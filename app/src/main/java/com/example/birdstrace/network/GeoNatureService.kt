@@ -159,6 +159,8 @@ object GeoNatureService {
                     put("date_max", dateFmt.format(d))
                     put("hour_min", heureFmt.format(d))
                     put("hour_max", heureFmt.format(d))
+                    put("additional_fields", JSONObject())
+                    put("meta_device_entry", "mobile")
                     put("t_occurrences_occtax", JSONArray().put(occ))
                     
                     // Métadonnées du relevé

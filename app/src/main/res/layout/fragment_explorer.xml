@@ -20,37 +20,98 @@
         android:src="@drawable/ic_arrow_back"
         android:tint="?attr/colorOnSurface" />
 
-    <!-- Boussole (haut droite) -->
-    <com.example.birdstrace.ui.CompassView
-        android:id="@+id/compass"
-        android:layout_width="44dp"
-        android:layout_height="44dp"
-        android:layout_gravity="top|end"
-        android:layout_margin="12dp"
-        android:elevation="4dp" />
+    <!-- Barre filtres taxons (haut centre) -->
+    <LinearLayout
+        android:id="@+id/barre_filtres"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|center_horizontal"
+        android:layout_marginTop="12dp"
+        android:background="@drawable/bandeau_dark"
+        android:elevation="4dp"
+        android:orientation="horizontal"
+        android:padding="4dp">
 
-    <!-- Bouton fond de carte (haut droite, sous la boussole) -->
-    <ImageButton
-        android:id="@+id/btn_fond_carte"
-        android:layout_width="44dp"
-        android:layout_height="44dp"
-        android:layout_gravity="top|end"
-        android:layout_marginTop="68dp"
-        android:layout_marginEnd="12dp"
-        android:background="@drawable/btn_map_bg"
-        android:contentDescription="Changer fond"
-        android:src="@drawable/ic_map" />
+        <TextView
+            android:id="@+id/btn_filtre_oiseau"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:drawablePadding="4dp"
+            android:drawableStart="@drawable/ic_bird_small"
+            android:drawableTint="@android:color/white"
+            android:gravity="center"
+            android:paddingHorizontal="10dp"
+            android:text="Oiseaux"
+            android:textColor="@android:color/white"
+            android:textSize="12sp" />
 
-    <!-- Bouton GPS / centrer (bas droite) -->
-    <ImageButton
-        android:id="@+id/btn_centrer"
-        android:layout_width="44dp"
-        android:layout_height="44dp"
+        <TextView
+            android:id="@+id/btn_filtre_mammifere"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:drawablePadding="4dp"
+            android:drawableStart="@drawable/ic_paw_small"
+            android:drawableTint="@android:color/white"
+            android:gravity="center"
+            android:paddingHorizontal="10dp"
+            android:text="Mamm."
+            android:textColor="@android:color/white"
+            android:textSize="12sp" />
+
+        <TextView
+            android:id="@+id/btn_filtre_reptile"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:drawablePadding="4dp"
+            android:drawableStart="@drawable/ic_reptile_small"
+            android:drawableTint="@android:color/white"
+            android:gravity="center"
+            android:paddingHorizontal="10dp"
+            android:text="Reptiles"
+            android:textColor="@android:color/white"
+            android:textSize="12sp" />
+    </LinearLayout>
+
+    <!-- Contrôles droite (empilés verticalement, bas droite) -->
+    <LinearLayout
+        android:id="@+id/ctrl_droite"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
         android:layout_gravity="bottom|end"
         android:layout_margin="12dp"
-        android:background="@drawable/btn_map_bg"
-        android:contentDescription="Centrer sur ma position"
-        android:src="@drawable/ic_location_on" />
+        android:gravity="center_horizontal"
+        android:orientation="vertical">
+
+        <com.example.birdstrace.ui.CompassView
+            android:id="@+id/compass"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:elevation="4dp" />
+
+        <Space
+            android:layout_width="1dp"
+            android:layout_height="8dp" />
+
+        <ImageButton
+            android:id="@+id/btn_fond_carte"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:background="@drawable/btn_map_bg"
+            android:contentDescription="Changer fond"
+            android:src="@drawable/ic_map" />
+
+        <Space
+            android:layout_width="1dp"
+            android:layout_height="8dp" />
+
+        <ImageButton
+            android:id="@+id/btn_centrer"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:background="@drawable/btn_map_bg"
+            android:contentDescription="Centrer sur ma position"
+            android:src="@drawable/ic_location_on" />
+    </LinearLayout>
 
     <!-- Badge compteur (bas gauche) -->
     <TextView

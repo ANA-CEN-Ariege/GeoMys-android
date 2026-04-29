@@ -49,6 +49,8 @@ class ExplorerFragment : Fragment() {
     private var debounceJob: Job? = null
     private val iconeCache = mutableMapOf<Pair<Taxon, Int>, BitmapDrawable>()
     private var useSatellite = false
+    private var taxonFiltre: Taxon? = null
+    private var observationsBrutes: List<ObsExplorer> = emptyList()
     private var sensorManager: android.hardware.SensorManager? = null
     private var sensorListener: android.hardware.SensorEventListener? = null
 
@@ -74,6 +76,7 @@ class ExplorerFragment : Fragment() {
 
         setupMap()
         setupCompass()
+        setupFiltres()
         binding.btnRetour.setOnClickListener { findNavController().navigateUp() }
         binding.btnFondCarte.setOnClickListener { toggleFondCarte() }
         binding.btnCentrer.setOnClickListener { centrerSurPosition() }
@@ -85,9 +88,8 @@ class ExplorerFragment : Fragment() {
             val dp32 = (32 * dp).toInt()
             binding.btnRetour.updateLayoutParams<android.widget.FrameLayout.LayoutParams> { topMargin = top + 12 }
             binding.tvCompteur.updateLayoutParams<android.widget.FrameLayout.LayoutParams> { topMargin = top + 12 }
-            binding.compass.updateLayoutParams<android.widget.FrameLayout.LayoutParams> { topMargin = top + 12 }
-            binding.btnFondCarte.updateLayoutParams<android.widget.FrameLayout.LayoutParams> { topMargin = top + (68 * dp).toInt() }
-            binding.btnCentrer.updateLayoutParams<android.widget.FrameLayout.LayoutParams> { bottomMargin = bottom + (12 * dp).toInt() }
+            binding.barreFiltres.updateLayoutParams<android.widget.FrameLayout.LayoutParams> { topMargin = top + 12 }
+            binding.ctrlDroite.updateLayoutParams<android.widget.FrameLayout.LayoutParams> { bottomMargin = bottom + (12 * dp).toInt() }
             binding.overlayChargement.updateLayoutParams<android.widget.FrameLayout.LayoutParams> { bottomMargin = bottom + dp32 }
             binding.tvNonConfigure.updateLayoutParams<android.widget.FrameLayout.LayoutParams> { bottomMargin = bottom + dp32 }
             insets
@@ -123,6 +125,38 @@ class ExplorerFragment : Fragment() {
             binding.map.controller.setCenter(GeoPoint(46.5, 2.5))
         }
     }
+
+    private fun setupFiltres() {
+        binding.btnFiltreOiseau.setOnClickListener { toggleFiltre(Taxon.OISEAU) }
+        binding.btnFiltreMammifere.setOnClickListener { toggleFiltre(Taxon.MAMMIFERE) }
+        binding.btnFiltreReptile.setOnClickListener { toggleFiltre(Taxon.REPTILE) }
+        mettreAJourBoutonsFiltres()
+    }
+
+    private fun toggleFiltre(taxon: Taxon) {
+        taxonFiltre = if (taxonFiltre == taxon) null else taxon
+        mettreAJourBoutonsFiltres()
+        afficherMarkers(observationsBrutes.filtrees())
+    }
+
+    private fun mettreAJourBoutonsFiltres() {
+        data class BtnInfo(val view: android.widget.TextView, val taxon: Taxon, val couleur: Int)
+        val boutons = listOf(
+            BtnInfo(binding.btnFiltreOiseau,    Taxon.OISEAU,    0xFFFF6D00.toInt()),
+            BtnInfo(binding.btnFiltreMammifere, Taxon.MAMMIFERE, 0xFF795548.toInt()),
+            BtnInfo(binding.btnFiltreReptile,   Taxon.REPTILE,   0xFF388E3C.toInt())
+        )
+        for ((btn, taxon, couleur) in boutons) {
+            val actif = taxonFiltre == taxon
+            btn.background = if (actif) requireContext().getDrawable(R.drawable.btn_filtre_actif) else null
+            btn.setTextColor(if (actif) couleur else android.graphics.Color.WHITE)
+            val tint = android.content.res.ColorStateList.valueOf(if (actif) couleur else android.graphics.Color.WHITE)
+            androidx.core.widget.TextViewCompat.setCompoundDrawableTintList(btn, tint)
+        }
+    }
+
+    private fun List<ObsExplorer>.filtrees() =
+        if (taxonFiltre == null) this else filter { it.taxon == taxonFiltre }
 
     private fun setupCompass() {
         sensorManager = requireContext().getSystemService(android.content.Context.SENSOR_SERVICE)
@@ -181,8 +215,9 @@ class ExplorerFragment : Fragment() {
                     minLon = bbox.lonWest, minLat = bbox.latSouth,
                     maxLon = bbox.lonEast, maxLat = bbox.latNorth
                 )
-                afficherMarkers(obs)
-                binding.tvCompteur.text = "${obs.size} obs. (12 mois)"
+                observationsBrutes = obs
+                afficherMarkers(obs.filtrees())
+                binding.tvCompteur.text = "${obs.filtrees().size} obs. (12 mois)"
                 binding.tvCompteur.visibility = View.VISIBLE
                 binding.tvNonConfigure.visibility = View.GONE
             } catch (e: Exception) {

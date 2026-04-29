@@ -325,7 +325,7 @@ class TraceFragment : Fragment() {
         }
 
         val groupes = grouperObservations(observations)
-        for ((obsId, group) in groupes) {
+        for ((_, group) in groupes) {
             if (group.size == 1) {
                 val obs = group[0]
                 if (obs.id !in observationMarkers) {
@@ -395,8 +395,6 @@ class TraceFragment : Fragment() {
     }
 
     private fun showConfirmTerminer() {
-        val hasParcours = traceViewModel.locationTracker.parcours.value?.isNotEmpty() == true
-        val hasObs = traceViewModel.observations.value?.isNotEmpty() == true
         val peutEnvoyerGn = gnConfig.estConfiguree && (traceViewModel.observations.value?.any { it.cdNom != null } == true)
 
         val options = mutableListOf(

@@ -149,8 +149,8 @@ class ExplorerFragment : Fragment() {
         for ((btn, taxon, couleur) in boutons) {
             val actif = taxonFiltre == taxon
             btn.background = if (actif) requireContext().getDrawable(R.drawable.btn_filtre_actif) else null
-            btn.setTextColor(if (actif) couleur else android.graphics.Color.WHITE)
-            val tint = android.content.res.ColorStateList.valueOf(if (actif) couleur else android.graphics.Color.WHITE)
+            btn.setTextColor(if (actif) couleur else Color.WHITE)
+            val tint = android.content.res.ColorStateList.valueOf(if (actif) couleur else Color.WHITE)
             androidx.core.widget.TextViewCompat.setCompoundDrawableTintList(btn, tint)
         }
     }
@@ -185,11 +185,11 @@ class ExplorerFragment : Fragment() {
 
     private fun centrerSurPosition() {
         val lm = requireContext().getSystemService(android.content.Context.LOCATION_SERVICE)
-            as android.location.LocationManager
+            as LocationManager
         val loc = try {
             @Suppress("MissingPermission")
-            lm.getLastKnownLocation(android.location.LocationManager.GPS_PROVIDER)
-                ?: lm.getLastKnownLocation(android.location.LocationManager.NETWORK_PROVIDER)
+            lm.getLastKnownLocation(LocationManager.GPS_PROVIDER)
+                ?: lm.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
         } catch (_: Exception) { null }
         if (loc != null) {
             binding.map.controller.animateTo(GeoPoint(loc.latitude, loc.longitude))
@@ -309,7 +309,7 @@ class ExplorerFragment : Fragment() {
         recycler.layoutManager = LinearLayoutManager(requireContext())
         recycler.adapter = object : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
             override fun getItemCount() = triees.size
-            override fun onCreateViewHolder(parent: android.view.ViewGroup, viewType: Int) =
+            override fun onCreateViewHolder(parent: ViewGroup, viewType: Int) =
                 object : RecyclerView.ViewHolder(layoutInflater.inflate(R.layout.item_obs_explorer, parent, false)) {}
 
             override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {

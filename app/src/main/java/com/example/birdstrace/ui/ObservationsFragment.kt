@@ -113,7 +113,7 @@ class ObservationAdapter(
         notifyDataSetChanged()
     }
 
-    inner class ViewHolder(val binding: ItemObservationBinding) : RecyclerView.ViewHolder(binding.root)
+    class ViewHolder(val binding: ItemObservationBinding) : RecyclerView.ViewHolder(binding.root)
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
         val binding = ItemObservationBinding.inflate(LayoutInflater.from(parent.context), parent, false)

@@ -98,7 +98,7 @@ private class GPXHandler : DefaultHandler() {
     }
 
     override fun characters(ch: CharArray, start: Int, length: Int) {
-        currentText.append(ch, start, length)
+        currentText.appendRange(ch, start, start + length)
     }
 
     override fun endElement(uri: String, localName: String, qName: String) {

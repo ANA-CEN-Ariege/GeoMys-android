@@ -164,7 +164,7 @@ class SortieAdapter(
         notifyDataSetChanged()
     }
 
-    inner class ViewHolder(val binding: ItemSortieBinding) : RecyclerView.ViewHolder(binding.root)
+    class ViewHolder(val binding: ItemSortieBinding) : RecyclerView.ViewHolder(binding.root)
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
         val binding = ItemSortieBinding.inflate(LayoutInflater.from(parent.context), parent, false)

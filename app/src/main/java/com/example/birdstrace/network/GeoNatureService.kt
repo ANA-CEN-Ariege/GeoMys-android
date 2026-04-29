@@ -254,6 +254,7 @@ object GeoNatureService {
             Pair("Reptiles",        "Reptiles")
         )
         val entrees = mutableMapOf<String, TaxRefEntry>()
+        val groupeMap = mutableMapOf<Int, String>()
         var totalRecu = 0
         var pagesRecues = 0
         val comptesParGroupe = mutableMapOf("Oiseaux" to 0, "Mammifères" to 0, "Reptiles" to 0)
@@ -290,6 +291,7 @@ object GeoNatureService {
                         val item = array.getJSONObject(i)
                         val cdNom = item.optInt("cd_nom", -1).takeIf { it > 0 } ?: continue
                         val lbNom = item.optString("lb_nom", "").takeIf { it.isNotEmpty() } ?: continue
+                        groupeMap[cdNom] = groupeCle
                         val nomVernRaw = item.optString("nom_vern", "")
                         if (nomVernRaw.isNotEmpty()) {
                             for (partie in nomVernRaw.split(",")) {
@@ -323,6 +325,7 @@ object GeoNatureService {
 
         if (pagesRecues == 0) return@withContext Pair(0, "Aucun résultat reçu")
         if (entrees.isNotEmpty()) TaxRefCache.ajouter(entrees)
+        if (groupeMap.isNotEmpty()) TaxRefCache.ajouterGroupes(groupeMap)
         val comptes = TaxRefCache.comptesGroupes.toMutableMap()
         comptesParGroupe.forEach { (k, v) -> comptes[k] = v }
         TaxRefCache.comptesGroupes = comptes
@@ -365,6 +368,7 @@ object GeoNatureService {
     ): List<ObsExplorer> {
         val result = mutableListOf<ObsExplorer>()
         val cdNomsCache = TaxRefCache.tousLesCdNoms()
+        val groupeParCdNom = TaxRefCache.tousLesGroupes()
         val groupesSupports = setOf("Oiseaux", "Mammifères", "Reptiles")
         try {
             val root = JSONObject(text)
@@ -405,8 +409,18 @@ object GeoNatureService {
                     }
                 } else {
                     val cdNom = props.optInt("cd_nom", -1).takeIf { it > 0 } ?: continue
-                    if (cdNomsCache.isNotEmpty() && cdNom !in cdNomsCache) continue
-                    taxon = Taxon.OISEAU
+                    val cachedGroupe = groupeParCdNom[cdNom.toString()]
+                    if (cachedGroupe != null) {
+                        if (cachedGroupe !in groupesSupports) continue
+                        taxon = when {
+                            cachedGroupe.contains("Mammif", ignoreCase = true) -> Taxon.MAMMIFERE
+                            cachedGroupe.contains("Reptile", ignoreCase = true) -> Taxon.REPTILE
+                            else -> Taxon.OISEAU
+                        }
+                    } else {
+                        if (cdNomsCache.isNotEmpty() && cdNom !in cdNomsCache) continue
+                        taxon = Taxon.OISEAU
+                    }
                 }
 
                 result.add(obsFromProps(props, lat, lon, taxon))

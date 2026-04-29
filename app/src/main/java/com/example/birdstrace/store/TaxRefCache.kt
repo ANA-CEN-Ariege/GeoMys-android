@@ -53,8 +53,26 @@ object TaxRefCache {
         }
         set(v) = prefs.edit().putString(KEY_COMPTES, gson.toJson(v)).apply()
 
+    private const val KEY_GROUPES = "gn_taxref_groupes_v1"
+
+    fun ajouterGroupes(groupes: Map<Int, String>) {
+        val existing = chargerGroupes().toMutableMap()
+        groupes.forEach { (k, v) -> existing[k.toString()] = v }
+        prefs.edit().putString(KEY_GROUPES, gson.toJson(existing)).apply()
+    }
+
+    fun tousLesGroupes(): Map<String, String> = chargerGroupes()
+
+    private fun chargerGroupes(): Map<String, String> {
+        val json = prefs.getString(KEY_GROUPES, null) ?: return emptyMap()
+        return try {
+            val type = object : TypeToken<Map<String, String>>() {}.type
+            gson.fromJson(json, type) ?: emptyMap()
+        } catch (e: Exception) { emptyMap() }
+    }
+
     fun vider() {
-        prefs.edit().remove(KEY).remove(KEY_VERSION).remove(KEY_COMPTES).apply()
+        prefs.edit().remove(KEY).remove(KEY_VERSION).remove(KEY_COMPTES).remove(KEY_GROUPES).apply()
     }
 
     var versionSauvegardee: String?

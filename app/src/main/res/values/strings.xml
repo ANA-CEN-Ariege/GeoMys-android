@@ -1,0 +1,28 @@
+<resources>
+    <string name="app_name">BioScope</string>
+    <string name="nouvelle_sortie">Nouvelle sortie</string>
+    <string name="reprendre_sortie">Reprendre la sortie</string>
+    <string name="mes_sorties">Mes sorties</string>
+    <string name="terminer_sortie">Terminer la sortie</string>
+    <string name="enregistrer_quitter">Enregistrer et quitter</string>
+    <string name="enregistrer_envoyer_gn">Enregistrer et envoyer à GeoNature</string>
+    <string name="supprimer_sortie">Supprimer la sortie</string>
+    <string name="continuer_sortie">Continuer la sortie</string>
+    <string name="positionner_observation">Déplacez la carte pour positionner l\'observation</string>
+    <string name="repositionner_observation">Déplacez la carte pour repositionner l\'observation</string>
+    <string name="valider_position">Valider ce point</string>
+    <string name="annuler">Annuler</string>
+    <string name="enregistrer">Enregistrer</string>
+    <string name="tout_reinitialiser">Tout réinitialiser</string>
+    <string name="action_irreversible">Cette action est irréversible.</string>
+    <string name="effacer_trace_obs">Effacer les observations et la trace</string>
+    <string name="partager_gpx">Partager GPX</string>
+    <string name="erreur_envoi">Erreur d\'envoi</string>
+    <string name="erreur_import">Erreur d\'import</string>
+    <string name="erreur_import_gpx">Impossible de lire ce fichier GPX. Vérifiez qu\'il contient un parcours ou des waypoints valides.</string>
+    <string name="taxref_non_trouve">Non trouvé — cd_nom saisissable dans Détails</string>
+    <string name="taxref_indisponible">TaxRef indisponible — cd_nom dans Détails</string>
+    <string name="configuration_complete">✓ Configuration complète</string>
+    <string name="configuration_incomplete">⚠ Configuration incomplète</string>
+    <string name="observations_count">Observations (%d)</string>
+</resources>

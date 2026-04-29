@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <org.osmdroid.views.MapView
+        android:id="@+id/map"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <!-- Bouton retour (haut gauche) -->
+    <ImageButton
+        android:id="@+id/btn_retour"
+        android:layout_width="44dp"
+        android:layout_height="44dp"
+        android:layout_gravity="top|start"
+        android:layout_margin="12dp"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:contentDescription="Retour"
+        android:src="@drawable/ic_arrow_back"
+        android:tint="?attr/colorOnSurface" />
+
+    <!-- Boussole (haut droite) -->
+    <com.example.birdstrace.ui.CompassView
+        android:id="@+id/compass"
+        android:layout_width="44dp"
+        android:layout_height="44dp"
+        android:layout_gravity="top|end"
+        android:layout_margin="12dp"
+        android:elevation="4dp" />
+
+    <!-- Bouton fond de carte (haut droite, sous la boussole) -->
+    <ImageButton
+        android:id="@+id/btn_fond_carte"
+        android:layout_width="44dp"
+        android:layout_height="44dp"
+        android:layout_gravity="top|end"
+        android:layout_marginTop="68dp"
+        android:layout_marginEnd="12dp"
+        android:background="@drawable/btn_map_bg"
+        android:contentDescription="Changer fond"
+        android:src="@drawable/ic_map" />
+
+    <!-- Bouton GPS / centrer (bas droite) -->
+    <ImageButton
+        android:id="@+id/btn_centrer"
+        android:layout_width="44dp"
+        android:layout_height="44dp"
+        android:layout_gravity="bottom|end"
+        android:layout_margin="12dp"
+        android:background="@drawable/btn_map_bg"
+        android:contentDescription="Centrer sur ma position"
+        android:src="@drawable/ic_location_on" />
+
+    <!-- Badge compteur (bas gauche) -->
+    <TextView
+        android:id="@+id/tv_compteur"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|start"
+        android:layout_margin="12dp"
+        android:background="@drawable/bandeau_dark"
+        android:paddingHorizontal="12dp"
+        android:paddingVertical="6dp"
+        android:textColor="@android:color/white"
+        android:textSize="13sp"
+        android:visibility="gone" />
+
+    <!-- Overlay chargement -->
+    <LinearLayout
+        android:id="@+id/overlay_chargement"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginBottom="32dp"
+        android:background="@drawable/bandeau_dark"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingHorizontal="16dp"
+        android:paddingVertical="10dp"
+        android:visibility="gone">
+
+        <ProgressBar
+            android:layout_width="18dp"
+            android:layout_height="18dp"
+            android:indeterminateTint="@android:color/white"
+            android:layout_marginEnd="10dp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Chargement des observations…"
+            android:textColor="@android:color/white"
+            android:textSize="13sp" />
+    </LinearLayout>
+
+    <!-- Message GeoNature non configuré -->
+    <TextView
+        android:id="@+id/tv_non_configure"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginBottom="32dp"
+        android:background="@drawable/bandeau_dark"
+        android:paddingHorizontal="16dp"
+        android:paddingVertical="10dp"
+        android:text="Configurez GeoNature pour explorer les observations"
+        android:textColor="@android:color/white"
+        android:textSize="13sp"
+        android:visibility="gone" />
+
+</FrameLayout>

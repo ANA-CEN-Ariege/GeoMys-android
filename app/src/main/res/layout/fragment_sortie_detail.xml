@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <org.osmdroid.views.MapView
+        android:id="@+id/map"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <!-- Overlay envoi GeoNature -->
+    <LinearLayout
+        android:id="@+id/overlay_envoi"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#88000000"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <ProgressBar
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:indeterminateTint="@android:color/white" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="Envoi vers GeoNature…"
+            android:textColor="@android:color/white"
+            android:textSize="16sp" />
+    </LinearLayout>
+
+    <!-- Bouton retour (haut gauche) -->
+    <ImageButton
+        android:id="@+id/btn_retour"
+        android:layout_width="44dp"
+        android:layout_height="44dp"
+        android:layout_gravity="top|start"
+        android:layout_margin="12dp"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:contentDescription="Retour"
+        android:src="@drawable/ic_arrow_back"
+        android:tint="?attr/colorOnSurface" />
+
+    <!-- Bouton liste espèces (haut droite) -->
+    <ImageButton
+        android:id="@+id/btn_liste_especes"
+        android:layout_width="44dp"
+        android:layout_height="44dp"
+        android:layout_gravity="top|end"
+        android:layout_margin="12dp"
+        android:background="@drawable/btn_map_bg"
+        android:contentDescription="Liste des espèces"
+        android:src="@drawable/ic_list"
+        android:visibility="gone" />
+
+    <!-- Boutons d'action en bas droite -->
+    <LinearLayout
+        android:id="@+id/conteneur_fabs"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|end"
+        android:layout_margin="16dp"
+        android:orientation="vertical"
+        android:gravity="end">
+
+        <!-- FAB envoi GeoNature -->
+        <com.google.android.material.floatingactionbutton.FloatingActionButton
+            android:id="@+id/btn_envoyer_gn"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
+            android:contentDescription="Envoyer vers GeoNature"
+            android:src="@drawable/ic_send"
+            android:visibility="gone"
+            app:backgroundTint="@color/colorPrimary"
+            xmlns:app="http://schemas.android.com/apk/res-auto" />
+
+        <!-- FAB export GPX -->
+        <com.google.android.material.floatingactionbutton.FloatingActionButton
+            android:id="@+id/btn_exporter"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:contentDescription="Exporter GPX"
+            android:src="@drawable/ic_share" />
+    </LinearLayout>
+</FrameLayout>

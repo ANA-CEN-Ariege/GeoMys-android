@@ -1,0 +1,285 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <!-- Carte -->
+    <org.osmdroid.views.MapView
+        android:id="@+id/map"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <!-- Réticule de positionnement -->
+    <FrameLayout
+        android:id="@+id/reticule"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:pointerIcon="crosshair"
+        android:visibility="gone">
+
+        <!-- Lignes horizontale et verticale + cercle central -->
+        <View
+            android:layout_width="40dp"
+            android:layout_height="2dp"
+            android:layout_gravity="center"
+            android:background="#DDFF3333" />
+
+        <View
+            android:layout_width="2dp"
+            android:layout_height="40dp"
+            android:layout_gravity="center"
+            android:background="#DDFF3333" />
+
+        <View
+            android:layout_width="18dp"
+            android:layout_height="18dp"
+            android:layout_gravity="center"
+            android:background="@drawable/reticule_circle" />
+
+        <View
+            android:layout_width="5dp"
+            android:layout_height="5dp"
+            android:layout_gravity="center"
+            android:background="@drawable/reticule_dot" />
+    </FrameLayout>
+
+    <!-- Bandeau instruction positionnement -->
+    <LinearLayout
+        android:id="@+id/bandeau_positionnement"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top"
+        android:gravity="center"
+        android:paddingTop="60dp"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/tv_bandeau_positionnement"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@drawable/bandeau_dark"
+            android:paddingHorizontal="16dp"
+            android:paddingVertical="10dp"
+            android:text="@string/positionner_observation"
+            android:textColor="@android:color/white"
+            android:textSize="14sp" />
+    </LinearLayout>
+
+    <!-- Bouton retour (haut gauche) -->
+    <ImageButton
+        android:id="@+id/btn_retour"
+        android:layout_width="44dp"
+        android:layout_height="44dp"
+        android:layout_gravity="top|start"
+        android:layout_margin="12dp"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:contentDescription="Retour"
+        android:src="@drawable/ic_arrow_back"
+        android:tint="?attr/colorOnSurface" />
+
+    <!-- Boussole (haut droite) -->
+    <com.example.birdstrace.ui.CompassView
+        android:id="@+id/compass"
+        android:layout_width="44dp"
+        android:layout_height="44dp"
+        android:layout_gravity="top|end"
+        android:layout_margin="12dp"
+        android:elevation="4dp" />
+
+    <!-- Bouton fond de carte (haut droite, sous la boussole) -->
+    <ImageButton
+        android:id="@+id/btn_fond_carte"
+        android:layout_width="44dp"
+        android:layout_height="44dp"
+        android:layout_gravity="top|end"
+        android:layout_marginTop="68dp"
+        android:layout_marginEnd="12dp"
+        android:background="@drawable/btn_map_bg"
+        android:contentDescription="Changer fond"
+        android:src="@drawable/ic_map" />
+
+    <!-- Barre d'info parcours -->
+    <LinearLayout
+        android:id="@+id/info_barre"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:background="@drawable/barre_info_bg"
+        android:gravity="center"
+        android:orientation="horizontal"
+        android:paddingHorizontal="20dp"
+        android:paddingVertical="8dp"
+        android:visibility="gone">
+
+        <ImageView
+            android:layout_width="16dp"
+            android:layout_height="16dp"
+            android:src="@drawable/ic_walk"
+            android:tint="@android:color/white" />
+
+        <TextView
+            android:id="@+id/tv_distance"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="4dp"
+            android:layout_marginEnd="24dp"
+            android:text="0 m"
+            android:textColor="@android:color/white"
+            android:textSize="14sp" />
+
+        <ImageView
+            android:layout_width="16dp"
+            android:layout_height="16dp"
+            android:src="@drawable/ic_bird_small"
+            android:tint="@android:color/white" />
+
+        <TextView
+            android:id="@+id/tv_nb_obs"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="4dp"
+            android:text="0 obs."
+            android:textColor="@android:color/white"
+            android:textSize="14sp" />
+    </LinearLayout>
+
+    <!-- Overlay envoi GeoNature -->
+    <LinearLayout
+        android:id="@+id/overlay_envoi"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#88000000"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <ProgressBar
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:indeterminateTint="@android:color/white" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="Envoi vers GeoNature…"
+            android:textColor="@android:color/white"
+            android:textSize="16sp" />
+    </LinearLayout>
+
+    <!-- Panneau contrôle normal -->
+    <LinearLayout
+        android:id="@+id/panneau_controle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:background="@drawable/panel_bg"
+        android:gravity="center"
+        android:orientation="horizontal"
+        android:paddingHorizontal="20dp"
+        android:paddingVertical="16dp">
+
+        <!-- Bouton parcours (play/stop) -->
+        <ImageButton
+            android:id="@+id/btn_parcours"
+            android:layout_width="52dp"
+            android:layout_height="52dp"
+            android:background="@drawable/btn_circle_white"
+            android:contentDescription="Parcours"
+            android:src="@drawable/ic_play" />
+
+        <View android:layout_width="0dp" android:layout_height="0dp" android:layout_weight="1" />
+
+        <!-- Bouton observation -->
+        <ImageButton
+            android:id="@+id/btn_observation"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:background="@drawable/btn_circle_white"
+            android:contentDescription="Observation"
+            android:src="@drawable/ic_bird_small" />
+
+        <View android:layout_width="0dp" android:layout_height="0dp" android:layout_weight="1" />
+
+        <!-- Bouton terminer -->
+        <ImageButton
+            android:id="@+id/btn_terminer"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:alpha="0.4"
+            android:background="@drawable/btn_circle_white"
+            android:contentDescription="Terminer"
+            android:enabled="false"
+            android:src="@drawable/ic_flag" />
+
+        <View android:layout_width="0dp" android:layout_height="0dp" android:layout_weight="1" />
+
+        <!-- Bouton liste avec badge -->
+        <FrameLayout android:layout_width="wrap_content" android:layout_height="wrap_content">
+
+            <ImageButton
+                android:id="@+id/btn_liste"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:background="@drawable/btn_circle_white"
+                android:contentDescription="Liste"
+                android:src="@drawable/ic_list" />
+
+            <TextView
+                android:id="@+id/liste_badge"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="top|end"
+                android:background="@drawable/badge_orange"
+                android:minWidth="18dp"
+                android:paddingHorizontal="4dp"
+                android:textColor="@android:color/white"
+                android:textSize="10sp"
+                android:visibility="gone" />
+        </FrameLayout>
+
+        <View android:layout_width="0dp" android:layout_height="0dp" android:layout_weight="1" />
+
+        <!-- Bouton centrer -->
+        <ImageButton
+            android:id="@+id/btn_centrer"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:background="@drawable/btn_circle_white"
+            android:contentDescription="Centrer"
+            android:src="@drawable/ic_location_on" />
+    </LinearLayout>
+
+    <!-- Panneau validation positionnement -->
+    <LinearLayout
+        android:id="@+id/panneau_validation_position"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:background="@drawable/panel_bg"
+        android:gravity="center"
+        android:orientation="horizontal"
+        android:paddingHorizontal="20dp"
+        android:paddingVertical="16dp"
+        android:visibility="gone">
+
+        <Button
+            android:id="@+id/btn_annuler_position"
+            style="@style/Widget.MaterialComponents.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:backgroundTint="@android:color/darker_gray"
+            android:text="@string/annuler"
+            android:textColor="@android:color/white" />
+
+        <View android:layout_width="0dp" android:layout_height="0dp" android:layout_weight="1" />
+
+        <Button
+            android:id="@+id/btn_valider_position"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:backgroundTint="@color/colorPrimary"
+            android:text="@string/valider_position"
+            android:textColor="@android:color/white" />
+    </LinearLayout>
+</FrameLayout>

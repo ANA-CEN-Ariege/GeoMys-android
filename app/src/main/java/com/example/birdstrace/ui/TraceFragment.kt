@@ -195,11 +195,7 @@ class TraceFragment : Fragment() {
         }
 
         binding.btnFondCarte.setOnClickListener {
-            fondCarte = when (fondCarte) {
-                FondCarte.OSM -> FondCarte.TOPO
-                FondCarte.TOPO -> FondCarte.ORTHO
-                FondCarte.ORTHO -> FondCarte.OSM
-            }
+            fondCarte = fondCarte.suivant()
             binding.map.setTileSource(tileSourcePour(fondCarte))
             binding.map.invalidate()
         }

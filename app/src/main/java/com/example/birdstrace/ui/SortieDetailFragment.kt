@@ -25,10 +25,8 @@ import com.example.birdstrace.store.GeoNatureConfig
 import com.example.birdstrace.store.SortieStore
 import kotlinx.coroutines.launch
 import org.osmdroid.config.Configuration
-import org.osmdroid.tileprovider.tilesource.OnlineTileSourceBase
 import org.osmdroid.util.BoundingBox
 import org.osmdroid.util.GeoPoint
-import org.osmdroid.util.MapTileIndex
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polyline
 import java.io.File
@@ -41,6 +39,7 @@ class SortieDetailFragment : Fragment() {
     private lateinit var sortie: Sortie
     private lateinit var sortieStore: SortieStore
     private lateinit var gnConfig: GeoNatureConfig
+    private var fondCarte = FondCarte.TOPO
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         Configuration.getInstance().userAgentValue = requireContext().packageName
@@ -84,6 +83,11 @@ class SortieDetailFragment : Fragment() {
 
     private fun setupButtons() {
         binding.btnRetour.setOnClickListener { findNavController().navigateUp() }
+        binding.btnFondCarte.setOnClickListener {
+            fondCarte = fondCarte.suivant()
+            binding.map.setTileSource(tileSourcePour(fondCarte))
+            binding.map.invalidate()
+        }
         binding.btnExporter.setOnClickListener { exporterGpx() }
 
         if (sortie.observations.isNotEmpty()) {
@@ -150,17 +154,7 @@ class SortieDetailFragment : Fragment() {
     }
 
     private fun setupMap() {
-        val tileSource = object : OnlineTileSourceBase("IGN_TOPO", 2, 19, 256, "", arrayOf("")) {
-            override fun getTileURLString(pMapTileIndex: Long): String {
-                val z = MapTileIndex.getZoom(pMapTileIndex)
-                val x = MapTileIndex.getX(pMapTileIndex)
-                val y = MapTileIndex.getY(pMapTileIndex)
-                return "https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0" +
-                    "&LAYER=GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2&STYLE=normal&FORMAT=image/png" +
-                    "&TILEMATRIXSET=PM&TILEMATRIX=$z&TILEROW=$y&TILECOL=$x"
-            }
-        }
-        binding.map.setTileSource(tileSource)
+        binding.map.setTileSource(tileSourcePour(fondCarte))
         binding.map.setMultiTouchControls(true)
 
         if (sortie.pointsParcours.size > 1) {

@@ -35,10 +35,7 @@ import org.osmdroid.config.Configuration
 import org.osmdroid.events.MapListener
 import org.osmdroid.events.ScrollEvent
 import org.osmdroid.events.ZoomEvent
-import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.GeoPoint
-import org.osmdroid.tileprovider.tilesource.OnlineTileSourceBase
-import org.osmdroid.util.MapTileIndex
 import org.osmdroid.views.overlay.Marker
 
 class ExplorerFragment : Fragment() {
@@ -48,21 +45,11 @@ class ExplorerFragment : Fragment() {
     private var fetchJob: Job? = null
     private var debounceJob: Job? = null
     private val iconeCache = mutableMapOf<Pair<Taxon, Int>, BitmapDrawable>()
-    private var useSatellite = false
+    private var fondCarte = FondCarte.OSM
     private var taxonFiltre: Taxon? = null
     private var observationsBrutes: List<ObsExplorer> = emptyList()
     private var sensorManager: android.hardware.SensorManager? = null
     private var sensorListener: android.hardware.SensorEventListener? = null
-
-    private val ESRI_SAT = object : OnlineTileSourceBase(
-        "ESRIWorldImagery", 1, 19, 256, ".jpg",
-        arrayOf("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/")
-    ) {
-        override fun getTileURLString(pMapTileIndex: Long): String =
-            "${baseUrl}${MapTileIndex.getZoom(pMapTileIndex)}/" +
-            "${MapTileIndex.getY(pMapTileIndex)}/" +
-            "${MapTileIndex.getX(pMapTileIndex)}.jpg"
-    }
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         Configuration.getInstance().userAgentValue = requireContext().packageName
@@ -109,7 +96,7 @@ class ExplorerFragment : Fragment() {
     }
 
     private fun setupMap() {
-        binding.map.setTileSource(TileSourceFactory.MAPNIK)
+        binding.map.setTileSource(tileSourcePour(fondCarte))
         binding.map.setMultiTouchControls(true)
         val lastLoc = try {
             val lm = requireContext().getSystemService(android.content.Context.LOCATION_SERVICE) as LocationManager
@@ -181,8 +168,8 @@ class ExplorerFragment : Fragment() {
     }
 
     private fun toggleFondCarte() {
-        useSatellite = !useSatellite
-        binding.map.setTileSource(if (useSatellite) ESRI_SAT else TileSourceFactory.MAPNIK)
+        fondCarte = fondCarte.suivant()
+        binding.map.setTileSource(tileSourcePour(fondCarte))
         binding.map.invalidate()
     }
 
@@ -207,7 +194,25 @@ class ExplorerFragment : Fragment() {
         }
     }
 
+    private fun largeurZoneKm(): Double {
+        val bbox = binding.map.boundingBox
+        val centerLat = (bbox.latNorth + bbox.latSouth) / 2
+        val cosLat = Math.cos(Math.toRadians(centerLat))
+        return (bbox.lonEast - bbox.lonWest) * 111.0 * cosLat
+    }
+
     private fun chargerObservations() {
+        if (largeurZoneKm() > 100) {
+            fetchJob?.cancel()
+            observationsBrutes = emptyList()
+            afficherMarkers(emptyList())
+            binding.tvCompteur.visibility = View.GONE
+            binding.tvNonConfigure.text = "Zoomez pour charger les observations (zone > 100 km)"
+            binding.tvNonConfigure.visibility = View.VISIBLE
+            binding.overlayChargement.visibility = View.GONE
+            return
+        }
+
         val bbox = binding.map.boundingBox
         fetchJob?.cancel()
         fetchJob = viewLifecycleOwner.lifecycleScope.launch {

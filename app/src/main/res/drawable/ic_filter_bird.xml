@@ -4,8 +4,19 @@
     android:height="24dp"
     android:viewportWidth="24"
     android:viewportHeight="24">
-    <!-- Oiseau en vol — silhouette ailes déployées -->
+    <!-- Colombe en vol, profil droite, ailes levées -->
     <path
         android:fillColor="#000000"
-        android:pathData="M2,14 C4,10 7.5,10 10,12 C10.5,9 11,6.5 12,5.5 C13,6.5 13.5,9 14,12 C16.5,10 20,10 22,14 C19,12.5 16.5,12 15,12 C14,10 13,8.5 12,8 C11,8.5 10,10 9,12 C7.5,12 5,12.5 2,14Z"/>
+        android:pathData="M20,13 C20,11 19,10 18,10
+            C17,9.5 16,9.5 15,10
+            C14,10.5 13,10 12,9
+            C10,7.5 8,5.5 6,4
+            C5,3 3.5,3.5 3,5
+            C2.5,6.5 3.5,8 5.5,9.5
+            C7.5,11 10,12.5 11.5,14.5
+            C11.5,16 11,18 9.5,19.5
+            C8.5,20.5 7.5,21.5 8,22
+            C9,22.5 11,22 13,21
+            C15,20 17,18.5 18.5,17
+            C19.5,15.5 20.5,14 20,13 Z"/>
 </vector>

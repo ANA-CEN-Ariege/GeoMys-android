@@ -123,16 +123,16 @@ object GeoNatureService {
             var premierIdReleve: Int? = null
             var derniereErreur: String? = null
 
+            val idMethObs = resolverNomenclatures(base, token, cookies, "METH_OBS")
+            val idSexe    = resolverNomenclatures(base, token, cookies, "SEXE")
+            val idStade   = resolverNomenclatures(base, token, cookies, "STADE_VIE")
+
             for (obs in obsValides) {
                 val counting = JSONObject().apply {
                     put("count_min", obs.nombre)
                     put("count_max", obs.nombre)
-                    obs.sexe?.let { code ->
-                        resolverNomenclature(base, token, cookies, "SEXE", code)?.let { put("id_nomenclature_sex", it) }
-                    }
-                    obs.stadeVie?.let { code ->
-                        resolverNomenclature(base, token, cookies, "STADE_VIE", code)?.let { put("id_nomenclature_life_stage", it) }
-                    }
+                    obs.sexe?.let { code -> idSexe[code]?.let { put("id_nomenclature_sex", it) } }
+                    obs.stadeVie?.let { code -> idStade[code]?.let { put("id_nomenclature_life_stage", it) } }
                 }
 
                 val occ = JSONObject().apply {
@@ -140,16 +140,8 @@ object GeoNatureService {
                     put("nom_cite", obs.espece)
                     if (obs.notes.isNotEmpty()) put("comment", obs.notes)
                     put("cor_counting_occtax", JSONArray().put(counting))
-
-                    obs.techniqueObs?.let { code ->
-                        resolverNomenclature(base, token, cookies, "METH_OBS", code)?.let { put("id_nomenclature_obs_technique", it) }
-                    }
-                    resolverNomenclature(base, token, cookies, "STATUT_OBS", "Pr")?.let {
-                        put("id_nomenclature_observation_status", it)
-                    }
-                    resolverNomenclature(base, token, cookies, "STATUT_BIO", "1")?.let {
-                        put("id_nomenclature_bio_status", it)
-                    }
+                    val codeTechnique = obs.techniqueObs ?: "0"
+                    idMethObs[codeTechnique]?.let { put("id_nomenclature_obs_technique", it) }
                 }
 
                 val d = Date(obs.date)
@@ -162,23 +154,7 @@ object GeoNatureService {
                     put("additional_fields", JSONObject())
                     put("meta_device_entry", "mobile")
                     put("t_occurrences_occtax", JSONArray().put(occ))
-                    
-                    // Métadonnées du relevé
-                    idRole?.let {
-                        put("observers", JSONArray().put(it))
-                        put("id_digitiser", it) // Indispensable pour GeoNature récent
-                    }
-
-                    // Nomenclatures du relevé (Synthèse)
-                    resolverNomenclature(base, token, cookies, "STATUT_SOURCE", "Te")?.let {
-                        put("id_nomenclature_source_status", it)
-                    }
-                    resolverNomenclature(base, token, cookies, "FLOUTAGE", "0")?.let {
-                        put("id_nomenclature_blurring", it)
-                    }
-                    resolverNomenclature(base, token, cookies, "TYP_GRP", "PH")?.let {
-                        put("id_nomenclature_grp_typ", it)
-                    }
+                    idRole?.let { put("observers", JSONArray().put(it)) }
                 }
 
                 val geometry = JSONObject()
@@ -498,21 +474,31 @@ object GeoNatureService {
             ?: userJson?.optString("token").takeIf { !it.isNullOrEmpty() }
     }
 
-    private fun resolverNomenclature(base: String, token: String?, cookies: String, type: String, code: String): Int? {
-        val cle = "$type:$code"
-        nomenclatureCache[cle]?.let { return it }
+    // Charge tous les cd_nomenclature→id_nomenclature pour un type donné (même logique qu'OrniTrace)
+    private fun resolverNomenclatures(base: String, token: String?, cookies: String, type: String): Map<String, Int> {
+        val cached = nomenclatureCache.entries
+            .filter { it.key.startsWith("$type:") }
+            .associate { it.key.removePrefix("$type:") to it.value }
+        if (cached.isNotEmpty()) return cached
 
         return try {
-            val url = URL("$base/api/nomenclatures/nomenclature/$type/$code")
+            val url = URL("$base/api/nomenclatures/nomenclature/$type")
             val conn = url.openConnection() as java.net.HttpURLConnection
-            conn.connectTimeout = 5000
-            conn.readTimeout = 5000
+            conn.connectTimeout = 10000
+            conn.readTimeout = 10000
             if (token != null) conn.setRequestProperty("Authorization", "Bearer $token")
             if (cookies.isNotEmpty()) conn.setRequestProperty("Cookie", cookies)
-            if (conn.responseCode != 200) return null
-            val id = JSONObject(conn.inputStream.bufferedReader().readText()).optInt("id_nomenclature", -1).takeIf { it > 0 }
-            if (id != null) nomenclatureCache[cle] = id
-            id
-        } catch (e: Exception) { null }
+            if (conn.responseCode != 200) return emptyMap()
+            val array = JSONArray(conn.inputStream.bufferedReader().readText())
+            val result = mutableMapOf<String, Int>()
+            for (i in 0 until array.length()) {
+                val item = array.getJSONObject(i)
+                val id = item.optInt("id_nomenclature", -1).takeIf { it > 0 } ?: continue
+                val cd = item.optString("cd_nomenclature").takeIf { it.isNotEmpty() } ?: continue
+                result[cd] = id
+                nomenclatureCache["$type:$cd"] = id
+            }
+            result
+        } catch (e: Exception) { emptyMap() }
     }
 }

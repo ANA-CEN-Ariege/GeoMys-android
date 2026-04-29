@@ -124,29 +124,29 @@ object GeoNatureService {
             var derniereErreur: String? = null
 
             for (obs in obsValides) {
-                val occ = JSONObject().apply {
-                    put("cd_nom", obs.cdNom!!)
-                    put("nom_cite", obs.espece)
+                val counting = JSONObject().apply {
                     put("count_min", obs.nombre)
                     put("count_max", obs.nombre)
-                    if (obs.notes.isNotEmpty()) put("comment", obs.notes)
-                    
-                    // Nomenclatures spécifiques à l'observation
                     obs.sexe?.let { code ->
                         resolverNomenclature(base, token, cookies, "SEXE", code)?.let { put("id_nomenclature_sex", it) }
                     }
                     obs.stadeVie?.let { code ->
                         resolverNomenclature(base, token, cookies, "STADE_VIE", code)?.let { put("id_nomenclature_life_stage", it) }
                     }
+                }
+
+                val occ = JSONObject().apply {
+                    put("cd_nom", obs.cdNom!!)
+                    put("nom_cite", obs.espece)
+                    if (obs.notes.isNotEmpty()) put("comment", obs.notes)
+                    put("cor_counting_occtax", JSONArray().put(counting))
+
                     obs.techniqueObs?.let { code ->
                         resolverNomenclature(base, token, cookies, "METH_OBS", code)?.let { put("id_nomenclature_obs_technique", it) }
                     }
-
-                    // Statut d'observation (INDISPENSABLE pour la Synthèse)
                     resolverNomenclature(base, token, cookies, "STATUT_OBS", "Pr")?.let {
                         put("id_nomenclature_observation_status", it)
                     }
-                    // Statut biologique (souvent "1" pour Indéterminé)
                     resolverNomenclature(base, token, cookies, "STATUT_BIO", "1")?.let {
                         put("id_nomenclature_bio_status", it)
                     }

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Oiseau en vol — silhouette ailes déployées -->
+    <path
+        android:fillColor="#000000"
+        android:pathData="M2,14 C4,10 7.5,10 10,12 C10.5,9 11,6.5 12,5.5 C13,6.5 13.5,9 14,12 C16.5,10 20,10 22,14 C19,12.5 16.5,12 15,12 C14,10 13,8.5 12,8 C11,8.5 10,10 9,12 C7.5,12 5,12.5 2,14Z"/>
+</vector>

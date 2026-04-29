@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Lézard vue de dessus — corps, tête, queue et 4 pattes -->
+    <path
+        android:fillColor="#000000"
+        android:pathData="M12,3 C10,3 9,5 9,7 L7,6 C5,6 4,8 5,9 L9,10 L9,14 L5,14 C4,15 4,17 5,17 L9,16 C9,18 10,20 12,21 L12,22 L12,21 C14,20 15,18 15,16 L19,17 C20,17 20,15 19,14 L15,14 L15,10 L19,9 C20,8 19,6 17,6 L15,7 C15,5 14,3 12,3Z"/>
+</vector>

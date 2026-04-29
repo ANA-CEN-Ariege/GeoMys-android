@@ -140,7 +140,7 @@ class ExplorerFragment : Fragment() {
     }
 
     private fun mettreAJourBoutonsFiltres() {
-        data class BtnInfo(val view: android.widget.TextView, val taxon: Taxon, val couleur: Int)
+        data class BtnInfo(val view: android.widget.ImageButton, val taxon: Taxon, val couleur: Int)
         val boutons = listOf(
             BtnInfo(binding.btnFiltreOiseau,    Taxon.OISEAU,    0xFFFF6D00.toInt()),
             BtnInfo(binding.btnFiltreMammifere, Taxon.MAMMIFERE, 0xFF795548.toInt()),
@@ -148,10 +148,13 @@ class ExplorerFragment : Fragment() {
         )
         for ((btn, taxon, couleur) in boutons) {
             val actif = taxonFiltre == taxon
-            btn.background = if (actif) requireContext().getDrawable(R.drawable.btn_filtre_actif) else null
-            btn.setTextColor(if (actif) couleur else Color.WHITE)
-            val tint = android.content.res.ColorStateList.valueOf(if (actif) couleur else Color.WHITE)
-            androidx.core.widget.TextViewCompat.setCompoundDrawableTintList(btn, tint)
+            btn.background = android.graphics.drawable.GradientDrawable().apply {
+                shape = android.graphics.drawable.GradientDrawable.OVAL
+                setColor(if (actif) couleur else Color.WHITE)
+            }
+            btn.imageTintList = android.content.res.ColorStateList.valueOf(
+                if (actif) Color.WHITE else couleur
+            )
         }
     }
 

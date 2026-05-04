@@ -225,7 +225,7 @@ object GeoNatureService {
     ): Pair<Int, String> = withContext(Dispatchers.IO) {
         val base = config.urlServeur.trim().trimEnd('/')
         val pageSize = 500
-        val maxParGroupe = 10000
+        val maxParGroupe = 20000
         val groupes = listOf(
             Pair("Oiseaux",         "Oiseaux"),
             Pair("Mammif%C3%A8res", "Mammifères"),
@@ -235,7 +235,9 @@ object GeoNatureService {
         val groupeMap = mutableMapOf<Int, String>()
         var totalRecu = 0
         var pagesRecues = 0
-        val comptesParGroupe = mutableMapOf("Oiseaux" to 0, "Mammifères" to 0, "Reptiles" to 0)
+        val cdNomsOiseaux    = mutableSetOf<Int>()
+        val cdNomsMammiferes = mutableSetOf<Int>()
+        val cdNomsReptiles   = mutableSetOf<Int>()
 
         progression(0, 1)
 
@@ -255,8 +257,11 @@ object GeoNatureService {
                         break
                     }
                     val text = conn.inputStream.bufferedReader().readText()
+                    var totalFiltre: Int? = null
                     val array: JSONArray = try { JSONArray(text) } catch (e: Exception) {
                         val obj = JSONObject(text)
+                        totalFiltre = obj.optInt("total_filtered", -1).takeIf { it >= 0 }
+                            ?: obj.optInt("total", -1).takeIf { it >= 0 }
                         obj.optJSONArray("items") ?: obj.optJSONArray("data") ?: obj.optJSONArray("results") ?: break
                     }
 
@@ -269,29 +274,28 @@ object GeoNatureService {
                         val item = array.getJSONObject(i)
                         val cdNom = item.optInt("cd_nom", -1).takeIf { it > 0 } ?: continue
                         val lbNom = item.optString("lb_nom", "").takeIf { it.isNotEmpty() } ?: continue
-                        groupeMap[cdNom] = groupeCle
-                        val nomVernRaw = item.optString("nom_vern", "")
-                        if (nomVernRaw.isNotEmpty()) {
-                            for (partie in nomVernRaw.split(",")) {
-                                val nomNettoye = partie.trim()
-                                    .replace(Regex("""\s*\((Le|La|Les|L'|L'|Un|Une)\)\s*$"""), "")
-                                val cle = TaxRefCache.normaliser(nomNettoye)
-                                if (cle.isNotEmpty()) {
-                                    val estNouveau = entrees[cle] == null
-                                    entrees[cle] = TaxRefEntry(cdNom, lbNom, nomNettoye)
-                                    if (estNouveau) comptesParGroupe[groupeCle] = (comptesParGroupe[groupeCle] ?: 0) + 1
-                                }
-                            }
+                        // Ignorer les taxons sans nom vernaculaire français (proxy fiable pour "présent en France")
+                        // Note: optString retourne "null" si la valeur JSON est null — on doit vérifier isNull()
+                        val nomVernRaw = if (item.isNull("nom_vern")) "" else item.optString("nom_vern", "")
+                        if (nomVernRaw.isEmpty()) continue
+                        for (partie in nomVernRaw.split(",")) {
+                            val nomNettoye = partie.trim()
+                                .replace(Regex("""\s*\((Le|La|Les|L'|L'|Un|Une)\)\s*$"""), "")
+                            val cle = TaxRefCache.normaliser(nomNettoye)
+                            if (cle.isNotEmpty()) entrees[cle] = TaxRefEntry(cdNom, lbNom, nomNettoye)
                         }
                         val cleSci = TaxRefCache.normaliser(lbNom)
-                        if (cleSci.isNotEmpty()) {
-                            val estNouveau = entrees[cleSci] == null
-                            entrees[cleSci] = TaxRefEntry(cdNom, lbNom, nomVernRaw.split(",").firstOrNull()?.trim())
-                            if (estNouveau) comptesParGroupe[groupeCle] = (comptesParGroupe[groupeCle] ?: 0) + 1
+                        if (cleSci.isNotEmpty()) entrees[cleSci] = TaxRefEntry(cdNom, lbNom, nomVernRaw.split(",").firstOrNull()?.trim())
+                        when (groupeCle) {
+                            "Oiseaux"    -> cdNomsOiseaux.add(cdNom)
+                            "Mammifères" -> cdNomsMammiferes.add(cdNom)
+                            "Reptiles"   -> cdNomsReptiles.add(cdNom)
                         }
+                        groupeMap[cdNom] = groupeCle
                     }
 
                     progression(entrees.size, 0)
+                    if (totalFiltre != null && recuGroupe >= totalFiltre) break
                     if (array.length() < pageSize) break
                     offset += pageSize
                 } catch (e: Exception) {
@@ -304,13 +308,15 @@ object GeoNatureService {
         if (pagesRecues == 0) return@withContext Pair(0, "Aucun résultat reçu")
         if (entrees.isNotEmpty()) TaxRefCache.ajouter(entrees)
         if (groupeMap.isNotEmpty()) TaxRefCache.ajouterGroupes(groupeMap)
+        val nbO = cdNomsOiseaux.size
+        val nbM = cdNomsMammiferes.size
+        val nbR = cdNomsReptiles.size
         val comptes = TaxRefCache.comptesGroupes.toMutableMap()
-        comptesParGroupe.forEach { (k, v) -> comptes[k] = v }
+        comptes["Oiseaux"]    = nbO
+        comptes["Mammifères"] = nbM
+        comptes["Reptiles"]   = nbR
         TaxRefCache.comptesGroupes = comptes
         verifierVersionTaxRef(config)?.let { TaxRefCache.versionSauvegardee = it }
-        val nbO = comptesParGroupe["Oiseaux"] ?: 0
-        val nbM = comptesParGroupe["Mammifères"] ?: 0
-        val nbR = comptesParGroupe["Reptiles"] ?: 0
         Pair(entrees.size, "${entrees.size} taxons indexés — $nbO oiseaux, $nbM mammifères, $nbR reptiles ($totalRecu reçus)")
     }
 

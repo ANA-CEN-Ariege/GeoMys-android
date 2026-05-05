@@ -9,6 +9,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ArrayAdapter
+import android.widget.Filter
 import android.widget.TextView
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
@@ -23,6 +24,7 @@ import com.example.birdstrace.model.Taxon
 import com.example.birdstrace.network.TaxRefService
 import com.example.birdstrace.network.TaxRefStatut
 import com.example.birdstrace.store.GeoNatureConfig
+import com.example.birdstrace.store.TaxRefCache
 import kotlinx.coroutines.*
 
 class SaisieObservationFragment : Fragment() {
@@ -121,9 +123,7 @@ class SaisieObservationFragment : Fragment() {
     }
 
     private fun refreshAutocompleteAdapter() {
-        val adapter = ArrayAdapter(requireContext(), android.R.layout.simple_dropdown_item_1line,
-            TaxRefLocal.getSuggestions(taxon))
-        binding.etEspece.setAdapter(adapter)
+        binding.etEspece.setAdapter(accentInsensitiveAdapter(TaxRefLocal.getSuggestions(taxon)))
     }
 
     private fun updateEspeceHint() {
@@ -135,10 +135,33 @@ class SaisieObservationFragment : Fragment() {
         }
     }
 
+    private fun accentInsensitiveAdapter(suggestions: List<String>): ArrayAdapter<String> {
+        val all = suggestions.toList()
+        return object : ArrayAdapter<String>(requireContext(), android.R.layout.simple_dropdown_item_1line, all.toMutableList()) {
+            override fun getFilter() = object : Filter() {
+                override fun performFiltering(constraint: CharSequence?): FilterResults {
+                    val results = FilterResults()
+                    val filtered = if (constraint.isNullOrEmpty()) all
+                    else {
+                        val query = TaxRefCache.normaliser(constraint.toString())
+                        all.filter { TaxRefCache.normaliser(it).contains(query) }
+                    }
+                    results.values = filtered
+                    results.count = filtered.size
+                    return results
+                }
+                @Suppress("UNCHECKED_CAST")
+                override fun publishResults(constraint: CharSequence?, results: FilterResults) {
+                    clear()
+                    if (results.count > 0) addAll(results.values as List<String>)
+                    notifyDataSetChanged()
+                }
+            }
+        }
+    }
+
     private fun setupAutocomplete() {
-        val adapter = ArrayAdapter(requireContext(), android.R.layout.simple_dropdown_item_1line,
-            TaxRefLocal.getSuggestions(taxon))
-        binding.etEspece.setAdapter(adapter)
+        binding.etEspece.setAdapter(accentInsensitiveAdapter(TaxRefLocal.getSuggestions(taxon)))
         binding.etEspece.threshold = 1
 
         binding.etEspece.addTextChangedListener(object : TextWatcher {

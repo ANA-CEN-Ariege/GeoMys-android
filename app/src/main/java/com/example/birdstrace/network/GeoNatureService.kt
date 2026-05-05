@@ -40,6 +40,14 @@ object GeoNatureService {
 
     private val nomenclatureCache = mutableMapOf<String, Int>()
 
+    // Correspondance code interne → label minuscule stable (même logique qu'OrniTrace)
+    // Les cd_nomenclature varient d'une instance GeoNature à l'autre ; les labels sont stables.
+    private val SEXE_LABELS     = mapOf("1" to "mâle", "2" to "femelle", "5" to "indéterminé")
+    private val STADE_LABELS    = mapOf("2" to "adulte", "3" to "juvénile", "4" to "immature")
+    private val METH_OBS_LABELS = mapOf(
+        "0" to "vu", "1" to "entendu", "2" to "vu et entendu", "4" to "chant", "5" to "indices de présence"
+    )
+
     suspend fun testerConnexion(config: GeoNatureConfig): Pair<Boolean, String> =
         withContext(Dispatchers.IO) {
             try {
@@ -131,8 +139,14 @@ object GeoNatureService {
                 val counting = JSONObject().apply {
                     put("count_min", obs.nombre)
                     put("count_max", obs.nombre)
-                    obs.sexe?.let { code -> idSexe[code]?.let { put("id_nomenclature_sex", it) } }
-                    obs.stadeVie?.let { code -> idStade[code]?.let { put("id_nomenclature_life_stage", it) } }
+                    obs.sexe?.let { code ->
+                        val label = SEXE_LABELS[code] ?: code.lowercase()
+                        idSexe[label]?.let { put("id_nomenclature_sex", it) }
+                    }
+                    obs.stadeVie?.let { code ->
+                        val label = STADE_LABELS[code] ?: code.lowercase()
+                        idStade[label]?.let { put("id_nomenclature_life_stage", it) }
+                    }
                 }
 
                 val occ = JSONObject().apply {
@@ -141,7 +155,8 @@ object GeoNatureService {
                     if (obs.notes.isNotEmpty()) put("comment", obs.notes)
                     put("cor_counting_occtax", JSONArray().put(counting))
                     val codeTechnique = obs.techniqueObs ?: "0"
-                    idMethObs[codeTechnique]?.let { put("id_nomenclature_obs_technique", it) }
+                    val labelTechnique = METH_OBS_LABELS[codeTechnique] ?: codeTechnique.lowercase()
+                    idMethObs[labelTechnique]?.let { put("id_nomenclature_obs_technique", it) }
                 }
 
                 val d = Date(obs.date)
@@ -480,31 +495,79 @@ object GeoNatureService {
             ?: userJson?.optString("token").takeIf { !it.isNullOrEmpty() }
     }
 
-    // Charge tous les cd_nomenclature→id_nomenclature pour un type donné (même logique qu'OrniTrace)
+    // Charge les nomenclatures d'un type : label_default minuscule → id_nomenclature.
+    // Même logique qu'OrniTrace : les labels sont stables d'une instance GeoNature à l'autre,
+    // contrairement aux cd_nomenclature qui varient.
     private fun resolverNomenclatures(base: String, token: String?, cookies: String, type: String): Map<String, Int> {
         val cached = nomenclatureCache.entries
             .filter { it.key.startsWith("$type:") }
             .associate { it.key.removePrefix("$type:") to it.value }
         if (cached.isNotEmpty()) return cached
 
-        return try {
-            val url = URL("$base/api/nomenclatures/nomenclature/$type")
-            val conn = url.openConnection() as java.net.HttpURLConnection
+        fun get(urlStr: String): String? = try {
+            val conn = URL(urlStr).openConnection() as java.net.HttpURLConnection
             conn.connectTimeout = 10000
             conn.readTimeout = 10000
             if (token != null) conn.setRequestProperty("Authorization", "Bearer $token")
             if (cookies.isNotEmpty()) conn.setRequestProperty("Cookie", cookies)
-            if (conn.responseCode != 200) return emptyMap()
-            val array = JSONArray(conn.inputStream.bufferedReader().readText())
-            val result = mutableMapOf<String, Int>()
+            if (conn.responseCode == 200) conn.inputStream.bufferedReader().readText() else null
+        } catch (e: Exception) { null }
+
+        fun buildLabelMap(array: JSONArray): Map<String, Int> {
+            val map = mutableMapOf<String, Int>()
             for (i in 0 until array.length()) {
                 val item = array.getJSONObject(i)
                 val id = item.optInt("id_nomenclature", -1).takeIf { it > 0 } ?: continue
-                val cd = item.optString("cd_nomenclature").takeIf { it.isNotEmpty() } ?: continue
-                result[cd] = id
-                nomenclatureCache["$type:$cd"] = id
+                val label = item.optString("label_default", "")
+                    .ifEmpty { item.optString("label_fr", "") }
+                    .lowercase()
+                if (label.isNotEmpty()) map[label] = id
             }
-            result
+            return map
+        }
+
+        fun extractArray(text: String): JSONArray? {
+            try {
+                val arr = JSONArray(text)
+                // Cas : tableau de type-descripteurs avec "values" imbriqué
+                arr.optJSONObject(0)?.optJSONArray("values")?.let { if (it.length() > 0) return it }
+                return arr
+            } catch (_: Exception) {}
+            val obj = try { JSONObject(text) } catch (_: Exception) { return null }
+            for (key in listOf("items", "data", "results", "values", "nomenclatures")) {
+                val arr = obj.optJSONArray(key)
+                if (arr != null && arr.length() > 0) return arr
+            }
+            return null
+        }
+
+        return try {
+            // Étape 1 : récupérer id_type via /nomenclature/{TYPE}
+            val text1 = get("$base/api/nomenclatures/nomenclature/$type") ?: return emptyMap()
+            val typeObj = try { JSONObject(text1) }
+                catch (_: Exception) { try { JSONArray(text1).optJSONObject(0) } catch (_: Exception) { null } }
+            val idType = typeObj?.optInt("id_type", -1)?.takeIf { it > 0 }
+
+            // Étape 2 : récupérer les valeurs — plusieurs formats d'URL possibles
+            val urls = buildList {
+                if (idType != null) {
+                    add("$base/api/nomenclatures/nomenclature?id_type=$idType&limit=200")
+                    add("$base/api/nomenclatures/nomenclatures?id_type=$idType&limit=200")
+                }
+                add("$base/api/nomenclatures/nomenclature?code_nomenclature_type=$type&limit=200")
+                add("$base/api/nomenclatures/nomenclatures?code_type=$type&limit=200")
+            }
+
+            var map = emptyMap<String, Int>()
+            for (url in urls) {
+                val text2 = get(url) ?: continue
+                val array = extractArray(text2) ?: continue
+                map = buildLabelMap(array)
+                if (map.isNotEmpty()) break
+            }
+
+            map.forEach { (label, id) -> nomenclatureCache["$type:$label"] = id }
+            map
         } catch (e: Exception) { emptyMap() }
     }
 }

@@ -14,6 +14,22 @@ object NomenclatureCache {
     private val gson = Gson()
     private var mem: Map<String, List<NomValeur>>? = null
 
+    // Groupes botaniques connus dans INPN/TaxRef (même liste que l'app iOS)
+    val GROUPES_BOTANIQUES: Set<String> = setOf(
+        "Angiospermes", "Gymnospermes", "Ptéridophytes",
+        "Mousses", "Hépatiques et anthocérotes",
+        "Lichens", "Chlorophytes et charophytes", "Rhodophytes",
+        "Trachéophytes", "Bryophytes", "Plantes"
+    )
+
+    // Intersection des groupes botaniques connus avec ceux présents dans le cache TaxRef.
+    // Fallback sur tous les groupes botaniques si aucun n'est encore synchronisé.
+    fun groupesBotaniquesConnus(): Set<String> {
+        val connus = TaxRefCache.comptesGroupes.keys.toSet()
+        val intersection = connus.intersect(GROUPES_BOTANIQUES)
+        return if (intersection.isEmpty()) GROUPES_BOTANIQUES else intersection
+    }
+
     fun init(context: Context) {
         prefs = context.getSharedPreferences("nomenclature_cache", Context.MODE_PRIVATE)
     }
@@ -27,19 +43,19 @@ object NomenclatureCache {
 
     val estDisponible: Boolean get() = charger().isNotEmpty()
 
-    // Filtre pour un groupe unique (Oiseaux, Mammifères, Reptiles, ou un group2_inpn précis)
-    fun filtrerPourGroupe(type: String, groupe2Inpn: String?): List<NomValeur> {
-        return filtrerPourGroupes(type, setOfNotNull(groupe2Inpn))
-    }
-
-    // Filtre pour un ensemble de groupes — utilisé pour les Plantes (union des groupes botaniques)
+    // Filtre pour un ensemble de groupes.
+    // Une valeur est incluse si :
+    //   - son taxref est vide (universelle)
+    //   - un entry a group2_inpn = "all" ou regno = "all"
+    //   - un entry a group2_inpn correspondant à l'un des groupes demandés
     fun filtrerPourGroupes(type: String, groupes: Set<String>): List<NomValeur> {
         return get(type).filter { v ->
             when {
-                v.taxref.isEmpty() -> true   // valeur universelle (joker "all")
-                groupes.isEmpty()  -> true   // groupe inconnu → tout afficher
+                v.taxref.isEmpty() -> true
+                groupes.isEmpty()  -> true
                 else -> v.taxref.any { r ->
                     r.group2Inpn.equals("all", ignoreCase = true) ||
+                    r.regne.equals("all", ignoreCase = true) ||
                     groupes.any { g -> r.group2Inpn.equals(g, ignoreCase = true) }
                 }
             }

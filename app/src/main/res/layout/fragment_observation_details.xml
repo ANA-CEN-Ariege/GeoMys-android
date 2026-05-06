@@ -53,6 +53,7 @@
         </LinearLayout>
 
         <TextView
+            android:id="@+id/tv_stade_vie_label"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
@@ -102,19 +103,27 @@
                 android:layout_height="wrap_content" />
         </LinearLayout>
 
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:layout_marginBottom="4dp"
-            android:text="État biologique"
-            android:textSize="13sp"
-            android:textColor="@android:color/darker_gray" />
-
-        <Spinner
-            android:id="@+id/spinner_eta_bio"
+        <!-- État biologique (masqué pour Plantes) -->
+        <LinearLayout
+            android:id="@+id/layout_eta_bio"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content" />
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:layout_marginBottom="4dp"
+                android:text="État biologique"
+                android:textSize="13sp"
+                android:textColor="@android:color/darker_gray" />
+
+            <Spinner
+                android:id="@+id/spinner_eta_bio"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content" />
+        </LinearLayout>
 
         <TextView
             android:layout_width="wrap_content"

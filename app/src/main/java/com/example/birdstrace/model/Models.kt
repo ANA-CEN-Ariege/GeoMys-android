@@ -3,7 +3,7 @@ package com.example.birdstrace.model
 import java.util.Date
 import java.util.UUID
 
-enum class Taxon { OISEAU, MAMMIFERE, REPTILE }
+enum class Taxon { OISEAU, MAMMIFERE, REPTILE, PLANTE }
 
 data class PointTrace(
     val latitude: Double,

@@ -523,6 +523,22 @@ object TaxRefLocal {
     }
 
     fun getSuggestionsAutocomplete(taxon: Taxon?, scientifique: Boolean): List<String> {
+        val animalGroups = setOf("Oiseaux", "Mammifères", "Reptiles")
+
+        // Pour Plantes : utiliser uniquement le cache (groupes non-animaux)
+        if (taxon == Taxon.PLANTE) {
+            val groupes = TaxRefCache.tousLesGroupes()
+            val parCdNom = mutableMapOf<Int, TaxRefEntry>()
+            for ((_, entry) in TaxRefCache.toutesLesEntrees()) {
+                val gr = groupes[entry.cdNom.toString()]
+                if (gr != null && gr !in animalGroups) parCdNom[entry.cdNom] = entry
+            }
+            return if (scientifique)
+                parCdNom.values.map { it.sciNom }.filter { it.isNotEmpty() }.distinct().sorted()
+            else
+                parCdNom.values.mapNotNull { it.vernNom }.filter { it.isNotEmpty() }.distinct().sorted()
+        }
+
         val groupeCible = when (taxon) {
             Taxon.MAMMIFERE -> "Mammifères"
             Taxon.REPTILE   -> "Reptiles"

@@ -8,6 +8,9 @@ import android.widget.ArrayAdapter
 import androidx.fragment.app.Fragment
 import androidx.navigation.fragment.findNavController
 import com.example.birdstrace.databinding.FragmentObservationDetailsBinding
+import com.example.birdstrace.model.Taxon
+import com.example.birdstrace.store.NomenclatureCache
+import com.example.birdstrace.store.NomValeur
 
 class ObservationDetailsFragment : Fragment() {
     private var _binding: FragmentObservationDetailsBinding? = null
@@ -21,6 +24,9 @@ class ObservationDetailsFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
+        val taxonName     = arguments?.getString("taxon") ?: Taxon.OISEAU.name
+        val taxon         = runCatching { Taxon.valueOf(taxonName) }.getOrDefault(Taxon.OISEAU)
+        val groupe2Inpn   = arguments?.getString("groupe2Inpn")
         val notes         = arguments?.getString("notes") ?: ""
         val sexe          = arguments?.getString("sexe") ?: ""
         val stadeVie      = arguments?.getString("stadeVie") ?: ""
@@ -42,7 +48,14 @@ class ObservationDetailsFragment : Fragment() {
         binding.etDeterminateur.setText(determinateur)
         binding.tvCoordonnees.text = "%.5f, %.5f".format(lat, lon)
 
-        setupSpinners(sexe, stadeVie, techniqueObs, statutBio, etaBio, preuveExist, objDenbr, typDenbr, comportement, methDetermin)
+        // Masquer les champs non pertinents pour les Plantes
+        val estPlante = taxon == Taxon.PLANTE
+        binding.layoutSexe.visibility        = if (estPlante) View.GONE else View.VISIBLE
+        binding.layoutStatutBio.visibility   = if (estPlante) View.GONE else View.VISIBLE
+        binding.layoutComportement.visibility = if (estPlante) View.GONE else View.VISIBLE
+
+        setupSpinners(groupe2Inpn, sexe, stadeVie, techniqueObs, statutBio, etaBio,
+                      preuveExist, objDenbr, typDenbr, comportement, methDetermin)
 
         if (taxrefNonTrouve) {
             binding.sectionCdNom.visibility = View.VISIBLE
@@ -71,57 +84,86 @@ class ObservationDetailsFragment : Fragment() {
     }
 
     private fun setupSpinners(
+        groupe2Inpn: String?,
         sexe: String, stadeVie: String, techniqueObs: String,
         statutBio: String, etaBio: String, preuveExist: String,
         objDenbr: String, typDenbr: String, comportement: String, methDetermin: String
     ) {
-        spinner(binding.spinnerSexe,
-            listOf("Non renseigné", "Mâle", "Femelle", "Indéterminé"),
-            listOf("", "1", "2", "5"), sexe)
+        val useCache = NomenclatureCache.estDisponible
 
-        spinner(binding.spinnerStadeVie,
-            listOf("Non renseigné", "Adulte", "Juvénile", "Immature"),
-            listOf("", "2", "3", "4"), stadeVie)
+        if (useCache) {
+            spinnerCache(binding.spinnerSexe,         "SEXE",            groupe2Inpn, sexe)
+            spinnerCache(binding.spinnerStadeVie,     "STADE_VIE",       groupe2Inpn, stadeVie)
+            spinnerCache(binding.spinnerTechnique,    "METH_OBS",        groupe2Inpn, techniqueObs)
+            spinnerCache(binding.spinnerStatutBio,    "STATUT_BIO",      groupe2Inpn, statutBio)
+            spinnerCache(binding.spinnerEtaBio,       "ETA_BIO",         groupe2Inpn, etaBio)
+            spinnerCache(binding.spinnerPreuveExist,  "PREUVE_EXIST",    groupe2Inpn, preuveExist)
+            spinnerCache(binding.spinnerObjDenbr,     "OBJ_DENBR",       groupe2Inpn, objDenbr)
+            spinnerCache(binding.spinnerTypDenbr,     "TYP_DENBR",       groupe2Inpn, typDenbr)
+            spinnerCache(binding.spinnerComportement, "OCC_COMPORTEMENT",groupe2Inpn, comportement)
+            spinnerCache(binding.spinnerMethDetermin, "METH_DETERMIN",   groupe2Inpn, methDetermin)
+        } else {
+            spinnerStatique(binding.spinnerSexe,
+                listOf("Non renseigné", "Mâle", "Femelle", "Indéterminé"),
+                listOf("", "1", "2", "5"), sexe)
 
-        spinner(binding.spinnerTechnique,
-            listOf("Non renseignée", "Vu", "Entendu", "Vu et entendu", "Chant", "Indices de présence"),
-            listOf("", "0", "1", "2", "4", "5"), techniqueObs)
+            spinnerStatique(binding.spinnerStadeVie,
+                listOf("Non renseigné", "Adulte", "Juvénile", "Immature"),
+                listOf("", "2", "3", "4"), stadeVie)
 
-        spinner(binding.spinnerStatutBio,
-            listOf("Non renseigné", "Reproduction", "Pas de reproduction", "Hivernation", "Estivation", "Non déterminé", "Inconnu"),
-            listOf("", "1", "2", "3", "4", "5", "6"), statutBio)
+            spinnerStatique(binding.spinnerTechnique,
+                listOf("Non renseignée", "Vu", "Entendu", "Vu et entendu", "Chant", "Indices de présence"),
+                listOf("", "0", "1", "2", "4", "5"), techniqueObs)
 
-        spinner(binding.spinnerEtaBio,
-            listOf("Non renseigné", "Vivant", "Mort", "Signe d'activité"),
-            listOf("", "1", "2", "3"), etaBio)
+            spinnerStatique(binding.spinnerStatutBio,
+                listOf("Non renseigné", "Reproduction", "Pas de reproduction", "Hivernation", "Estivation", "Non déterminé", "Inconnu"),
+                listOf("", "1", "2", "3", "4", "5", "6"), statutBio)
 
-        spinner(binding.spinnerPreuveExist,
-            listOf("Non renseignée", "Non", "Oui", "Non acquise", "Inconnu"),
-            listOf("", "0", "1", "2", "3"), preuveExist)
+            spinnerStatique(binding.spinnerEtaBio,
+                listOf("Non renseigné", "Vivant", "Mort", "Signe d'activité"),
+                listOf("", "1", "2", "3"), etaBio)
 
-        spinner(binding.spinnerObjDenbr,
-            listOf("Non renseigné", "Individu", "Couple", "Nid", "Famille", "Groupe"),
-            listOf("", "1", "2", "3", "4", "5"), objDenbr)
+            spinnerStatique(binding.spinnerPreuveExist,
+                listOf("Non renseignée", "Non", "Oui", "Non acquise", "Inconnu"),
+                listOf("", "0", "1", "2", "3"), preuveExist)
 
-        spinner(binding.spinnerTypDenbr,
-            listOf("Non renseigné", "Exact", "Estimé", "Minimum", "Maximum"),
-            listOf("", "1", "2", "3", "4"), typDenbr)
+            spinnerStatique(binding.spinnerObjDenbr,
+                listOf("Non renseigné", "Individu", "Couple", "Nid", "Famille", "Groupe"),
+                listOf("", "1", "2", "3", "4", "5"), objDenbr)
 
-        spinner(binding.spinnerComportement,
-            listOf("Non renseigné", "Chant", "Chasse / Alimentation", "Repos", "Déplacement",
-                "Passage en vol", "Migration", "Halte migratoire", "Hivernage",
-                "Nourrissage des jeunes", "Territorial", "Accouplement",
-                "Nidification possible", "Nidification probable", "Nidification certaine", "Inconnu"),
-            listOf("", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15"),
-            comportement)
+            spinnerStatique(binding.spinnerTypDenbr,
+                listOf("Non renseigné", "Exact", "Estimé", "Minimum", "Maximum"),
+                listOf("", "1", "2", "3", "4"), typDenbr)
 
-        spinner(binding.spinnerMethDetermin,
-            listOf("Non renseignée", "Visuel à distance", "Auditif direct", "Photo ou vidéo",
-                "Auditif avec transformation électronique", "Individu en main", "Autre méthode"),
-            listOf("", "1", "2", "3", "4", "5", "6"), methDetermin)
+            spinnerStatique(binding.spinnerComportement,
+                listOf("Non renseigné", "Chant", "Chasse / Alimentation", "Repos", "Déplacement",
+                    "Passage en vol", "Migration", "Halte migratoire", "Hivernage",
+                    "Nourrissage des jeunes", "Territorial", "Accouplement",
+                    "Nidification possible", "Nidification probable", "Nidification certaine", "Inconnu"),
+                listOf("", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15"),
+                comportement)
+
+            spinnerStatique(binding.spinnerMethDetermin,
+                listOf("Non renseignée", "Visuel à distance", "Auditif direct", "Photo ou vidéo",
+                    "Auditif avec transformation électronique", "Individu en main", "Autre méthode"),
+                listOf("", "1", "2", "3", "4", "5", "6"), methDetermin)
+        }
     }
 
-    private fun spinner(spinner: android.widget.Spinner, labels: List<String>, codes: List<String>, current: String) {
+    // Spinner alimenté par NomenclatureCache filtré par groupe
+    private fun spinnerCache(
+        spinner: android.widget.Spinner,
+        type: String,
+        groupe2Inpn: String?,
+        current: String
+    ) {
+        val valeurs = NomenclatureCache.filtrerPourGroupe(type, groupe2Inpn)
+        val labels = listOf("Non renseigné") + valeurs.map { it.label }
+        val codes  = listOf("") + valeurs.map { it.id.toString() }
+        spinnerStatique(spinner, labels, codes, current)
+    }
+
+    private fun spinnerStatique(spinner: android.widget.Spinner, labels: List<String>, codes: List<String>, current: String) {
         val adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, labels)
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         spinner.adapter = adapter

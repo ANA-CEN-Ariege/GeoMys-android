@@ -30,19 +30,27 @@
                 android:minLines="3" />
         </com.google.android.material.textfield.TextInputLayout>
 
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:layout_marginBottom="4dp"
-            android:text="Sexe"
-            android:textSize="13sp"
-            android:textColor="@android:color/darker_gray" />
-
-        <Spinner
-            android:id="@+id/spinner_sexe"
+        <!-- Sexe (masqué pour Plantes) -->
+        <LinearLayout
+            android:id="@+id/layout_sexe"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content" />
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:layout_marginBottom="4dp"
+                android:text="Sexe"
+                android:textSize="13sp"
+                android:textColor="@android:color/darker_gray" />
+
+            <Spinner
+                android:id="@+id/spinner_sexe"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content" />
+        </LinearLayout>
 
         <TextView
             android:layout_width="wrap_content"
@@ -72,19 +80,27 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content" />
 
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:layout_marginBottom="4dp"
-            android:text="Statut biologique"
-            android:textSize="13sp"
-            android:textColor="@android:color/darker_gray" />
-
-        <Spinner
-            android:id="@+id/spinner_statut_bio"
+        <!-- Statut biologique (masqué pour Plantes) -->
+        <LinearLayout
+            android:id="@+id/layout_statut_bio"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content" />
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:layout_marginBottom="4dp"
+                android:text="Statut biologique"
+                android:textSize="13sp"
+                android:textColor="@android:color/darker_gray" />
+
+            <Spinner
+                android:id="@+id/spinner_statut_bio"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content" />
+        </LinearLayout>
 
         <TextView
             android:layout_width="wrap_content"
@@ -142,19 +158,27 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content" />
 
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:layout_marginBottom="4dp"
-            android:text="Comportement"
-            android:textSize="13sp"
-            android:textColor="@android:color/darker_gray" />
-
-        <Spinner
-            android:id="@+id/spinner_comportement"
+        <!-- Comportement (masqué pour Plantes) -->
+        <LinearLayout
+            android:id="@+id/layout_comportement"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content" />
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:layout_marginBottom="4dp"
+                android:text="Comportement"
+                android:textSize="13sp"
+                android:textColor="@android:color/darker_gray" />
+
+            <Spinner
+                android:id="@+id/spinner_comportement"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content" />
+        </LinearLayout>
 
         <TextView
             android:layout_width="wrap_content"

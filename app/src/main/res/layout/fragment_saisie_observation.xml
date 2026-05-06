@@ -63,6 +63,19 @@
                 app:iconGravity="top"
                 app:iconSize="20dp"
                 app:cornerRadius="8dp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_taxon_plante"
+                style="@style/Widget.MaterialComponents.Button.TextButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Plantes"
+                android:textSize="11sp"
+                app:icon="@drawable/ic_leaf_small"
+                app:iconGravity="top"
+                app:iconSize="20dp"
+                app:cornerRadius="8dp" />
         </LinearLayout>
 
         <!-- Switch nom scientifique -->

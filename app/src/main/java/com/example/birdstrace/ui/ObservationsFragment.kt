@@ -145,6 +145,10 @@ class ObservationAdapter(
                     ivTaxonIcon.setImageResource(R.drawable.ic_reptile_small)
                     ivTaxonIcon.imageTintList = ColorStateList.valueOf(ContextCompat.getColor(ctx, R.color.colorSecondary))
                 }
+                Taxon.PLANTE -> {
+                    ivTaxonIcon.setImageResource(R.drawable.ic_leaf_small)
+                    ivTaxonIcon.imageTintList = ColorStateList.valueOf(ContextCompat.getColor(ctx, R.color.teal))
+                }
             }
         }
     }

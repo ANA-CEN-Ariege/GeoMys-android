@@ -88,6 +88,9 @@ class SaisieObservationFragment : Fragment() {
         binding.btnTaxonReptile.setOnClickListener {
             if (taxon != Taxon.REPTILE) { taxon = Taxon.REPTILE; onTaxonChanged() }
         }
+        binding.btnTaxonPlante.setOnClickListener {
+            if (taxon != Taxon.PLANTE) { taxon = Taxon.PLANTE; onTaxonChanged() }
+        }
     }
 
     private fun onTaxonChanged() {
@@ -103,11 +106,12 @@ class SaisieObservationFragment : Fragment() {
         val transparent = ColorStateList.valueOf(Color.TRANSPARENT)
         val white = ColorStateList.valueOf(Color.WHITE)
         val gray = ContextCompat.getColorStateList(requireContext(), android.R.color.darker_gray)!!
-        val oiseauColor = ContextCompat.getColor(requireContext(), R.color.orange)
-        val mammiColor = ContextCompat.getColor(requireContext(), R.color.brown)
+        val oiseauColor  = ContextCompat.getColor(requireContext(), R.color.orange)
+        val mammiColor   = ContextCompat.getColor(requireContext(), R.color.brown)
         val reptileColor = ContextCompat.getColor(requireContext(), R.color.colorSecondary)
+        val planteColor  = ContextCompat.getColor(requireContext(), R.color.teal)
 
-        listOf(binding.btnTaxonOiseau, binding.btnTaxonMammifere, binding.btnTaxonReptile).forEach { btn ->
+        listOf(binding.btnTaxonOiseau, binding.btnTaxonMammifere, binding.btnTaxonReptile, binding.btnTaxonPlante).forEach { btn ->
             btn.backgroundTintList = transparent
             btn.setTextColor(gray)
             btn.iconTint = gray
@@ -128,6 +132,11 @@ class SaisieObservationFragment : Fragment() {
                 binding.btnTaxonReptile.setTextColor(Color.WHITE)
                 binding.btnTaxonReptile.iconTint = white
             }
+            Taxon.PLANTE -> {
+                binding.btnTaxonPlante.backgroundTintList = ColorStateList.valueOf(planteColor)
+                binding.btnTaxonPlante.setTextColor(Color.WHITE)
+                binding.btnTaxonPlante.iconTint = white
+            }
         }
     }
 
@@ -138,10 +147,11 @@ class SaisieObservationFragment : Fragment() {
     private fun updateEspeceHint() {
         binding.tilEspece.hint = ""
         binding.tilEspece.placeholderText = if (rechercheNomSci) {
-            "Nom scientifique (ex: Turdus merula, Cyanistes caeruleus…)"
+            "Nom scientifique (ex: Turdus merula, Rosa canina…)"
         } else when (taxon) {
             Taxon.MAMMIFERE -> "Espèce observée (ex: Renard roux, Blaireau…)"
             Taxon.REPTILE   -> "Espèce observée (ex: Lézard des murailles, Vipère aspic…)"
+            Taxon.PLANTE    -> "Espèce observée (ex: Chêne pédonculé, Genêt purgatif…)"
             else            -> "Espèce observée (ex: Merle noir, Rouge-gorge…)"
         }
     }
@@ -255,7 +265,17 @@ class SaisieObservationFragment : Fragment() {
 
     private fun setupDetails() {
         binding.btnDetails.setOnClickListener {
+            val cdNom = (taxRefStatut as? TaxRefStatut.Trouve)?.cdNom
+            val groupe2Inpn = cdNom?.let { TaxRefCache.tousLesGroupes()[it.toString()] }
+                ?: when (taxon) {
+                    Taxon.MAMMIFERE -> "Mammifères"
+                    Taxon.REPTILE   -> "Reptiles"
+                    Taxon.PLANTE    -> null
+                    else            -> "Oiseaux"
+                }
             val bundle = Bundle().apply {
+                putString("taxon",         taxon.name)
+                putString("groupe2Inpn",   groupe2Inpn)
                 putString("notes",         notes)
                 putString("sexe",          sexe)
                 putString("stadeVie",      stadeVie)

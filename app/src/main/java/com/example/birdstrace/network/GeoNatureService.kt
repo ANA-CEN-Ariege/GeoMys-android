@@ -4,8 +4,11 @@ import com.example.birdstrace.model.Observation
 import com.example.birdstrace.model.Sortie
 import com.example.birdstrace.model.Taxon
 import com.example.birdstrace.store.GeoNatureConfig
+import com.example.birdstrace.store.NomenclatureCache
+import com.example.birdstrace.store.NomValeur
 import com.example.birdstrace.store.TaxRefCache
 import com.example.birdstrace.store.TaxRefEntry
+import com.example.birdstrace.store.TaxrefRestriction
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -255,16 +258,20 @@ object GeoNatureService {
                     put("count_min", obs.nombre)
                     put("count_max", obs.nombre)
                     obs.sexe?.let { code ->
-                        nomenclatures["SEXE"]?.get(SEXE_LABELS[code] ?: code.lowercase())?.let { put("id_nomenclature_sex", it) }
+                        resolverIdNomenclature(code, "SEXE", SEXE_LABELS, nomenclatures)
+                            ?.let { put("id_nomenclature_sex", it) }
                     }
                     obs.stadeVie?.let { code ->
-                        nomenclatures["STADE_VIE"]?.get(STADE_LABELS[code] ?: code.lowercase())?.let { put("id_nomenclature_life_stage", it) }
+                        resolverIdNomenclature(code, "STADE_VIE", STADE_LABELS, nomenclatures)
+                            ?.let { put("id_nomenclature_life_stage", it) }
                     }
                     obs.objDenbr?.let { code ->
-                        nomenclatures["OBJ_DENBR"]?.get(OBJ_DENBR_LABELS[code] ?: code.lowercase())?.let { put("id_nomenclature_obj_count", it) }
+                        resolverIdNomenclature(code, "OBJ_DENBR", OBJ_DENBR_LABELS, nomenclatures)
+                            ?.let { put("id_nomenclature_obj_count", it) }
                     }
                     obs.typDenbr?.let { code ->
-                        nomenclatures["TYP_DENBR"]?.get(TYP_DENBR_LABELS[code] ?: code.lowercase())?.let { put("id_nomenclature_type_count", it) }
+                        resolverIdNomenclature(code, "TYP_DENBR", TYP_DENBR_LABELS, nomenclatures)
+                            ?.let { put("id_nomenclature_type_count", it) }
                     }
                 }
 
@@ -274,22 +281,27 @@ object GeoNatureService {
                     if (obs.notes.isNotEmpty()) put("comment", obs.notes)
                     put("cor_counting_occtax", JSONArray().put(counting))
                     val codeTechnique = obs.techniqueObs ?: "0"
-                    nomenclatures["METH_OBS"]?.get(METH_OBS_LABELS[codeTechnique] ?: codeTechnique.lowercase())
+                    resolverIdNomenclature(codeTechnique, "METH_OBS", METH_OBS_LABELS, nomenclatures)
                         ?.let { put("id_nomenclature_obs_technique", it) }
                     obs.statutBio?.let { code ->
-                        nomenclatures["STATUT_BIO"]?.get(STATUT_BIO_LABELS[code] ?: code.lowercase())?.let { put("id_nomenclature_bio_status", it) }
+                        resolverIdNomenclature(code, "STATUT_BIO", STATUT_BIO_LABELS, nomenclatures)
+                            ?.let { put("id_nomenclature_bio_status", it) }
                     }
                     obs.etaBio?.let { code ->
-                        nomenclatures["ETA_BIO"]?.get(ETA_BIO_LABELS[code] ?: code.lowercase())?.let { put("id_nomenclature_bio_condition", it) }
+                        resolverIdNomenclature(code, "ETA_BIO", ETA_BIO_LABELS, nomenclatures)
+                            ?.let { put("id_nomenclature_bio_condition", it) }
                     }
                     obs.preuveExist?.let { code ->
-                        nomenclatures["PREUVE_EXIST"]?.get(PREUVE_EXIST_LABELS[code] ?: code.lowercase())?.let { put("id_nomenclature_exist_proof", it) }
+                        resolverIdNomenclature(code, "PREUVE_EXIST", PREUVE_EXIST_LABELS, nomenclatures)
+                            ?.let { put("id_nomenclature_exist_proof", it) }
                     }
                     obs.comportement?.let { code ->
-                        nomenclatures["OCC_COMPORTEMENT"]?.get(COMPORTEMENT_LABELS[code] ?: code.lowercase())?.let { put("id_nomenclature_behaviour", it) }
+                        resolverIdNomenclature(code, "OCC_COMPORTEMENT", COMPORTEMENT_LABELS, nomenclatures)
+                            ?.let { put("id_nomenclature_behaviour", it) }
                     }
                     obs.methDetermin?.let { code ->
-                        nomenclatures["METH_DETERMIN"]?.get(METH_DETERMIN_LABELS[code] ?: code.lowercase())?.let { put("id_nomenclature_determination_method", it) }
+                        resolverIdNomenclature(code, "METH_DETERMIN", METH_DETERMIN_LABELS, nomenclatures)
+                            ?.let { put("id_nomenclature_determination_method", it) }
                     }
                     obs.determinateur?.takeIf { it.isNotEmpty() }?.let { put("determiner", it) }
                 }
@@ -350,6 +362,7 @@ object GeoNatureService {
         val cdNomsOiseaux    = mutableSetOf<Int>()
         val cdNomsMammiferes = mutableSetOf<Int>()
         val cdNomsReptiles   = mutableSetOf<Int>()
+        val cdNomsPlantes    = mutableSetOf<Int>()
         var totalRecu = 0
         var pagesRecues = 0
 
@@ -408,6 +421,7 @@ object GeoNatureService {
                         "Oiseaux"    -> cdNomsOiseaux.add(cdNom)
                         "Mammifères" -> cdNomsMammiferes.add(cdNom)
                         "Reptiles"   -> cdNomsReptiles.add(cdNom)
+                        else         -> if (groupe.isNotEmpty()) cdNomsPlantes.add(cdNom)
                     }
                 }
 
@@ -425,13 +439,21 @@ object GeoNatureService {
         val nbO = cdNomsOiseaux.size
         val nbM = cdNomsMammiferes.size
         val nbR = cdNomsReptiles.size
+        val nbP = cdNomsPlantes.size
         val comptes = TaxRefCache.comptesGroupes.toMutableMap()
         if (nbO > 0) comptes["Oiseaux"]    = nbO
         if (nbM > 0) comptes["Mammifères"] = nbM
         if (nbR > 0) comptes["Reptiles"]   = nbR
+        if (nbP > 0) comptes["Plantes"]    = nbP
         TaxRefCache.comptesGroupes = comptes
         verifierVersionTaxRef(config)?.let { TaxRefCache.versionSauvegardee = it }
-        Pair(entrees.size, "${entrees.size} taxons indexés — $nbO oiseaux, $nbM mammifères, $nbR reptiles")
+        val msg = buildString {
+            append("${entrees.size} taxons indexés — $nbO oiseaux")
+            if (nbM > 0) append(", $nbM mammifères")
+            if (nbR > 0) append(", $nbR reptiles")
+            if (nbP > 0) append(", $nbP plantes")
+        }
+        Pair(entrees.size, msg)
     }
 
     suspend fun recupererObsExplorer(
@@ -553,6 +575,90 @@ object GeoNatureService {
             taxon = taxon
         )
     }
+
+    // Résout un code interne ou un id_nomenclature direct vers l'id GeoNature
+    private fun resolverIdNomenclature(
+        code: String,
+        type: String,
+        labels: Map<String, String>,
+        nomenclatures: Map<String, Map<String, Int>>
+    ): Int? {
+        // Si le code est déjà un id_nomenclature (depuis NomenclatureCache)
+        code.toIntOrNull()?.let { return it }
+        // Sinon résolution via label stable
+        return nomenclatures[type]?.get(labels[code] ?: code.lowercase())
+    }
+
+    suspend fun synchroniserNomenclatures(config: GeoNatureConfig): Pair<Int, String> =
+        withContext(Dispatchers.IO) {
+            val base = config.urlServeur.trim().trimEnd('/')
+            val (token, _, cookies) = loginAvecCookies(base, config.login, config.motDePasse)
+                ?: return@withContext Pair(0, "Authentification échouée")
+
+            try {
+                val url = URL("$base/api/nomenclatures/nomenclatures/taxonomy")
+                val conn = url.openConnection() as java.net.HttpURLConnection
+                conn.connectTimeout = 30000
+                conn.readTimeout = 30000
+                conn.setRequestProperty("Accept", "application/json")
+                if (token != null) conn.setRequestProperty("Authorization", "Bearer $token")
+                if (cookies.isNotEmpty()) conn.setRequestProperty("Cookie", cookies)
+
+                val code = conn.responseCode
+                if (code != 200) return@withContext Pair(0, "HTTP $code")
+
+                val text = conn.inputStream.bufferedReader().readText()
+                val array: JSONArray = try { JSONArray(text) } catch (_: Exception) {
+                    val obj = JSONObject(text)
+                    obj.optJSONArray("items") ?: obj.optJSONArray("data")
+                        ?: return@withContext Pair(0, "Format inattendu")
+                }
+
+                val typesVoulus = setOf("METH_OBS", "SEXE", "STADE_VIE", "STATUT_BIO", "ETA_BIO",
+                                        "PREUVE_EXIST", "OBJ_DENBR", "TYP_DENBR", "OCC_COMPORTEMENT", "METH_DETERMIN")
+                val result = mutableMapOf<String, List<NomValeur>>()
+
+                for (i in 0 until array.length()) {
+                    val typeObj = array.getJSONObject(i)
+                    val mnem = typeObj.optString("mnemonique", "")
+                    if (mnem !in typesVoulus) continue
+
+                    val valuesArray = typeObj.optJSONArray("values") ?: continue
+                    val valeurs = mutableListOf<NomValeur>()
+
+                    for (j in 0 until valuesArray.length()) {
+                        val v = valuesArray.getJSONObject(j)
+                        val id = v.optInt("id_nomenclature", -1).takeIf { it > 0 } ?: continue
+                        val label = v.optString("label_default", "").ifEmpty { v.optString("label_fr", "") }
+                        if (label.isEmpty()) continue
+
+                        val taxrefArray = v.optJSONArray("taxref")
+                        val restrictions = mutableListOf<TaxrefRestriction>()
+                        if (taxrefArray != null) {
+                            for (k in 0 until taxrefArray.length()) {
+                                val r = taxrefArray.getJSONObject(k)
+                                val regne = r.optString("regne", r.optString("kingdom", ""))
+                                val group2 = r.optString("group2_inpn", "")
+                                restrictions.add(TaxrefRestriction(regne, group2))
+                            }
+                        }
+                        valeurs.add(NomValeur(id, label, restrictions))
+                    }
+
+                    if (valeurs.isNotEmpty()) result[mnem] = valeurs
+                }
+
+                if (result.isNotEmpty()) NomenclatureCache.setAll(result)
+                val total = result.values.sumOf { it.size }
+                val resume = result.entries.joinToString(" | ") { (t, vals) ->
+                    val nbTr = vals.count { it.taxref.isNotEmpty() }
+                    "$t:${vals.size}val/${nbTr}taxref"
+                }
+                Pair(total, resume)
+            } catch (e: Exception) {
+                Pair(0, "Erreur : ${e.message}")
+            }
+        }
 
     private fun parseErreur(code: Int, body: String?): String {
         if (body != null) {

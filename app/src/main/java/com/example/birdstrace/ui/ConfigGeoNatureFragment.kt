@@ -14,6 +14,7 @@ import com.example.birdstrace.network.GeoNatureDataset
 import com.example.birdstrace.network.GeoNatureListe
 import com.example.birdstrace.network.GeoNatureService
 import com.example.birdstrace.store.GeoNatureConfig
+import com.example.birdstrace.store.NomenclatureCache
 import com.example.birdstrace.store.TaxRefCache
 import kotlinx.coroutines.launch
 
@@ -201,16 +202,21 @@ class ConfigGeoNatureFragment : Fragment() {
         binding.progressSync.visibility = View.VISIBLE
         binding.tvSyncResultat.visibility = View.GONE
         viewLifecycleOwner.lifecycleScope.launch {
-            val (_, msg) = GeoNatureService.synchroniserTaxRef(gnConfig) { fait, _ ->
+            val (_, msgTaxRef) = GeoNatureService.synchroniserTaxRef(gnConfig) { fait, _ ->
                 activity?.runOnUiThread {
                     binding.tvSyncResultat.visibility = View.VISIBLE
                     binding.tvSyncResultat.text = "$fait taxons reçus…"
                 }
             }
+            val (nbNom, msgNom) = GeoNatureService.synchroniserNomenclatures(gnConfig)
             binding.progressSync.visibility = View.GONE
             binding.btnSyncTaxRef.isEnabled = true
             binding.tvSyncResultat.visibility = View.VISIBLE
-            binding.tvSyncResultat.text = msg
+            binding.tvSyncResultat.text = buildString {
+                append(msgTaxRef)
+                if (nbNom > 0) append("\nNomenclatures : $msgNom")
+                else if (msgNom.isNotEmpty()) append("\nNomenclatures : $msgNom")
+            }
             updateCacheInfo()
         }
     }
@@ -229,21 +235,19 @@ class ConfigGeoNatureFragment : Fragment() {
     private fun updateCacheInfo() {
         val count = TaxRefCache.count
         val comptes = TaxRefCache.comptesGroupes
-        binding.tvCacheInfo.text = when {
+        val taxrefText = when {
             count == 0 -> "Cache vide"
-            comptes.isNotEmpty() -> {
-                val nbO = comptes["Oiseaux"] ?: 0
-                val nbM = comptes["Mammifères"] ?: 0
-                val nbR = comptes["Reptiles"] ?: 0
-                buildString {
-                    append("$count taxons en cache")
-                    if (nbO > 0) append(" · $nbO oiseaux")
-                    if (nbM > 0) append(" · $nbM mammifères")
-                    if (nbR > 0) append(" · $nbR reptiles")
-                }
+            comptes.isNotEmpty() -> buildString {
+                append("$count taxons en cache")
+                (comptes["Oiseaux"] ?: 0).let { if (it > 0) append(" · $it oiseaux") }
+                (comptes["Mammifères"] ?: 0).let { if (it > 0) append(" · $it mammifères") }
+                (comptes["Reptiles"] ?: 0).let { if (it > 0) append(" · $it reptiles") }
+                (comptes["Plantes"] ?: 0).let { if (it > 0) append(" · $it plantes") }
             }
             else -> "$count taxons en cache"
         }
+        val nomResume = NomenclatureCache.resume()
+        binding.tvCacheInfo.text = if (nomResume.isNotEmpty()) "$taxrefText\n$nomResume" else taxrefText
         binding.btnViderCache.isEnabled = count > 0
     }
 

@@ -11,6 +11,7 @@ import com.example.birdstrace.databinding.FragmentObservationDetailsBinding
 import com.example.birdstrace.model.Taxon
 import com.example.birdstrace.store.NomenclatureCache
 import com.example.birdstrace.store.NomValeur
+import com.example.birdstrace.store.TaxRefCache
 
 class ObservationDetailsFragment : Fragment() {
     private var _binding: FragmentObservationDetailsBinding? = null
@@ -54,7 +55,7 @@ class ObservationDetailsFragment : Fragment() {
         binding.layoutStatutBio.visibility   = if (estPlante) View.GONE else View.VISIBLE
         binding.layoutComportement.visibility = if (estPlante) View.GONE else View.VISIBLE
 
-        setupSpinners(groupe2Inpn, sexe, stadeVie, techniqueObs, statutBio, etaBio,
+        setupSpinners(taxon, groupe2Inpn, sexe, stadeVie, techniqueObs, statutBio, etaBio,
                       preuveExist, objDenbr, typDenbr, comportement, methDetermin)
 
         if (taxrefNonTrouve) {
@@ -84,6 +85,7 @@ class ObservationDetailsFragment : Fragment() {
     }
 
     private fun setupSpinners(
+        taxon: Taxon,
         groupe2Inpn: String?,
         sexe: String, stadeVie: String, techniqueObs: String,
         statutBio: String, etaBio: String, preuveExist: String,
@@ -92,16 +94,17 @@ class ObservationDetailsFragment : Fragment() {
         val useCache = NomenclatureCache.estDisponible
 
         if (useCache) {
-            spinnerCache(binding.spinnerSexe,         "SEXE",            groupe2Inpn, sexe)
-            spinnerCache(binding.spinnerStadeVie,     "STADE_VIE",       groupe2Inpn, stadeVie)
-            spinnerCache(binding.spinnerTechnique,    "METH_OBS",        groupe2Inpn, techniqueObs)
-            spinnerCache(binding.spinnerStatutBio,    "STATUT_BIO",      groupe2Inpn, statutBio)
-            spinnerCache(binding.spinnerEtaBio,       "ETA_BIO",         groupe2Inpn, etaBio)
-            spinnerCache(binding.spinnerPreuveExist,  "PREUVE_EXIST",    groupe2Inpn, preuveExist)
-            spinnerCache(binding.spinnerObjDenbr,     "OBJ_DENBR",       groupe2Inpn, objDenbr)
-            spinnerCache(binding.spinnerTypDenbr,     "TYP_DENBR",       groupe2Inpn, typDenbr)
-            spinnerCache(binding.spinnerComportement, "OCC_COMPORTEMENT",groupe2Inpn, comportement)
-            spinnerCache(binding.spinnerMethDetermin, "METH_DETERMIN",   groupe2Inpn, methDetermin)
+            val groupes = groupesFiltrage(taxon, groupe2Inpn)
+            spinnerCache(binding.spinnerSexe,         "SEXE",            groupes, sexe)
+            spinnerCache(binding.spinnerStadeVie,     "STADE_VIE",       groupes, stadeVie)
+            spinnerCache(binding.spinnerTechnique,    "METH_OBS",        groupes, techniqueObs)
+            spinnerCache(binding.spinnerStatutBio,    "STATUT_BIO",      groupes, statutBio)
+            spinnerCache(binding.spinnerEtaBio,       "ETA_BIO",         groupes, etaBio)
+            spinnerCache(binding.spinnerPreuveExist,  "PREUVE_EXIST",    groupes, preuveExist)
+            spinnerCache(binding.spinnerObjDenbr,     "OBJ_DENBR",       groupes, objDenbr)
+            spinnerCache(binding.spinnerTypDenbr,     "TYP_DENBR",       groupes, typDenbr)
+            spinnerCache(binding.spinnerComportement, "OCC_COMPORTEMENT",groupes, comportement)
+            spinnerCache(binding.spinnerMethDetermin, "METH_DETERMIN",   groupes, methDetermin)
         } else {
             spinnerStatique(binding.spinnerSexe,
                 listOf("Non renseigné", "Mâle", "Femelle", "Indéterminé"),
@@ -150,14 +153,28 @@ class ObservationDetailsFragment : Fragment() {
         }
     }
 
+    // Calcule l'ensemble des groupes à utiliser pour le filtrage des nomenclatures
+    private fun groupesFiltrage(taxon: Taxon, groupe2Inpn: String?): Set<String> {
+        return when (taxon) {
+            Taxon.PLANTE -> {
+                // Union de tous les groupes botaniques connus dans le cache
+                val animalGroups = setOf("Oiseaux", "Mammifères", "Reptiles")
+                TaxRefCache.tousLesGroupes().values
+                    .filter { it !in animalGroups }
+                    .toSet()
+            }
+            else -> setOfNotNull(groupe2Inpn)
+        }
+    }
+
     // Spinner alimenté par NomenclatureCache filtré par groupe
     private fun spinnerCache(
         spinner: android.widget.Spinner,
         type: String,
-        groupe2Inpn: String?,
+        groupes: Set<String>,
         current: String
     ) {
-        val valeurs = NomenclatureCache.filtrerPourGroupe(type, groupe2Inpn)
+        val valeurs = NomenclatureCache.filtrerPourGroupes(type, groupes)
         val labels = listOf("Non renseigné") + valeurs.map { it.label }
         val codes  = listOf("") + valeurs.map { it.id.toString() }
         spinnerStatique(spinner, labels, codes, current)

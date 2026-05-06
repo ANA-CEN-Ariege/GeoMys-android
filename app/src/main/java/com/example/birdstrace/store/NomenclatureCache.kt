@@ -27,14 +27,20 @@ object NomenclatureCache {
 
     val estDisponible: Boolean get() = charger().isNotEmpty()
 
+    // Filtre pour un groupe unique (Oiseaux, Mammifères, Reptiles, ou un group2_inpn précis)
     fun filtrerPourGroupe(type: String, groupe2Inpn: String?): List<NomValeur> {
+        return filtrerPourGroupes(type, setOfNotNull(groupe2Inpn))
+    }
+
+    // Filtre pour un ensemble de groupes — utilisé pour les Plantes (union des groupes botaniques)
+    fun filtrerPourGroupes(type: String, groupes: Set<String>): List<NomValeur> {
         return get(type).filter { v ->
             when {
-                v.taxref.isEmpty() -> true
-                groupe2Inpn == null -> true
+                v.taxref.isEmpty() -> true   // valeur universelle (joker "all")
+                groupes.isEmpty()  -> true   // groupe inconnu → tout afficher
                 else -> v.taxref.any { r ->
                     r.group2Inpn.equals("all", ignoreCase = true) ||
-                    r.group2Inpn.equals(groupe2Inpn, ignoreCase = true)
+                    groupes.any { g -> r.group2Inpn.equals(g, ignoreCase = true) }
                 }
             }
         }

@@ -5,7 +5,7 @@ import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
-import com.example.birdstrace.BioScopeApplication
+import com.example.birdstrace.GeoNatApplication
 import com.example.birdstrace.model.Observation
 import com.example.birdstrace.model.PointTrace
 import com.example.birdstrace.model.Sortie
@@ -14,7 +14,7 @@ import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 
 class TraceViewModel(application: Application) : AndroidViewModel(application) {
-    val locationTracker = (application as BioScopeApplication).locationTracker
+    val locationTracker = (application as GeoNatApplication).locationTracker
 
     private val _observations = MutableLiveData<MutableList<Observation>>(mutableListOf())
     val observations: LiveData<MutableList<Observation>> = _observations

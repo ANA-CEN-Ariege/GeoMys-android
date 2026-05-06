@@ -124,7 +124,7 @@ class TraceFragment : Fragment() {
         gnConfig = GeoNatureConfig(requireContext())
 
         enregistrerTrace = requireContext()
-            .getSharedPreferences("bioscope_prefs", android.content.Context.MODE_PRIVATE)
+            .getSharedPreferences("GeoNat_prefs", android.content.Context.MODE_PRIVATE)
             .getBoolean("enregistrer_trace", true)
 
         setupMap()

@@ -11,6 +11,7 @@ import androidx.navigation.fragment.findNavController
 import com.example.birdstrace.R
 import com.example.birdstrace.databinding.FragmentConfigGeonatureBinding
 import com.example.birdstrace.network.GeoNatureDataset
+import com.example.birdstrace.network.GeoNatureListe
 import com.example.birdstrace.network.GeoNatureService
 import com.example.birdstrace.store.GeoNatureConfig
 import com.example.birdstrace.store.TaxRefCache
@@ -21,6 +22,7 @@ class ConfigGeoNatureFragment : Fragment() {
     private val binding get() = _binding!!
     private lateinit var gnConfig: GeoNatureConfig
     private val datasets = mutableListOf<GeoNatureDataset>()
+    private val listes = mutableListOf<GeoNatureListe>()
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         _binding = FragmentConfigGeonatureBinding.inflate(inflater, container, false)
@@ -35,6 +37,7 @@ class ConfigGeoNatureFragment : Fragment() {
         binding.etLogin.setText(gnConfig.login)
         binding.etMotDePasse.setText(gnConfig.motDePasse)
         binding.etDataset.setText(gnConfig.idDataset)
+        binding.etTaxaListe.setText(gnConfig.taxaListeId)
 
         updateStatusIndicator()
         updateCacheInfo()
@@ -47,6 +50,11 @@ class ConfigGeoNatureFragment : Fragment() {
         binding.btnChargerDatasets.setOnClickListener {
             sauvegarderChamps()
             chargerDatasets()
+        }
+
+        binding.btnChargerListes.setOnClickListener {
+            sauvegarderChamps()
+            chargerListes()
         }
 
         binding.btnSyncTaxRef.setOnClickListener {
@@ -87,6 +95,7 @@ class ConfigGeoNatureFragment : Fragment() {
         gnConfig.login = binding.etLogin.text.toString()
         gnConfig.motDePasse = binding.etMotDePasse.text.toString()
         gnConfig.idDataset = binding.etDataset.text.toString()
+        gnConfig.taxaListeId = binding.etTaxaListe.text.toString()
     }
 
     private fun testerConnexion() {
@@ -103,7 +112,7 @@ class ConfigGeoNatureFragment : Fragment() {
                 if (success) 0xFF2E7D32.toInt() else 0xFFC62828.toInt()
             )
             updateStatusIndicator()
-            if (success) chargerDatasets()
+            if (success) { chargerDatasets(); chargerListes() }
         }
     }
 
@@ -140,6 +149,49 @@ class ConfigGeoNatureFragment : Fragment() {
             } finally {
                 binding.progressDatasets.visibility = View.GONE
                 binding.btnChargerDatasets.isEnabled = true
+            }
+        }
+    }
+
+    private fun chargerListes() {
+        binding.btnChargerListes.isEnabled = false
+        binding.tvErreurListes.visibility = View.GONE
+        viewLifecycleOwner.lifecycleScope.launch {
+            try {
+                val result = GeoNatureService.chargerListesTaxons(gnConfig)
+                listes.clear()
+                listes.addAll(result)
+                if (result.isNotEmpty()) {
+                    val noms = result.map { "${it.nom} (${it.id})" }
+                    val adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, noms)
+                    adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+                    binding.spinnerListes.adapter = adapter
+                    binding.spinnerListes.visibility = View.VISIBLE
+                    binding.tilTaxaListe.visibility = View.GONE
+                    binding.spinnerListes.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+                        override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
+                            gnConfig.taxaListeId = listes[position].id.toString()
+                            binding.etTaxaListe.setText(gnConfig.taxaListeId)
+                        }
+                        override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
+                    }
+                    val currentId = gnConfig.taxaListeId.toIntOrNull()
+                    val idx = listes.indexOfFirst { it.id == currentId }
+                    if (idx >= 0) binding.spinnerListes.setSelection(idx)
+                    else if (result.size == 1) {
+                        binding.spinnerListes.setSelection(0)
+                        gnConfig.taxaListeId = result[0].id.toString()
+                        binding.etTaxaListe.setText(gnConfig.taxaListeId)
+                    }
+                } else {
+                    binding.tvErreurListes.visibility = View.VISIBLE
+                    binding.tvErreurListes.text = "Aucune liste de taxons trouvée sur ce serveur"
+                }
+            } catch (e: Exception) {
+                binding.tvErreurListes.visibility = View.VISIBLE
+                binding.tvErreurListes.text = e.message
+            } finally {
+                binding.btnChargerListes.isEnabled = true
             }
         }
     }

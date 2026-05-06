@@ -11,14 +11,14 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Observer
-import com.example.birdstrace.BioScopeApplication
+import com.example.birdstrace.GeoNatApplication
 import com.example.birdstrace.R
 import com.example.birdstrace.ui.MainActivity
 
 class LocationForegroundService : Service() {
 
     companion object {
-        const val CHANNEL_ID = "bioscope_location"
+        const val CHANNEL_ID = "GeoNat_location"
         private const val NOTIF_ID = 1
 
         fun start(context: Context) {
@@ -33,7 +33,7 @@ class LocationForegroundService : Service() {
         }
     }
 
-    private val tracker get() = (application as BioScopeApplication).locationTracker
+    private val tracker get() = (application as GeoNatApplication).locationTracker
 
     private val distanceObserver = Observer<Double> { dist ->
         updateNotification(dist ?: 0.0)
@@ -79,7 +79,7 @@ class LocationForegroundService : Service() {
         val text = if (enCours) "%.0f m parcourus".format(dist) else "En attente de démarrage"
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("BioScope – suivi GPS actif")
+            .setContentTitle("GeoNat – suivi GPS actif")
             .setContentText(text)
             .setSmallIcon(R.drawable.ic_walk)
             .setContentIntent(pi)

@@ -55,14 +55,20 @@ object TaxRefService {
                 if (conn.responseCode != 200) return@withContext null
                 val array = JSONArray(conn.inputStream.bufferedReader().readText())
                 val nomNorm = TaxRefCache.normaliser(nom)
+                val nomLc = nom.trim().lowercase()
                 for (i in 0 until array.length()) {
                     val item = array.getJSONObject(i)
+                    val cdNom = item.optInt("cd_nom", -1)
+                    val lbNom = item.optString("lb_nom", "")
+                    if (cdNom <= 0) continue
+                    // Correspondance sur nom vernaculaire (noms français)
                     val vernRaw = item.optString("nom_vern", "")
-                    val vern = TaxRefCache.normaliser(vernRaw)
-                    if (vern == nomNorm) {
-                        val cdNom = item.optInt("cd_nom", -1)
-                        val lbNom = item.optString("lb_nom", "")
-                        if (cdNom > 0) return@withContext TaxRefStatut.Trouve(cdNom, lbNom, if (vernRaw.isNotEmpty()) vernRaw else null)
+                    if (TaxRefCache.normaliser(vernRaw) == nomNorm) {
+                        return@withContext TaxRefStatut.Trouve(cdNom, lbNom, vernRaw.ifEmpty { null })
+                    }
+                    // Correspondance sur nom scientifique (lb_nom)
+                    if (lbNom.lowercase() == nomLc) {
+                        return@withContext TaxRefStatut.Trouve(cdNom, lbNom, vernRaw.ifEmpty { null })
                     }
                 }
                 null

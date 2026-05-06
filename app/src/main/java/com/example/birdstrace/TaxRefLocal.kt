@@ -3,6 +3,7 @@ package com.example.birdstrace
 import com.example.birdstrace.model.Taxon
 import com.example.birdstrace.network.TaxRefStatut
 import com.example.birdstrace.store.TaxRefCache
+import com.example.birdstrace.store.TaxRefEntry
 
 // Extrait de TaxRef v18 (PatriNat/MNHN) — oiseaux de France métropolitaine
 object TaxRefLocal {
@@ -521,6 +522,39 @@ object TaxRefLocal {
         else            -> suggestions
     }
 
+    fun getSuggestionsAutocomplete(taxon: Taxon?, scientifique: Boolean): List<String> {
+        val groupeCible = when (taxon) {
+            Taxon.MAMMIFERE -> "Mammifères"
+            Taxon.REPTILE   -> "Reptiles"
+            else            -> "Oiseaux"
+        }
+        // Cache GeoNature en premier : déduplication par cdNom, filtré par groupe
+        val groupes = TaxRefCache.tousLesGroupes()
+        if (groupes.isNotEmpty()) {
+            val parCdNom = mutableMapOf<Int, TaxRefEntry>()
+            for ((_, entry) in TaxRefCache.toutesLesEntrees()) {
+                if (groupes[entry.cdNom.toString()] == groupeCible) {
+                    parCdNom[entry.cdNom] = entry
+                }
+            }
+            if (parCdNom.isNotEmpty()) {
+                return if (scientifique) {
+                    parCdNom.values.map { it.sciNom }.filter { it.isNotEmpty() }.distinct().sorted()
+                } else {
+                    parCdNom.values.mapNotNull { it.vernNom }.filter { it.isNotEmpty() }.distinct().sorted()
+                }
+            }
+        }
+        // Fallback : données embarquées TaxRefLocal
+        return if (scientifique) {
+            getSuggestions(taxon).mapNotNull { nom ->
+                noms[TaxRefCache.normaliser(nom)]?.let { sciNoms[it] }
+            }.distinct().sorted()
+        } else {
+            getSuggestions(taxon)
+        }
+    }
+
     // Mammifères de France — source : INPN / UICN
     val mammiferesSuggestions: List<String> = listOf(
         "Belette d'Europe", "Bison d'Europe", "Blaireau européen",
@@ -603,12 +637,20 @@ object TaxRefLocal {
 
     fun rechercher(nom: String): TaxRefStatut {
         val cle = TaxRefCache.normaliser(nom)
-        val cdNom = noms[cle] ?: return TaxRefStatut.NonTrouve
-        
-        // Retrouver le nom avec accents dans les suggestions
-        val nomFr = suggestions.find { TaxRefCache.normaliser(it) == cle }
-        
-        return TaxRefStatut.Trouve(cdNom, sciNoms[cdNom] ?: "", nomFr)
+
+        // Recherche par nom français
+        noms[cle]?.let { cdNom ->
+            val nomFr = suggestions.find { TaxRefCache.normaliser(it) == cle }
+            return TaxRefStatut.Trouve(cdNom, sciNoms[cdNom] ?: "", nomFr)
+        }
+
+        // Recherche par nom scientifique (mode sci activé)
+        val nomLc = nom.trim().lowercase()
+        sciNoms.entries.firstOrNull { it.value.lowercase() == nomLc }?.let { (cdNom, sciNom) ->
+            return TaxRefStatut.Trouve(cdNom, sciNom, null)
+        }
+
+        return TaxRefStatut.NonTrouve
     }
 
     val suggestions: List<String> = listOf(

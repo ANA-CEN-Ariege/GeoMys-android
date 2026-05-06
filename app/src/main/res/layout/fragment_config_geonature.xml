@@ -157,6 +157,44 @@
             android:textSize="13sp"
             android:visibility="gone" />
 
+        <!-- Liste de taxons -->
+        <com.google.android.material.textfield.TextInputLayout
+            android:id="@+id/til_taxa_liste"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:hint="id_liste (saisie manuelle)">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/et_taxa_liste"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="number" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <Spinner
+            android:id="@+id/spinner_listes"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/tv_erreur_listes"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:textColor="@android:color/holo_red_dark"
+            android:textSize="12sp"
+            android:visibility="gone" />
+
+        <Button
+            android:id="@+id/btn_charger_listes"
+            style="@style/Widget.MaterialComponents.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Charger les listes disponibles" />
+
         <!-- TaxRef Cache -->
         <TextView
             android:layout_width="wrap_content"

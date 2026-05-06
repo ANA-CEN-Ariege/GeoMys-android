@@ -35,6 +35,8 @@ object TaxRefCache {
 
     val count: Int get() = charger().size
 
+    fun toutesLesEntrees(): Map<String, TaxRefEntry> = charger()
+
     fun tousLesCdNoms(): Set<Int> = charger().values.map { it.cdNom }.toSet()
 
     fun getVernaculaireParCdNom(cdNom: Int): String? {

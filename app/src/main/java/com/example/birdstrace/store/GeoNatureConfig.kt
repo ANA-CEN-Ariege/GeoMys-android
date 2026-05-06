@@ -36,6 +36,10 @@ class GeoNatureConfig(context: Context) {
         get() = prefs.getString("gn_dataset", "") ?: ""
         set(v) = prefs.edit().putString("gn_dataset", v).apply()
 
+    var taxaListeId: String
+        get() = prefs.getString("gn_taxa_liste", "") ?: ""
+        set(v) = prefs.edit().putString("gn_taxa_liste", v).apply()
+
     val connexionConfiguree: Boolean
         get() = urlServeur.trim().isNotEmpty() && login.trim().isNotEmpty() && motDePasse.isNotEmpty()
 

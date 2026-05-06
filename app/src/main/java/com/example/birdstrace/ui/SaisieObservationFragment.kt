@@ -36,6 +36,7 @@ class SaisieObservationFragment : Fragment() {
     private var latitude = 0.0
     private var longitude = 0.0
     private var taxon: Taxon = Taxon.OISEAU
+    private var rechercheNomSci = false
     private var taxRefStatut: TaxRefStatut? = null
     private var taxRefJob: Job? = null
     private var nombre = 1
@@ -131,12 +132,14 @@ class SaisieObservationFragment : Fragment() {
     }
 
     private fun refreshAutocompleteAdapter() {
-        binding.etEspece.setAdapter(accentInsensitiveAdapter(TaxRefLocal.getSuggestions(taxon)))
+        binding.etEspece.setAdapter(accentInsensitiveAdapter(TaxRefLocal.getSuggestionsAutocomplete(taxon, rechercheNomSci)))
     }
 
     private fun updateEspeceHint() {
-        binding.tilEspece.hint = "" // On vide le hint pour qu'il ne flotte pas
-        binding.tilEspece.placeholderText = when (taxon) {
+        binding.tilEspece.hint = ""
+        binding.tilEspece.placeholderText = if (rechercheNomSci) {
+            "Nom scientifique (ex: Turdus merula, Cyanistes caeruleus…)"
+        } else when (taxon) {
             Taxon.MAMMIFERE -> "Espèce observée (ex: Renard roux, Blaireau…)"
             Taxon.REPTILE   -> "Espèce observée (ex: Lézard des murailles, Vipère aspic…)"
             else            -> "Espèce observée (ex: Merle noir, Rouge-gorge…)"
@@ -169,8 +172,17 @@ class SaisieObservationFragment : Fragment() {
     }
 
     private fun setupAutocomplete() {
-        binding.etEspece.setAdapter(accentInsensitiveAdapter(TaxRefLocal.getSuggestions(taxon)))
+        binding.etEspece.setAdapter(accentInsensitiveAdapter(TaxRefLocal.getSuggestionsAutocomplete(taxon, rechercheNomSci)))
         binding.etEspece.threshold = 1
+
+        binding.switchNomSci.setOnCheckedChangeListener { _, isChecked ->
+            rechercheNomSci = isChecked
+            binding.etEspece.setText("")
+            taxRefStatut = null
+            updateTaxRefUI()
+            refreshAutocompleteAdapter()
+            updateEspeceHint()
+        }
 
         binding.btnEnregistrer.isEnabled = false
         binding.etEspece.addTextChangedListener(object : TextWatcher {

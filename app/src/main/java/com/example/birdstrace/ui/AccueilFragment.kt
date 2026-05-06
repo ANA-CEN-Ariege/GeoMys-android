@@ -30,7 +30,7 @@ class AccueilFragment : Fragment() {
         sortieStore = SortieStore(requireContext())
         gnConfig = GeoNatureConfig(requireContext())
 
-        val prefs = requireContext().getSharedPreferences("bioscope_prefs", android.content.Context.MODE_PRIVATE)
+        val prefs = requireContext().getSharedPreferences("GeoNat_prefs", android.content.Context.MODE_PRIVATE)
         binding.switchTrace.isChecked = prefs.getBoolean("enregistrer_trace", true)
         binding.switchTrace.setOnCheckedChangeListener { _, isChecked ->
             prefs.edit().putBoolean("enregistrer_trace", isChecked).apply()

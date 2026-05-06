@@ -81,7 +81,7 @@ class ObservationsFragment : Fragment() {
         val obs = traceViewModel.observations.value ?: emptyList()
         val parcours = traceViewModel.locationTracker.parcours.value ?: emptyList()
         val gpxContent = genererGPX(obs, parcours)
-        val file = File(requireContext().cacheDir, "bioscope_${System.currentTimeMillis()}.gpx")
+        val file = File(requireContext().cacheDir, "GeoNat_${System.currentTimeMillis()}.gpx")
         file.writeText(gpxContent)
 
         val uri = androidx.core.content.FileProvider.getUriForFile(

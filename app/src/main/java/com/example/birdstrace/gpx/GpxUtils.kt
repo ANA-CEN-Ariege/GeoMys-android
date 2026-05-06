@@ -21,7 +21,7 @@ fun genererGPX(observations: List<Observation>, parcours: List<PointTrace>): Str
     }
     val sb = StringBuilder()
     sb.appendLine("""<?xml version="1.0" encoding="UTF-8"?>""")
-    sb.appendLine("""<gpx version="1.1" creator="BioScope" xmlns="http://www.topografix.com/GPX/1/1">""")
+    sb.appendLine("""<gpx version="1.1" creator="GeoNat" xmlns="http://www.topografix.com/GPX/1/1">""")
 
     for (obs in observations.sortedBy { it.date }) {
         sb.appendLine("""  <wpt lat="${obs.latitude}" lon="${obs.longitude}">""")
@@ -37,7 +37,7 @@ fun genererGPX(observations: List<Observation>, parcours: List<PointTrace>): Str
 
     if (parcours.isNotEmpty()) {
         sb.appendLine("""  <trk>""")
-        sb.appendLine("""    <name>Parcours BioScope</name>""")
+        sb.appendLine("""    <name>Parcours GeoNat</name>""")
         sb.appendLine("""    <trkseg>""")
         for (pt in parcours) {
             sb.appendLine("""      <trkpt lat="${pt.latitude}" lon="${pt.longitude}"/>""")

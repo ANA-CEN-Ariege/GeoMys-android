@@ -65,6 +65,15 @@
                 app:cornerRadius="8dp" />
         </LinearLayout>
 
+        <!-- Switch nom scientifique -->
+        <com.google.android.material.switchmaterial.SwitchMaterial
+            android:id="@+id/switch_nom_sci"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="8dp"
+            android:text="Nom scientifique"
+            android:textSize="13sp" />
+
         <!-- Espèce -->
         <com.google.android.material.textfield.TextInputLayout
             android:id="@+id/til_espece"

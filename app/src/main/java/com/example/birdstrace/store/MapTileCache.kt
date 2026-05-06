@@ -21,7 +21,7 @@ object MapTileCache {
     }
 
     fun purgerSiNecessaire(context: Context) {
-        val prefs = context.getSharedPreferences("bioscope_prefs", Context.MODE_PRIVATE)
+        val prefs = context.getSharedPreferences("GeoNat_prefs", Context.MODE_PRIVATE)
         val dernierePurge = prefs.getLong(PREFS_KEY, 0L)
         if (System.currentTimeMillis() - dernierePurge < DUREE_SEMAINE_MS) return
 

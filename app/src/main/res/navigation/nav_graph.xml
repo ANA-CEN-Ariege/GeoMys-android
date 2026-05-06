@@ -7,7 +7,7 @@
     <fragment
         android:id="@+id/accueilFragment"
         android:name="com.example.birdstrace.ui.AccueilFragment"
-        android:label="BioScope">
+        android:label="GeoNat">
         <action
             android:id="@+id/action_accueil_to_trace"
             app:destination="@id/traceFragment" />

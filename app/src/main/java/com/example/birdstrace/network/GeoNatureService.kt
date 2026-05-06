@@ -17,6 +17,7 @@ import java.util.Date
 import java.util.Locale
 
 data class GeoNatureDataset(val id: Int, val nom: String)
+data class GeoNatureListe(val id: Int, val nom: String)
 
 data class ObsExplorer(
     val nomCite: String,
@@ -100,7 +101,7 @@ object GeoNatureService {
                 val code = conn.responseCode
                 val ct = conn.getHeaderField("Content-Type") ?: ""
                 if (!ct.contains("json")) {
-                    return@withContext Pair(false, "Mauvaise URL : réponse HTML reçue. Essayez d'ajouter ou retirer /geonature à l'URL.")
+                    return@withContext Pair(false, "Mauvaise URL : réponse HTML reçue. Essayez d'ajouter ou retirer /GeoNature à l'URL.")
                 }
                 when (code) {
                     200 -> {
@@ -145,6 +146,32 @@ object GeoNatureService {
                 if (id > 0 && nom.isNotEmpty()) result.add(GeoNatureDataset(id, nom))
             }
             result
+        }
+
+    suspend fun chargerListesTaxons(config: GeoNatureConfig): List<GeoNatureListe> =
+        withContext(Dispatchers.IO) {
+            try {
+                val base = config.urlServeur.trim().trimEnd('/')
+                val url = URL("$base/api/taxhub/api/biblistes")
+                val conn = url.openConnection() as java.net.HttpURLConnection
+                conn.connectTimeout = 10000
+                conn.readTimeout = 10000
+                conn.setRequestProperty("Accept", "application/json")
+                if (conn.responseCode != 200) return@withContext emptyList()
+                val text = conn.inputStream.bufferedReader().readText()
+                val array: JSONArray = try { JSONArray(text) } catch (_: Exception) {
+                    val obj = JSONObject(text)
+                    obj.optJSONArray("data") ?: obj.optJSONArray("items") ?: obj.optJSONArray("results") ?: return@withContext emptyList()
+                }
+                val result = mutableListOf<GeoNatureListe>()
+                for (i in 0 until array.length()) {
+                    val item = array.getJSONObject(i)
+                    val id = item.optInt("id_liste", -1)
+                    val nom = item.optString("nom_liste", "")
+                    if (id > 0 && nom.isNotEmpty()) result.add(GeoNatureListe(id, nom))
+                }
+                result.sortedBy { it.nom }
+            } catch (_: Exception) { emptyList() }
         }
 
     suspend fun envoyer(sortie: Sortie, config: GeoNatureConfig): Triple<Int, Int, Int?> =
@@ -313,101 +340,98 @@ object GeoNatureService {
         config: GeoNatureConfig,
         progression: (Int, Int) -> Unit
     ): Pair<Int, String> = withContext(Dispatchers.IO) {
+        val listeId = config.taxaListeId.trim().toIntOrNull()?.takeIf { it > 0 }
+            ?: return@withContext Pair(0, "Aucune liste de taxons configurée — saisissez un id_liste dans les paramètres GeoNature.")
+
         val base = config.urlServeur.trim().trimEnd('/')
-        val pageSize = 500
-        val maxParGroupe = 20000
-        val groupes = listOf(
-            Pair("Oiseaux",         "Oiseaux"),
-            Pair("Mammif%C3%A8res", "Mammifères"),
-            Pair("Reptiles",        "Reptiles")
-        )
+        val pageSize = 1000
         val entrees = mutableMapOf<String, TaxRefEntry>()
         val groupeMap = mutableMapOf<Int, String>()
-        var totalRecu = 0
-        var pagesRecues = 0
         val cdNomsOiseaux    = mutableSetOf<Int>()
         val cdNomsMammiferes = mutableSetOf<Int>()
         val cdNomsReptiles   = mutableSetOf<Int>()
+        var totalRecu = 0
+        var pagesRecues = 0
 
         progression(0, 1)
 
-        for ((groupeUrl, groupeCle) in groupes) {
-            var offset = 0
-            var recuGroupe = 0
-
-            while (recuGroupe < maxParGroupe) {
-                try {
-                    val url = URL("$base/api/taxhub/api/taxref/?group2_inpn=$groupeUrl&fr_present=O&is_ref=true&fields=cd_nom,lb_nom,nom_vern&limit=$pageSize&offset=$offset")
-                    val conn = url.openConnection() as java.net.HttpURLConnection
-                    conn.connectTimeout = 30000
-                    conn.readTimeout = 30000
-                    conn.setRequestProperty("Accept", "application/json")
-                    if (conn.responseCode != 200) {
-                        if (pagesRecues == 0) return@withContext Pair(0, "Erreur HTTP ${conn.responseCode}")
-                        break
+        var page = 1
+        while (true) {
+            try {
+                val url = URL("$base/api/taxhub/api/taxref?orderby=cd_nom&fields=listes&id_liste=$listeId&limit=$pageSize&page=$page")
+                val conn = url.openConnection() as java.net.HttpURLConnection
+                conn.connectTimeout = 60000
+                conn.readTimeout = 60000
+                conn.setRequestProperty("Accept", "application/json")
+                val code = conn.responseCode
+                if (code != 200) {
+                    if (pagesRecues == 0) {
+                        val preview = try { conn.errorStream?.bufferedReader()?.readText()?.take(200) } catch (_: Exception) { null } ?: ""
+                        return@withContext Pair(0, "Erreur HTTP $code — $preview")
                     }
-                    val text = conn.inputStream.bufferedReader().readText()
-                    var totalFiltre: Int? = null
-                    val array: JSONArray = try { JSONArray(text) } catch (e: Exception) {
-                        val obj = JSONObject(text)
-                        totalFiltre = obj.optInt("total_filtered", -1).takeIf { it >= 0 }
-                            ?: obj.optInt("total", -1).takeIf { it >= 0 }
-                        obj.optJSONArray("items") ?: obj.optJSONArray("data") ?: obj.optJSONArray("results") ?: break
-                    }
-
-                    if (array.length() == 0) break
-                    pagesRecues++
-                    recuGroupe += array.length()
-                    totalRecu += array.length()
-
-                    for (i in 0 until array.length()) {
-                        val item = array.getJSONObject(i)
-                        val cdNom = item.optInt("cd_nom", -1).takeIf { it > 0 } ?: continue
-                        val lbNom = item.optString("lb_nom", "").takeIf { it.isNotEmpty() } ?: continue
-                        // Ignorer les taxons sans nom vernaculaire français (proxy fiable pour "présent en France")
-                        // Note: optString retourne "null" si la valeur JSON est null — on doit vérifier isNull()
-                        val nomVernRaw = if (item.isNull("nom_vern")) "" else item.optString("nom_vern", "")
-                        if (nomVernRaw.isEmpty()) continue
-                        for (partie in nomVernRaw.split(",")) {
-                            val nomNettoye = partie.trim()
-                                .replace(Regex("""\s*\((Le|La|Les|L'|L'|Un|Une)\)\s*$"""), "")
-                            val cle = TaxRefCache.normaliser(nomNettoye)
-                            if (cle.isNotEmpty()) entrees[cle] = TaxRefEntry(cdNom, lbNom, nomNettoye)
-                        }
-                        val cleSci = TaxRefCache.normaliser(lbNom)
-                        if (cleSci.isNotEmpty()) entrees[cleSci] = TaxRefEntry(cdNom, lbNom, nomVernRaw.split(",").firstOrNull()?.trim())
-                        when (groupeCle) {
-                            "Oiseaux"    -> cdNomsOiseaux.add(cdNom)
-                            "Mammifères" -> cdNomsMammiferes.add(cdNom)
-                            "Reptiles"   -> cdNomsReptiles.add(cdNom)
-                        }
-                        groupeMap[cdNom] = groupeCle
-                    }
-
-                    progression(entrees.size, 0)
-                    if (totalFiltre != null && recuGroupe >= totalFiltre) break
-                    if (array.length() < pageSize) break
-                    offset += pageSize
-                } catch (e: Exception) {
-                    if (pagesRecues == 0) return@withContext Pair(0, "Erreur réseau : ${e.message}")
                     break
                 }
+                val text = conn.inputStream.bufferedReader().readText()
+                val array: JSONArray = try {
+                    val obj = JSONObject(text)
+                    obj.optJSONArray("items") ?: obj.optJSONArray("data") ?: obj.optJSONArray("results") ?: JSONArray(text)
+                } catch (_: Exception) {
+                    try { JSONArray(text) } catch (_: Exception) {
+                        if (pagesRecues == 0) return@withContext Pair(0, "Réponse non-JSON : ${text.take(200)}")
+                        break
+                    }
+                }
+
+                if (array.length() == 0) break
+                pagesRecues++
+                totalRecu += array.length()
+                progression(entrees.size, 0)
+
+                for (i in 0 until array.length()) {
+                    val item = array.getJSONObject(i)
+                    val cdNom = item.optInt("cd_nom", -1).takeIf { it > 0 } ?: continue
+                    val lbNom = item.optString("lb_nom", "").takeIf { it.isNotEmpty() } ?: continue
+                    val nomVernRaw = if (item.isNull("nom_vern")) "" else item.optString("nom_vern", "")
+                    val groupe = item.optString("group2_inpn", "")
+
+                    for (partie in nomVernRaw.split(",")) {
+                        val nomNettoye = partie.trim()
+                            .replace(Regex("""\s*\((Le|La|Les|L'|L'|Un|Une)\)\s*$"""), "")
+                        val cle = TaxRefCache.normaliser(nomNettoye)
+                        if (cle.isNotEmpty()) entrees[cle] = TaxRefEntry(cdNom, lbNom, nomNettoye)
+                    }
+                    val cleSci = TaxRefCache.normaliser(lbNom)
+                    if (cleSci.isNotEmpty()) entrees[cleSci] = TaxRefEntry(cdNom, lbNom, nomVernRaw.split(",").firstOrNull()?.trim())
+
+                    if (groupe.isNotEmpty()) groupeMap[cdNom] = groupe
+                    when (groupe) {
+                        "Oiseaux"    -> cdNomsOiseaux.add(cdNom)
+                        "Mammifères" -> cdNomsMammiferes.add(cdNom)
+                        "Reptiles"   -> cdNomsReptiles.add(cdNom)
+                    }
+                }
+
+                if (array.length() < pageSize) break
+                page++
+            } catch (e: Exception) {
+                if (pagesRecues == 0) return@withContext Pair(0, "Erreur réseau : ${e.message}")
+                break
             }
         }
 
-        if (pagesRecues == 0) return@withContext Pair(0, "Aucun résultat reçu")
+        if (pagesRecues == 0) return@withContext Pair(0, "Aucun résultat — la liste $listeId est peut-être vide ou inexistante.")
         if (entrees.isNotEmpty()) TaxRefCache.ajouter(entrees)
         if (groupeMap.isNotEmpty()) TaxRefCache.ajouterGroupes(groupeMap)
         val nbO = cdNomsOiseaux.size
         val nbM = cdNomsMammiferes.size
         val nbR = cdNomsReptiles.size
         val comptes = TaxRefCache.comptesGroupes.toMutableMap()
-        comptes["Oiseaux"]    = nbO
-        comptes["Mammifères"] = nbM
-        comptes["Reptiles"]   = nbR
+        if (nbO > 0) comptes["Oiseaux"]    = nbO
+        if (nbM > 0) comptes["Mammifères"] = nbM
+        if (nbR > 0) comptes["Reptiles"]   = nbR
         TaxRefCache.comptesGroupes = comptes
         verifierVersionTaxRef(config)?.let { TaxRefCache.versionSauvegardee = it }
-        Pair(entrees.size, "${entrees.size} taxons indexés — $nbO oiseaux, $nbM mammifères, $nbR reptiles ($totalRecu reçus)")
+        Pair(entrees.size, "${entrees.size} taxons indexés — $nbO oiseaux, $nbM mammifères, $nbR reptiles")
     }
 
     suspend fun recupererObsExplorer(

@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">BioScope</string>
+    <string name="app_name">GeoNat</string>
     <string name="nouvelle_sortie">Nouvelle sortie</string>
     <string name="reprendre_sortie">Reprendre la sortie</string>
     <string name="mes_sorties">Mes sorties</string>

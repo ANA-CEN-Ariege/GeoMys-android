@@ -47,6 +47,41 @@ object GeoNatureService {
     private val METH_OBS_LABELS = mapOf(
         "0" to "vu", "1" to "entendu", "2" to "vu et entendu", "4" to "chant", "5" to "indices de présence"
     )
+    private val STATUT_BIO_LABELS = mapOf(
+        "1" to "reproduction", "2" to "pas de reproduction",
+        "3" to "hibernation", "4" to "estivation", "5" to "non déterminé", "6" to "inconnu"
+    )
+    private val ETA_BIO_LABELS = mapOf("1" to "vivant", "2" to "mort", "3" to "signe d'activité")
+    private val PREUVE_EXIST_LABELS = mapOf("0" to "non", "1" to "oui", "2" to "non acquise", "3" to "inconnu")
+    private val OBJ_DENBR_LABELS = mapOf(
+        "1" to "individu", "2" to "couple", "3" to "nid", "4" to "famille", "5" to "groupe"
+    )
+    private val TYP_DENBR_LABELS = mapOf("1" to "exact", "2" to "estimé", "3" to "minimum", "4" to "maximum")
+    private val COMPORTEMENT_LABELS = mapOf(
+        "1"  to "chant",
+        "2"  to "chasse/alimentation",
+        "3"  to "repos",
+        "4"  to "déplacement",
+        "5"  to "passage en vol",
+        "6"  to "migration",
+        "7"  to "halte migratoire",
+        "8"  to "hivernage",
+        "9"  to "nourrissage des jeunes",
+        "10" to "territorial",
+        "11" to "accouplement",
+        "12" to "30 - nidification possible",
+        "13" to "40 - nidification probable",
+        "14" to "50 - nidification certaine",
+        "15" to "inconnu"
+    )
+    private val METH_DETERMIN_LABELS = mapOf(
+        "1" to "examen visuel à distance",
+        "2" to "examen auditif direct",
+        "3" to "examen visuel sur photo ou vidéo",
+        "4" to "examen auditif avec transformation électronique",
+        "5" to "examen visuel de l'individu en main",
+        "6" to "autre méthode de détermination"
+    )
 
     suspend fun testerConnexion(config: GeoNatureConfig): Pair<Boolean, String> =
         withContext(Dispatchers.IO) {
@@ -125,40 +160,19 @@ object GeoNatureService {
                 ?: throw GNErreur.EnvoiEchoue(0, "id_dataset invalide : \"${config.idDataset}\"")
 
             val dateFmt = SimpleDateFormat("yyyy-MM-dd", Locale.US)
-            val heureFmt = SimpleDateFormat("HH:mm:ss", Locale.US)
+            val heureFmt = SimpleDateFormat("HH:mm", Locale.US)
 
             var nbCrees = 0
             var premierIdReleve: Int? = null
             var derniereErreur: String? = null
 
-            val idMethObs = resolverNomenclatures(base, token, cookies, "METH_OBS")
-            val idSexe    = resolverNomenclatures(base, token, cookies, "SEXE")
-            val idStade   = resolverNomenclatures(base, token, cookies, "STADE_VIE")
+            val nomenclatures = mutableMapOf<String, Map<String, Int>>()
+            for (type in listOf("METH_OBS", "SEXE", "STADE_VIE", "STATUT_BIO", "ETA_BIO",
+                                "PREUVE_EXIST", "OBJ_DENBR", "TYP_DENBR", "OCC_COMPORTEMENT", "METH_DETERMIN")) {
+                nomenclatures[type] = resolverNomenclatures(base, token, cookies, type)
+            }
 
             for (obs in obsValides) {
-                val counting = JSONObject().apply {
-                    put("count_min", obs.nombre)
-                    put("count_max", obs.nombre)
-                    obs.sexe?.let { code ->
-                        val label = SEXE_LABELS[code] ?: code.lowercase()
-                        idSexe[label]?.let { put("id_nomenclature_sex", it) }
-                    }
-                    obs.stadeVie?.let { code ->
-                        val label = STADE_LABELS[code] ?: code.lowercase()
-                        idStade[label]?.let { put("id_nomenclature_life_stage", it) }
-                    }
-                }
-
-                val occ = JSONObject().apply {
-                    put("cd_nom", obs.cdNom!!)
-                    put("nom_cite", obs.espece)
-                    if (obs.notes.isNotEmpty()) put("comment", obs.notes)
-                    put("cor_counting_occtax", JSONArray().put(counting))
-                    val codeTechnique = obs.techniqueObs ?: "0"
-                    val labelTechnique = METH_OBS_LABELS[codeTechnique] ?: codeTechnique.lowercase()
-                    idMethObs[labelTechnique]?.let { put("id_nomenclature_obs_technique", it) }
-                }
-
                 val d = Date(obs.date)
                 val properties = JSONObject().apply {
                     put("id_dataset", datasetId)
@@ -168,7 +182,7 @@ object GeoNatureService {
                     put("hour_max", heureFmt.format(d))
                     put("additional_fields", JSONObject())
                     put("meta_device_entry", "mobile")
-                    put("t_occurrences_occtax", JSONArray().put(occ))
+                    put("t_occurrences_occtax", JSONArray())
                     idRole?.let { put("observers", JSONArray().put(it)) }
                 }
 
@@ -176,40 +190,101 @@ object GeoNatureService {
                     .put("type", "Point")
                     .put("coordinates", JSONArray().put(obs.longitude).put(obs.latitude))
 
-                val body = JSONObject().put("geometry", geometry).put("properties", properties).toString()
+                val body1 = JSONObject()
+                    .put("geometry", geometry)
+                    .put("status", "to_sync")
+                    .put("properties", properties)
+                    .toString()
 
-                val url = URL("$base/api/occtax/releve")
-                val conn = url.openConnection() as java.net.HttpURLConnection
-                conn.requestMethod = "POST"
-                conn.doOutput = true
-                conn.connectTimeout = 30000
-                conn.readTimeout = 30000
-                conn.setRequestProperty("Content-Type", "application/json")
-                conn.setRequestProperty("Accept", "application/json")
-                if (token != null) conn.setRequestProperty("Authorization", "Bearer $token")
-                if (cookies.isNotEmpty()) conn.setRequestProperty("Cookie", cookies)
-                OutputStreamWriter(conn.outputStream).use { it.write(body) }
+                val urlReleve = URL("$base/api/occtax/OCCTAX/only/releve")
+                val conn1 = urlReleve.openConnection() as java.net.HttpURLConnection
+                conn1.requestMethod = "POST"
+                conn1.doOutput = true
+                conn1.connectTimeout = 30000
+                conn1.readTimeout = 30000
+                conn1.setRequestProperty("Content-Type", "application/json")
+                conn1.setRequestProperty("Accept", "application/json")
+                if (token != null) conn1.setRequestProperty("Authorization", "Bearer $token")
+                if (cookies.isNotEmpty()) conn1.setRequestProperty("Cookie", cookies)
+                OutputStreamWriter(conn1.outputStream).use { it.write(body1) }
 
-                val code = conn.responseCode
-                val ct = conn.getHeaderField("Content-Type") ?: ""
-                if (ct.contains("json") && code in 200..299) {
-                    nbCrees++
-                    if (premierIdReleve == null) {
-                        val resp = JSONObject(conn.inputStream.bufferedReader().readText())
-                        premierIdReleve = (resp.optJSONObject("properties")?.optInt("id_releve_occtax", -1)
-                            ?: resp.optInt("id_releve_occtax", -1)).takeIf { it > 0 }
+                val code1 = conn1.responseCode
+                if (code1 !in 200..299) {
+                    val body2 = try { (conn1.errorStream ?: conn1.inputStream)?.bufferedReader()?.readText() } catch (_: Exception) { null }
+                    derniereErreur = parseErreur(code1, body2)
+                    continue
+                }
+                val resp1 = JSONObject(conn1.inputStream.bufferedReader().readText())
+                val idReleve = resp1.optInt("id", -1).takeIf { it > 0 }
+                    ?: resp1.optJSONObject("properties")?.optInt("id_releve_occtax", -1)?.takeIf { it > 0 }
+                    ?: resp1.optInt("id_releve_occtax", -1).takeIf { it > 0 }
+                if (idReleve == null) {
+                    derniereErreur = "id absent de la réponse relevé"
+                    continue
+                }
+                if (premierIdReleve == null) premierIdReleve = idReleve
+
+                val counting = JSONObject().apply {
+                    put("count_min", obs.nombre)
+                    put("count_max", obs.nombre)
+                    obs.sexe?.let { code ->
+                        nomenclatures["SEXE"]?.get(SEXE_LABELS[code] ?: code.lowercase())?.let { put("id_nomenclature_sex", it) }
                     }
+                    obs.stadeVie?.let { code ->
+                        nomenclatures["STADE_VIE"]?.get(STADE_LABELS[code] ?: code.lowercase())?.let { put("id_nomenclature_life_stage", it) }
+                    }
+                    obs.objDenbr?.let { code ->
+                        nomenclatures["OBJ_DENBR"]?.get(OBJ_DENBR_LABELS[code] ?: code.lowercase())?.let { put("id_nomenclature_obj_count", it) }
+                    }
+                    obs.typDenbr?.let { code ->
+                        nomenclatures["TYP_DENBR"]?.get(TYP_DENBR_LABELS[code] ?: code.lowercase())?.let { put("id_nomenclature_type_count", it) }
+                    }
+                }
+
+                val occ = JSONObject().apply {
+                    put("cd_nom", obs.cdNom!!)
+                    put("nom_cite", obs.espece)
+                    if (obs.notes.isNotEmpty()) put("comment", obs.notes)
+                    put("cor_counting_occtax", JSONArray().put(counting))
+                    val codeTechnique = obs.techniqueObs ?: "0"
+                    nomenclatures["METH_OBS"]?.get(METH_OBS_LABELS[codeTechnique] ?: codeTechnique.lowercase())
+                        ?.let { put("id_nomenclature_obs_technique", it) }
+                    obs.statutBio?.let { code ->
+                        nomenclatures["STATUT_BIO"]?.get(STATUT_BIO_LABELS[code] ?: code.lowercase())?.let { put("id_nomenclature_bio_status", it) }
+                    }
+                    obs.etaBio?.let { code ->
+                        nomenclatures["ETA_BIO"]?.get(ETA_BIO_LABELS[code] ?: code.lowercase())?.let { put("id_nomenclature_bio_condition", it) }
+                    }
+                    obs.preuveExist?.let { code ->
+                        nomenclatures["PREUVE_EXIST"]?.get(PREUVE_EXIST_LABELS[code] ?: code.lowercase())?.let { put("id_nomenclature_exist_proof", it) }
+                    }
+                    obs.comportement?.let { code ->
+                        nomenclatures["OCC_COMPORTEMENT"]?.get(COMPORTEMENT_LABELS[code] ?: code.lowercase())?.let { put("id_nomenclature_behaviour", it) }
+                    }
+                    obs.methDetermin?.let { code ->
+                        nomenclatures["METH_DETERMIN"]?.get(METH_DETERMIN_LABELS[code] ?: code.lowercase())?.let { put("id_nomenclature_determination_method", it) }
+                    }
+                    obs.determinateur?.takeIf { it.isNotEmpty() }?.let { put("determiner", it) }
+                }
+
+                val urlOcc = URL("$base/api/occtax/OCCTAX/releve/$idReleve/occurrence")
+                val conn2 = urlOcc.openConnection() as java.net.HttpURLConnection
+                conn2.requestMethod = "POST"
+                conn2.doOutput = true
+                conn2.connectTimeout = 30000
+                conn2.readTimeout = 30000
+                conn2.setRequestProperty("Content-Type", "application/json")
+                conn2.setRequestProperty("Accept", "application/json")
+                if (token != null) conn2.setRequestProperty("Authorization", "Bearer $token")
+                if (cookies.isNotEmpty()) conn2.setRequestProperty("Cookie", cookies)
+                OutputStreamWriter(conn2.outputStream).use { it.write(occ.toString()) }
+
+                val code2 = conn2.responseCode
+                if (code2 in 200..299) {
+                    nbCrees++
                 } else {
-                    val body2 = try { (conn.errorStream ?: conn.inputStream)?.bufferedReader()?.readText() } catch (_: Exception) { null }
-                    derniereErreur = if (ct.contains("json") && body2 != null) {
-                        try {
-                            val j = JSONObject(body2)
-                            j.optString("description").takeIf { it.isNotEmpty() }
-                                ?: j.optString("msg").takeIf { it.isNotEmpty() }
-                                ?: j.optString("message").takeIf { it.isNotEmpty() }
-                                ?: "HTTP $code"
-                        } catch (_: Exception) { "HTTP $code" }
-                    } else "Erreur HTTP $code"
+                    val body2 = try { (conn2.errorStream ?: conn2.inputStream)?.bufferedReader()?.readText() } catch (_: Exception) { null }
+                    derniereErreur = parseErreur(code2, body2)
                 }
             }
 
@@ -453,6 +528,19 @@ object GeoNatureService {
             nombre = props.optInt("count_min", 1).coerceAtLeast(1),
             taxon = taxon
         )
+    }
+
+    private fun parseErreur(code: Int, body: String?): String {
+        if (body != null) {
+            try {
+                val j = JSONObject(body)
+                return j.optString("description").takeIf { it.isNotEmpty() }
+                    ?: j.optString("msg").takeIf { it.isNotEmpty() }
+                    ?: j.optString("message").takeIf { it.isNotEmpty() }
+                    ?: "HTTP $code"
+            } catch (_: Exception) {}
+        }
+        return "Erreur HTTP $code"
     }
 
     // Retourne (token, idRole, cookies) — cookies à renvoyer avec les appels suivants

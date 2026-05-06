@@ -22,7 +22,15 @@ data class Observation(
     var nombre: Int = 1,
     var sexe: String? = null,
     var stadeVie: String? = null,
-    var techniqueObs: String? = null
+    var techniqueObs: String? = null,
+    var statutBio: String? = null,
+    var etaBio: String? = null,
+    var preuveExist: String? = null,
+    var objDenbr: String? = null,
+    var typDenbr: String? = null,
+    var comportement: String? = null,
+    var methDetermin: String? = null,
+    var determinateur: String? = null
 )
 
 data class Sortie(

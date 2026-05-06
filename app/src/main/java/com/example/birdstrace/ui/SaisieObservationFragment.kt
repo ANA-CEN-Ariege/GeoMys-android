@@ -42,6 +42,14 @@ class SaisieObservationFragment : Fragment() {
     private var sexe = ""
     private var stadeVie = ""
     private var techniqueObs = ""
+    private var statutBio = ""
+    private var etaBio = ""
+    private var preuveExist = ""
+    private var objDenbr = ""
+    private var typDenbr = ""
+    private var comportement = ""
+    private var methDetermin = ""
+    private var determinateur = ""
     private var notes = ""
     private var cdNomManuel = ""
 
@@ -164,10 +172,12 @@ class SaisieObservationFragment : Fragment() {
         binding.etEspece.setAdapter(accentInsensitiveAdapter(TaxRefLocal.getSuggestions(taxon)))
         binding.etEspece.threshold = 1
 
+        binding.btnEnregistrer.isEnabled = false
         binding.etEspece.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
             override fun afterTextChanged(s: Editable?) {
+                binding.btnEnregistrer.isEnabled = s?.toString()?.trim()?.isNotEmpty() == true
                 lancerRechercheTaxRef(s?.toString() ?: "")
             }
         })
@@ -234,11 +244,19 @@ class SaisieObservationFragment : Fragment() {
     private fun setupDetails() {
         binding.btnDetails.setOnClickListener {
             val bundle = Bundle().apply {
-                putString("notes", notes)
-                putString("sexe", sexe)
-                putString("stadeVie", stadeVie)
-                putString("techniqueObs", techniqueObs)
-                putString("cdNomManuel", cdNomManuel)
+                putString("notes",         notes)
+                putString("sexe",          sexe)
+                putString("stadeVie",      stadeVie)
+                putString("techniqueObs",  techniqueObs)
+                putString("statutBio",     statutBio)
+                putString("etaBio",        etaBio)
+                putString("preuveExist",   preuveExist)
+                putString("objDenbr",      objDenbr)
+                putString("typDenbr",      typDenbr)
+                putString("comportement",  comportement)
+                putString("methDetermin",  methDetermin)
+                putString("determinateur", determinateur)
+                putString("cdNomManuel",   cdNomManuel)
                 putBoolean("taxrefNonTrouve", taxRefStatut == TaxRefStatut.NonTrouve || taxRefStatut == TaxRefStatut.Indisponible)
                 putDouble("latitude", latitude)
                 putDouble("longitude", longitude)
@@ -251,16 +269,27 @@ class SaisieObservationFragment : Fragment() {
         super.onViewStateRestored(savedInstanceState)
         // Récupérer les détails retournés
         findNavController().currentBackStackEntry?.savedStateHandle?.apply {
-            getLiveData<String>("notes").observe(viewLifecycleOwner) { notes = it; updateDetailsIndicator() }
-            getLiveData<String>("sexe").observe(viewLifecycleOwner) { sexe = it; updateDetailsIndicator() }
-            getLiveData<String>("stadeVie").observe(viewLifecycleOwner) { stadeVie = it; updateDetailsIndicator() }
-            getLiveData<String>("techniqueObs").observe(viewLifecycleOwner) { techniqueObs = it; updateDetailsIndicator() }
-            getLiveData<String>("cdNomManuel").observe(viewLifecycleOwner) { cdNomManuel = it }
+            getLiveData<String>("notes").observe(viewLifecycleOwner)         { notes = it; updateDetailsIndicator() }
+            getLiveData<String>("sexe").observe(viewLifecycleOwner)          { sexe = it; updateDetailsIndicator() }
+            getLiveData<String>("stadeVie").observe(viewLifecycleOwner)      { stadeVie = it; updateDetailsIndicator() }
+            getLiveData<String>("techniqueObs").observe(viewLifecycleOwner)  { techniqueObs = it; updateDetailsIndicator() }
+            getLiveData<String>("statutBio").observe(viewLifecycleOwner)     { statutBio = it; updateDetailsIndicator() }
+            getLiveData<String>("etaBio").observe(viewLifecycleOwner)        { etaBio = it; updateDetailsIndicator() }
+            getLiveData<String>("preuveExist").observe(viewLifecycleOwner)   { preuveExist = it; updateDetailsIndicator() }
+            getLiveData<String>("objDenbr").observe(viewLifecycleOwner)      { objDenbr = it; updateDetailsIndicator() }
+            getLiveData<String>("typDenbr").observe(viewLifecycleOwner)      { typDenbr = it; updateDetailsIndicator() }
+            getLiveData<String>("comportement").observe(viewLifecycleOwner)  { comportement = it; updateDetailsIndicator() }
+            getLiveData<String>("methDetermin").observe(viewLifecycleOwner)  { methDetermin = it; updateDetailsIndicator() }
+            getLiveData<String>("determinateur").observe(viewLifecycleOwner) { determinateur = it }
+            getLiveData<String>("cdNomManuel").observe(viewLifecycleOwner)   { cdNomManuel = it }
         }
     }
 
     private fun updateDetailsIndicator() {
-        val hasDetails = notes.isNotEmpty() || sexe.isNotEmpty() || stadeVie.isNotEmpty() || techniqueObs.isNotEmpty()
+        val hasDetails = notes.isNotEmpty() || sexe.isNotEmpty() || stadeVie.isNotEmpty() ||
+            techniqueObs.isNotEmpty() || statutBio.isNotEmpty() || etaBio.isNotEmpty() ||
+            preuveExist.isNotEmpty() || objDenbr.isNotEmpty() || typDenbr.isNotEmpty() ||
+            comportement.isNotEmpty() || methDetermin.isNotEmpty()
         binding.ivDetailsIndicator.visibility = if (hasDetails) View.VISIBLE else View.GONE
     }
 
@@ -278,9 +307,17 @@ class SaisieObservationFragment : Fragment() {
             longitude = longitude,
             notes = notes,
             nombre = nombre,
-            sexe = sexe.ifEmpty { null },
-            stadeVie = stadeVie.ifEmpty { null },
-            techniqueObs = techniqueObs.ifEmpty { null }
+            sexe          = sexe.ifEmpty { null },
+            stadeVie      = stadeVie.ifEmpty { null },
+            techniqueObs  = techniqueObs.ifEmpty { null },
+            statutBio     = statutBio.ifEmpty { null },
+            etaBio        = etaBio.ifEmpty { null },
+            preuveExist   = preuveExist.ifEmpty { null },
+            objDenbr      = objDenbr.ifEmpty { null },
+            typDenbr      = typDenbr.ifEmpty { null },
+            comportement  = comportement.ifEmpty { null },
+            methDetermin  = methDetermin.ifEmpty { null },
+            determinateur = determinateur.ifEmpty { null }
         )
         traceViewModel.ajouterObservation(obs)
         findNavController().navigateUp()

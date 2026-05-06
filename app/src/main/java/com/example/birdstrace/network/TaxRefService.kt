@@ -1,5 +1,6 @@
 package com.example.birdstrace.network
 
+import com.example.birdstrace.TaxRefLocal
 import com.example.birdstrace.store.GeoNatureConfig
 import com.example.birdstrace.store.TaxRefCache
 import kotlinx.coroutines.Dispatchers
@@ -22,7 +23,13 @@ object TaxRefService {
                 return@withContext Pair(TaxRefStatut.Trouve(entry.cdNom, entry.sciNom, entry.vernNom), false)
             }
 
-            // 2. API TaxRef GeoNature en direct (si configuré)
+            // 2. Base embarquée TaxRefLocal
+            val statutLocal = TaxRefLocal.rechercher(nom)
+            if (statutLocal is TaxRefStatut.Trouve) {
+                return@withContext Pair(statutLocal, false)
+            }
+
+            // 3. API TaxRef GeoNature en direct (si configuré)
             if (gnConfig != null && gnConfig.connexionConfiguree) {
                 rechercherViaGeoNature(nom, gnConfig)?.let { statut ->
                     if (statut is TaxRefStatut.Trouve) {

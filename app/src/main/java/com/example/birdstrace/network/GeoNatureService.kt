@@ -136,9 +136,12 @@ object GeoNatureService {
 
             if (conn.responseCode != 200) throw GNErreur.EnvoiEchoue(conn.responseCode, "Impossible de charger les jeux de données")
 
-            val parsed = try { JSONArray(conn.inputStream.bufferedReader().readText()) } catch (e: Exception) {
-                val obj = JSONObject(conn.inputStream.bufferedReader().readText())
-                obj.optJSONArray("data") ?: obj.optJSONArray("items") ?: obj.optJSONArray("results") ?: JSONArray()
+            val rawText = conn.inputStream.bufferedReader().readText()
+            val parsed = try { JSONArray(rawText) } catch (_: Exception) {
+                try {
+                    val obj = JSONObject(rawText)
+                    obj.optJSONArray("data") ?: obj.optJSONArray("items") ?: obj.optJSONArray("results") ?: JSONArray()
+                } catch (_: Exception) { JSONArray() }
             }
 
             val result = mutableListOf<GeoNatureDataset>()
@@ -199,7 +202,12 @@ object GeoNatureService {
             val nomenclatures = mutableMapOf<String, Map<String, Int>>()
             for (type in listOf("METH_OBS", "SEXE", "STADE_VIE", "STATUT_BIO", "ETA_BIO",
                                 "PREUVE_EXIST", "OBJ_DENBR", "TYP_DENBR", "OCC_COMPORTEMENT", "METH_DETERMIN")) {
-                nomenclatures[type] = resolverNomenclatures(base, token, cookies, type)
+                val fromCache = NomenclatureCache.get(type)
+                nomenclatures[type] = if (fromCache.isNotEmpty()) {
+                    fromCache.associate { it.label.lowercase() to it.id }
+                } else {
+                    resolverNomenclatures(base, token, cookies, type)
+                }
             }
 
             for (obs in obsValides) {
@@ -244,7 +252,11 @@ object GeoNatureService {
                     derniereErreur = parseErreur(code1, body2)
                     continue
                 }
-                val resp1 = JSONObject(conn1.inputStream.bufferedReader().readText())
+                val resp1Text = try { conn1.inputStream.bufferedReader().readText() } catch (_: Exception) { "" }
+                val resp1 = try { JSONObject(resp1Text) } catch (_: Exception) {
+                    derniereErreur = "Réponse relevé non-JSON"
+                    continue
+                }
                 val idReleve = resp1.optInt("id", -1).takeIf { it > 0 }
                     ?: resp1.optJSONObject("properties")?.optInt("id_releve_occtax", -1)?.takeIf { it > 0 }
                     ?: resp1.optInt("id_releve_occtax", -1).takeIf { it > 0 }
@@ -645,9 +657,13 @@ object GeoNatureService {
 
                 val text = conn.inputStream.bufferedReader().readText()
                 val array: JSONArray = try { JSONArray(text) } catch (_: Exception) {
-                    val obj = JSONObject(text)
-                    obj.optJSONArray("items") ?: obj.optJSONArray("data")
-                        ?: return@withContext Pair(0, "Format inattendu")
+                    try {
+                        val obj = JSONObject(text)
+                        obj.optJSONArray("items") ?: obj.optJSONArray("data")
+                            ?: return@withContext Pair(0, "Format inattendu")
+                    } catch (_: Exception) {
+                        return@withContext Pair(0, "Format inattendu")
+                    }
                 }
 
                 val typesVoulus = setOf("METH_OBS", "SEXE", "STADE_VIE", "STATUT_BIO", "ETA_BIO",

@@ -22,6 +22,11 @@ class TraceViewModel(application: Application) : AndroidViewModel(application) {
     private val prefs = application.getSharedPreferences("session", Context.MODE_PRIVATE)
     private val gson = Gson()
 
+    private data class SessionSnapshot(
+        val observations: List<Observation> = emptyList(),
+        val parcours: List<PointTrace> = emptyList()
+    )
+
     val estActive: Boolean
         get() = (locationTracker.estEnCours.value == true)
             || (locationTracker.parcours.value?.isNotEmpty() == true)
@@ -62,28 +67,49 @@ class TraceViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun sauvegarder() {
-        val obs = _observations.value ?: emptyList<Observation>()
-        prefs.edit().putString("observations", gson.toJson(obs)).apply()
-        val pts = locationTracker.parcours.value ?: emptyList<PointTrace>()
-        prefs.edit().putString("parcours", gson.toJson(pts)).apply()
+        val snapshot = SessionSnapshot(
+            observations = _observations.value ?: emptyList(),
+            parcours = locationTracker.parcours.value ?: emptyList()
+        )
+        prefs.edit()
+            .putString(KEY_SESSION, gson.toJson(snapshot))
+            .remove("observations")
+            .remove("parcours")
+            .apply()
     }
 
     private fun charger() {
+        val json = prefs.getString(KEY_SESSION, null)
+        if (json != null) {
+            try {
+                val type = object : TypeToken<SessionSnapshot>() {}.type
+                val snapshot: SessionSnapshot = gson.fromJson(json, type) ?: return
+                _observations.value = snapshot.observations.toMutableList()
+                locationTracker.restaurerParcours(snapshot.parcours)
+            } catch (_: Exception) {}
+            return
+        }
+        // Migration depuis les anciennes clés séparées
+        migrerAnciennesClés()
+    }
+
+    private fun migrerAnciennesClés() {
         val obsJson = prefs.getString("observations", null)
-        if (obsJson != null) {
-            try {
-                val type = object : TypeToken<MutableList<Observation>>() {}.type
-                _observations.value = gson.fromJson(obsJson, type) ?: mutableListOf()
-            } catch (_: Exception) {}
-        }
         val parcoursJson = prefs.getString("parcours", null)
-        if (parcoursJson != null) {
-            try {
-                val type = object : TypeToken<List<PointTrace>>() {}.type
-                val pts: List<PointTrace> = gson.fromJson(parcoursJson, type) ?: emptyList()
-                locationTracker.restaurerParcours(pts)
-            } catch (_: Exception) {}
-        }
+        if (obsJson == null && parcoursJson == null) return
+        try {
+            val obsType = object : TypeToken<MutableList<Observation>>() {}.type
+            val obs: MutableList<Observation> = obsJson?.let { gson.fromJson(it, obsType) } ?: mutableListOf()
+            val ptsType = object : TypeToken<List<PointTrace>>() {}.type
+            val pts: List<PointTrace> = parcoursJson?.let { gson.fromJson(it, ptsType) } ?: emptyList()
+            _observations.value = obs
+            locationTracker.restaurerParcours(pts)
+        } catch (_: Exception) {}
+        sauvegarder()
+    }
+
+    companion object {
+        private const val KEY_SESSION = "session_v2"
     }
 
     override fun onCleared() {

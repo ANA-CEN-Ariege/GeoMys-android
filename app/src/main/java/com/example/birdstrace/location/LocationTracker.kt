@@ -25,19 +25,24 @@ class LocationTracker(private val context: Context) {
     private val _distanceTotale = MutableLiveData(0.0)
     val distanceTotale: LiveData<Double> = _distanceTotale
 
-    private var dernierLoc: Location? = null
+    @Volatile private var dernierLoc: Location? = null
+    @Volatile private var distanceAccumulee = 0.0
+    @Volatile private var listening = false
     private val _parcoursMutable = mutableListOf<PointTrace>()
-    private var listening = false
 
     private val locationListener = object : LocationListener {
         override fun onLocationChanged(loc: Location) {
             if (loc.accuracy > 50f) return
             _position.postValue(loc)
             if (_estEnCours.value == true) {
-                _parcoursMutable.add(PointTrace(loc.latitude, loc.longitude))
-                _parcours.postValue(_parcoursMutable.toList())
+                synchronized(_parcoursMutable) {
+                    _parcoursMutable.add(PointTrace(loc.latitude, loc.longitude))
+                    _parcours.postValue(_parcoursMutable.toList())
+                }
                 dernierLoc?.let { prev ->
-                    _distanceTotale.postValue((_distanceTotale.value ?: 0.0) + loc.distanceTo(prev))
+                    val d = distanceAccumulee + loc.distanceTo(prev)
+                    distanceAccumulee = d
+                    _distanceTotale.postValue(d)
                 }
                 dernierLoc = loc
             }
@@ -75,8 +80,9 @@ class LocationTracker(private val context: Context) {
     }
 
     fun demarrerParcours() {
-        _parcoursMutable.clear()
+        synchronized(_parcoursMutable) { _parcoursMutable.clear() }
         _parcours.postValue(emptyList())
+        distanceAccumulee = 0.0
         _distanceTotale.postValue(0.0)
         dernierLoc = null
         _estEnCours.postValue(true)
@@ -87,16 +93,19 @@ class LocationTracker(private val context: Context) {
     }
 
     fun reinitialiser() {
-        _parcoursMutable.clear()
+        synchronized(_parcoursMutable) { _parcoursMutable.clear() }
         _parcours.postValue(emptyList())
+        distanceAccumulee = 0.0
         _distanceTotale.postValue(0.0)
         dernierLoc = null
         _estEnCours.postValue(false)
     }
 
     fun restaurerParcours(points: List<PointTrace>) {
-        _parcoursMutable.clear()
-        _parcoursMutable.addAll(points)
-        _parcours.postValue(_parcoursMutable.toList())
+        synchronized(_parcoursMutable) {
+            _parcoursMutable.clear()
+            _parcoursMutable.addAll(points)
+            _parcours.postValue(_parcoursMutable.toList())
+        }
     }
 }

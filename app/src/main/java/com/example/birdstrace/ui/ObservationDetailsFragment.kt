@@ -25,6 +25,7 @@ class ObservationDetailsFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
 
         val taxon         = runCatching { Taxon.valueOf(arguments?.getString("taxon") ?: "") }.getOrDefault(Taxon.OISEAU)
+        val groupe2Inpn   = arguments?.getString("groupe2Inpn") ?: ""
         val notes         = arguments?.getString("notes") ?: ""
         val sexe          = arguments?.getString("sexe") ?: ""
         val stadeVie      = arguments?.getString("stadeVie") ?: ""
@@ -56,10 +57,10 @@ class ObservationDetailsFragment : Fragment() {
         // Stade de vie → Stade phénologique pour les Plantes
         binding.tvStadeVieLabel.text = if (taxon == Taxon.PLANTE) "Stade phénologique" else "Stade de vie"
 
-        // Groupes de filtrage des nomenclatures selon le taxon
-        val groupes = groupesFiltrage(taxon)
+        // Groupes de filtrage + regno selon le taxon — même logique que l'app iOS
+        val (groupes, regno) = groupesEtRegno(taxon, groupe2Inpn)
 
-        setupSpinners(champs, groupes, sexe, stadeVie, techniqueObs, statutBio, etaBio,
+        setupSpinners(champs, groupes, regno, sexe, stadeVie, techniqueObs, statutBio, etaBio,
                       preuveExist, objDenbr, typDenbr, comportement, methDetermin)
 
         if (taxrefNonTrouve) {
@@ -96,21 +97,51 @@ class ObservationDetailsFragment : Fragment() {
                                  "PREUVE_EXIST","OBJ_DENBR","TYP_DENBR","OCC_COMPORTEMENT","METH_DETERMIN")
         Taxon.REPTILE   -> setOf("METH_OBS","SEXE","STADE_VIE","ETA_BIO",
                                  "PREUVE_EXIST","OBJ_DENBR","TYP_DENBR","METH_DETERMIN")
-        Taxon.PLANTE    -> setOf("METH_OBS","STADE_VIE",
+        Taxon.BATRACIEN -> setOf("METH_OBS","SEXE","STADE_VIE","ETA_BIO",
                                  "PREUVE_EXIST","OBJ_DENBR","TYP_DENBR","METH_DETERMIN")
+        Taxon.POISSON     -> setOf("METH_OBS","SEXE","STADE_VIE","ETA_BIO",
+                                   "PREUVE_EXIST","OBJ_DENBR","TYP_DENBR","METH_DETERMIN")
+        Taxon.INSECTE     -> setOf("METH_OBS","SEXE","STADE_VIE","ETA_BIO",
+                                   "PREUVE_EXIST","OBJ_DENBR","TYP_DENBR","METH_DETERMIN")
+        Taxon.FONGE       -> setOf("METH_OBS","PREUVE_EXIST","OBJ_DENBR","TYP_DENBR","METH_DETERMIN")
+        Taxon.INVERTEBRES -> setOf("METH_OBS","SEXE","STADE_VIE","ETA_BIO",
+                                   "PREUVE_EXIST","OBJ_DENBR","TYP_DENBR","METH_DETERMIN")
+        Taxon.PLANTE      -> setOf("METH_OBS","STADE_VIE",
+                                   "PREUVE_EXIST","OBJ_DENBR","TYP_DENBR","METH_DETERMIN")
     }
 
-    // Groupes de filtrage des nomenclatures par taxon
-    private fun groupesFiltrage(taxon: Taxon): Set<String> = when (taxon) {
-        Taxon.PLANTE    -> NomenclatureCache.groupesBotaniquesConnus()
-        Taxon.MAMMIFERE -> setOf("Mammifères")
-        Taxon.REPTILE   -> setOf("Reptiles")
-        else            -> setOf("Oiseaux")
+    // Groupes de filtrage + regno par taxon — même logique que l'app iOS.
+    // Pour Plantes : union des groupes botaniques présents dans le cache TaxRef.
+    // Pour les autres : groupe exact depuis les arguments (ou fallback).
+    private fun groupesEtRegno(taxon: Taxon, groupe2Inpn: String): Pair<Set<String>, String> = when (taxon) {
+        Taxon.PLANTE ->
+            Pair(NomenclatureCache.groupesBotaniquesConnus(), "Plantae")
+        Taxon.FONGE ->
+            Pair(NomenclatureCache.GROUPES_FONGE, "Fungi")
+        Taxon.INVERTEBRES ->
+            // Pas de group2 dédié : on cible le règne Animalia avec un groupe fictif
+            // pour que filtrerPourGroupes inclue les entrées "Animalia, all"
+            Pair(setOf("Animalia"), "Animalia")
+        else -> {
+            val g = groupe2Inpn.ifEmpty {
+                when (taxon) {
+                    Taxon.OISEAU    -> "Oiseaux"
+                    Taxon.MAMMIFERE -> "Mammifères"
+                    Taxon.REPTILE   -> "Reptiles"
+                    Taxon.BATRACIEN -> "Amphibiens"
+                    Taxon.POISSON   -> "Poissons"
+                    Taxon.INSECTE   -> "Insectes"
+                    else            -> ""
+                }
+            }
+            Pair(setOf(g), NomenclatureCache.regno(pourGroupe = g))
+        }
     }
 
     private fun setupSpinners(
         champs: Set<String>,
         groupes: Set<String>,
+        regno: String,
         sexe: String, stadeVie: String, techniqueObs: String,
         statutBio: String, etaBio: String, preuveExist: String,
         objDenbr: String, typDenbr: String, comportement: String, methDetermin: String
@@ -120,7 +151,7 @@ class ObservationDetailsFragment : Fragment() {
         fun sc(type: String, current: String,
                fallbackLabels: List<String>, fallbackCodes: List<String>): Unit {
             if (useCache) {
-                val valeurs = NomenclatureCache.filtrerPourGroupes(type, groupes)
+                val valeurs = NomenclatureCache.filtrerPourGroupes(type, groupes, regno)
                 if (valeurs.isNotEmpty()) {
                     val labels = listOf("Non renseigné") + valeurs.map { it.label }
                     val codes  = listOf("") + valeurs.map { it.id.toString() }

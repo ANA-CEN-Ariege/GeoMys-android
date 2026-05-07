@@ -2,6 +2,7 @@ package com.example.birdstrace
 
 import com.example.birdstrace.model.Taxon
 import com.example.birdstrace.network.TaxRefStatut
+import com.example.birdstrace.store.NomenclatureCache
 import com.example.birdstrace.store.TaxRefCache
 import com.example.birdstrace.store.TaxRefEntry
 
@@ -519,55 +520,122 @@ object TaxRefLocal {
     fun getSuggestions(taxon: Taxon?): List<String> = when (taxon) {
         Taxon.MAMMIFERE -> mammiferesSuggestions
         Taxon.REPTILE   -> reptilesSuggestions
+        Taxon.BATRACIEN -> batraciensSuggestions
         else            -> suggestions
     }
 
     fun getSuggestionsAutocomplete(taxon: Taxon?, scientifique: Boolean): List<String> {
-        val animalGroups = setOf("Oiseaux", "Mammifères", "Reptiles")
+        val groupes2 = TaxRefCache.tousLesGroupes()
+        val groupes1 = TaxRefCache.tousLesGroupes1()
+        val regnes   = TaxRefCache.tousLesRegnes()
 
-        // Pour Plantes : utiliser uniquement le cache (groupes non-animaux)
-        if (taxon == Taxon.PLANTE) {
-            val groupes = TaxRefCache.tousLesGroupes()
+        fun toList(parCdNom: Map<Int, TaxRefEntry>): List<String> = if (scientifique)
+            parCdNom.values.map { it.sciNom }.filter { it.isNotEmpty() }.distinct().sorted()
+        else
+            parCdNom.values.mapNotNull { it.vernNom }.filter { it.isNotEmpty() }.distinct().sorted()
+
+        fun filtrerParGroup2(ensemble: Set<String>): List<String> {
             val parCdNom = mutableMapOf<Int, TaxRefEntry>()
             for ((_, entry) in TaxRefCache.toutesLesEntrees()) {
-                val gr = groupes[entry.cdNom.toString()]
-                if (gr != null && gr !in animalGroups) parCdNom[entry.cdNom] = entry
+                val g2 = groupes2[entry.cdNom.toString()]
+                if (g2 != null && g2 in ensemble) parCdNom[entry.cdNom] = entry
             }
-            return if (scientifique)
-                parCdNom.values.map { it.sciNom }.filter { it.isNotEmpty() }.distinct().sorted()
-            else
-                parCdNom.values.mapNotNull { it.vernNom }.filter { it.isNotEmpty() }.distinct().sorted()
+            return toList(parCdNom)
         }
 
-        val groupeCible = when (taxon) {
-            Taxon.MAMMIFERE -> "Mammifères"
-            Taxon.REPTILE   -> "Reptiles"
-            else            -> "Oiseaux"
+        if (groupes2.isEmpty()) {
+            // Fallback données embarquées pour les groupes de base
+            return if (scientifique) {
+                getSuggestions(taxon).mapNotNull { nom ->
+                    noms[TaxRefCache.normaliser(nom)]?.let { sciNoms[it] }
+                }.distinct().sorted()
+            } else {
+                getSuggestions(taxon)
+            }
         }
-        // Cache GeoNature en premier : déduplication par cdNom, filtré par groupe
-        val groupes = TaxRefCache.tousLesGroupes()
-        if (groupes.isNotEmpty()) {
-            val parCdNom = mutableMapOf<Int, TaxRefEntry>()
-            for ((_, entry) in TaxRefCache.toutesLesEntrees()) {
-                if (groupes[entry.cdNom.toString()] == groupeCible) {
-                    parCdNom[entry.cdNom] = entry
+
+        return when (taxon) {
+            // Flore : group1_inpn IN ('Phanérogames', 'Ptéridophytes', 'Bryophytes')
+            Taxon.PLANTE -> {
+                val groupes1Flore = NomenclatureCache.GROUPES1_FLORE
+                if (groupes1.isNotEmpty()) {
+                    val parCdNom = mutableMapOf<Int, TaxRefEntry>()
+                    for ((_, entry) in TaxRefCache.toutesLesEntrees()) {
+                        if (groupes1[entry.cdNom.toString()] in groupes1Flore) parCdNom[entry.cdNom] = entry
+                    }
+                    if (parCdNom.isNotEmpty()) return toList(parCdNom)
                 }
+                filtrerParGroup2(NomenclatureCache.groupesBotaniquesConnus())
             }
-            if (parCdNom.isNotEmpty()) {
-                return if (scientifique) {
-                    parCdNom.values.map { it.sciNom }.filter { it.isNotEmpty() }.distinct().sorted()
+
+            // Insectes : group2_inpn = 'Insectes'
+            Taxon.INSECTE -> filtrerParGroup2(setOf("Insectes"))
+
+            // Fonge : règne = 'Fungi'
+            Taxon.FONGE -> {
+                if (regnes.isNotEmpty()) {
+                    val parCdNom = mutableMapOf<Int, TaxRefEntry>()
+                    for ((_, entry) in TaxRefCache.toutesLesEntrees()) {
+                        if (regnes[entry.cdNom.toString()] == "Fungi") parCdNom[entry.cdNom] = entry
+                    }
+                    if (parCdNom.isNotEmpty()) return toList(parCdNom)
+                }
+                filtrerParGroup2(NomenclatureCache.GROUPES_FONGE)
+            }
+
+            // Poissons : group2_inpn = 'Poissons' (priorité), fallback group1 ou ensemble v16/v17
+            Taxon.POISSON -> {
+                val parG2 = filtrerParGroup2(setOf("Poissons"))
+                if (parG2.isNotEmpty()) return parG2
+                if (groupes1.isNotEmpty()) {
+                    val parCdNom = mutableMapOf<Int, TaxRefEntry>()
+                    for ((_, entry) in TaxRefCache.toutesLesEntrees()) {
+                        if (groupes1[entry.cdNom.toString()] == "Poissons") parCdNom[entry.cdNom] = entry
+                    }
+                    if (parCdNom.isNotEmpty()) return toList(parCdNom)
+                }
+                filtrerParGroup2(NomenclatureCache.GROUP2_POISSONS)
+            }
+
+            // Invertébrés : règne = 'Animalia' AND group2 NOT IN vertébrés + insectes + poissons
+            Taxon.INVERTEBRES -> {
+                val exclusG2 = setOf("Oiseaux", "Mammifères", "Reptiles", "Amphibiens", "Insectes", "Poissons")
+                val parCdNom = mutableMapOf<Int, TaxRefEntry>()
+                if (regnes.isNotEmpty()) {
+                    for ((_, entry) in TaxRefCache.toutesLesEntrees()) {
+                        val cdStr = entry.cdNom.toString()
+                        val g2 = groupes2[cdStr] ?: ""
+                        val r  = regnes[cdStr] ?: ""
+                        if (r == "Animalia" && g2 !in exclusG2) parCdNom[entry.cdNom] = entry
+                    }
                 } else {
-                    parCdNom.values.mapNotNull { it.vernNom }.filter { it.isNotEmpty() }.distinct().sorted()
+                    val exclusFallback = exclusG2 + NomenclatureCache.GROUP2_POISSONS +
+                        NomenclatureCache.GROUPES_BOTANIQUES + NomenclatureCache.GROUPES_FONGE
+                    for ((_, entry) in TaxRefCache.toutesLesEntrees()) {
+                        val g2 = groupes2[entry.cdNom.toString()] ?: continue
+                        if (g2 !in exclusFallback) parCdNom[entry.cdNom] = entry
+                    }
+                }
+                toList(parCdNom)
+            }
+
+            else -> {
+                val groupeCible = when (taxon) {
+                    Taxon.MAMMIFERE -> "Mammifères"
+                    Taxon.REPTILE   -> "Reptiles"
+                    Taxon.BATRACIEN -> "Amphibiens"
+                    else            -> "Oiseaux"
+                }
+                val res = filtrerParGroup2(setOf(groupeCible))
+                if (res.isNotEmpty()) res
+                else if (scientifique) {
+                    getSuggestions(taxon).mapNotNull { nom ->
+                        noms[TaxRefCache.normaliser(nom)]?.let { sciNoms[it] }
+                    }.distinct().sorted()
+                } else {
+                    getSuggestions(taxon)
                 }
             }
-        }
-        // Fallback : données embarquées TaxRefLocal
-        return if (scientifique) {
-            getSuggestions(taxon).mapNotNull { nom ->
-                noms[TaxRefCache.normaliser(nom)]?.let { sciNoms[it] }
-            }.distinct().sorted()
-        } else {
-            getSuggestions(taxon)
         }
     }
 
@@ -649,6 +717,22 @@ object TaxRefLocal {
         "Tarente de Mauritanie",
         "Tortue de Hermann", "Tortue des steppes",
         "Vipère aspic", "Vipère d'Orsini", "Vipère péliade", "Vipère de Seoane"
+    )
+
+    val batraciensSuggestions: List<String> = listOf(
+        "Alyte accoucheur", "Alyte ibérique",
+        "Crapaud calamite", "Crapaud commun", "Crapaud épineux", "Crapaud vert",
+        "Discoglosse peint", "Discoglosse sarde",
+        "Grenouille agile", "Grenouille de Berger", "Grenouille de Lessona",
+        "Grenouille des champs", "Grenouille du Péloponnèse", "Grenouille ibérique",
+        "Grenouille rieuse", "Grenouille rousse", "Grenouille verte",
+        "Pélobate cultripède", "Pélobate brun",
+        "Pélodyte ponctué",
+        "Rainette de Doumer", "Rainette italienne", "Rainette méridionale", "Rainette verte",
+        "Salamandre de Corse", "Salamandre de Lanza", "Salamandre tachetée",
+        "Sonneur à ventre jaune", "Sonneur à ventre de feu",
+        "Triton alpestre", "Triton crêté", "Triton de Blasius",
+        "Triton marbré", "Triton palmé", "Triton ponctué"
     )
 
     fun rechercher(nom: String): TaxRefStatut {

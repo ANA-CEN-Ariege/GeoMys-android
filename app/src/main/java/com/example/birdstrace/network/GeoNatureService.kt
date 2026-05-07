@@ -359,10 +359,15 @@ object GeoNatureService {
         val pageSize = 1000
         val entrees = mutableMapOf<String, TaxRefEntry>()
         val groupeMap = mutableMapOf<Int, String>()
+        val groupe1Map = mutableMapOf<Int, String>()
+        val regneMap = mutableMapOf<Int, String>()
         val cdNomsOiseaux    = mutableSetOf<Int>()
         val cdNomsMammiferes = mutableSetOf<Int>()
         val cdNomsReptiles   = mutableSetOf<Int>()
-        val cdNomsPlantes    = mutableSetOf<Int>()
+        val cdNomsBatraciens = mutableSetOf<Int>()
+        val cdNomsPoissons   = mutableSetOf<Int>()
+        val cdNomsInsectes   = mutableSetOf<Int>()
+        val comptesTousGroupes = mutableMapOf<String, Int>()
         var totalRecu = 0
         var pagesRecues = 0
 
@@ -406,6 +411,8 @@ object GeoNatureService {
                     val lbNom = item.optString("lb_nom", "").takeIf { it.isNotEmpty() } ?: continue
                     val nomVernRaw = if (item.isNull("nom_vern")) "" else item.optString("nom_vern", "")
                     val groupe = item.optString("group2_inpn", "")
+                    val groupe1 = item.optString("group1_inpn", "")
+                    val regne = item.optString("regne", "")
 
                     for (partie in nomVernRaw.split(",")) {
                         val nomNettoye = partie.trim()
@@ -416,12 +423,20 @@ object GeoNatureService {
                     val cleSci = TaxRefCache.normaliser(lbNom)
                     if (cleSci.isNotEmpty()) entrees[cleSci] = TaxRefEntry(cdNom, lbNom, nomVernRaw.split(",").firstOrNull()?.trim())
 
-                    if (groupe.isNotEmpty()) groupeMap[cdNom] = groupe
+                    if (groupe.isNotEmpty()) {
+                        groupeMap[cdNom] = groupe
+                        comptesTousGroupes[groupe] = (comptesTousGroupes[groupe] ?: 0) + 1
+                    }
+                    if (groupe1.isNotEmpty()) groupe1Map[cdNom] = groupe1
+                    if (regne.isNotEmpty()) regneMap[cdNom] = regne
                     when (groupe) {
                         "Oiseaux"    -> cdNomsOiseaux.add(cdNom)
                         "Mammifères" -> cdNomsMammiferes.add(cdNom)
                         "Reptiles"   -> cdNomsReptiles.add(cdNom)
-                        else         -> if (groupe.isNotEmpty()) cdNomsPlantes.add(cdNom)
+                        "Amphibiens" -> cdNomsBatraciens.add(cdNom)
+                        "Poissons"   -> cdNomsPoissons.add(cdNom)
+                        "Insectes"   -> cdNomsInsectes.add(cdNom)
+                        else         -> Unit
                     }
                 }
 
@@ -436,21 +451,32 @@ object GeoNatureService {
         if (pagesRecues == 0) return@withContext Pair(0, "Aucun résultat — la liste $listeId est peut-être vide ou inexistante.")
         if (entrees.isNotEmpty()) TaxRefCache.ajouter(entrees)
         if (groupeMap.isNotEmpty()) TaxRefCache.ajouterGroupes(groupeMap)
+        if (groupe1Map.isNotEmpty() || regneMap.isNotEmpty()) TaxRefCache.ajouterGroupes1etRegnes(groupe1Map, regneMap)
         val nbO = cdNomsOiseaux.size
         val nbM = cdNomsMammiferes.size
         val nbR = cdNomsReptiles.size
-        val nbP = cdNomsPlantes.size
+        val nbB = cdNomsBatraciens.size
+        val nbPo = cdNomsPoissons.size
+        val nbI  = cdNomsInsectes.size
+        // Stocker les comptes par groupe — clé = group2_inpn exact
         val comptes = TaxRefCache.comptesGroupes.toMutableMap()
-        if (nbO > 0) comptes["Oiseaux"]    = nbO
-        if (nbM > 0) comptes["Mammifères"] = nbM
-        if (nbR > 0) comptes["Reptiles"]   = nbR
-        if (nbP > 0) comptes["Plantes"]    = nbP
+        for ((k, v) in comptesTousGroupes) if (v > 0) comptes[k] = v
         TaxRefCache.comptesGroupes = comptes
         verifierVersionTaxRef(config)?.let { TaxRefCache.versionSauvegardee = it }
+        // Fonge : règne = 'Fungi' ; Invertébrés : règne = 'Animalia' hors vertébrés+insectes+poissons
+        val nbCh  = regneMap.values.count { it == "Fungi" }
+        val nbInv = maxOf(0, regneMap.values.count { it == "Animalia" } - nbO - nbM - nbR - nbB - nbPo - nbI)
+        // Flore : group1_inpn IN ('Phanérogames', 'Ptéridophytes', 'Bryophytes')
+        val nbP = groupe1Map.values.count { it in NomenclatureCache.GROUPES1_FLORE }
         val msg = buildString {
             append("${entrees.size} taxons indexés — $nbO oiseaux")
             if (nbM > 0) append(", $nbM mammifères")
             if (nbR > 0) append(", $nbR reptiles")
+            if (nbB > 0) append(", $nbB batraciens")
+            if (nbPo > 0) append(", $nbPo poissons")
+            if (nbI  > 0) append(", $nbI insectes")
+            if (nbCh > 0) append(", $nbCh fonge")
+            if (nbInv > 0) append(", $nbInv invertébrés")
             if (nbP > 0) append(", $nbP plantes")
         }
         Pair(entrees.size, msg)
@@ -489,7 +515,7 @@ object GeoNatureService {
         val result = mutableListOf<ObsExplorer>()
         val cdNomsCache = TaxRefCache.tousLesCdNoms()
         val groupeParCdNom = TaxRefCache.tousLesGroupes()
-        val groupesSupports = setOf("Oiseaux", "Mammifères", "Reptiles")
+        val regneParCdNom = TaxRefCache.tousLesRegnes()
         try {
             val root = JSONObject(text)
             val array: JSONArray = root.optJSONArray("features")
@@ -521,21 +547,31 @@ object GeoNatureService {
                 }
                 val taxon: Taxon
                 if (group.isNotEmpty()) {
-                    if (group !in groupesSupports) continue
-                    taxon = when {
-                        group.contains("Mammif", ignoreCase = true) -> Taxon.MAMMIFERE
-                        group.contains("Reptile", ignoreCase = true) -> Taxon.REPTILE
-                        else -> Taxon.OISEAU
+                    taxon = when (group) {
+                        "Oiseaux"    -> Taxon.OISEAU
+                        "Mammifères" -> Taxon.MAMMIFERE
+                        "Reptiles"   -> Taxon.REPTILE
+                        "Amphibiens" -> Taxon.BATRACIEN
+                        "Poissons"   -> Taxon.POISSON
+                        "Insectes"   -> Taxon.INSECTE
+                        else -> {
+                            val cdNomProp = props.optInt("cd_nom", -1)
+                            if (cdNomProp > 0 && regneParCdNom[cdNomProp.toString()] == "Fungi")
+                                Taxon.FONGE else Taxon.INVERTEBRES
+                        }
                     }
                 } else {
                     val cdNom = props.optInt("cd_nom", -1).takeIf { it > 0 } ?: continue
                     val cachedGroupe = groupeParCdNom[cdNom.toString()]
                     if (cachedGroupe != null) {
-                        if (cachedGroupe !in groupesSupports) continue
-                        taxon = when {
-                            cachedGroupe.contains("Mammif", ignoreCase = true) -> Taxon.MAMMIFERE
-                            cachedGroupe.contains("Reptile", ignoreCase = true) -> Taxon.REPTILE
-                            else -> Taxon.OISEAU
+                        taxon = when (cachedGroupe) {
+                            "Oiseaux"    -> Taxon.OISEAU
+                            "Mammifères" -> Taxon.MAMMIFERE
+                            "Reptiles"   -> Taxon.REPTILE
+                            "Amphibiens" -> Taxon.BATRACIEN
+                            "Poissons"   -> Taxon.POISSON
+                            "Insectes"   -> Taxon.INSECTE
+                            else -> if (regneParCdNom[cdNom.toString()] == "Fungi") Taxon.FONGE else Taxon.INVERTEBRES
                         }
                     } else {
                         if (cdNomsCache.isNotEmpty() && cdNom !in cdNomsCache) continue
@@ -620,10 +656,14 @@ object GeoNatureService {
 
                 for (i in 0 until array.length()) {
                     val typeObj = array.getJSONObject(i)
-                    val mnem = typeObj.optString("mnemonique", "")
+                    // GeoNature peut utiliser "mnemonique" ou "mnemonic"
+                    val mnem = typeObj.optString("mnemonique", "").ifEmpty { typeObj.optString("mnemonic", "") }
                     if (mnem !in typesVoulus) continue
 
-                    val valuesArray = typeObj.optJSONArray("values") ?: continue
+                    // GeoNature retourne "nomenclatures" (pas "values")
+                    val valuesArray = typeObj.optJSONArray("nomenclatures")
+                        ?: typeObj.optJSONArray("values")
+                        ?: continue
                     val valeurs = mutableListOf<NomValeur>()
 
                     for (j in 0 until valuesArray.length()) {
@@ -637,8 +677,10 @@ object GeoNatureService {
                         if (taxrefArray != null) {
                             for (k in 0 until taxrefArray.length()) {
                                 val r = taxrefArray.getJSONObject(k)
-                                val regne = r.optString("regne", r.optString("kingdom", ""))
+                                val regne = r.optString("regne", "")
                                 val group2 = r.optString("group2_inpn", "")
+                                // Ignorer les entrées vides (comme iOS : guard !regno.isEmpty || !group.isEmpty)
+                                if (regne.isEmpty() && group2.isEmpty()) continue
                                 restrictions.add(TaxrefRestriction(regne, group2))
                             }
                         }

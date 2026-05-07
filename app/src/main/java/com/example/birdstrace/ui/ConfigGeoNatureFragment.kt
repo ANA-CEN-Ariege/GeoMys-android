@@ -242,7 +242,19 @@ class ConfigGeoNatureFragment : Fragment() {
                 (comptes["Oiseaux"] ?: 0).let { if (it > 0) append(" · $it oiseaux") }
                 (comptes["Mammifères"] ?: 0).let { if (it > 0) append(" · $it mammifères") }
                 (comptes["Reptiles"] ?: 0).let { if (it > 0) append(" · $it reptiles") }
-                (comptes["Plantes"] ?: 0).let { if (it > 0) append(" · $it plantes") }
+                (comptes["Amphibiens"] ?: 0).let { if (it > 0) append(" · $it batraciens") }
+                (comptes["Poissons"] ?: 0).let { if (it > 0) append(" · $it poissons") }
+                (comptes["Insectes"] ?: 0).let { if (it > 0) append(" · $it insectes") }
+                val regnes = TaxRefCache.tousLesRegnes()
+                val nbFonge = regnes.values.count { it == "Fungi" }
+                if (nbFonge > 0) append(" · $nbFonge fonge")
+                val nbInv = maxOf(0, regnes.values.count { it == "Animalia" } -
+                    (comptes["Oiseaux"] ?: 0) - (comptes["Mammifères"] ?: 0) -
+                    (comptes["Reptiles"] ?: 0) - (comptes["Amphibiens"] ?: 0) -
+                    (comptes["Poissons"] ?: 0) - (comptes["Insectes"] ?: 0))
+                if (nbInv > 0) append(" · $nbInv invertébrés")
+                val nbPlantes = TaxRefCache.tousLesGroupes1().values.count { it in NomenclatureCache.GROUPES1_FLORE }
+                if (nbPlantes > 0) append(" · $nbPlantes plantes")
             }
             else -> "$count taxons en cache"
         }

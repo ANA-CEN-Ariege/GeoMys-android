@@ -43,7 +43,10 @@ class ObservationsFragment : Fragment() {
             },
             onRepositionner = { obs ->
                 findNavController().navigateUp()
-                // Signal to TraceFragment to enter reposition mode
+            },
+            onEditer = { obs ->
+                val bundle = Bundle().apply { putString("obsId", obs.id) }
+                findNavController().navigate(R.id.action_observations_to_saisie, bundle)
             }
         )
 
@@ -103,7 +106,8 @@ class ObservationsFragment : Fragment() {
 
 class ObservationAdapter(
     private val onDelete: (Observation) -> Unit,
-    private val onRepositionner: (Observation) -> Unit
+    private val onRepositionner: (Observation) -> Unit,
+    private val onEditer: (Observation) -> Unit = {}
 ) : RecyclerView.Adapter<ObservationAdapter.ViewHolder>() {
     private var items: List<Observation> = emptyList()
     private val fmt = SimpleDateFormat("dd/MM HH:mm", Locale.getDefault())
@@ -130,6 +134,7 @@ class ObservationAdapter(
             tvNombre.text = "×${obs.nombre}"
             tvNotes.visibility = if (obs.notes.isNotEmpty()) View.VISIBLE else View.GONE
             tvNotes.text = obs.notes
+            btnModifier.setOnClickListener { onEditer(obs) }
             btnSupprimer.setOnClickListener { onDelete(obs) }
             val ctx = holder.itemView.context
             when (obs.taxon ?: Taxon.OISEAU) {
@@ -144,6 +149,26 @@ class ObservationAdapter(
                 Taxon.REPTILE -> {
                     ivTaxonIcon.setImageResource(R.drawable.ic_reptile_small)
                     ivTaxonIcon.imageTintList = ColorStateList.valueOf(ContextCompat.getColor(ctx, R.color.colorSecondary))
+                }
+                Taxon.BATRACIEN -> {
+                    ivTaxonIcon.setImageResource(R.drawable.ic_frog_small)
+                    ivTaxonIcon.imageTintList = ColorStateList.valueOf(ContextCompat.getColor(ctx, R.color.blue_batracien))
+                }
+                Taxon.POISSON -> {
+                    ivTaxonIcon.setImageResource(R.drawable.ic_fish_small)
+                    ivTaxonIcon.imageTintList = ColorStateList.valueOf(ContextCompat.getColor(ctx, R.color.blue_poisson))
+                }
+                Taxon.INSECTE -> {
+                    ivTaxonIcon.setImageResource(R.drawable.ic_insect_small)
+                    ivTaxonIcon.imageTintList = ColorStateList.valueOf(ContextCompat.getColor(ctx, R.color.amber_insecte))
+                }
+                Taxon.FONGE -> {
+                    ivTaxonIcon.setImageResource(R.drawable.ic_mushroom_small)
+                    ivTaxonIcon.imageTintList = ColorStateList.valueOf(ContextCompat.getColor(ctx, R.color.brown_fonge))
+                }
+                Taxon.INVERTEBRES -> {
+                    ivTaxonIcon.setImageResource(R.drawable.ic_invertebrate_small)
+                    ivTaxonIcon.imageTintList = ColorStateList.valueOf(ContextCompat.getColor(ctx, R.color.purple_invertebres))
                 }
                 Taxon.PLANTE -> {
                     ivTaxonIcon.setImageResource(R.drawable.ic_leaf_small)

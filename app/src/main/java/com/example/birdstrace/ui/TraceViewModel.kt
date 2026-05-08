@@ -43,6 +43,16 @@ class TraceViewModel(application: Application) : AndroidViewModel(application) {
         sauvegarder()
     }
 
+    fun modifierObservation(obs: Observation) {
+        val list = _observations.value ?: return
+        val idx = list.indexOfFirst { it.id == obs.id }
+        if (idx >= 0) {
+            list[idx] = obs
+            _observations.value = list
+            sauvegarder()
+        }
+    }
+
     fun supprimerObservation(id: String) {
         val list = _observations.value ?: return
         list.removeAll { it.id == id }

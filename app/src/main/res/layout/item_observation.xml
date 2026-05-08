@@ -90,6 +90,15 @@
     </LinearLayout>
 
     <ImageButton
+        android:id="@+id/btn_modifier"
+        android:layout_width="36dp"
+        android:layout_height="36dp"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:contentDescription="Modifier"
+        android:src="@drawable/ic_edit"
+        android:tint="?attr/colorPrimary" />
+
+    <ImageButton
         android:id="@+id/btn_supprimer"
         android:layout_width="36dp"
         android:layout_height="36dp"

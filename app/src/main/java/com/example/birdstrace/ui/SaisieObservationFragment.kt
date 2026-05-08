@@ -1,8 +1,13 @@
 package com.example.birdstrace.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.content.res.ColorStateList
 import android.graphics.Color
 import android.os.Bundle
+import android.speech.RecognitionListener
+import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.LayoutInflater
@@ -11,6 +16,8 @@ import android.view.ViewGroup
 import android.widget.ArrayAdapter
 import android.widget.Filter
 import android.widget.TextView
+import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
@@ -30,9 +37,16 @@ import kotlinx.coroutines.*
 class SaisieObservationFragment : Fragment() {
     private var _binding: FragmentSaisieObservationBinding? = null
     private val binding get() = _binding!!
+
+    private var speechRecognizer: SpeechRecognizer? = null
+
+    private val micPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) demarrerEcoute() else Toast.makeText(requireContext(), "Permission micro refusée", Toast.LENGTH_SHORT).show()
+    }
     private val traceViewModel: TraceViewModel by activityViewModels()
     private lateinit var gnConfig: GeoNatureConfig
 
+    private var obsId: String? = null
     private var latitude = 0.0
     private var longitude = 0.0
     private var taxon: Taxon = Taxon.OISEAU
@@ -62,16 +76,48 @@ class SaisieObservationFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         gnConfig = GeoNatureConfig(requireContext())
-        latitude = arguments?.getDouble("latitude") ?: 0.0
-        longitude = arguments?.getDouble("longitude") ?: 0.0
+        obsId = arguments?.getString("obsId")
+
+        val obsExistante = obsId?.let { id ->
+            traceViewModel.observations.value?.find { it.id == id }
+        }
+
+        if (obsExistante != null) {
+            latitude = obsExistante.latitude
+            longitude = obsExistante.longitude
+            taxon = obsExistante.taxon ?: Taxon.OISEAU
+            nombre = obsExistante.nombre
+            notes = obsExistante.notes
+            sexe = obsExistante.sexe ?: ""
+            stadeVie = obsExistante.stadeVie ?: ""
+            techniqueObs = obsExistante.techniqueObs ?: ""
+            statutBio = obsExistante.statutBio ?: ""
+            etaBio = obsExistante.etaBio ?: ""
+            preuveExist = obsExistante.preuveExist ?: ""
+            objDenbr = obsExistante.objDenbr ?: ""
+            typDenbr = obsExistante.typDenbr ?: ""
+            comportement = obsExistante.comportement ?: ""
+            methDetermin = obsExistante.methDetermin ?: ""
+            determinateur = obsExistante.determinateur ?: ""
+            cdNomManuel = obsExistante.cdNom?.toString() ?: ""
+        } else {
+            latitude = arguments?.getDouble("latitude") ?: 0.0
+            longitude = arguments?.getDouble("longitude") ?: 0.0
+        }
 
         binding.tvCoordonnees.text = "%.5f, %.5f".format(latitude, longitude)
-        binding.tvNombre.text = "1 individu"
+        binding.tvNombre.text = if (nombre == 1) "1 individu" else "$nombre individus"
 
         setupTaxonSelector()
         setupAutocomplete()
         setupNombreControls()
         setupDetails()
+
+        if (obsExistante != null) {
+            binding.etEspece.setText(obsExistante.espece)
+            updateDetailsIndicator()
+            requireActivity().title = "Modifier l'observation"
+        }
 
         binding.btnAnnuler.setOnClickListener { findNavController().navigateUp() }
         binding.btnEnregistrer.setOnClickListener { enregistrer() }
@@ -79,17 +125,18 @@ class SaisieObservationFragment : Fragment() {
 
     private fun setupTaxonSelector() {
         updateTaxonUI()
-        binding.btnTaxonOiseau.setOnClickListener {
-            if (taxon != Taxon.OISEAU) { taxon = Taxon.OISEAU; onTaxonChanged() }
-        }
-        binding.btnTaxonMammifere.setOnClickListener {
-            if (taxon != Taxon.MAMMIFERE) { taxon = Taxon.MAMMIFERE; onTaxonChanged() }
-        }
-        binding.btnTaxonReptile.setOnClickListener {
-            if (taxon != Taxon.REPTILE) { taxon = Taxon.REPTILE; onTaxonChanged() }
-        }
-        binding.btnTaxonPlante.setOnClickListener {
-            if (taxon != Taxon.PLANTE) { taxon = Taxon.PLANTE; onTaxonChanged() }
+        listOf(
+            binding.btnTaxonOiseau     to Taxon.OISEAU,
+            binding.btnTaxonMammifere  to Taxon.MAMMIFERE,
+            binding.btnTaxonReptile    to Taxon.REPTILE,
+            binding.btnTaxonBatracien  to Taxon.BATRACIEN,
+            binding.btnTaxonPoisson    to Taxon.POISSON,
+            binding.btnTaxonInsecte    to Taxon.INSECTE,
+            binding.btnTaxonFonge      to Taxon.FONGE,
+            binding.btnTaxonInvertebres to Taxon.INVERTEBRES,
+            binding.btnTaxonPlante     to Taxon.PLANTE,
+        ).forEach { (btn, t) ->
+            btn.setOnClickListener { if (taxon != t) { taxon = t; onTaxonChanged() } }
         }
     }
 
@@ -106,42 +153,49 @@ class SaisieObservationFragment : Fragment() {
         val transparent = ColorStateList.valueOf(Color.TRANSPARENT)
         val white = ColorStateList.valueOf(Color.WHITE)
         val gray = ContextCompat.getColorStateList(requireContext(), android.R.color.darker_gray)!!
-        val oiseauColor  = ContextCompat.getColor(requireContext(), R.color.orange)
-        val mammiColor   = ContextCompat.getColor(requireContext(), R.color.brown)
-        val reptileColor = ContextCompat.getColor(requireContext(), R.color.colorSecondary)
-        val planteColor  = ContextCompat.getColor(requireContext(), R.color.teal)
 
-        listOf(binding.btnTaxonOiseau, binding.btnTaxonMammifere, binding.btnTaxonReptile, binding.btnTaxonPlante).forEach { btn ->
+        val couleurs = mapOf(
+            Taxon.OISEAU      to ContextCompat.getColor(requireContext(), R.color.orange),
+            Taxon.MAMMIFERE   to ContextCompat.getColor(requireContext(), R.color.brown),
+            Taxon.REPTILE     to ContextCompat.getColor(requireContext(), R.color.colorSecondary),
+            Taxon.BATRACIEN   to ContextCompat.getColor(requireContext(), R.color.blue_batracien),
+            Taxon.POISSON     to ContextCompat.getColor(requireContext(), R.color.blue_poisson),
+            Taxon.INSECTE     to ContextCompat.getColor(requireContext(), R.color.amber_insecte),
+            Taxon.FONGE       to ContextCompat.getColor(requireContext(), R.color.brown_fonge),
+            Taxon.INVERTEBRES to ContextCompat.getColor(requireContext(), R.color.purple_invertebres),
+            Taxon.PLANTE      to ContextCompat.getColor(requireContext(), R.color.teal),
+        )
+        val boutons = mapOf(
+            Taxon.OISEAU      to binding.btnTaxonOiseau,
+            Taxon.MAMMIFERE   to binding.btnTaxonMammifere,
+            Taxon.REPTILE     to binding.btnTaxonReptile,
+            Taxon.BATRACIEN   to binding.btnTaxonBatracien,
+            Taxon.POISSON     to binding.btnTaxonPoisson,
+            Taxon.INSECTE     to binding.btnTaxonInsecte,
+            Taxon.FONGE       to binding.btnTaxonFonge,
+            Taxon.INVERTEBRES to binding.btnTaxonInvertebres,
+            Taxon.PLANTE      to binding.btnTaxonPlante,
+        )
+        boutons.values.forEach { btn ->
             btn.backgroundTintList = transparent
             btn.setTextColor(gray)
             btn.iconTint = gray
         }
-        when (taxon) {
-            Taxon.OISEAU -> {
-                binding.btnTaxonOiseau.backgroundTintList = ColorStateList.valueOf(oiseauColor)
-                binding.btnTaxonOiseau.setTextColor(Color.WHITE)
-                binding.btnTaxonOiseau.iconTint = white
-            }
-            Taxon.MAMMIFERE -> {
-                binding.btnTaxonMammifere.backgroundTintList = ColorStateList.valueOf(mammiColor)
-                binding.btnTaxonMammifere.setTextColor(Color.WHITE)
-                binding.btnTaxonMammifere.iconTint = white
-            }
-            Taxon.REPTILE -> {
-                binding.btnTaxonReptile.backgroundTintList = ColorStateList.valueOf(reptileColor)
-                binding.btnTaxonReptile.setTextColor(Color.WHITE)
-                binding.btnTaxonReptile.iconTint = white
-            }
-            Taxon.PLANTE -> {
-                binding.btnTaxonPlante.backgroundTintList = ColorStateList.valueOf(planteColor)
-                binding.btnTaxonPlante.setTextColor(Color.WHITE)
-                binding.btnTaxonPlante.iconTint = white
-            }
+        boutons[taxon]?.let { btn ->
+            val color = couleurs[taxon] ?: return
+            btn.backgroundTintList = ColorStateList.valueOf(color)
+            btn.setTextColor(Color.WHITE)
+            btn.iconTint = white
         }
     }
 
     private fun refreshAutocompleteAdapter() {
-        binding.etEspece.setAdapter(accentInsensitiveAdapter(TaxRefLocal.getSuggestionsAutocomplete(taxon, rechercheNomSci)))
+        viewLifecycleOwner.lifecycleScope.launch {
+            val suggestions = withContext(Dispatchers.Default) {
+                TaxRefLocal.getSuggestionsAutocomplete(taxon, rechercheNomSci)
+            }
+            if (isAdded) binding.etEspece.setAdapter(accentInsensitiveAdapter(suggestions))
+        }
     }
 
     private fun updateEspeceHint() {
@@ -149,23 +203,29 @@ class SaisieObservationFragment : Fragment() {
         binding.tilEspece.placeholderText = if (rechercheNomSci) {
             "Nom scientifique (ex: Turdus merula, Rosa canina…)"
         } else when (taxon) {
-            Taxon.MAMMIFERE -> "Espèce observée (ex: Renard roux, Blaireau…)"
-            Taxon.REPTILE   -> "Espèce observée (ex: Lézard des murailles, Vipère aspic…)"
-            Taxon.PLANTE    -> "Espèce observée (ex: Chêne pédonculé, Genêt purgatif…)"
-            else            -> "Espèce observée (ex: Merle noir, Rouge-gorge…)"
+            Taxon.MAMMIFERE   -> "Espèce observée (ex: Renard roux, Blaireau…)"
+            Taxon.REPTILE     -> "Espèce observée (ex: Lézard des murailles, Vipère aspic…)"
+            Taxon.BATRACIEN   -> "Espèce observée (ex: Grenouille verte, Salamandre tachetée…)"
+            Taxon.POISSON     -> "Espèce observée (ex: Brochet, Truite fario…)"
+            Taxon.INSECTE     -> "Espèce observée (ex: Criquet mélodieux, Machaon…)"
+            Taxon.FONGE       -> "Espèce observée (ex: Cèpe de Bordeaux, Chanterelle…)"
+            Taxon.INVERTEBRES -> "Espèce observée (ex: Escargot de Bourgogne, Homard…)"
+            Taxon.PLANTE      -> "Espèce observée (ex: Chêne pédonculé, Genêt purgatif…)"
+            else              -> "Espèce observée (ex: Merle noir, Rouge-gorge…)"
         }
     }
 
     private fun accentInsensitiveAdapter(suggestions: List<String>): ArrayAdapter<String> {
-        val all = suggestions.toList()
-        return object : ArrayAdapter<String>(requireContext(), android.R.layout.simple_dropdown_item_1line, all.toMutableList()) {
+        // Pré-normaliser une seule fois — évite O(n) appels à normaliser() à chaque frappe
+        val normalized: List<Pair<String, String>> = suggestions.map { TaxRefCache.normaliser(it) to it }
+        return object : ArrayAdapter<String>(requireContext(), android.R.layout.simple_dropdown_item_1line, suggestions.toMutableList()) {
             override fun getFilter() = object : Filter() {
                 override fun performFiltering(constraint: CharSequence?): FilterResults {
                     val results = FilterResults()
-                    val filtered = if (constraint.isNullOrEmpty()) all
+                    val filtered: List<String> = if (constraint.isNullOrEmpty()) suggestions
                     else {
                         val query = TaxRefCache.normaliser(constraint.toString())
-                        all.filter { TaxRefCache.normaliser(it).contains(query) }
+                        normalized.mapNotNull { (key, display) -> if (key.contains(query)) display else null }
                     }
                     results.values = filtered
                     results.count = filtered.size
@@ -181,9 +241,71 @@ class SaisieObservationFragment : Fragment() {
         }
     }
 
+    private fun lancerDictee() {
+        if (!SpeechRecognizer.isRecognitionAvailable(requireContext())) {
+            Toast.makeText(requireContext(), "Reconnaissance vocale non disponible", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            return
+        }
+        demarrerEcoute()
+    }
+
+    private fun demarrerEcoute() {
+        speechRecognizer?.destroy()
+        speechRecognizer = SpeechRecognizer.createSpeechRecognizer(requireContext()).apply {
+            setRecognitionListener(object : RecognitionListener {
+                override fun onReadyForSpeech(params: Bundle?) {
+                    binding.tilEspece.setEndIconDrawable(R.drawable.ic_mic_active)
+                }
+                override fun onResults(results: Bundle?) {
+                    binding.tilEspece.setEndIconDrawable(R.drawable.ic_mic)
+                    val texte = results
+                        ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                        ?.firstOrNull() ?: return
+                    binding.etEspece.setText(texte)
+                    binding.etEspece.setSelection(texte.length)
+                }
+                override fun onError(error: Int) {
+                    binding.tilEspece.setEndIconDrawable(R.drawable.ic_mic)
+                    val msg = when (error) {
+                        SpeechRecognizer.ERROR_NO_MATCH      -> "Aucune correspondance — réessayez"
+                        SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "Aucune voix détectée"
+                        SpeechRecognizer.ERROR_NETWORK,
+                        SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "Erreur réseau — connexion requise"
+                        SpeechRecognizer.ERROR_AUDIO         -> "Erreur microphone"
+                        else -> "Erreur reconnaissance ($error)"
+                    }
+                    Toast.makeText(requireContext(), msg, Toast.LENGTH_SHORT).show()
+                }
+                override fun onBeginningOfSpeech() {}
+                override fun onRmsChanged(rmsdB: Float) {}
+                override fun onBufferReceived(buffer: ByteArray?) {}
+                override fun onEndOfSpeech() {}
+                override fun onPartialResults(partialResults: Bundle?) {
+                    val partiel = partialResults
+                        ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                        ?.firstOrNull() ?: return
+                    binding.etEspece.setText(partiel)
+                    binding.etEspece.setSelection(partiel.length)
+                }
+                override fun onEvent(eventType: Int, params: Bundle?) {}
+            })
+            startListening(android.content.Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_WEB_SEARCH)
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE, "fr-FR")
+                putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
+                putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+            })
+        }
+    }
+
     private fun setupAutocomplete() {
-        binding.etEspece.setAdapter(accentInsensitiveAdapter(TaxRefLocal.getSuggestionsAutocomplete(taxon, rechercheNomSci)))
         binding.etEspece.threshold = 1
+        refreshAutocompleteAdapter()
+        binding.tilEspece.setEndIconOnClickListener { lancerDictee() }
 
         binding.switchNomSci.setOnCheckedChangeListener { _, isChecked ->
             rechercheNomSci = isChecked
@@ -268,10 +390,15 @@ class SaisieObservationFragment : Fragment() {
             val cdNom = (taxRefStatut as? TaxRefStatut.Trouve)?.cdNom
             val groupe2Inpn = cdNom?.let { TaxRefCache.tousLesGroupes()[it.toString()] }
                 ?: when (taxon) {
-                    Taxon.MAMMIFERE -> "Mammifères"
-                    Taxon.REPTILE   -> "Reptiles"
-                    Taxon.PLANTE    -> null
-                    else            -> "Oiseaux"
+                    Taxon.MAMMIFERE   -> "Mammifères"
+                    Taxon.REPTILE     -> "Reptiles"
+                    Taxon.BATRACIEN   -> "Amphibiens"
+                    Taxon.POISSON     -> "Poissons"
+                    Taxon.INSECTE     -> "Insectes"
+                    Taxon.PLANTE,
+                    Taxon.FONGE,
+                    Taxon.INVERTEBRES -> null
+                    else              -> "Oiseaux"
                 }
             val bundle = Bundle().apply {
                 putString("taxon",         taxon.name)
@@ -331,33 +458,62 @@ class SaisieObservationFragment : Fragment() {
             is TaxRefStatut.Trouve -> Pair(s.cdNom, s.nomFrancais ?: s.nomScientifique)
             else -> Pair(cdNomManuel.trim().toIntOrNull(), especeText)
         }
-        val obs = Observation(
-            espece = if (nomAffiche.isEmpty()) "Espèce inconnue" else nomAffiche,
-            taxon = taxon,
-            cdNom = cdNomFinal,
-            latitude = latitude,
-            longitude = longitude,
-            notes = notes,
-            nombre = nombre,
-            sexe          = sexe.ifEmpty { null },
-            stadeVie      = stadeVie.ifEmpty { null },
-            techniqueObs  = techniqueObs.ifEmpty { null },
-            statutBio     = statutBio.ifEmpty { null },
-            etaBio        = etaBio.ifEmpty { null },
-            preuveExist   = preuveExist.ifEmpty { null },
-            objDenbr      = objDenbr.ifEmpty { null },
-            typDenbr      = typDenbr.ifEmpty { null },
-            comportement  = comportement.ifEmpty { null },
-            methDetermin  = methDetermin.ifEmpty { null },
-            determinateur = determinateur.ifEmpty { null }
-        )
-        traceViewModel.ajouterObservation(obs)
+        val nomFinal = if (nomAffiche.isEmpty()) "Espèce inconnue" else nomAffiche
+
+        val idExistant = obsId
+        val obsBase = idExistant?.let { id ->
+            traceViewModel.observations.value?.find { it.id == id }
+        }
+
+        if (obsBase != null) {
+            traceViewModel.modifierObservation(obsBase.copy(
+                espece        = nomFinal,
+                taxon         = taxon,
+                cdNom         = cdNomFinal,
+                notes         = notes,
+                nombre        = nombre,
+                sexe          = sexe.ifEmpty { null },
+                stadeVie      = stadeVie.ifEmpty { null },
+                techniqueObs  = techniqueObs.ifEmpty { null },
+                statutBio     = statutBio.ifEmpty { null },
+                etaBio        = etaBio.ifEmpty { null },
+                preuveExist   = preuveExist.ifEmpty { null },
+                objDenbr      = objDenbr.ifEmpty { null },
+                typDenbr      = typDenbr.ifEmpty { null },
+                comportement  = comportement.ifEmpty { null },
+                methDetermin  = methDetermin.ifEmpty { null },
+                determinateur = determinateur.ifEmpty { null }
+            ))
+        } else {
+            traceViewModel.ajouterObservation(Observation(
+                espece        = nomFinal,
+                taxon         = taxon,
+                cdNom         = cdNomFinal,
+                latitude      = latitude,
+                longitude     = longitude,
+                notes         = notes,
+                nombre        = nombre,
+                sexe          = sexe.ifEmpty { null },
+                stadeVie      = stadeVie.ifEmpty { null },
+                techniqueObs  = techniqueObs.ifEmpty { null },
+                statutBio     = statutBio.ifEmpty { null },
+                etaBio        = etaBio.ifEmpty { null },
+                preuveExist   = preuveExist.ifEmpty { null },
+                objDenbr      = objDenbr.ifEmpty { null },
+                typDenbr      = typDenbr.ifEmpty { null },
+                comportement  = comportement.ifEmpty { null },
+                methDetermin  = methDetermin.ifEmpty { null },
+                determinateur = determinateur.ifEmpty { null }
+            ))
+        }
         findNavController().navigateUp()
     }
 
     override fun onDestroyView() {
         super.onDestroyView()
         taxRefJob?.cancel()
+        speechRecognizer?.destroy()
+        speechRecognizer = null
         _binding = null
     }
 

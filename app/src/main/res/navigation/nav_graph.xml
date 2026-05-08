@@ -51,7 +51,11 @@
     <fragment
         android:id="@+id/observationsFragment"
         android:name="com.example.birdstrace.ui.ObservationsFragment"
-        android:label="Observations" />
+        android:label="Observations">
+        <action
+            android:id="@+id/action_observations_to_saisie"
+            app:destination="@id/saisieObservationFragment" />
+    </fragment>
 
     <fragment
         android:id="@+id/sortiesFragment"

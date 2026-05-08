@@ -18,65 +18,166 @@
             android:textSize="20sp"
             android:textStyle="bold" />
 
-        <!-- Sélecteur de taxon -->
-        <LinearLayout
+        <!-- Sélecteur de taxon — ligne défilante -->
+        <HorizontalScrollView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginBottom="12dp"
-            android:orientation="horizontal">
+            android:scrollbars="none">
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btn_taxon_oiseau"
-                style="@style/Widget.MaterialComponents.Button.TextButton"
-                android:layout_width="0dp"
+            <LinearLayout
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="Oiseaux"
-                android:textSize="11sp"
-                app:icon="@drawable/ic_bird_small"
-                app:iconGravity="top"
-                app:iconSize="20dp"
-                app:cornerRadius="8dp" />
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingVertical="2dp">
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btn_taxon_mammifere"
-                style="@style/Widget.MaterialComponents.Button.TextButton"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="Mammifères"
-                android:textSize="11sp"
-                app:icon="@drawable/ic_paw_small"
-                app:iconGravity="top"
-                app:iconSize="20dp"
-                app:cornerRadius="8dp" />
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_taxon_oiseau"
+                    style="@style/Widget.MaterialComponents.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    android:paddingHorizontal="14dp"
+                    android:paddingVertical="10dp"
+                    android:text=""
+                    app:icon="@drawable/ic_bird_small"
+                    app:iconGravity="textStart"
+                    app:iconPadding="0dp"
+                    app:iconSize="24dp"
+                    app:cornerRadius="8dp" />
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btn_taxon_reptile"
-                style="@style/Widget.MaterialComponents.Button.TextButton"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="Reptiles"
-                android:textSize="11sp"
-                app:icon="@drawable/ic_reptile_small"
-                app:iconGravity="top"
-                app:iconSize="20dp"
-                app:cornerRadius="8dp" />
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_taxon_mammifere"
+                    style="@style/Widget.MaterialComponents.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    android:paddingHorizontal="14dp"
+                    android:paddingVertical="10dp"
+                    android:text=""
+                    app:icon="@drawable/ic_paw_small"
+                    app:iconGravity="textStart"
+                    app:iconPadding="0dp"
+                    app:iconSize="24dp"
+                    app:cornerRadius="8dp" />
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btn_taxon_plante"
-                style="@style/Widget.MaterialComponents.Button.TextButton"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="Plantes"
-                android:textSize="11sp"
-                app:icon="@drawable/ic_leaf_small"
-                app:iconGravity="top"
-                app:iconSize="20dp"
-                app:cornerRadius="8dp" />
-        </LinearLayout>
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_taxon_reptile"
+                    style="@style/Widget.MaterialComponents.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    android:paddingHorizontal="14dp"
+                    android:paddingVertical="10dp"
+                    android:text=""
+                    app:icon="@drawable/ic_reptile_small"
+                    app:iconGravity="textStart"
+                    app:iconPadding="0dp"
+                    app:iconSize="24dp"
+                    app:cornerRadius="8dp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_taxon_batracien"
+                    style="@style/Widget.MaterialComponents.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    android:paddingHorizontal="14dp"
+                    android:paddingVertical="10dp"
+                    android:text=""
+                    app:icon="@drawable/ic_frog_small"
+                    app:iconGravity="textStart"
+                    app:iconPadding="0dp"
+                    app:iconSize="24dp"
+                    app:cornerRadius="8dp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_taxon_poisson"
+                    style="@style/Widget.MaterialComponents.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    android:paddingHorizontal="14dp"
+                    android:paddingVertical="10dp"
+                    android:text=""
+                    app:icon="@drawable/ic_fish_small"
+                    app:iconGravity="textStart"
+                    app:iconPadding="0dp"
+                    app:iconSize="24dp"
+                    app:cornerRadius="8dp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_taxon_insecte"
+                    style="@style/Widget.MaterialComponents.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    android:paddingHorizontal="14dp"
+                    android:paddingVertical="10dp"
+                    android:text=""
+                    app:icon="@drawable/ic_insect_small"
+                    app:iconGravity="textStart"
+                    app:iconPadding="0dp"
+                    app:iconSize="24dp"
+                    app:cornerRadius="8dp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_taxon_fonge"
+                    style="@style/Widget.MaterialComponents.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    android:paddingHorizontal="14dp"
+                    android:paddingVertical="10dp"
+                    android:text=""
+                    app:icon="@drawable/ic_mushroom_small"
+                    app:iconGravity="textStart"
+                    app:iconPadding="0dp"
+                    app:iconSize="24dp"
+                    app:cornerRadius="8dp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_taxon_invertebres"
+                    style="@style/Widget.MaterialComponents.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    android:paddingHorizontal="14dp"
+                    android:paddingVertical="10dp"
+                    android:text=""
+                    app:icon="@drawable/ic_invertebrate_small"
+                    app:iconGravity="textStart"
+                    app:iconPadding="0dp"
+                    app:iconSize="24dp"
+                    app:cornerRadius="8dp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_taxon_plante"
+                    style="@style/Widget.MaterialComponents.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    android:paddingHorizontal="14dp"
+                    android:paddingVertical="10dp"
+                    android:text=""
+                    app:icon="@drawable/ic_leaf_small"
+                    app:iconGravity="textStart"
+                    app:iconPadding="0dp"
+                    app:iconSize="24dp"
+                    app:cornerRadius="8dp" />
+
+            </LinearLayout>
+        </HorizontalScrollView>
 
         <!-- Switch nom scientifique -->
         <com.google.android.material.switchmaterial.SwitchMaterial
@@ -91,7 +192,10 @@
         <com.google.android.material.textfield.TextInputLayout
             android:id="@+id/til_espece"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content">
+            android:layout_height="wrap_content"
+            app:endIconMode="custom"
+            app:endIconDrawable="@drawable/ic_mic"
+            app:endIconContentDescription="Dictée vocale">
 
             <AutoCompleteTextView
                 android:id="@+id/et_espece"

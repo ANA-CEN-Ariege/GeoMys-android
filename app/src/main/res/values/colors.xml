@@ -7,7 +7,12 @@
     <color name="colorOnSecondary">#FFFFFF</color>
     <color name="orange">#FF6D00</color>
     <color name="teal">#009688</color>
+    <color name="blue_batracien">#0288D1</color>
     <color name="brown">#795548</color>
+    <color name="blue_poisson">#0097A7</color>
+    <color name="amber_insecte">#F9A825</color>
+    <color name="brown_fonge">#6D4C41</color>
+    <color name="purple_invertebres">#7B1FA2</color>
     <color name="green_85">#D943A047</color>
     <color name="white_70">#B3FFFFFF</color>
     <color name="accueil_top">#14402E</color>

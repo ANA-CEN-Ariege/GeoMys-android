@@ -1,5 +1,8 @@
 <resources>
     <string name="app_name">GeoNat</string>
+    <string name="saisie_multi_taxons">Saisie multi-taxons</string>
+    <string name="saisie_mono_taxons">Saisie mono-taxons</string>
+    <string name="reprendre_saisie">Reprendre la saisie</string>
     <string name="nouvelle_sortie">Nouvelle sortie</string>
     <string name="reprendre_sortie">Reprendre la sortie</string>
     <string name="mes_sorties">Mes sorties</string>

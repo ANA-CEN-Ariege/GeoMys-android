@@ -168,14 +168,19 @@ class SortieDetailFragment : Fragment() {
         }
 
         val markerIcon = ContextCompat.getDrawable(requireContext(), R.drawable.ic_bird_marker)
-        for (groupe in grouperObservations(sortie.observations)) {
-            val pivot = groupe[0]
+        for (obs in sortie.observations) {
             val marker = Marker(binding.map).apply {
-                position = GeoPoint(pivot.latitude, pivot.longitude)
+                position = GeoPoint(obs.latitude, obs.longitude)
                 icon = markerIcon
+                title = obs.espece
+                val fmt = SimpleDateFormat("HH:mm", Locale.getDefault())
+                var sub = fmt.format(Date(obs.date))
+                if (obs.nombre > 1) sub += " · ${obs.nombre} ind."
+                if (obs.notes.isNotEmpty()) sub += " — ${obs.notes}"
+                snippet = sub
                 setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                setOnMarkerClickListener { _, _ ->
-                    montrerEspecesMarker(groupe)
+                setOnMarkerClickListener { m, _ ->
+                    m.showInfoWindow()
                     true
                 }
             }
@@ -200,50 +205,9 @@ class SortieDetailFragment : Fragment() {
         }
     }
 
-    private fun grouperObservations(observations: List<Observation>): List<List<Observation>> {
-        val restants = observations.toMutableList()
-        val groupes = mutableListOf<List<Observation>>()
-        while (restants.isNotEmpty()) {
-            val pivot = restants.removeAt(0)
-            val groupe = mutableListOf(pivot)
-            val it = restants.iterator()
-            while (it.hasNext()) {
-                val obs = it.next()
-                val dist = FloatArray(1)
-                android.location.Location.distanceBetween(
-                    pivot.latitude, pivot.longitude, obs.latitude, obs.longitude, dist
-                )
-                if (dist[0] <= 30f) { groupe.add(obs); it.remove() }
-            }
-            groupes.add(groupe)
-        }
-        return groupes
-    }
-
-    private fun montrerEspecesMarker(groupe: List<Observation>) {
-        val fmt = SimpleDateFormat("HH:mm", Locale.getDefault())
-        val agregees = groupe
-            .groupBy { it.espece }
-            .map { (espece, obs) ->
-                val total = obs.sumOf { it.nombre }
-                val heures = obs.map { fmt.format(Date(it.date)) }.distinct().joinToString(", ")
-                Triple(espece, total, heures)
-            }
-            .sortedBy { it.first }
-
-        val lignes = agregees.map { (espece, nombre, heures) ->
-            "$espece — $nombre ind. · $heures"
-        }.toTypedArray()
-
-        val titre = if (agregees.size == 1) agregees[0].first
-                    else "${agregees.size} espèces"
-
-        AlertDialog.Builder(requireContext())
-            .setTitle(titre)
-            .setItems(lignes, null)
-            .setPositiveButton("Fermer", null)
-            .show()
-    }
+    override fun onResume() { super.onResume(); binding.map.onResume() }
+    override fun onPause() { super.onPause(); binding.map.onPause() }
+    override fun onDestroyView() { super.onDestroyView(); _binding = null }
 
     private fun exporterGpx() {
         val gpxContent = genererGPX(sortie.observations, sortie.pointsParcours)
@@ -257,8 +221,4 @@ class SortieDetailFragment : Fragment() {
         }
         startActivity(Intent.createChooser(intent, "Exporter GPX"))
     }
-
-    override fun onResume() { super.onResume(); binding.map.onResume() }
-    override fun onPause() { super.onPause(); binding.map.onPause() }
-    override fun onDestroyView() { super.onDestroyView(); _binding = null }
 }

@@ -130,7 +130,7 @@
         <ImageView
             android:layout_width="16dp"
             android:layout_height="16dp"
-            android:src="@drawable/ic_bird_small"
+            android:src="@drawable/oiseaux"
             android:tint="@android:color/white" />
 
         <TextView
@@ -197,7 +197,7 @@
             android:layout_height="48dp"
             android:background="@drawable/btn_circle_white"
             android:contentDescription="Observation"
-            android:src="@drawable/ic_bird_small" />
+            android:src="@drawable/ic_add" />
 
         <View android:layout_width="0dp" android:layout_height="0dp" android:layout_weight="1" />
 
@@ -210,7 +210,7 @@
             android:background="@drawable/btn_circle_white"
             android:contentDescription="Terminer"
             android:enabled="false"
-            android:src="@drawable/ic_flag" />
+            android:src="@drawable/ic_close" />
 
         <View android:layout_width="0dp" android:layout_height="0dp" android:layout_weight="1" />
 

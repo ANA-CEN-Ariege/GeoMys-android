@@ -40,6 +40,10 @@ class AccueilFragment : Fragment() {
             findNavController().navigate(R.id.action_accueil_to_trace)
         }
 
+        binding.btnSaisieRapide.setOnClickListener {
+            findNavController().navigate(R.id.action_accueil_to_saisie_rapide)
+        }
+
         binding.btnMenu.setOnClickListener { view ->
             PopupMenu(requireContext(), view).apply {
                 menuInflater.inflate(R.menu.menu_accueil, menu)
@@ -82,9 +86,9 @@ class AccueilFragment : Fragment() {
         val active = traceViewModel.estActive
         val enCours = traceViewModel.locationTracker.estEnCours.value == true
         binding.btnNouveauSortie.text = when {
-            enCours -> getString(R.string.reprendre_sortie)
-            active -> getString(R.string.reprendre_sortie)
-            else -> getString(R.string.nouvelle_sortie)
+            enCours -> getString(R.string.reprendre_saisie)
+            active -> getString(R.string.reprendre_saisie)
+            else -> getString(R.string.saisie_multi_taxons)
         }
         binding.indicateurEnregistrement.visibility = if (enCours) View.VISIBLE else View.GONE
     }

@@ -139,39 +139,39 @@ class ObservationAdapter(
             val ctx = holder.itemView.context
             when (obs.taxon ?: Taxon.OISEAU) {
                 Taxon.OISEAU -> {
-                    ivTaxonIcon.setImageResource(R.drawable.ic_bird_small)
+                    ivTaxonIcon.setImageResource(R.drawable.oiseaux)
                     ivTaxonIcon.imageTintList = ColorStateList.valueOf(ContextCompat.getColor(ctx, R.color.orange))
                 }
                 Taxon.MAMMIFERE -> {
-                    ivTaxonIcon.setImageResource(R.drawable.ic_paw_small)
+                    ivTaxonIcon.setImageResource(R.drawable.mammiferes2)
                     ivTaxonIcon.imageTintList = ColorStateList.valueOf(ContextCompat.getColor(ctx, R.color.brown))
                 }
                 Taxon.REPTILE -> {
-                    ivTaxonIcon.setImageResource(R.drawable.ic_reptile_small)
+                    ivTaxonIcon.setImageResource(R.drawable.reptiles2)
                     ivTaxonIcon.imageTintList = ColorStateList.valueOf(ContextCompat.getColor(ctx, R.color.colorSecondary))
                 }
                 Taxon.BATRACIEN -> {
-                    ivTaxonIcon.setImageResource(R.drawable.ic_frog_small)
+                    ivTaxonIcon.setImageResource(R.drawable.amphibiens)
                     ivTaxonIcon.imageTintList = ColorStateList.valueOf(ContextCompat.getColor(ctx, R.color.blue_batracien))
                 }
                 Taxon.POISSON -> {
-                    ivTaxonIcon.setImageResource(R.drawable.ic_fish_small)
+                    ivTaxonIcon.setImageResource(R.drawable.poissons)
                     ivTaxonIcon.imageTintList = ColorStateList.valueOf(ContextCompat.getColor(ctx, R.color.blue_poisson))
                 }
                 Taxon.INSECTE -> {
-                    ivTaxonIcon.setImageResource(R.drawable.ic_insect_small)
+                    ivTaxonIcon.setImageResource(R.drawable.insectes)
                     ivTaxonIcon.imageTintList = ColorStateList.valueOf(ContextCompat.getColor(ctx, R.color.amber_insecte))
                 }
                 Taxon.FONGE -> {
-                    ivTaxonIcon.setImageResource(R.drawable.ic_mushroom_small)
+                    ivTaxonIcon.setImageResource(R.drawable.champignons2)
                     ivTaxonIcon.imageTintList = ColorStateList.valueOf(ContextCompat.getColor(ctx, R.color.brown_fonge))
                 }
                 Taxon.INVERTEBRES -> {
-                    ivTaxonIcon.setImageResource(R.drawable.ic_invertebrate_small)
+                    ivTaxonIcon.setImageResource(R.drawable.mollusques)
                     ivTaxonIcon.imageTintList = ColorStateList.valueOf(ContextCompat.getColor(ctx, R.color.purple_invertebres))
                 }
                 Taxon.PLANTE -> {
-                    ivTaxonIcon.setImageResource(R.drawable.ic_leaf_small)
+                    ivTaxonIcon.setImageResource(R.drawable.fleurs)
                     ivTaxonIcon.imageTintList = ColorStateList.valueOf(ContextCompat.getColor(ctx, R.color.teal))
                 }
             }

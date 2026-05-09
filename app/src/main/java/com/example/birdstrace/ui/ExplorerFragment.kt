@@ -117,6 +117,7 @@ class ExplorerFragment : Fragment() {
         binding.btnFiltreOiseau.setOnClickListener { toggleFiltre(Taxon.OISEAU) }
         binding.btnFiltreMammifere.setOnClickListener { toggleFiltre(Taxon.MAMMIFERE) }
         binding.btnFiltreReptile.setOnClickListener { toggleFiltre(Taxon.REPTILE) }
+        binding.btnFiltreBatracien.setOnClickListener { toggleFiltre(Taxon.BATRACIEN) }
         mettreAJourBoutonsFiltres()
     }
 
@@ -131,7 +132,8 @@ class ExplorerFragment : Fragment() {
         val boutons = listOf(
             BtnInfo(binding.btnFiltreOiseau,    Taxon.OISEAU,    0xFFFF6D00.toInt()),
             BtnInfo(binding.btnFiltreMammifere, Taxon.MAMMIFERE, 0xFF795548.toInt()),
-            BtnInfo(binding.btnFiltreReptile,   Taxon.REPTILE,   0xFF388E3C.toInt())
+            BtnInfo(binding.btnFiltreReptile,   Taxon.REPTILE,   0xFF388E3C.toInt()),
+            BtnInfo(binding.btnFiltreBatracien, Taxon.BATRACIEN, 0xFF0288D1.toInt())
         )
         for ((btn, taxon, couleur) in boutons) {
             val actif = taxonFiltre == taxon
@@ -289,9 +291,16 @@ class ExplorerFragment : Fragment() {
             canvas.drawText(count.toString(), r, r + paintTexte.textSize * 0.36f, paintTexte)
         } else {
             val iconeRes = when (taxon) {
-                Taxon.MAMMIFERE -> R.drawable.ic_paw_small
-                Taxon.REPTILE   -> R.drawable.ic_reptile_small
-                else            -> R.drawable.ic_bird_small
+                Taxon.OISEAU    -> R.drawable.oiseaux
+                Taxon.FONGE     -> R.drawable.champignons2
+                Taxon.MAMMIFERE -> R.drawable.mammiferes2
+                Taxon.REPTILE   -> R.drawable.reptiles2
+                Taxon.BATRACIEN -> R.drawable.amphibiens
+                Taxon.POISSON   -> R.drawable.poissons
+                Taxon.INSECTE   -> R.drawable.insectes
+                Taxon.INVERTEBRES -> R.drawable.mollusques
+                Taxon.PLANTE    -> R.drawable.fleurs
+                else            -> R.drawable.oiseaux
             }
             val drawable = ContextCompat.getDrawable(requireContext(), iconeRes)!!.mutate()
             DrawableCompat.setTint(drawable, Color.WHITE)

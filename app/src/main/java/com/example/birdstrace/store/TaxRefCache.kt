@@ -11,15 +11,14 @@ object TaxRefCache {
     private const val KEY_VERSION = "gn_taxref_version_cache"
     private lateinit var prefs: android.content.SharedPreferences
     private val gson = Gson()
+    @Volatile private var mem: Map<String, TaxRefEntry>? = null
+    @Volatile private var memGroupes: Map<String, String>? = null
 
     fun init(context: Context) {
         prefs = context.getSharedPreferences("taxref_cache", Context.MODE_PRIVATE)
     }
 
-    fun get(nom: String): TaxRefEntry? {
-        val cache = charger()
-        return cache[normaliser(nom)]
-    }
+    fun get(nom: String): TaxRefEntry? = charger()[normaliser(nom)]
 
     fun set(nom: String, cdNom: Int, sciNom: String, vernNom: String? = null) {
         val cache = charger().toMutableMap()
@@ -39,9 +38,8 @@ object TaxRefCache {
 
     fun tousLesCdNoms(): Set<Int> = charger().values.map { it.cdNom }.toSet()
 
-    fun getVernaculaireParCdNom(cdNom: Int): String? {
-        return charger().values.find { it.cdNom == cdNom }?.vernNom
-    }
+    fun getVernaculaireParCdNom(cdNom: Int): String? =
+        charger().values.find { it.cdNom == cdNom }?.vernNom
 
     private const val KEY_COMPTES = "gn_taxref_comptes_v1"
 
@@ -60,21 +58,68 @@ object TaxRefCache {
     fun ajouterGroupes(groupes: Map<Int, String>) {
         val existing = chargerGroupes().toMutableMap()
         groupes.forEach { (k, v) -> existing[k.toString()] = v }
-        prefs.edit().putString(KEY_GROUPES, gson.toJson(existing)).apply()
+        val json = gson.toJson(existing)
+        prefs.edit().putString(KEY_GROUPES, json).apply()
+        memGroupes = existing
     }
 
     fun tousLesGroupes(): Map<String, String> = chargerGroupes()
 
     private fun chargerGroupes(): Map<String, String> {
+        memGroupes?.let { return it }
         val json = prefs.getString(KEY_GROUPES, null) ?: return emptyMap()
         return try {
             val type = object : TypeToken<Map<String, String>>() {}.type
-            gson.fromJson(json, type) ?: emptyMap()
+            (gson.fromJson(json, type) ?: emptyMap<String, String>()).also { memGroupes = it }
+        } catch (e: Exception) { emptyMap() }
+    }
+
+    private const val KEY_GROUPES1 = "gn_taxref_groupes1_v1"
+    @Volatile private var memGroupes1: Map<String, String>? = null
+
+    private const val KEY_REGNES = "gn_taxref_regnes_v1"
+    @Volatile private var memRegnes: Map<String, String>? = null
+
+    fun ajouterGroupes1etRegnes(groupes1: Map<Int, String>, regnes: Map<Int, String>) {
+        val existingG1 = chargerGroupes1().toMutableMap()
+        groupes1.forEach { (k, v) -> if (v.isNotEmpty()) existingG1[k.toString()] = v }
+        prefs.edit().putString(KEY_GROUPES1, gson.toJson(existingG1)).apply()
+        memGroupes1 = existingG1
+
+        val existingR = chargerRegnes().toMutableMap()
+        regnes.forEach { (k, v) -> if (v.isNotEmpty()) existingR[k.toString()] = v }
+        prefs.edit().putString(KEY_REGNES, gson.toJson(existingR)).apply()
+        memRegnes = existingR
+    }
+
+    fun tousLesGroupes1(): Map<String, String> = chargerGroupes1()
+    fun tousLesRegnes(): Map<String, String> = chargerRegnes()
+
+    private fun chargerGroupes1(): Map<String, String> {
+        memGroupes1?.let { return it }
+        val json = prefs.getString(KEY_GROUPES1, null) ?: return emptyMap()
+        return try {
+            val type = object : TypeToken<Map<String, String>>() {}.type
+            (gson.fromJson(json, type) ?: emptyMap<String, String>()).also { memGroupes1 = it }
+        } catch (e: Exception) { emptyMap() }
+    }
+
+    private fun chargerRegnes(): Map<String, String> {
+        memRegnes?.let { return it }
+        val json = prefs.getString(KEY_REGNES, null) ?: return emptyMap()
+        return try {
+            val type = object : TypeToken<Map<String, String>>() {}.type
+            (gson.fromJson(json, type) ?: emptyMap<String, String>()).also { memRegnes = it }
         } catch (e: Exception) { emptyMap() }
     }
 
     fun vider() {
-        prefs.edit().remove(KEY).remove(KEY_VERSION).remove(KEY_COMPTES).remove(KEY_GROUPES).apply()
+        prefs.edit().remove(KEY).remove(KEY_VERSION).remove(KEY_COMPTES)
+            .remove(KEY_GROUPES).remove(KEY_GROUPES1).remove(KEY_REGNES).apply()
+        mem = null
+        memGroupes = null
+        memGroupes1 = null
+        memRegnes = null
     }
 
     var versionSauvegardee: String?
@@ -96,16 +141,16 @@ object TaxRefCache {
             }.joinToString("")
 
     private fun charger(): Map<String, TaxRefEntry> {
+        mem?.let { return it }
         val json = prefs.getString(KEY, null) ?: return emptyMap()
         return try {
             val type = object : TypeToken<Map<String, TaxRefEntry>>() {}.type
-            gson.fromJson(json, type) ?: emptyMap()
-        } catch (e: Exception) {
-            emptyMap()
-        }
+            (gson.fromJson(json, type) ?: emptyMap<String, TaxRefEntry>()).also { mem = it }
+        } catch (e: Exception) { emptyMap() }
     }
 
     private fun sauvegarder(cache: Map<String, TaxRefEntry>) {
         prefs.edit().putString(KEY, gson.toJson(cache)).apply()
+        mem = cache
     }
 }

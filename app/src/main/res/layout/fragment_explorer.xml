@@ -60,6 +60,17 @@
             android:src="@drawable/ic_filter_reptile"
             android:padding="10dp"
             android:contentDescription="Reptiles" />
+
+        <Space android:layout_width="8dp" android:layout_height="1dp" />
+
+        <ImageButton
+            android:id="@+id/btn_filtre_batracien"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:background="@drawable/btn_map_bg"
+            android:src="@drawable/ic_filter_frog"
+            android:padding="10dp"
+            android:contentDescription="Batraciens" />
     </LinearLayout>
 
     <!-- Contrôles droite (empilés verticalement, bas droite) -->

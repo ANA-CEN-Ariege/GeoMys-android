@@ -11,7 +11,7 @@
         android:id="@+id/iv_taxon_icon"
         android:layout_width="32dp"
         android:layout_height="32dp"
-        android:src="@drawable/ic_bird_small" />
+        android:src="@drawable/oiseaux" />
 
     <LinearLayout
         android:layout_width="0dp"

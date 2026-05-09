@@ -45,7 +45,7 @@
             <ImageView
                 android:layout_width="14dp"
                 android:layout_height="14dp"
-                android:src="@drawable/ic_bird_small"
+                android:src="@drawable/oiseaux"
                 android:tint="?attr/colorControlNormal" />
 
             <TextView

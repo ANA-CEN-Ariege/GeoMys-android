@@ -174,6 +174,11 @@ class TraceFragment : Fragment() {
             updateModePositionnement()
         }
 
+        binding.btnObservation.setOnLongClickListener {
+            findNavController().navigate(R.id.action_trace_to_saisie_rapide)
+            true
+        }
+
         binding.btnTerminer.setOnClickListener {
             showConfirmTerminer()
         }

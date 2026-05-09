@@ -1,6 +1,7 @@
 package com.example.birdstrace.network
 
 import com.example.birdstrace.TaxRefLocal
+import com.example.birdstrace.model.Taxon
 import com.example.birdstrace.store.GeoNatureConfig
 import com.example.birdstrace.store.TaxRefCache
 import kotlinx.coroutines.Dispatchers
@@ -16,7 +17,7 @@ sealed class TaxRefStatut {
 
 object TaxRefService {
 
-    suspend fun rechercher(nom: String, gnConfig: GeoNatureConfig? = null): Pair<TaxRefStatut, Boolean> =
+    suspend fun rechercher(nom: String, taxon: Taxon? = null, gnConfig: GeoNatureConfig? = null): Pair<TaxRefStatut, Boolean> =
         withContext(Dispatchers.IO) {
             // 1. Cache synchronisé depuis le serveur GeoNature (cd_nom autoritatif du serveur)
             TaxRefCache.get(nom)?.let { entry ->
@@ -31,7 +32,7 @@ object TaxRefService {
 
             // 3. API TaxRef GeoNature en direct (si configuré)
             if (gnConfig != null && gnConfig.connexionConfiguree) {
-                rechercherViaGeoNature(nom, gnConfig)?.let { statut ->
+                rechercherViaGeoNature(nom, taxon, gnConfig)?.let { statut ->
                     if (statut is TaxRefStatut.Trouve) {
                         TaxRefCache.set(nom, statut.cdNom, statut.nomScientifique, statut.nomFrancais)
                     }
@@ -42,12 +43,21 @@ object TaxRefService {
             Pair(TaxRefStatut.NonTrouve, false)
         }
 
-    private suspend fun rechercherViaGeoNature(nom: String, config: GeoNatureConfig): TaxRefStatut? =
+    private suspend fun rechercherViaGeoNature(nom: String, taxon: Taxon?, config: GeoNatureConfig): TaxRefStatut? =
         withContext(Dispatchers.IO) {
             try {
                 val base = config.urlServeur.trim().trimEnd('/')
                 val encoded = nom.trim().replace(" ", "%20")
-                val url = URL("$base/api/taxhub/api/taxref/?nom_cite=$encoded&limit=10")
+                
+                val regneParam = when(taxon) {
+                    Taxon.FONGE -> "&regne=Fungi"
+                    Taxon.PLANTE -> "&regne=Plantae"
+                    Taxon.OISEAU, Taxon.MAMMIFERE, Taxon.REPTILE, Taxon.BATRACIEN,
+                    Taxon.POISSON, Taxon.INSECTE, Taxon.INVERTEBRES -> "&regne=Animalia"
+                    null -> ""
+                }
+
+                val url = URL("$base/api/taxhub/api/taxref/?nom_cite=$encoded&limit=10$regneParam")
                 val conn = url.openConnection() as java.net.HttpURLConnection
                 conn.connectTimeout = 5000
                 conn.readTimeout = 5000

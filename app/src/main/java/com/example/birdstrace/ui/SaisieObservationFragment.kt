@@ -339,7 +339,7 @@ class SaisieObservationFragment : Fragment() {
             if (!isActive) return@launch
             binding.taxrefProgress.visibility = View.VISIBLE
             binding.tvTaxrefStatut.visibility = View.GONE
-            val (statut, _) = TaxRefService.rechercher(nom, gnConfig)
+            val (statut, _) = TaxRefService.rechercher(nom, taxon, gnConfig)
             taxRefStatut = statut
             binding.taxrefProgress.visibility = View.GONE
             updateTaxRefUI()

@@ -20,6 +20,9 @@
         <action
             android:id="@+id/action_accueil_to_explorer"
             app:destination="@id/explorerFragment" />
+        <action
+            android:id="@+id/action_accueil_to_saisie_rapide"
+            app:destination="@id/saisieRapideFragment" />
     </fragment>
 
     <fragment
@@ -32,6 +35,9 @@
         <action
             android:id="@+id/action_trace_to_saisie"
             app:destination="@id/saisieObservationFragment" />
+        <action
+            android:id="@+id/action_trace_to_saisie_rapide"
+            app:destination="@id/saisieRapideFragment" />
     </fragment>
 
     <fragment
@@ -41,6 +47,18 @@
         <action
             android:id="@+id/action_saisie_to_details"
             app:destination="@id/observationDetailsFragment" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/saisieRapideFragment"
+        android:name="com.example.birdstrace.ui.SaisieRapideFragment"
+        android:label="Saisie rapide">
+        <action
+            android:id="@+id/action_saisieRapide_to_details"
+            app:destination="@id/observationDetailsFragment" />
+        <action
+            android:id="@+id/action_saisieRapide_to_saisie"
+            app:destination="@id/saisieObservationFragment" />
     </fragment>
 
     <fragment

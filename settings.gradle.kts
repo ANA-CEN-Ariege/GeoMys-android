@@ -22,5 +22,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "BioScope"
+rootProject.name = "GeoNat"
 include(":app")

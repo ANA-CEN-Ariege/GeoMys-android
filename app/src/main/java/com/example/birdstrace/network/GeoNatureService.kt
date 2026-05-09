@@ -198,10 +198,18 @@ object GeoNatureService {
             var nbCrees = 0
             var premierIdReleve: Int? = null
             var derniereErreur: String? = null
+            var dernierCodeErreur: Int = 0
 
             val nomenclatures = mutableMapOf<String, Map<String, Int>>()
-            for (type in listOf("METH_OBS", "SEXE", "STADE_VIE", "STATUT_BIO", "ETA_BIO",
-                                "PREUVE_EXIST", "OBJ_DENBR", "TYP_DENBR", "OCC_COMPORTEMENT", "METH_DETERMIN")) {
+            val typesVoulus = listOf("METH_OBS", "SEXE", "STADE_VIE", "STATUT_BIO", "ETA_BIO",
+                "PREUVE_EXIST", "OBJ_DENBR", "TYP_DENBR", "OCC_COMPORTEMENT", "METH_DETERMIN")
+
+            // Si le cache est vide, on tente une synchro automatique
+            if (!NomenclatureCache.estDisponible) {
+                try { synchroniserNomenclatures(config) } catch (_: Exception) {}
+            }
+
+            for (type in typesVoulus) {
                 val fromCache = NomenclatureCache.get(type)
                 nomenclatures[type] = if (fromCache.isNotEmpty()) {
                     fromCache.associate { it.label.lowercase() to it.id }
@@ -221,7 +229,10 @@ object GeoNatureService {
                     put("additional_fields", JSONObject())
                     put("meta_device_entry", "mobile")
                     put("t_occurrences_occtax", JSONArray())
-                    idRole?.let { put("observers", JSONArray().put(it)) }
+                    if (idRole != null) {
+                        put("id_digitiser", idRole)
+                        put("observers", JSONArray().put(idRole))
+                    }
                 }
 
                 val geometry = JSONObject()
@@ -248,8 +259,9 @@ object GeoNatureService {
 
                 val code1 = conn1.responseCode
                 if (code1 !in 200..299) {
-                    val body2 = try { (conn1.errorStream ?: conn1.inputStream)?.bufferedReader()?.readText() } catch (_: Exception) { null }
-                    derniereErreur = parseErreur(code1, body2)
+                    val bodyErr = try { (conn1.errorStream ?: conn1.inputStream)?.bufferedReader()?.readText() } catch (_: Exception) { null }
+                    dernierCodeErreur = code1
+                    derniereErreur = parseErreur(code1, bodyErr)
                     continue
                 }
                 val resp1Text = try { conn1.inputStream.bufferedReader().readText() } catch (_: Exception) { "" }
@@ -257,11 +269,20 @@ object GeoNatureService {
                     derniereErreur = "Réponse relevé non-JSON"
                     continue
                 }
+                
+                // Extraction de l'ID robuste (identique iOS)
                 val idReleve = resp1.optInt("id", -1).takeIf { it > 0 }
                     ?: resp1.optJSONObject("properties")?.optInt("id_releve_occtax", -1)?.takeIf { it > 0 }
                     ?: resp1.optInt("id_releve_occtax", -1).takeIf { it > 0 }
+                
                 if (idReleve == null) {
-                    derniereErreur = "id absent de la réponse relevé"
+                    val keys = try {
+                        val kList = mutableListOf<String>()
+                        val it = resp1.keys()
+                        while(it.hasNext()) kList.add(it.next())
+                        kList.sorted().joinToString(",")
+                    } catch (_: Exception) { "?" }
+                    derniereErreur = "id absent de la réponse (clés: $keys)"
                     continue
                 }
                 if (premierIdReleve == null) premierIdReleve = idReleve
@@ -334,12 +355,13 @@ object GeoNatureService {
                 if (code2 in 200..299) {
                     nbCrees++
                 } else {
-                    val body2 = try { (conn2.errorStream ?: conn2.inputStream)?.bufferedReader()?.readText() } catch (_: Exception) { null }
-                    derniereErreur = parseErreur(code2, body2)
+                    val bodyErr = try { (conn2.errorStream ?: conn2.inputStream)?.bufferedReader()?.readText() } catch (_: Exception) { null }
+                    dernierCodeErreur = code2
+                    derniereErreur = parseErreur(code2, bodyErr)
                 }
             }
 
-            if (nbCrees == 0) throw GNErreur.EnvoiEchoue(0, derniereErreur ?: "Aucun relevé créé")
+            if (nbCrees == 0) throw GNErreur.EnvoiEchoue(dernierCodeErreur, derniereErreur ?: "Aucun relevé créé")
             Triple(nbCrees, obsValides.size, premierIdReleve)
         }
 
@@ -631,10 +653,24 @@ object GeoNatureService {
         labels: Map<String, String>,
         nomenclatures: Map<String, Map<String, Int>>
     ): Int? {
-        // Si le code est déjà un id_nomenclature (depuis NomenclatureCache)
-        code.toIntOrNull()?.let { return it }
-        // Sinon résolution via label stable
-        return nomenclatures[type]?.get(labels[code] ?: code.lowercase())
+        // 1. Si c'est un de nos codes internes ("0", "1", "2"...), on DOIT résoudre par le label
+        if (labels.containsKey(code)) {
+            val label = labels[code]!!.lowercase()
+            return nomenclatures[type]?.get(label)
+        }
+
+        // 2. Si le code est déjà un id_nomenclature (ex: sélectionné via NomenclatureCache)
+        // On vérifie s'il existe dans la nomenclature récupérée du serveur
+        val idAsInt = code.toIntOrNull()
+        if (idAsInt != null) {
+            val serverIds = nomenclatures[type]?.values
+            if (serverIds?.contains(idAsInt) == true) {
+                return idAsInt
+            }
+        }
+
+        // 3. Sinon résolution via le texte brut (fallback)
+        return nomenclatures[type]?.get(code.lowercase())
     }
 
     suspend fun synchroniserNomenclatures(config: GeoNatureConfig): Pair<Int, String> =
@@ -644,22 +680,36 @@ object GeoNatureService {
                 ?: return@withContext Pair(0, "Authentification échouée")
 
             try {
-                val url = URL("$base/api/nomenclatures/nomenclatures/taxonomy")
-                val conn = url.openConnection() as java.net.HttpURLConnection
-                conn.connectTimeout = 30000
-                conn.readTimeout = 30000
-                conn.setRequestProperty("Accept", "application/json")
-                if (token != null) conn.setRequestProperty("Authorization", "Bearer $token")
-                if (cookies.isNotEmpty()) conn.setRequestProperty("Cookie", cookies)
+                // On teste les mêmes endpoints que sur iOS
+                val urls = listOf(
+                    "$base/api/nomenclatures/nomenclatures/taxonomy",
+                    "$base/api/nomenclatures/nomenclature/taxonomy",
+                    "$base/api/nomenclatures/taxonomy"
+                )
+                
+                var text: String? = null
+                var lastCode = 0
+                for (u in urls) {
+                    val conn = URL(u).openConnection() as java.net.HttpURLConnection
+                    conn.connectTimeout = 15000
+                    conn.readTimeout = 15000
+                    conn.setRequestProperty("Accept", "application/json")
+                    if (token != null) conn.setRequestProperty("Authorization", "Bearer $token")
+                    if (cookies.isNotEmpty()) conn.setRequestProperty("Cookie", cookies)
+                    lastCode = conn.responseCode
+                    if (lastCode == 200) {
+                        text = conn.inputStream.bufferedReader().readText()
+                        break
+                    }
+                }
 
-                val code = conn.responseCode
-                if (code != 200) return@withContext Pair(0, "HTTP $code")
+                if (text == null) return@withContext Pair(0, "Endpoint taxonomy inaccessible (HTTP $lastCode)")
 
-                val text = conn.inputStream.bufferedReader().readText()
                 val array: JSONArray = try { JSONArray(text) } catch (_: Exception) {
                     try {
                         val obj = JSONObject(text)
                         obj.optJSONArray("items") ?: obj.optJSONArray("data")
+                            ?: obj.optJSONArray("nomenclatures") ?: obj.optJSONArray("results")
                             ?: return@withContext Pair(0, "Format inattendu")
                     } catch (_: Exception) {
                         return@withContext Pair(0, "Format inattendu")
@@ -747,14 +797,19 @@ object GeoNatureService {
             if (conn.responseCode != 200) return null
             val ct = conn.getHeaderField("Content-Type") ?: ""
             if (!ct.contains("json")) return null
-            // Capturer tous les cookies Set-Cookie (comme URLSession.ephemeral dans OrniTrace)
+            
             val cookies = conn.headerFields["Set-Cookie"]
                 ?.joinToString("; ") { it.substringBefore(";").trim() }
                 ?: ""
-            val json = JSONObject(conn.inputStream.bufferedReader().readText())
+            val jsonText = conn.inputStream.bufferedReader().readText()
+            val json = JSONObject(jsonText)
             val token = extractToken(json)
+            
+            // Sur GeoNature, id_role est souvent dans l'objet "user"
             val userJson = json.optJSONObject("user")
             val idRole = userJson?.optInt("id_role", -1)?.takeIf { it > 0 }
+                ?: json.optInt("id_role", -1).takeIf { it > 0 }
+
             Triple(token, idRole, cookies)
         } catch (e: Exception) { null }
     }

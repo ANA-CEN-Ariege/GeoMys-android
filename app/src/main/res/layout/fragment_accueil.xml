@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@drawable/bg_accueil"
@@ -84,33 +85,53 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:paddingHorizontal="28dp">
+            android:paddingHorizontal="24dp">
 
             <!-- Bouton nouvelle/reprendre sortie -->
-            <FrameLayout
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="12dp">
+                android:layout_marginBottom="12dp"
+                android:orientation="horizontal">
+
+                <FrameLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1">
+
+                    <Button
+                        android:id="@+id/btn_nouveau_sortie"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:backgroundTint="@color/green_85"
+                        android:paddingVertical="18dp"
+                        android:text="@string/saisie_multi_taxons"
+                        android:textColor="@android:color/white"
+                        android:textSize="15sp"
+                        android:textAllCaps="false" />
+
+                    <View
+                        android:id="@+id/indicateur_enregistrement"
+                        android:layout_width="12dp"
+                        android:layout_height="12dp"
+                        android:layout_gravity="center_vertical|end"
+                        android:layout_marginEnd="12dp"
+                        android:background="@drawable/indicator_red"
+                        android:visibility="gone" />
+                </FrameLayout>
 
                 <Button
-                    android:id="@+id/btn_nouveau_sortie"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:backgroundTint="@color/green_85"
-                    android:padding="18dp"
-                    android:text="@string/nouvelle_sortie"
+                    android:id="@+id/btn_saisie_rapide"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_marginStart="8dp"
+                    android:layout_weight="1"
+                    android:backgroundTint="@color/orange"
+                    android:text="@string/saisie_mono_taxons"
                     android:textColor="@android:color/white"
-                    android:textSize="18sp" />
-
-                <View
-                    android:id="@+id/indicateur_enregistrement"
-                    android:layout_width="12dp"
-                    android:layout_height="12dp"
-                    android:layout_gravity="center_vertical|end"
-                    android:layout_marginEnd="16dp"
-                    android:background="@drawable/indicator_red"
-                    android:visibility="gone" />
-            </FrameLayout>
+                    android:textSize="15sp"
+                    android:textAllCaps="false" />
+            </LinearLayout>
 
             <!-- Switch enregistrer trace -->
             <LinearLayout

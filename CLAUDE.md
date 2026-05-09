@@ -26,7 +26,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-BioScope is a single-module Android app (`com.example.birdstrace`).
+BioNat is a single-module Android app (`com.example.birdstrace`).
 
 - **Min SDK:** 24 (Android 7.0), **Target/Compile SDK:** 36
 - **Language:** Kotlin, **Java compatibility:** 11

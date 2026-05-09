@@ -300,7 +300,6 @@ class ExplorerFragment : Fragment() {
                 Taxon.INSECTE   -> R.drawable.insectes
                 Taxon.INVERTEBRES -> R.drawable.mollusques
                 Taxon.PLANTE    -> R.drawable.fleurs
-                else            -> R.drawable.oiseaux
             }
             val drawable = ContextCompat.getDrawable(requireContext(), iconeRes)!!.mutate()
             DrawableCompat.setTint(drawable, Color.WHITE)

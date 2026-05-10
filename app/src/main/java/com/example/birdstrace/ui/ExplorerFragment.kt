@@ -75,7 +75,8 @@ class ExplorerFragment : Fragment() {
             val dp32 = (32 * dp).toInt()
             binding.btnRetour.updateLayoutParams<android.widget.FrameLayout.LayoutParams> { topMargin = top + 12 }
             binding.tvCompteur.updateLayoutParams<android.widget.FrameLayout.LayoutParams> { topMargin = top + 12 }
-            binding.barreFiltres.updateLayoutParams<android.widget.FrameLayout.LayoutParams> { topMargin = top + 12 }
+            // Barre de filtres décalée bien sous le bouton retour pour libérer le clic
+            binding.barreFiltres.updateLayoutParams<android.widget.FrameLayout.LayoutParams> { topMargin = top + (96 * dp).toInt() }
             binding.ctrlDroite.updateLayoutParams<android.widget.FrameLayout.LayoutParams> { bottomMargin = bottom + (12 * dp).toInt() }
             binding.overlayChargement.updateLayoutParams<android.widget.FrameLayout.LayoutParams> { bottomMargin = bottom + dp32 }
             binding.tvNonConfigure.updateLayoutParams<android.widget.FrameLayout.LayoutParams> { bottomMargin = bottom + dp32 }
@@ -113,11 +114,37 @@ class ExplorerFragment : Fragment() {
         }
     }
 
+    private fun boutonsParTaxon(): Map<Taxon, com.google.android.material.button.MaterialButton> = mapOf(
+        Taxon.OISEAU      to binding.btnFiltreOiseau,
+        Taxon.MAMMIFERE   to binding.btnFiltreMammifere,
+        Taxon.REPTILE     to binding.btnFiltreReptile,
+        Taxon.BATRACIEN   to binding.btnFiltreBatracien,
+        Taxon.INVERTEBRES to binding.btnFiltreInvertebres,
+        Taxon.POISSON     to binding.btnFiltrePoisson,
+        Taxon.INSECTE     to binding.btnFiltreInsecte,
+        Taxon.FONGE       to binding.btnFiltreFonge,
+        Taxon.PLANTE      to binding.btnFiltrePlante,
+    )
+
+    private fun couleurParTaxon(taxon: Taxon): Int = ContextCompat.getColor(
+        requireContext(),
+        when (taxon) {
+            Taxon.OISEAU      -> R.color.orange
+            Taxon.MAMMIFERE   -> R.color.brown
+            Taxon.REPTILE     -> R.color.colorSecondary
+            Taxon.BATRACIEN   -> R.color.blue_batracien
+            Taxon.POISSON     -> R.color.blue_poisson
+            Taxon.INSECTE     -> R.color.amber_insecte
+            Taxon.FONGE       -> R.color.brown_fonge
+            Taxon.INVERTEBRES -> R.color.purple_invertebres
+            Taxon.PLANTE      -> R.color.teal
+        }
+    )
+
     private fun setupFiltres() {
-        binding.btnFiltreOiseau.setOnClickListener { toggleFiltre(Taxon.OISEAU) }
-        binding.btnFiltreMammifere.setOnClickListener { toggleFiltre(Taxon.MAMMIFERE) }
-        binding.btnFiltreReptile.setOnClickListener { toggleFiltre(Taxon.REPTILE) }
-        binding.btnFiltreBatracien.setOnClickListener { toggleFiltre(Taxon.BATRACIEN) }
+        for ((taxon, btn) in boutonsParTaxon()) {
+            btn.setOnClickListener { toggleFiltre(taxon) }
+        }
         mettreAJourBoutonsFiltres()
     }
 
@@ -128,22 +155,13 @@ class ExplorerFragment : Fragment() {
     }
 
     private fun mettreAJourBoutonsFiltres() {
-        data class BtnInfo(val view: android.widget.ImageButton, val taxon: Taxon, val couleur: Int)
-        val boutons = listOf(
-            BtnInfo(binding.btnFiltreOiseau,    Taxon.OISEAU,    0xFFFF6D00.toInt()),
-            BtnInfo(binding.btnFiltreMammifere, Taxon.MAMMIFERE, 0xFF795548.toInt()),
-            BtnInfo(binding.btnFiltreReptile,   Taxon.REPTILE,   0xFF388E3C.toInt()),
-            BtnInfo(binding.btnFiltreBatracien, Taxon.BATRACIEN, 0xFF0288D1.toInt())
-        )
-        for ((btn, taxon, couleur) in boutons) {
+        val transparent = android.content.res.ColorStateList.valueOf(Color.TRANSPARENT)
+        val white = android.content.res.ColorStateList.valueOf(Color.WHITE)
+        for ((taxon, btn) in boutonsParTaxon()) {
+            val couleur = couleurParTaxon(taxon)
             val actif = taxonFiltre == taxon
-            btn.background = android.graphics.drawable.GradientDrawable().apply {
-                shape = android.graphics.drawable.GradientDrawable.OVAL
-                setColor(if (actif) couleur else Color.WHITE)
-            }
-            btn.imageTintList = android.content.res.ColorStateList.valueOf(
-                if (actif) Color.WHITE else couleur
-            )
+            btn.backgroundTintList = if (actif) android.content.res.ColorStateList.valueOf(couleur) else transparent
+            btn.iconTint = if (actif) white else android.content.res.ColorStateList.valueOf(couleur)
         }
     }
 
@@ -272,11 +290,7 @@ class ExplorerFragment : Fragment() {
         val canvas = Canvas(bitmap)
         val r = taille / 2f
 
-        val couleur = when (taxon) {
-            Taxon.MAMMIFERE -> 0xFF795548.toInt()
-            Taxon.REPTILE   -> 0xFF388E3C.toInt()
-            else            -> 0xFFFF6D00.toInt()
-        }
+        val couleur = couleurParTaxon(taxon)
 
         val paintCercle = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = couleur }
         canvas.drawCircle(r, r, r - 2, paintCercle)

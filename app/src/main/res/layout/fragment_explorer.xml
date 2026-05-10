@@ -21,58 +21,179 @@
         android:src="@drawable/ic_arrow_back"
         app:tint="?attr/colorOnSurface" />
 
-    <!-- Filtres taxons (haut centre) — 3 boutons icône séparés -->
-    <LinearLayout
+    <!-- Filtres taxons (haut, sous le bouton retour) — ligne défilante horizontale -->
+    <HorizontalScrollView
         android:id="@+id/barre_filtres"
-        android:layout_width="wrap_content"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="top|center_horizontal"
-        android:layout_marginTop="12dp"
-        android:orientation="horizontal"
-        android:elevation="4dp">
+        android:layout_marginTop="96dp"
+        android:layout_marginHorizontal="8dp"
+        android:elevation="4dp"
+        android:scrollbars="none">
 
-        <ImageButton
-            android:id="@+id/btn_filtre_oiseau"
-            android:layout_width="44dp"
-            android:layout_height="44dp"
-            android:background="@drawable/btn_map_bg"
-            android:src="@drawable/ic_filter_bird"
-            android:padding="10dp"
-            android:contentDescription="Oiseaux" />
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingVertical="2dp">
 
-        <Space android:layout_width="8dp" android:layout_height="1dp" />
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_filtre_oiseau"
+                style="@style/Widget.MaterialComponents.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:contentDescription="Oiseaux"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:paddingHorizontal="14dp"
+                android:paddingVertical="10dp"
+                android:text=""
+                app:cornerRadius="8dp"
+                app:icon="@drawable/oiseaux"
+                app:iconGravity="textStart"
+                app:iconPadding="0dp"
+                app:iconSize="24dp" />
 
-        <ImageButton
-            android:id="@+id/btn_filtre_mammifere"
-            android:layout_width="44dp"
-            android:layout_height="44dp"
-            android:background="@drawable/btn_map_bg"
-            android:src="@drawable/ic_filter_paw"
-            android:padding="10dp"
-            android:contentDescription="Mammifères" />
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_filtre_mammifere"
+                style="@style/Widget.MaterialComponents.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:contentDescription="Mammifères"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:paddingHorizontal="14dp"
+                android:paddingVertical="10dp"
+                android:text=""
+                app:cornerRadius="8dp"
+                app:icon="@drawable/mammiferes2"
+                app:iconGravity="textStart"
+                app:iconPadding="0dp"
+                app:iconSize="24dp" />
 
-        <Space android:layout_width="8dp" android:layout_height="1dp" />
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_filtre_reptile"
+                style="@style/Widget.MaterialComponents.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:contentDescription="Reptiles"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:paddingHorizontal="14dp"
+                android:paddingVertical="10dp"
+                android:text=""
+                app:cornerRadius="8dp"
+                app:icon="@drawable/reptiles2"
+                app:iconGravity="textStart"
+                app:iconPadding="0dp"
+                app:iconSize="24dp" />
 
-        <ImageButton
-            android:id="@+id/btn_filtre_reptile"
-            android:layout_width="44dp"
-            android:layout_height="44dp"
-            android:background="@drawable/btn_map_bg"
-            android:src="@drawable/ic_filter_reptile"
-            android:padding="10dp"
-            android:contentDescription="Reptiles" />
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_filtre_batracien"
+                style="@style/Widget.MaterialComponents.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:contentDescription="Batraciens"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:paddingHorizontal="14dp"
+                android:paddingVertical="10dp"
+                android:text=""
+                app:cornerRadius="8dp"
+                app:icon="@drawable/amphibiens"
+                app:iconGravity="textStart"
+                app:iconPadding="0dp"
+                app:iconSize="24dp" />
 
-        <Space android:layout_width="8dp" android:layout_height="1dp" />
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_filtre_invertebres"
+                style="@style/Widget.MaterialComponents.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:contentDescription="Invertébrés"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:paddingHorizontal="14dp"
+                android:paddingVertical="10dp"
+                android:text=""
+                app:cornerRadius="8dp"
+                app:icon="@drawable/mollusques"
+                app:iconGravity="textStart"
+                app:iconPadding="0dp"
+                app:iconSize="24dp" />
 
-        <ImageButton
-            android:id="@+id/btn_filtre_batracien"
-            android:layout_width="44dp"
-            android:layout_height="44dp"
-            android:background="@drawable/btn_map_bg"
-            android:src="@drawable/ic_filter_frog"
-            android:padding="10dp"
-            android:contentDescription="Batraciens" />
-    </LinearLayout>
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_filtre_poisson"
+                style="@style/Widget.MaterialComponents.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:contentDescription="Poissons"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:paddingHorizontal="14dp"
+                android:paddingVertical="10dp"
+                android:text=""
+                app:cornerRadius="8dp"
+                app:icon="@drawable/poissons"
+                app:iconGravity="textStart"
+                app:iconPadding="0dp"
+                app:iconSize="24dp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_filtre_insecte"
+                style="@style/Widget.MaterialComponents.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:contentDescription="Insectes"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:paddingHorizontal="14dp"
+                android:paddingVertical="10dp"
+                android:text=""
+                app:cornerRadius="8dp"
+                app:icon="@drawable/insectes"
+                app:iconGravity="textStart"
+                app:iconPadding="0dp"
+                app:iconSize="24dp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_filtre_fonge"
+                style="@style/Widget.MaterialComponents.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:contentDescription="Fonge"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:paddingHorizontal="14dp"
+                android:paddingVertical="10dp"
+                android:text=""
+                app:cornerRadius="8dp"
+                app:icon="@drawable/champignons2"
+                app:iconGravity="textStart"
+                app:iconPadding="0dp"
+                app:iconSize="24dp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_filtre_plante"
+                style="@style/Widget.MaterialComponents.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:contentDescription="Plantes"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:paddingHorizontal="14dp"
+                android:paddingVertical="10dp"
+                android:text=""
+                app:cornerRadius="8dp"
+                app:icon="@drawable/fleurs"
+                app:iconGravity="textStart"
+                app:iconPadding="0dp"
+                app:iconSize="24dp" />
+
+        </LinearLayout>
+    </HorizontalScrollView>
 
     <!-- Contrôles droite (empilés verticalement, bas droite) -->
     <LinearLayout

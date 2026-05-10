@@ -596,34 +596,31 @@ object GeoNatureService {
                         props.optString("group_inpn", "")
                     }
                 }
+                fun mapperTaxon(group2: String, cdNom: Int): Taxon {
+                    when (group2) {
+                        "Oiseaux"    -> return Taxon.OISEAU
+                        "Mammifères" -> return Taxon.MAMMIFERE
+                        "Reptiles"   -> return Taxon.REPTILE
+                        "Amphibiens" -> return Taxon.BATRACIEN
+                        "Poissons"   -> return Taxon.POISSON
+                        "Insectes"   -> return Taxon.INSECTE
+                    }
+                    val cdNomStr = cdNom.toString()
+                    return when (regneParCdNom[cdNomStr]) {
+                        "Fungi"   -> Taxon.FONGE
+                        "Plantae" -> Taxon.PLANTE
+                        else      -> Taxon.INVERTEBRES
+                    }
+                }
+
                 val taxon: Taxon
                 if (group.isNotEmpty()) {
-                    taxon = when (group) {
-                        "Oiseaux"    -> Taxon.OISEAU
-                        "Mammifères" -> Taxon.MAMMIFERE
-                        "Reptiles"   -> Taxon.REPTILE
-                        "Amphibiens" -> Taxon.BATRACIEN
-                        "Poissons"   -> Taxon.POISSON
-                        "Insectes"   -> Taxon.INSECTE
-                        else -> {
-                            val cdNomProp = props.optInt("cd_nom", -1)
-                            if (cdNomProp > 0 && regneParCdNom[cdNomProp.toString()] == "Fungi")
-                                Taxon.FONGE else Taxon.INVERTEBRES
-                        }
-                    }
+                    taxon = mapperTaxon(group, props.optInt("cd_nom", -1))
                 } else {
                     val cdNom = props.optInt("cd_nom", -1).takeIf { it > 0 } ?: continue
                     val cachedGroupe = groupeParCdNom[cdNom.toString()]
                     if (cachedGroupe != null) {
-                        taxon = when (cachedGroupe) {
-                            "Oiseaux"    -> Taxon.OISEAU
-                            "Mammifères" -> Taxon.MAMMIFERE
-                            "Reptiles"   -> Taxon.REPTILE
-                            "Amphibiens" -> Taxon.BATRACIEN
-                            "Poissons"   -> Taxon.POISSON
-                            "Insectes"   -> Taxon.INSECTE
-                            else -> if (regneParCdNom[cdNom.toString()] == "Fungi") Taxon.FONGE else Taxon.INVERTEBRES
-                        }
+                        taxon = mapperTaxon(cachedGroupe, cdNom)
                     } else {
                         if (cdNomsCache.isNotEmpty() && cdNom !in cdNomsCache) continue
                         taxon = Taxon.OISEAU

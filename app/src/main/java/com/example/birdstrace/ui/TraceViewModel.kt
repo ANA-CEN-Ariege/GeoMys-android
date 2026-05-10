@@ -19,12 +19,50 @@ class TraceViewModel(application: Application) : AndroidViewModel(application) {
     private val _observations = MutableLiveData<MutableList<Observation>>(mutableListOf())
     val observations: LiveData<MutableList<Observation>> = _observations
 
+    /**
+     * Snapshot des paramètres par défaut de la saisie rapide en cours.
+     * Non null = une saisie rapide est active et peut être reprise depuis l'accueil.
+     */
+    data class SaisieRapideSession(
+        val taxon: String,
+        val especeDefaut: String,
+        val cdNomDefaut: Int?,
+        val rechercheNomSci: Boolean,
+        val sexe: String,
+        val stadeVie: String,
+        val techniqueObs: String,
+        val statutBio: String,
+        val etaBio: String,
+        val preuveExist: String,
+        val objDenbr: String,
+        val typDenbr: String,
+        val comportement: String,
+        val methDetermin: String,
+        val determinateur: String,
+        val notes: String,
+        val cdNomManuel: String
+    )
+
+    private val _saisieRapideSession = MutableLiveData<SaisieRapideSession?>(null)
+    val saisieRapideSession: LiveData<SaisieRapideSession?> = _saisieRapideSession
+
+    fun demarrerSaisieRapide(s: SaisieRapideSession) {
+        _saisieRapideSession.value = s
+        sauvegarder()
+    }
+
+    fun arreterSaisieRapide() {
+        _saisieRapideSession.value = null
+        sauvegarder()
+    }
+
     private val prefs = application.getSharedPreferences("session", Context.MODE_PRIVATE)
     private val gson = Gson()
 
     private data class SessionSnapshot(
         val observations: List<Observation> = emptyList(),
-        val parcours: List<PointTrace> = emptyList()
+        val parcours: List<PointTrace> = emptyList(),
+        val saisieRapide: SaisieRapideSession? = null
     )
 
     val estActive: Boolean
@@ -72,6 +110,7 @@ class TraceViewModel(application: Application) : AndroidViewModel(application) {
 
     fun reinitialiser() {
         _observations.value = mutableListOf()
+        _saisieRapideSession.value = null
         locationTracker.reinitialiser()
         sauvegarder()
     }
@@ -79,7 +118,8 @@ class TraceViewModel(application: Application) : AndroidViewModel(application) {
     fun sauvegarder() {
         val snapshot = SessionSnapshot(
             observations = _observations.value ?: emptyList(),
-            parcours = locationTracker.parcours.value ?: emptyList()
+            parcours = locationTracker.parcours.value ?: emptyList(),
+            saisieRapide = _saisieRapideSession.value
         )
         prefs.edit()
             .putString(KEY_SESSION, gson.toJson(snapshot))
@@ -95,6 +135,7 @@ class TraceViewModel(application: Application) : AndroidViewModel(application) {
                 val type = object : TypeToken<SessionSnapshot>() {}.type
                 val snapshot: SessionSnapshot = gson.fromJson(json, type) ?: return
                 _observations.value = snapshot.observations.toMutableList()
+                _saisieRapideSession.value = snapshot.saisieRapide
                 locationTracker.restaurerParcours(snapshot.parcours)
             } catch (_: Exception) {}
             return

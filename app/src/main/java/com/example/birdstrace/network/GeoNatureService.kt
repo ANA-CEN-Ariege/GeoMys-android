@@ -199,6 +199,9 @@ object GeoNatureService {
             var premierIdReleve: Int? = null
             var derniereErreur: String? = null
             var dernierCodeErreur: Int = 0
+            // Relevés créés côté serveur pour lesquels le POST de l'occurrence a échoué.
+            // Ils restent vides sur GeoNature et doivent être signalés à l'utilisateur.
+            val relevesOrphelins = mutableListOf<Int>()
 
             val nomenclatures = mutableMapOf<String, Map<String, Int>>()
             val typesVoulus = listOf("METH_OBS", "SEXE", "STADE_VIE", "STATUT_BIO", "ETA_BIO",
@@ -358,10 +361,20 @@ object GeoNatureService {
                     val bodyErr = try { (conn2.errorStream ?: conn2.inputStream)?.bufferedReader()?.readText() } catch (_: Exception) { null }
                     dernierCodeErreur = code2
                     derniereErreur = parseErreur(code2, bodyErr)
+                    relevesOrphelins.add(idReleve)
                 }
             }
 
-            if (nbCrees == 0) throw GNErreur.EnvoiEchoue(dernierCodeErreur, derniereErreur ?: "Aucun relevé créé")
+            if (nbCrees == 0) {
+                val msg = buildString {
+                    append(derniereErreur ?: "Aucun relevé créé")
+                    if (relevesOrphelins.isNotEmpty()) {
+                        append(" — ${relevesOrphelins.size} relevé(s) vide(s) créé(s) côté GeoNature ")
+                        append("(id : ${relevesOrphelins.joinToString(", ")}), à supprimer manuellement.")
+                    }
+                }
+                throw GNErreur.EnvoiEchoue(dernierCodeErreur, msg)
+            }
             Triple(nbCrees, obsValides.size, premierIdReleve)
         }
 
@@ -501,7 +514,11 @@ object GeoNatureService {
         val nbCh  = regneMap.values.count { it == "Fungi" }
         val nbInv = maxOf(0, regneMap.values.count { it == "Animalia" } - nbO - nbM - nbR - nbB - nbPo - nbI)
         // Flore : group1_inpn IN ('Phanérogames', 'Ptéridophytes', 'Bryophytes')
-        val nbP = groupe1Map.values.count { it in NomenclatureCache.GROUPES1_FLORE }
+        // ou règne = 'Plantae' (fallback quand group1_inpn n'est pas peuplé côté serveur).
+        val cdNomsPlantes = mutableSetOf<Int>()
+        for ((cd, g1) in groupe1Map) if (g1 in NomenclatureCache.GROUPES1_FLORE) cdNomsPlantes.add(cd)
+        for ((cd, regne) in regneMap) if (regne == "Plantae") cdNomsPlantes.add(cd)
+        val nbP = cdNomsPlantes.size
         val msg = buildString {
             append("${entrees.size} taxons indexés — $nbO oiseaux")
             if (nbM > 0) append(", $nbM mammifères")

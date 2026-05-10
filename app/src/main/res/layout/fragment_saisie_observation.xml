@@ -274,7 +274,7 @@
                 android:layout_width="18dp"
                 android:layout_height="18dp"
                 android:src="@drawable/ic_location_pin"
-                android:tint="@android:color/holo_red_dark" />
+                app:tint="@android:color/holo_red_dark" />
 
             <TextView
                 android:id="@+id/tv_coordonnees"
@@ -306,7 +306,7 @@
                 android:layout_gravity="center_vertical|end"
                 android:layout_marginEnd="12dp"
                 android:src="@drawable/ic_check_circle"
-                android:tint="@android:color/holo_green_dark"
+                app:tint="@android:color/holo_green_dark"
                 android:visibility="gone" />
         </FrameLayout>
 

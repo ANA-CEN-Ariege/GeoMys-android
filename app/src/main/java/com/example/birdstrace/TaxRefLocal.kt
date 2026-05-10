@@ -555,16 +555,20 @@ object TaxRefLocal {
         }
 
         return when (taxon) {
-            // Flore : group1_inpn IN ('Phanérogames', 'Ptéridophytes', 'Bryophytes')
+            // Flore : critère officiel group1_inpn IN ('Phanérogames', 'Ptéridophytes', 'Bryophytes').
+            // Beaucoup d'instances GeoNature ne peuplent pas group1_inpn pour les plantes
+            // (champ NULL en base ou absent de la réponse JSON) — on retombe sur le règne "Plantae"
+            // pour ne pas perdre la quasi-totalité des taxons en autocomplétion.
             Taxon.PLANTE -> {
                 val groupes1Flore = NomenclatureCache.GROUPES1_FLORE
-                if (groupes1.isNotEmpty()) {
-                    val parCdNom = mutableMapOf<Int, TaxRefEntry>()
-                    for ((_, entry) in TaxRefCache.toutesLesEntrees()) {
-                        if (groupes1[entry.cdNom.toString()] in groupes1Flore) parCdNom[entry.cdNom] = entry
+                val parCdNom = mutableMapOf<Int, TaxRefEntry>()
+                for ((_, entry) in TaxRefCache.toutesLesEntrees()) {
+                    val cdNomStr = entry.cdNom.toString()
+                    if (groupes1[cdNomStr] in groupes1Flore || regnes[cdNomStr] == "Plantae") {
+                        parCdNom[entry.cdNom] = entry
                     }
-                    if (parCdNom.isNotEmpty()) return toList(parCdNom)
                 }
+                if (parCdNom.isNotEmpty()) return toList(parCdNom)
                 filtrerParGroup2(NomenclatureCache.groupesBotaniquesConnus())
             }
 

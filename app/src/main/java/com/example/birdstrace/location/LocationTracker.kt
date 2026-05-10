@@ -32,8 +32,11 @@ class LocationTracker(private val context: Context) {
 
     private val locationListener = object : LocationListener {
         override fun onLocationChanged(loc: Location) {
-            if (loc.accuracy > 50f) return
+            // Toujours mettre à jour la position courante (sinon l'UI reste vide
+            // tant que la précision ne descend pas sous 50 m).
             _position.postValue(loc)
+            // Filtre des points imprécis uniquement pour l'enregistrement du parcours.
+            if (loc.accuracy > 50f) return
             if (_estEnCours.value == true) {
                 synchronized(_parcoursMutable) {
                     _parcoursMutable.add(PointTrace(loc.latitude, loc.longitude))

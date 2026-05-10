@@ -52,7 +52,7 @@
         android:background="?attr/selectableItemBackgroundBorderless"
         android:contentDescription="Retour"
         android:src="@drawable/ic_arrow_back"
-        android:tint="?attr/colorOnSurface" />
+        app:tint="?attr/colorOnSurface" />
 
     <!-- Compteur session (haut centre, mode actif) -->
     <TextView
@@ -111,7 +111,7 @@
                     android:layout_height="20dp"
                     android:layout_marginEnd="8dp"
                     android:src="@drawable/ic_send"
-                    android:tint="?attr/colorPrimary" />
+                    app:tint="?attr/colorPrimary" />
 
                 <TextView
                     android:layout_width="wrap_content"
@@ -468,7 +468,7 @@
                 android:layout_height="16dp"
                 android:layout_marginEnd="8dp"
                 android:src="@drawable/ic_check_circle"
-                android:tint="@android:color/holo_green_dark" />
+                app:tint="@android:color/holo_green_dark" />
 
             <TextView
                 android:id="@+id/tv_snack_espece"

@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:gravity="center_vertical"
@@ -96,7 +97,7 @@
         android:background="?attr/selectableItemBackgroundBorderless"
         android:contentDescription="Modifier"
         android:src="@drawable/ic_edit"
-        android:tint="?attr/colorPrimary" />
+        app:tint="?attr/colorPrimary" />
 
     <ImageButton
         android:id="@+id/btn_supprimer"
@@ -105,5 +106,5 @@
         android:background="?attr/selectableItemBackgroundBorderless"
         android:contentDescription="Supprimer"
         android:src="@drawable/ic_delete"
-        android:tint="@android:color/holo_red_light" />
+        app:tint="@android:color/holo_red_light" />
 </LinearLayout>

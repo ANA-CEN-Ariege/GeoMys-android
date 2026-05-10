@@ -31,7 +31,7 @@
             android:background="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="Configuration"
             android:src="@drawable/ic_settings"
-            android:tint="@color/white_70" />
+            app:tint="@color/white_70" />
 
         <View
             android:id="@+id/indicateur_gn"
@@ -146,7 +146,7 @@
                     android:layout_width="20dp"
                     android:layout_height="20dp"
                     android:src="@drawable/ic_walk"
-                    android:tint="@color/white_70" />
+                    app:tint="@color/white_70" />
 
                 <TextView
                     android:layout_width="0dp"

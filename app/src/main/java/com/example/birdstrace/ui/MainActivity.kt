@@ -2,6 +2,7 @@ package com.example.birdstrace.ui
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.os.Build
 import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
 import androidx.navigation.NavController
@@ -31,6 +32,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val channel = NotificationChannel(
             LocationForegroundService.CHANNEL_ID,
             "Suivi GPS",

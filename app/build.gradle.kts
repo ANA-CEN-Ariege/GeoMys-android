@@ -4,12 +4,12 @@ plugins {
 
 android {
     namespace = "com.example.birdstrace"
-    compileSdk = 34
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.example.bioscope"
         minSdk = 24
-        targetSdk = 34
+        targetSdk = 36
         versionCode = 6
         versionName = "0.6.0"
 

@@ -49,7 +49,6 @@ class TraceFragment : Fragment() {
     private lateinit var sortieStore: SortieStore
     private lateinit var gnConfig: GeoNatureConfig
 
-    private var mapInitialized = false
     private var suivrePosition = true
     private var modePositionnement = false
     private var obsARepositionner: Observation? = null
@@ -145,16 +144,15 @@ class TraceFragment : Fragment() {
         locationOverlay = MyLocationNewOverlay(GpsMyLocationProvider(requireContext()), binding.map)
         binding.map.overlays.add(locationOverlay)
 
-        binding.map.setOnTouchListener { _, event ->
+        binding.map.setOnTouchListener { v, event ->
             if (event.action == android.view.MotionEvent.ACTION_MOVE
                 && !modePositionnement && obsARepositionner == null) {
                 suivrePosition = false
                 binding.btnCentrer.setImageResource(R.drawable.ic_location_off)
             }
+            if (event.action == android.view.MotionEvent.ACTION_UP) v.performClick()
             false
         }
-
-        mapInitialized = true
     }
 
     private fun setupControls() {

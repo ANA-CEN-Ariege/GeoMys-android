@@ -117,7 +117,7 @@ class SortiesFragment : Fragment() {
         }
         binding.emptyView.visibility = if (filtrees.isEmpty()) View.VISIBLE else View.GONE
         binding.recyclerView.visibility = if (filtrees.isEmpty()) View.GONE else View.VISIBLE
-        (binding.emptyView.getChildAt(1) as? android.widget.TextView)?.text = emptyMsg
+        binding.tvEmpty.text = emptyMsg
     }
 
     private fun updateTabCounts(toutes: List<Sortie>) {

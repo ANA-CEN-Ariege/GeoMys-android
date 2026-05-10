@@ -1,6 +1,7 @@
 package com.example.birdstrace.store
 
 import android.content.Context
+import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 
@@ -17,6 +18,9 @@ class GeoNatureConfig(context: Context) {
             EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
         )
     } catch (e: Exception) {
+        // Fallback non chiffré : le mot de passe sera en clair. On le signale
+        // explicitement pour ne pas masquer un problème silencieux côté Keystore.
+        Log.w("GeoNatureConfig", "EncryptedSharedPreferences indisponible — fallback non chiffré", e)
         prefs
     }
 

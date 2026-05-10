@@ -2,6 +2,10 @@ package com.example.birdstrace.store
 
 import android.content.Context
 import android.util.Log
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import org.osmdroid.config.Configuration
 import java.io.File
 
@@ -20,14 +24,16 @@ object MapTileCache {
         Configuration.getInstance().tileFileSystemCacheTrimBytes = CACHE_MAX_BYTES * 3 / 4
     }
 
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
     fun purgerSiNecessaire(context: Context) {
         val prefs = context.getSharedPreferences("GeoNat_prefs", Context.MODE_PRIVATE)
         val dernierePurge = prefs.getLong(PREFS_KEY, 0L)
         if (System.currentTimeMillis() - dernierePurge < DUREE_SEMAINE_MS) return
 
-        Thread {
+        scope.launch {
             val cacheDir = Configuration.getInstance().osmdroidTileCache
-            if (!cacheDir.exists()) return@Thread
+            if (!cacheDir.exists()) return@launch
 
             val limite = System.currentTimeMillis() - AGE_MAX_MS
             var nbPurgees = 0
@@ -45,6 +51,6 @@ object MapTileCache {
             }
 
             prefs.edit().putLong(PREFS_KEY, System.currentTimeMillis()).apply()
-        }.start()
+        }
     }
 }

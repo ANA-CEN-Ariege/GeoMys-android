@@ -55,7 +55,7 @@ class TraceFragment : Fragment() {
     private var fondCarte = FondCarte.OSM
 
     private var savedMapCenter: GeoPoint? = null
-    private var savedMapZoom: Double = 15.0
+    private var savedMapZoom: Double = 18.0
 
     private var locationOverlay: MyLocationNewOverlay? = null
     private var tracePolyline: Polyline? = null
@@ -322,16 +322,11 @@ class TraceFragment : Fragment() {
             observationMarkers[id]?.let { binding.map.overlays.remove(it) }
             observationMarkers.remove(id)
         }
-
-        val groupes = grouperObservations(observations)
-        for ((_, group) in groupes) {
-            if (group.size == 1) {
-                val obs = group[0]
-                if (obs.id !in observationMarkers) {
-                    val marker = createObservationMarker(obs)
-                    observationMarkers[obs.id] = marker
-                    binding.map.overlays.add(marker)
-                }
+        observations.forEach { obs ->
+            if (obs.id !in observationMarkers) {
+                val marker = createObservationMarker(obs)
+                observationMarkers[obs.id] = marker
+                binding.map.overlays.add(marker)
             }
         }
         binding.map.invalidate()
@@ -348,35 +343,43 @@ class TraceFragment : Fragment() {
         if (obs.notes.isNotEmpty()) sub += " — ${obs.notes}"
         marker.snippet = sub
         marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-        marker.setOnMarkerClickListener { m, _ ->
-            m.showInfoWindow()
+        marker.setOnMarkerClickListener { _, _ ->
+            val toutes = traceViewModel.observations.value ?: emptyList()
+            montrerListeEspeces(obsProches(obs, toutes).ifEmpty { listOf(obs) })
             true
         }
         return marker
     }
 
-    private fun grouperObservations(observations: List<Observation>): Map<String, List<Observation>> {
-        val groupes = mutableMapOf<String, List<Observation>>()
-        val restants = observations.toMutableList()
-        while (restants.isNotEmpty()) {
-            val pivot = restants.removeAt(0)
-            val groupe = mutableListOf(pivot)
-            val it = restants.iterator()
-            while (it.hasNext()) {
-                val obs = it.next()
-                val results = FloatArray(1)
-                android.location.Location.distanceBetween(
-                    pivot.latitude, pivot.longitude, obs.latitude, obs.longitude, results
-                )
-                if (results[0] <= 30f) {
-                    groupe.add(obs)
-                    it.remove()
-                }
-            }
-            groupes[pivot.id] = groupe
+    private fun obsProches(reference: Observation, toutes: List<Observation>): List<Observation> {
+        val out = FloatArray(1)
+        return toutes.filter {
+            android.location.Location.distanceBetween(
+                reference.latitude, reference.longitude, it.latitude, it.longitude, out
+            )
+            out[0] <= 30f
         }
-        return groupes
     }
+
+    private fun montrerListeEspeces(observations: List<Observation>) {
+        val triees = observations.sortedByDescending { it.date }
+        val fmt = SimpleDateFormat("HH:mm", Locale.getDefault())
+        val items = triees.map { o ->
+            val heure = fmt.format(Date(o.date))
+            val n = if (o.nombre > 1) " · ${o.nombre} ind." else ""
+            val notes = if (o.notes.isNotEmpty()) "\n   ${o.notes}" else ""
+            "$heure  ${o.espece}$n$notes"
+        }.toTypedArray()
+        AlertDialog.Builder(requireContext())
+            .setTitle("${triees.size} obs. ici — appuyer pour modifier")
+            .setItems(items) { _, which ->
+                val bundle = Bundle().apply { putString("obsId", triees[which].id) }
+                findNavController().navigate(R.id.action_trace_to_saisie, bundle)
+            }
+            .setPositiveButton("Fermer", null)
+            .show()
+    }
+
 
     private fun demanderPermissions() {
         val fine = Manifest.permission.ACCESS_FINE_LOCATION

@@ -18,7 +18,15 @@ object TaxRefCache {
         prefs = context.getSharedPreferences("taxref_cache", Context.MODE_PRIVATE)
     }
 
-    fun get(nom: String): TaxRefEntry? = charger()[normaliser(nom)]
+    // Suffixe d'article ajouté par l'INPN aux noms vernaculaires : "Triton palmé (Le)".
+    // À retirer pour que les clés normalisées matchent quel que soit l'origine (synchro, frappe).
+    private val regexSuffixeArticle = Regex("""\s*\((Le|La|Les|L'|L'|Un|Une|Des)\)\s*$""")
+    fun nettoyerSuffixeArticle(nom: String): String = nom.replace(regexSuffixeArticle, "").trim()
+
+    fun get(nom: String): TaxRefEntry? {
+        val cache = charger()
+        return cache[normaliser(nom)] ?: cache[normaliser(nettoyerSuffixeArticle(nom))]
+    }
 
     fun set(nom: String, cdNom: Int, sciNom: String, vernNom: String? = null) {
         val cache = charger().toMutableMap()

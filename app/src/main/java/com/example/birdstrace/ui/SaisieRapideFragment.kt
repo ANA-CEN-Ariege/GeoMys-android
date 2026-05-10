@@ -116,11 +116,11 @@ class SaisieRapideFragment : Fragment() {
         setupMap()
         setupTaxonSelector()
         setupAutocomplete()
-        setupNombreControls()
         setupControls()
         observerViewModel()
         demanderPermissions()
         applyWindowInsets()
+        updateModeUI()
     }
 
     // ─── Carte ────────────────────────────────────────────────────────────────
@@ -346,21 +346,6 @@ class SaisieRapideFragment : Fragment() {
         }
     }
 
-    // ─── Nombre ───────────────────────────────────────────────────────────────
-
-    private fun setupNombreControls() {
-        binding.btnMoins.setOnClickListener {
-            if (nombre > 1) { nombre--; updateNombreLabel() }
-        }
-        binding.btnPlus.setOnClickListener {
-            if (nombre < 999) { nombre++; updateNombreLabel() }
-        }
-    }
-
-    private fun updateNombreLabel() {
-        binding.tvNombre.text = if (nombre == 1) "1 individu" else "$nombre individus"
-    }
-
     // ─── Contrôles principaux ─────────────────────────────────────────────────
 
     private fun setupControls() {
@@ -568,6 +553,9 @@ class SaisieRapideFragment : Fragment() {
         binding.panneauActif.visibility  = if (modeActif) View.VISIBLE else View.GONE
         binding.reticule.visibility      = if (modeActif) View.VISIBLE else View.GONE
         binding.tvCompteur.visibility    = if (modeActif) View.VISIBLE else View.GONE
+        // Carte et bouton fond de carte cachés tant qu'on n'a pas démarré la saisie
+        binding.map.visibility           = if (modeActif) View.VISIBLE else View.GONE
+        binding.btnFondCarte.visibility  = if (modeActif) View.VISIBLE else View.GONE
         if (!modeActif) {
             snackJob?.cancel()
             binding.snackConfirmation.visibility = View.GONE
@@ -620,13 +608,46 @@ class SaisieRapideFragment : Fragment() {
                     val fmt = SimpleDateFormat("HH:mm", Locale.getDefault())
                     snippet = fmt.format(Date(obs.date)) + if (obs.nombre > 1) " · ${obs.nombre} ind." else ""
                     setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                    setOnMarkerClickListener { m, _ -> m.showInfoWindow(); true }
+                    setOnMarkerClickListener { _, _ ->
+                        val toutes = traceViewModel.observations.value ?: emptyList()
+                        montrerListeEspeces(obsProches(obs, toutes).ifEmpty { listOf(obs) })
+                        true
+                    }
                 }
                 observationMarkers[obs.id] = marker
                 binding.map.overlays.add(marker)
             }
         }
         binding.map.invalidate()
+    }
+
+    private fun obsProches(reference: Observation, toutes: List<Observation>): List<Observation> {
+        val out = FloatArray(1)
+        return toutes.filter {
+            android.location.Location.distanceBetween(
+                reference.latitude, reference.longitude, it.latitude, it.longitude, out
+            )
+            out[0] <= 30f
+        }
+    }
+
+    private fun montrerListeEspeces(observations: List<Observation>) {
+        val triees = observations.sortedByDescending { it.date }
+        val fmt = SimpleDateFormat("HH:mm", Locale.getDefault())
+        val items = triees.map { o ->
+            val heure = fmt.format(Date(o.date))
+            val n = if (o.nombre > 1) " · ${o.nombre} ind." else ""
+            val notes = if (o.notes.isNotEmpty()) "\n   ${o.notes}" else ""
+            "$heure  ${o.espece}$n$notes"
+        }.toTypedArray()
+        androidx.appcompat.app.AlertDialog.Builder(requireContext())
+            .setTitle("${triees.size} obs. ici — appuyer pour modifier")
+            .setItems(items) { _, which ->
+                val bundle = Bundle().apply { putString("obsId", triees[which].id) }
+                findNavController().navigate(R.id.action_saisieRapide_to_saisie, bundle)
+            }
+            .setPositiveButton("Fermer", null)
+            .show()
     }
 
     // ─── Dictée vocale ────────────────────────────────────────────────────────

@@ -462,13 +462,16 @@ object GeoNatureService {
                     val regne = item.optString("regne", "")
 
                     for (partie in nomVernRaw.split(",")) {
-                        val nomNettoye = partie.trim()
-                            .replace(Regex("""\s*\((Le|La|Les|L'|L'|Un|Une)\)\s*$"""), "")
+                        val nomNettoye = TaxRefCache.nettoyerSuffixeArticle(partie.trim())
                         val cle = TaxRefCache.normaliser(nomNettoye)
                         if (cle.isNotEmpty()) entrees[cle] = TaxRefEntry(cdNom, lbNom, nomNettoye)
                     }
                     val cleSci = TaxRefCache.normaliser(lbNom)
-                    if (cleSci.isNotEmpty()) entrees[cleSci] = TaxRefEntry(cdNom, lbNom, nomVernRaw.split(",").firstOrNull()?.trim())
+                    if (cleSci.isNotEmpty()) {
+                        val premierVern = nomVernRaw.split(",").firstOrNull()?.trim()
+                            ?.let { TaxRefCache.nettoyerSuffixeArticle(it) }
+                        entrees[cleSci] = TaxRefEntry(cdNom, lbNom, premierVern)
+                    }
 
                     if (groupe.isNotEmpty()) {
                         groupeMap[cdNom] = groupe

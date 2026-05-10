@@ -321,10 +321,18 @@ class SaisieObservationFragment : Fragment() {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
             override fun afterTextChanged(s: Editable?) {
-                binding.btnEnregistrer.isEnabled = s?.toString()?.trim()?.isNotEmpty() == true
+                // Désactivé tant qu'on n'a pas un match TaxRef confirmé (ou un cd_nom manuel valide).
+                updateBtnEnregistrerState()
                 lancerRechercheTaxRef(s?.toString() ?: "")
             }
         })
+    }
+
+    private fun updateBtnEnregistrerState() {
+        val texte = binding.etEspece.text?.toString()?.trim().orEmpty()
+        val matchTaxRef = taxRefStatut is TaxRefStatut.Trouve
+        val cdNomManuelOk = (cdNomManuel.trim().toIntOrNull() ?: 0) > 0
+        binding.btnEnregistrer.isEnabled = texte.isNotEmpty() && (matchTaxRef || cdNomManuelOk)
     }
 
     private fun lancerRechercheTaxRef(nom: String) {
@@ -368,6 +376,7 @@ class SaisieObservationFragment : Fragment() {
                 binding.taxrefProgress.visibility = View.GONE
             }
         }
+        updateBtnEnregistrerState()
     }
 
     private fun setupNombreControls() {
@@ -440,7 +449,7 @@ class SaisieObservationFragment : Fragment() {
             getLiveData<String>("comportement").observe(viewLifecycleOwner)  { comportement = it; updateDetailsIndicator() }
             getLiveData<String>("methDetermin").observe(viewLifecycleOwner)  { methDetermin = it; updateDetailsIndicator() }
             getLiveData<String>("determinateur").observe(viewLifecycleOwner) { determinateur = it }
-            getLiveData<String>("cdNomManuel").observe(viewLifecycleOwner)   { cdNomManuel = it }
+            getLiveData<String>("cdNomManuel").observe(viewLifecycleOwner)   { cdNomManuel = it; updateBtnEnregistrerState() }
         }
     }
 

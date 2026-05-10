@@ -32,9 +32,12 @@ import com.example.birdstrace.TaxRefLocal
 import com.example.birdstrace.databinding.FragmentSaisieRapideBinding
 import com.example.birdstrace.model.Observation
 import com.example.birdstrace.model.Taxon
+import com.example.birdstrace.model.Sortie
+import com.example.birdstrace.network.GeoNatureService
 import com.example.birdstrace.network.TaxRefService
 import com.example.birdstrace.network.TaxRefStatut
 import com.example.birdstrace.store.GeoNatureConfig
+import com.example.birdstrace.store.SortieStore
 import com.example.birdstrace.store.TaxRefCache
 import com.example.birdstrace.location.LocationForegroundService
 import kotlinx.coroutines.Job
@@ -56,6 +59,9 @@ class SaisieRapideFragment : Fragment() {
     private var _binding: FragmentSaisieRapideBinding? = null
     private val binding get() = _binding!!
     private val traceViewModel: TraceViewModel by activityViewModels()
+    private lateinit var sortieStore: SortieStore
+    private lateinit var gnConfig: GeoNatureConfig
+    private var envoiJob: Job? = null
 
     // Paramètres par défaut
     private var taxon: Taxon = Taxon.OISEAU
@@ -113,6 +119,8 @@ class SaisieRapideFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        sortieStore = SortieStore(requireContext())
+        gnConfig = GeoNatureConfig(requireContext())
         setupMap()
         setupTaxonSelector()
         setupAutocomplete()
@@ -254,13 +262,23 @@ class SaisieRapideFragment : Fragment() {
 
         binding.tilEspece.setEndIconOnClickListener { lancerDictee() }
 
+        binding.btnDemarrer.isEnabled = false
         binding.etEspece.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
             override fun afterTextChanged(s: Editable?) {
+                // Désactivé immédiatement quand le texte change ; réactivé après match TaxRef trouvé.
+                updateDemarrerState()
                 lancerRechercheTaxRef(s?.toString() ?: "")
             }
         })
+    }
+
+    private fun updateDemarrerState() {
+        val texte = binding.etEspece.text?.toString()?.trim().orEmpty()
+        val matchTaxRef = taxRefStatut is TaxRefStatut.Trouve
+        val cdNomManuelOk = (cdNomManuel.trim().toIntOrNull() ?: 0) > 0
+        binding.btnDemarrer.isEnabled = texte.isNotEmpty() && (matchTaxRef || cdNomManuelOk)
     }
 
     private fun refreshAutocompleteAdapter() {
@@ -352,6 +370,7 @@ class SaisieRapideFragment : Fragment() {
             }
             null -> { binding.tvTaxrefStatut.visibility = View.GONE; binding.taxrefProgress.visibility = View.GONE }
         }
+        updateDemarrerState()
     }
 
     // ─── Contrôles principaux ─────────────────────────────────────────────────
@@ -384,6 +403,7 @@ class SaisieRapideFragment : Fragment() {
         }
 
         binding.btnDemarrer.setOnClickListener { demarrer() }
+        binding.btnAnnulerSaisie.setOnClickListener { findNavController().navigateUp() }
 
         binding.btnModifierParams.setOnClickListener {
             modeActif = false
@@ -392,7 +412,7 @@ class SaisieRapideFragment : Fragment() {
 
         binding.btnEnregistrerIci.setOnClickListener { enregistrerIci() }
 
-        binding.btnTerminerRapide.setOnClickListener { findNavController().navigateUp() }
+        binding.btnTerminerRapide.setOnClickListener { showConfirmTerminer() }
 
         binding.btnCentrerGps.setOnClickListener {
             suivrePosition = true
@@ -426,7 +446,7 @@ class SaisieRapideFragment : Fragment() {
             getLiveData<String>("comportement").observe(viewLifecycleOwner)  { comportement = it; updateDetailsIndicator() }
             getLiveData<String>("methDetermin").observe(viewLifecycleOwner)  { methDetermin = it; updateDetailsIndicator() }
             getLiveData<String>("determinateur").observe(viewLifecycleOwner) { determinateur = it }
-            getLiveData<String>("cdNomManuel").observe(viewLifecycleOwner)   { cdNomManuel = it }
+            getLiveData<String>("cdNomManuel").observe(viewLifecycleOwner)   { cdNomManuel = it; updateDemarrerState() }
         }
     }
 
@@ -758,10 +778,80 @@ class SaisieRapideFragment : Fragment() {
         super.onDestroyView()
         snackJob?.cancel()
         taxRefJob?.cancel()
+        envoiJob?.cancel()
         speechRecognizer?.destroy()
         speechRecognizer = null
         observationMarkers.clear()
         _binding = null
+    }
+
+    // ─── Terminer la saisie ───────────────────────────────────────────────────
+
+    private fun showConfirmTerminer() {
+        val obs = traceViewModel.observations.value ?: emptyList()
+        if (obs.isEmpty()) {
+            findNavController().navigateUp()
+            return
+        }
+
+        val peutEnvoyerGn = gnConfig.estConfiguree && obs.any { it.cdNom != null }
+        val options = mutableListOf(getString(R.string.enregistrer_quitter))
+        if (peutEnvoyerGn) options.add(getString(R.string.enregistrer_envoyer_gn))
+        options.add(getString(R.string.supprimer_sortie))
+        options.add(getString(R.string.continuer_sortie))
+
+        androidx.appcompat.app.AlertDialog.Builder(requireContext())
+            .setTitle(R.string.terminer_sortie)
+            .setItems(options.toTypedArray()) { _, which ->
+                when (options[which]) {
+                    getString(R.string.enregistrer_quitter) -> terminerSaisie(envoyerGN = false)
+                    getString(R.string.enregistrer_envoyer_gn) -> terminerSaisie(envoyerGN = true)
+                    getString(R.string.supprimer_sortie) -> {
+                        traceViewModel.reinitialiser()
+                        LocationForegroundService.stop(requireContext())
+                        findNavController().navigateUp()
+                    }
+                    // Continuer : ne rien faire, fermer le dialog
+                }
+            }.show()
+    }
+
+    private fun terminerSaisie(envoyerGN: Boolean) {
+        LocationForegroundService.stop(requireContext())
+        val sortie = Sortie(
+            date = System.currentTimeMillis(),
+            pointsParcours = emptyList(),
+            observations = traceViewModel.observations.value?.toList() ?: emptyList(),
+            distanceTotale = 0.0
+        )
+        if (sortie.observations.isNotEmpty()) sortieStore.ajouter(sortie)
+        traceViewModel.reinitialiser()
+
+        if (envoyerGN) envoyerVersGeoNature(sortie)
+        else findNavController().navigateUp()
+    }
+
+    private fun envoyerVersGeoNature(sortie: Sortie) {
+        envoiJob = viewLifecycleOwner.lifecycleScope.launch {
+            try {
+                val (nb, total, premierReleve) = GeoNatureService.envoyer(sortie, gnConfig)
+                sortieStore.marquerEnvoyee(sortie.id)
+                var msg = "$nb/$total relevé${if (total > 1) "s" else ""} créé${if (nb > 1) "s" else ""}"
+                if (premierReleve != null) msg += " (premier #$premierReleve)"
+                showResult(msg, true)
+            } catch (e: Exception) {
+                showResult(e.message ?: "Erreur inconnue", false)
+            }
+        }
+    }
+
+    private fun showResult(msg: String, success: Boolean) {
+        if (!isAdded) return
+        androidx.appcompat.app.AlertDialog.Builder(requireContext())
+            .setTitle(if (success) "GeoNature" else getString(R.string.erreur_envoi))
+            .setMessage(msg)
+            .setPositiveButton("OK") { _, _ -> findNavController().navigateUp() }
+            .show()
     }
 }
 

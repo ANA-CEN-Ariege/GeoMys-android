@@ -343,13 +343,28 @@
                 android:textSize="12sp"
                 android:visibility="gone" />
 
-            <!-- Bouton Démarrer -->
-            <Button
-                android:id="@+id/btn_demarrer"
+            <!-- Boutons Annuler / Démarrer -->
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="16dp"
-                android:text="Démarrer la saisie →" />
+                android:orientation="horizontal">
+
+                <Button
+                    android:id="@+id/btn_annuler_saisie"
+                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="8dp"
+                    android:text="Annuler" />
+
+                <Button
+                    android:id="@+id/btn_demarrer"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Démarrer la saisie →" />
+            </LinearLayout>
         </LinearLayout>
     </ScrollView>
 

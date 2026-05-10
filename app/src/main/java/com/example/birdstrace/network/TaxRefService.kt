@@ -21,7 +21,7 @@ object TaxRefService {
         withContext(Dispatchers.IO) {
             // 1. Cache synchronisé depuis le serveur GeoNature (cd_nom autoritatif du serveur)
             TaxRefCache.get(nom)?.let { entry ->
-                return@withContext Pair(TaxRefStatut.Trouve(entry.cdNom, entry.sciNom, entry.vernNom), false)
+                return@withContext Pair(TaxRefStatut.Trouve(entry.cdNom, entry.sciNom, entry.premierVern), false)
             }
 
             // 2. Base embarquée TaxRefLocal
@@ -64,16 +64,20 @@ object TaxRefService {
                 conn.setRequestProperty("Accept", "application/json")
                 if (conn.responseCode != 200) return@withContext null
                 val array = JSONArray(conn.inputStream.bufferedReader().readText())
-                val nomNorm = TaxRefCache.normaliser(nom)
-                val nomLc = nom.trim().lowercase()
+                val nomNettoye = TaxRefCache.nettoyerSuffixeArticle(nom)
+                val nomNorm = TaxRefCache.normaliser(nomNettoye)
+                val nomLc = nomNettoye.lowercase()
                 for (i in 0 until array.length()) {
                     val item = array.getJSONObject(i)
                     val cdNom = item.optInt("cd_nom", -1)
                     val lbNom = item.optString("lb_nom", "")
                     if (cdNom <= 0) continue
-                    // Correspondance sur nom vernaculaire (noms français)
+                    // Correspondance sur nom vernaculaire (peut contenir plusieurs valeurs séparées par virgule).
                     val vernRaw = item.optString("nom_vern", "")
-                    if (TaxRefCache.normaliser(vernRaw) == nomNorm) {
+                    val vernMatch = vernRaw.split(",")
+                        .map { TaxRefCache.nettoyerSuffixeArticle(it.trim()) }
+                        .any { TaxRefCache.normaliser(it) == nomNorm }
+                    if (vernMatch) {
                         return@withContext TaxRefStatut.Trouve(cdNom, lbNom, vernRaw.ifEmpty { null })
                     }
                     // Correspondance sur nom scientifique (lb_nom)
@@ -82,7 +86,7 @@ object TaxRefService {
                     }
                 }
                 null
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 null
             }
         }

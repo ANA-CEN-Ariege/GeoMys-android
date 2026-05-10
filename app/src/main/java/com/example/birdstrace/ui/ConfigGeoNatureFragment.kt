@@ -80,12 +80,16 @@ class ConfigGeoNatureFragment : Fragment() {
                 if (version != null) {
                     val cached = TaxRefCache.versionSauvegardee
                     binding.tvTaxRefVersion.visibility = View.VISIBLE
-                    binding.tvTaxRefVersion.text = if (cached != null && cached != version)
-                        "TaxRef : mise à jour v$version (cache v$cached)"
-                    else if (cached == version)
-                        "TaxRef v$version — à jour"
-                    else
-                        "TaxRef v$version disponible"
+                    when {
+                        cached != null && cached != version -> {
+                            binding.tvTaxRefVersion.text = "⚠ TaxRef serveur v$version — cache v$cached. Resynchroniser recommandé."
+                            binding.tvTaxRefVersion.setTextColor(
+                                androidx.core.content.ContextCompat.getColor(requireContext(), android.R.color.holo_orange_dark)
+                            )
+                        }
+                        cached == version -> binding.tvTaxRefVersion.text = "TaxRef v$version — à jour"
+                        else -> binding.tvTaxRefVersion.text = "TaxRef v$version disponible — synchroniser pour utiliser"
+                    }
                 }
             }
         }

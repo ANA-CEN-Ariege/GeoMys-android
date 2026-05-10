@@ -225,7 +225,16 @@ class SaisieObservationFragment : Fragment() {
                     val filtered: List<String> = if (constraint.isNullOrEmpty()) suggestions
                     else {
                         val query = TaxRefCache.normaliser(constraint.toString())
-                        normalized.mapNotNull { (key, display) -> if (key.contains(query)) display else null }
+                        // Tri composite : startsWith(query) en premier, puis contains(query).
+                        val starts = ArrayList<String>()
+                        val contains = ArrayList<String>()
+                        for ((key, display) in normalized) {
+                            when {
+                                key.startsWith(query) -> starts.add(display)
+                                key.contains(query)   -> contains.add(display)
+                            }
+                        }
+                        starts + contains
                     }
                     results.values = filtered
                     results.count = filtered.size

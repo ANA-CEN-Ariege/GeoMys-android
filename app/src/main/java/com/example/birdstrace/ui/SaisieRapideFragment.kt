@@ -295,7 +295,15 @@ class SaisieRapideFragment : Fragment() {
                     val filtered = if (constraint.isNullOrEmpty()) suggestions
                     else {
                         val q = TaxRefCache.normaliser(constraint.toString())
-                        normalized.mapNotNull { (k, d) -> if (k.contains(q)) d else null }
+                        val starts = ArrayList<String>()
+                        val contains = ArrayList<String>()
+                        for ((k, d) in normalized) {
+                            when {
+                                k.startsWith(q) -> starts.add(d)
+                                k.contains(q)   -> contains.add(d)
+                            }
+                        }
+                        starts + contains
                     }
                     results.values = filtered; results.count = filtered.size; return results
                 }

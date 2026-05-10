@@ -378,6 +378,40 @@ object GeoNatureService {
             Triple(nbCrees, obsValides.size, premierIdReleve)
         }
 
+    private fun construireIndexTaxon(
+        groupe2: Map<Int, String>,
+        groupe1: Map<Int, String>,
+        regne: Map<Int, String>
+    ): Map<Taxon, List<Int>> {
+        val parG2 = groupe2.entries.groupBy({ it.value }, { it.key })
+        val oiseaux    = parG2["Oiseaux"].orEmpty().toSet()
+        val mammiferes = parG2["Mammifères"].orEmpty().toSet()
+        val reptiles   = parG2["Reptiles"].orEmpty().toSet()
+        val batraciens = parG2["Amphibiens"].orEmpty().toSet()
+        val poissons   = (parG2["Poissons"].orEmpty() +
+            groupe1.filterValues { it == "Poissons" }.keys +
+            groupe2.filter { it.value in NomenclatureCache.GROUP2_POISSONS }.keys).toSet()
+        val insectes   = parG2["Insectes"].orEmpty().toSet()
+        val fonge      = regne.filterValues { it == "Fungi" }.keys
+        val plantes    = (groupe1.filter { it.value in NomenclatureCache.GROUPES1_FLORE }.keys +
+            regne.filterValues { it == "Plantae" }.keys).toSet()
+
+        val tousAnimalia = regne.filterValues { it == "Animalia" }.keys
+        val invertebres = (tousAnimalia - oiseaux - mammiferes - reptiles - batraciens - poissons - insectes).toSet()
+
+        return mapOf(
+            Taxon.OISEAU      to oiseaux.sorted(),
+            Taxon.MAMMIFERE   to mammiferes.sorted(),
+            Taxon.REPTILE     to reptiles.sorted(),
+            Taxon.BATRACIEN   to batraciens.sorted(),
+            Taxon.POISSON     to poissons.sorted(),
+            Taxon.INSECTE     to insectes.sorted(),
+            Taxon.FONGE       to fonge.sorted(),
+            Taxon.INVERTEBRES to invertebres.sorted(),
+            Taxon.PLANTE      to plantes.sorted(),
+        )
+    }
+
     suspend fun verifierVersionTaxRef(config: GeoNatureConfig): String? =
         withContext(Dispatchers.IO) {
             try {
@@ -461,17 +495,21 @@ object GeoNatureService {
                     val groupe1 = item.optString("group1_inpn", "")
                     val regne = item.optString("regne", "")
 
-                    for (partie in nomVernRaw.split(",")) {
-                        val nomNettoye = TaxRefCache.nettoyerSuffixeArticle(partie.trim())
-                        val cle = TaxRefCache.normaliser(nomNettoye)
-                        if (cle.isNotEmpty()) entrees[cle] = TaxRefEntry(cdNom, lbNom, nomNettoye)
+                    // Tous les noms vernaculaires nettoyés (peuvent être plusieurs séparés par virgule).
+                    val tousVern: List<String> = nomVernRaw.split(",")
+                        .map { TaxRefCache.nettoyerSuffixeArticle(it.trim()) }
+                        .filter { it.isNotEmpty() }
+                        .distinct()
+                    val entryFinale = TaxRefEntry(cdNom, lbNom, tousVern)
+
+                    // Une clé par nom vernaculaire ET une clé par nom scientifique, toutes
+                    // pointant vers la même entrée — qui contient la liste complète des vernaculaires.
+                    for (vern in tousVern) {
+                        val cle = TaxRefCache.normaliser(vern)
+                        if (cle.isNotEmpty()) entrees[cle] = entryFinale
                     }
                     val cleSci = TaxRefCache.normaliser(lbNom)
-                    if (cleSci.isNotEmpty()) {
-                        val premierVern = nomVernRaw.split(",").firstOrNull()?.trim()
-                            ?.let { TaxRefCache.nettoyerSuffixeArticle(it) }
-                        entrees[cleSci] = TaxRefEntry(cdNom, lbNom, premierVern)
-                    }
+                    if (cleSci.isNotEmpty()) entrees[cleSci] = entryFinale
 
                     if (groupe.isNotEmpty()) {
                         groupeMap[cdNom] = groupe
@@ -502,6 +540,11 @@ object GeoNatureService {
         if (entrees.isNotEmpty()) TaxRefCache.ajouter(entrees)
         if (groupeMap.isNotEmpty()) TaxRefCache.ajouterGroupes(groupeMap)
         if (groupe1Map.isNotEmpty() || regneMap.isNotEmpty()) TaxRefCache.ajouterGroupes1etRegnes(groupe1Map, regneMap)
+
+        // Index pré-calculé Taxon → cdNoms : permet à l'autocomplétion de servir
+        // les suggestions sans rescanner l'ensemble du cache à chaque switch de taxon.
+        val indexTaxon = construireIndexTaxon(groupeMap, groupe1Map, regneMap)
+        TaxRefCache.setIndexParTaxon(indexTaxon)
         val nbO = cdNomsOiseaux.size
         val nbM = cdNomsMammiferes.size
         val nbR = cdNomsReptiles.size

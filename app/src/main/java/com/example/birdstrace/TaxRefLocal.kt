@@ -529,10 +529,30 @@ object TaxRefLocal {
         val groupes1 = TaxRefCache.tousLesGroupes1()
         val regnes   = TaxRefCache.tousLesRegnes()
 
-        fun toList(parCdNom: Map<Int, TaxRefEntry>): List<String> = if (scientifique)
-            parCdNom.values.map { it.sciNom }.filter { it.isNotEmpty() }.distinct().sorted()
-        else
-            parCdNom.values.mapNotNull { it.vernNom }.filter { it.isNotEmpty() }.distinct().sorted()
+        // Conversion liste d'entries → suggestions : en mode vernaculaire, on déplie tous
+        // les vernNoms ; quand un taxon n'a aucun nom français, on retombe sur sciNom pour
+        // ne pas le rendre invisible (fréquent en flore, fonge, invertébrés).
+        fun entriesToSuggestions(entries: Collection<TaxRefEntry>): List<String> = if (scientifique) {
+            entries.asSequence().map { it.sciNom }.filter { it.isNotEmpty() }.distinct().sorted().toList()
+        } else {
+            entries.asSequence().flatMap { e ->
+                if (e.vernNoms.isNotEmpty()) e.vernNoms.asSequence()
+                else sequenceOf(e.sciNom)
+            }.filter { it.isNotEmpty() }.distinct().sorted().toList()
+        }
+
+        fun toList(parCdNom: Map<Int, TaxRefEntry>): List<String> = entriesToSuggestions(parCdNom.values)
+
+        // Fast-path : si l'index pré-calculé existe pour ce taxon, on l'utilise
+        // (évite de rescanner toutes les entrées à chaque switch).
+        if (taxon != null) {
+            val cdNoms = TaxRefCache.indexParTaxon(taxon)
+            if (!cdNoms.isNullOrEmpty()) {
+                val parCdNom = TaxRefCache.entreesParCdNom()
+                val entries = cdNoms.mapNotNull { parCdNom[it] }
+                if (entries.isNotEmpty()) return entriesToSuggestions(entries)
+            }
+        }
 
         fun filtrerParGroup2(ensemble: Set<String>): List<String> {
             val parCdNom = mutableMapOf<Int, TaxRefEntry>()

@@ -158,7 +158,6 @@ class SaisieObservationFragment : Fragment() {
                     }
                 }
             }
-            row.findViewById<ImageButton>(R.id.btn_edit).setOnClickListener { reediter(index) }
             row.findViewById<ImageButton>(R.id.btn_info).setOnClickListener { ouvrirDetails(index) }
             row.findViewById<ImageButton>(R.id.btn_delete).setOnClickListener { supprimer(index) }
             binding.llPendingObs.addView(row)
@@ -200,25 +199,6 @@ class SaisieObservationFragment : Fragment() {
         rafraichirListe()
     }
 
-    /** Bouton ✏️ : retire la ligne et remet ses valeurs (taxon, nombre, nom) dans le formulaire
-     *  pour que l'utilisateur puisse corriger puis re-sélectionner via l'autocomplétion. */
-    private fun reediter(index: Int) {
-        if (index !in pendingObs.indices) return
-        val obs = pendingObs.removeAt(index)
-        pendingNombreForNextAdd = obs.nombre
-        taxon = obs.taxon
-        updateTaxonUI()
-        refreshAutocompleteAdapter()
-        binding.etEspece.setText(obs.espece)
-        binding.etEspece.setSelection(obs.espece.length)
-        binding.etEspece.requestFocus()
-        rafraichirListe()
-    }
-
-    /** Nombre à appliquer à la prochaine PendingObs ajoutée via l'autocomplétion. Mis à jour
-     *  par reediter() pour préserver le compteur de la ligne réouverte. Toujours remis à 1
-     *  après chaque ajout — les ajouts normaux et la duplication partent toujours de 1. */
-    private var pendingNombreForNextAdd = 1
 
     private fun ouvrirDetails(index: Int) {
         if (index !in pendingObs.indices) return
@@ -472,9 +452,8 @@ class SaisieObservationFragment : Fragment() {
             taxon = taxon,
             espece = especeAffichee,
             cdNom = cdNom,
-            nombre = pendingNombreForNextAdd
+            nombre = 1
         ))
-        pendingNombreForNextAdd = 1
         binding.etEspece.setText("")
         taxRefStatut = null
         updateTaxRefUI()

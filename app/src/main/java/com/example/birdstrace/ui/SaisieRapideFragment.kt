@@ -46,6 +46,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
+import androidx.core.graphics.drawable.toBitmap
 import org.osmdroid.config.Configuration
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.overlay.Marker
@@ -146,6 +147,12 @@ class SaisieRapideFragment : Fragment() {
             } ?: GeoPoint(46.5, 2.5)
         )
         locationOverlay = MyLocationNewOverlay(GpsMyLocationProvider(requireContext()), binding.map).apply {
+            setPersonIcon(ContextCompat.getDrawable(requireContext(), R.drawable.ic_gps_blue_dot)?.toBitmap())
+            setPersonHotspot(10f, 10f)
+            setDirectionArrow(
+                ContextCompat.getDrawable(requireContext(), R.drawable.ic_gps_blue_dot)?.toBitmap(),
+                ContextCompat.getDrawable(requireContext(), R.drawable.ic_gps_blue_dot)?.toBitmap()
+            )
             setDrawAccuracyEnabled(true)
         }
         binding.map.overlays.add(locationOverlay)

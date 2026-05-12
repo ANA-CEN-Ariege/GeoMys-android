@@ -126,7 +126,7 @@
                     android:layout_height="match_parent"
                     android:layout_marginStart="8dp"
                     android:layout_weight="1"
-                    android:backgroundTint="@color/orange"
+                    android:backgroundTint="@color/green_85"
                     android:text="@string/saisie_mono_taxons"
                     android:textColor="@android:color/white"
                     android:textSize="15sp"

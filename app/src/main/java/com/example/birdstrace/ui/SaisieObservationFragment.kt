@@ -105,7 +105,6 @@ class SaisieObservationFragment : Fragment() {
             longitude = arguments?.getDouble("longitude") ?: 0.0
         }
 
-        binding.tvCoordonnees.text = "%.5f, %.5f".format(latitude, longitude)
         binding.tvNombre.text = if (nombre == 1) "1 individu" else "$nombre individus"
 
         setupTaxonSelector()

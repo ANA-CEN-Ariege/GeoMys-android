@@ -31,6 +31,7 @@ import com.example.birdstrace.location.LocationForegroundService
 import com.example.birdstrace.store.GeoNatureConfig
 import com.example.birdstrace.store.SortieStore
 import com.example.birdstrace.network.GeoNatureService
+import androidx.core.graphics.drawable.toBitmap
 import org.osmdroid.config.Configuration
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
@@ -141,7 +142,14 @@ class TraceFragment : Fragment() {
         binding.map.controller.setZoom(savedMapZoom)
         binding.map.controller.setCenter(savedMapCenter ?: GeoPoint(46.5, 2.5))
 
-        locationOverlay = MyLocationNewOverlay(GpsMyLocationProvider(requireContext()), binding.map)
+        locationOverlay = MyLocationNewOverlay(GpsMyLocationProvider(requireContext()), binding.map).apply {
+            setPersonIcon(ContextCompat.getDrawable(requireContext(), R.drawable.ic_gps_blue_dot)?.toBitmap())
+            setPersonHotspot(10f, 10f)
+            setDirectionArrow(
+                ContextCompat.getDrawable(requireContext(), R.drawable.ic_gps_blue_dot)?.toBitmap(),
+                ContextCompat.getDrawable(requireContext(), R.drawable.ic_gps_blue_dot)?.toBitmap()
+            )
+        }
         binding.map.overlays.add(locationOverlay)
 
         binding.map.setOnTouchListener { v, event ->

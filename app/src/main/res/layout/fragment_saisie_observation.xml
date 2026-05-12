@@ -262,30 +262,6 @@
                 android:src="@drawable/ic_add" />
         </LinearLayout>
 
-        <!-- Position -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:gravity="center_vertical"
-            android:orientation="horizontal">
-
-            <ImageView
-                android:layout_width="18dp"
-                android:layout_height="18dp"
-                android:src="@drawable/ic_location_pin"
-                app:tint="@android:color/holo_red_dark" />
-
-            <TextView
-                android:id="@+id/tv_coordonnees"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="6dp"
-                android:fontFamily="monospace"
-                android:textColor="@android:color/darker_gray"
-                android:textSize="12sp" />
-        </LinearLayout>
-
         <!-- Bouton Détails -->
         <FrameLayout
             android:layout_width="match_parent"

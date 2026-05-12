@@ -15,6 +15,8 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.ArrayAdapter
 import android.widget.Filter
+import android.widget.ImageButton
+import android.widget.ImageView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -46,7 +48,34 @@ class SaisieObservationFragment : Fragment() {
     private val traceViewModel: TraceViewModel by activityViewModels()
     private lateinit var gnConfig: GeoNatureConfig
 
-    private var obsId: String? = null
+    /** Une obs en attente d'enregistrement. Contient tous les champs ; `existingId` est non-null
+     *  uniquement quand on édite une obs déjà enregistrée (flow depuis la liste Observations). */
+    private data class PendingObs(
+        var taxon: Taxon,
+        var espece: String,
+        var cdNom: Int?,
+        var nombre: Int = 1,
+        var sexe: String = "",
+        var stadeVie: String = "",
+        var techniqueObs: String = "",
+        var statutBio: String = "",
+        var etaBio: String = "",
+        var preuveExist: String = "",
+        var objDenbr: String = "",
+        var typDenbr: String = "",
+        var comportement: String = "",
+        var methDetermin: String = "",
+        var determinateur: String = "",
+        var notes: String = "",
+        var cdNomManuel: String = "",
+        val existingId: String? = null
+    )
+
+    private val pendingObs = mutableListOf<PendingObs>()
+    /** Index de la PendingObs dont on édite les détails via ObservationDetailsFragment. */
+    private var editingDetailsIndex: Int? = null
+
+    // État courant du formulaire — utilisé au moment d'ajouter une nouvelle ligne.
     private var latitude = 0.0
     private var longitude = 0.0
     private var taxon: Taxon = Taxon.OISEAU
@@ -54,19 +83,6 @@ class SaisieObservationFragment : Fragment() {
     private var taxRefStatut: TaxRefStatut? = null
     private var taxRefJob: Job? = null
     private var nombre = 1
-    private var sexe = ""
-    private var stadeVie = ""
-    private var techniqueObs = ""
-    private var statutBio = ""
-    private var etaBio = ""
-    private var preuveExist = ""
-    private var objDenbr = ""
-    private var typDenbr = ""
-    private var comportement = ""
-    private var methDetermin = ""
-    private var determinateur = ""
-    private var notes = ""
-    private var cdNomManuel = ""
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         _binding = FragmentSaisieObservationBinding.inflate(inflater, container, false)
@@ -75,33 +91,39 @@ class SaisieObservationFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        // ScrollView edge-to-edge : padding-top = status bar, padding-bottom = nav bar + IME.
         binding.root.applySystemBarInsets(includeIme = true)
         gnConfig = GeoNatureConfig(requireContext())
-        obsId = arguments?.getString("obsId")
 
+        val obsId = arguments?.getString("obsId")
         val obsExistante = obsId?.let { id ->
             traceViewModel.observations.value?.find { it.id == id }
         }
 
         if (obsExistante != null) {
+            // Édition d'une obs existante — pré-remplir la liste avec une seule entrée.
             latitude = obsExistante.latitude
             longitude = obsExistante.longitude
-            taxon = obsExistante.taxon ?: Taxon.OISEAU
-            nombre = obsExistante.nombre
-            notes = obsExistante.notes
-            sexe = obsExistante.sexe ?: ""
-            stadeVie = obsExistante.stadeVie ?: ""
-            techniqueObs = obsExistante.techniqueObs ?: ""
-            statutBio = obsExistante.statutBio ?: ""
-            etaBio = obsExistante.etaBio ?: ""
-            preuveExist = obsExistante.preuveExist ?: ""
-            objDenbr = obsExistante.objDenbr ?: ""
-            typDenbr = obsExistante.typDenbr ?: ""
-            comportement = obsExistante.comportement ?: ""
-            methDetermin = obsExistante.methDetermin ?: ""
-            determinateur = obsExistante.determinateur ?: ""
-            cdNomManuel = obsExistante.cdNom?.toString() ?: ""
+            pendingObs.add(PendingObs(
+                taxon = obsExistante.taxon ?: Taxon.OISEAU,
+                espece = obsExistante.espece,
+                cdNom = obsExistante.cdNom,
+                nombre = obsExistante.nombre,
+                sexe = obsExistante.sexe ?: "",
+                stadeVie = obsExistante.stadeVie ?: "",
+                techniqueObs = obsExistante.techniqueObs ?: "",
+                statutBio = obsExistante.statutBio ?: "",
+                etaBio = obsExistante.etaBio ?: "",
+                preuveExist = obsExistante.preuveExist ?: "",
+                objDenbr = obsExistante.objDenbr ?: "",
+                typDenbr = obsExistante.typDenbr ?: "",
+                comportement = obsExistante.comportement ?: "",
+                methDetermin = obsExistante.methDetermin ?: "",
+                determinateur = obsExistante.determinateur ?: "",
+                notes = obsExistante.notes,
+                cdNomManuel = obsExistante.cdNom?.toString() ?: "",
+                existingId = obsExistante.id
+            ))
+            requireActivity().title = "Modifier l'observation"
         } else {
             latitude = arguments?.getDouble("latitude") ?: 0.0
             longitude = arguments?.getDouble("longitude") ?: 0.0
@@ -112,17 +134,137 @@ class SaisieObservationFragment : Fragment() {
         setupTaxonSelector()
         setupAutocomplete()
         setupNombreControls()
-        setupDetails()
-
-        if (obsExistante != null) {
-            binding.etEspece.setText(obsExistante.espece)
-            updateDetailsIndicator()
-            requireActivity().title = "Modifier l'observation"
-        }
+        rafraichirListe()
 
         binding.btnAnnuler.setOnClickListener { findNavController().navigateUp() }
         binding.btnEnregistrer.setOnClickListener { enregistrer() }
+        updateBtnEnregistrerState()
     }
+
+    // ─── Liste des obs en attente ─────────────────────────────────────────────
+
+    private fun rafraichirListe() {
+        binding.llPendingObs.removeAllViews()
+        val inflater = LayoutInflater.from(requireContext())
+        pendingObs.forEachIndexed { index, obs ->
+            val row = inflater.inflate(R.layout.item_pending_obs, binding.llPendingObs, false)
+            row.findViewById<ImageView>(R.id.iv_taxon).setImageResource(iconeTaxon(obs.taxon))
+            val label = if (obs.nombre > 1) "${obs.espece}  ·  ${obs.nombre} indiv." else obs.espece
+            row.findViewById<TextView>(R.id.tv_espece).text = label
+            row.findViewById<ImageButton>(R.id.btn_edit).setOnClickListener { reediter(index) }
+            row.findViewById<ImageButton>(R.id.btn_info).setOnClickListener { ouvrirDetails(index) }
+            row.findViewById<ImageButton>(R.id.btn_delete).setOnClickListener { supprimer(index) }
+            binding.llPendingObs.addView(row)
+        }
+        updateBtnEnregistrerState()
+    }
+
+    private fun iconeTaxon(t: Taxon): Int = when (t) {
+        Taxon.OISEAU      -> R.drawable.oiseaux
+        Taxon.MAMMIFERE   -> R.drawable.mammiferes2
+        Taxon.REPTILE     -> R.drawable.reptiles2
+        Taxon.BATRACIEN   -> R.drawable.amphibiens
+        Taxon.POISSON     -> R.drawable.poissons
+        Taxon.INSECTE     -> R.drawable.insectes
+        Taxon.FONGE       -> R.drawable.champignons2
+        Taxon.INVERTEBRES -> R.drawable.mollusques
+        Taxon.PLANTE      -> R.drawable.fleurs
+    }
+
+    private fun supprimer(index: Int) {
+        if (index !in pendingObs.indices) return
+        pendingObs.removeAt(index)
+        rafraichirListe()
+    }
+
+    /** Bouton ✏️ : retire la ligne et remet ses valeurs (taxon, nombre, nom) dans le formulaire
+     *  pour que l'utilisateur puisse corriger puis re-sélectionner via l'autocomplétion. */
+    private fun reediter(index: Int) {
+        if (index !in pendingObs.indices) return
+        val obs = pendingObs.removeAt(index)
+        taxon = obs.taxon
+        nombre = obs.nombre
+        binding.tvNombre.text = if (nombre == 1) "1 individu" else "$nombre individus"
+        updateTaxonUI()
+        refreshAutocompleteAdapter()
+        binding.etEspece.setText(obs.espece)
+        binding.etEspece.setSelection(obs.espece.length)
+        binding.etEspece.requestFocus()
+        rafraichirListe()
+    }
+
+    private fun ouvrirDetails(index: Int) {
+        if (index !in pendingObs.indices) return
+        val obs = pendingObs[index]
+        editingDetailsIndex = index
+        val groupe2Inpn = obs.cdNom?.let { TaxRefCache.tousLesGroupes()[it.toString()] }
+            ?: when (obs.taxon) {
+                Taxon.MAMMIFERE   -> "Mammifères"
+                Taxon.REPTILE     -> "Reptiles"
+                Taxon.BATRACIEN   -> "Amphibiens"
+                Taxon.POISSON     -> "Poissons"
+                Taxon.INSECTE     -> "Insectes"
+                Taxon.PLANTE,
+                Taxon.FONGE,
+                Taxon.INVERTEBRES -> null
+                else              -> "Oiseaux"
+            }
+        val bundle = Bundle().apply {
+            putString("taxon",         obs.taxon.name)
+            putString("groupe2Inpn",   groupe2Inpn)
+            putString("notes",         obs.notes)
+            putString("sexe",          obs.sexe)
+            putString("stadeVie",      obs.stadeVie)
+            putString("techniqueObs",  obs.techniqueObs)
+            putString("statutBio",     obs.statutBio)
+            putString("etaBio",        obs.etaBio)
+            putString("preuveExist",   obs.preuveExist)
+            putString("objDenbr",      obs.objDenbr)
+            putString("typDenbr",      obs.typDenbr)
+            putString("comportement",  obs.comportement)
+            putString("methDetermin",  obs.methDetermin)
+            putString("determinateur", obs.determinateur)
+            putString("cdNomManuel",   obs.cdNomManuel)
+            putBoolean("taxrefNonTrouve", obs.cdNom == null)
+            putDouble("latitude", latitude)
+            putDouble("longitude", longitude)
+        }
+        findNavController().navigate(R.id.action_saisie_to_details, bundle)
+    }
+
+    override fun onViewStateRestored(savedInstanceState: Bundle?) {
+        super.onViewStateRestored(savedInstanceState)
+        // Retour de ObservationDetailsFragment : met à jour la PendingObs en cours d'édition.
+        findNavController().currentBackStackEntry?.savedStateHandle?.apply {
+            val handler: (String, (PendingObs, String) -> Unit) -> Unit = { key, setter ->
+                getLiveData<String>(key).observe(viewLifecycleOwner) { value ->
+                    val idx = editingDetailsIndex ?: return@observe
+                    if (idx in pendingObs.indices) {
+                        setter(pendingObs[idx], value)
+                        rafraichirListe()
+                    }
+                }
+            }
+            handler("notes")         { o, v -> o.notes = v }
+            handler("sexe")          { o, v -> o.sexe = v }
+            handler("stadeVie")      { o, v -> o.stadeVie = v }
+            handler("techniqueObs")  { o, v -> o.techniqueObs = v }
+            handler("statutBio")     { o, v -> o.statutBio = v }
+            handler("etaBio")        { o, v -> o.etaBio = v }
+            handler("preuveExist")   { o, v -> o.preuveExist = v }
+            handler("objDenbr")      { o, v -> o.objDenbr = v }
+            handler("typDenbr")      { o, v -> o.typDenbr = v }
+            handler("comportement")  { o, v -> o.comportement = v }
+            handler("methDetermin")  { o, v -> o.methDetermin = v }
+            handler("determinateur") { o, v -> o.determinateur = v }
+            handler("cdNomManuel")   { o, v ->
+                o.cdNomManuel = v
+                v.trim().toIntOrNull()?.takeIf { it > 0 }?.let { o.cdNom = it }
+            }
+        }
+    }
+
+    // ─── Sélection taxon ──────────────────────────────────────────────────────
 
     private fun setupTaxonSelector() {
         updateTaxonUI()
@@ -190,6 +332,8 @@ class SaisieObservationFragment : Fragment() {
         }
     }
 
+    // ─── Espèce / autocomplete ────────────────────────────────────────────────
+
     private fun refreshAutocompleteAdapter() {
         viewLifecycleOwner.lifecycleScope.launch {
             val suggestions = withContext(Dispatchers.Default) {
@@ -225,7 +369,6 @@ class SaisieObservationFragment : Fragment() {
     }
 
     private fun accentInsensitiveAdapter(suggestions: List<String>): ArrayAdapter<String> {
-        // Pré-normaliser une seule fois — évite O(n) appels à normaliser() à chaque frappe
         val normalized: List<Pair<String, String>> = suggestions.map { TaxRefCache.normaliser(it) to it }
         return object : ArrayAdapter<String>(requireContext(), android.R.layout.simple_dropdown_item_1line, suggestions.toMutableList()) {
             override fun getFilter() = object : Filter() {
@@ -234,7 +377,6 @@ class SaisieObservationFragment : Fragment() {
                     val filtered: List<String> = if (constraint.isNullOrEmpty()) suggestions
                     else {
                         val query = TaxRefCache.normaliser(constraint.toString())
-                        // Tri composite : startsWith(query) en premier, puis contains(query).
                         val starts = ArrayList<String>()
                         val contains = ArrayList<String>()
                         for ((key, display) in normalized) {
@@ -258,6 +400,180 @@ class SaisieObservationFragment : Fragment() {
             }
         }
     }
+
+    private fun setupAutocomplete() {
+        binding.etEspece.threshold = 1
+        refreshAutocompleteAdapter()
+        binding.tilEspece.setEndIconOnClickListener { lancerDictee() }
+
+        binding.switchNomSci.setOnCheckedChangeListener { _, isChecked ->
+            rechercheNomSci = isChecked
+            binding.etEspece.setText("")
+            taxRefStatut = null
+            updateTaxRefUI()
+            refreshAutocompleteAdapter()
+            updateEspeceHint()
+        }
+
+        binding.etEspece.setOnItemClickListener { _, _, position, _ ->
+            val nomSelectionne = binding.etEspece.adapter.getItem(position) as? String ?: return@setOnItemClickListener
+            ajouterDepuisSuggestion(nomSelectionne)
+        }
+
+        binding.etEspece.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: Editable?) {
+                // Recherche TaxRef à des fins d'affichage du statut (pas d'ajout automatique).
+                lancerRechercheTaxRef(s?.toString() ?: "")
+            }
+        })
+    }
+
+    /** Ajoute une nouvelle PendingObs à partir d'une suggestion d'autocomplétion. */
+    private fun ajouterDepuisSuggestion(nom: String) {
+        val entry = TaxRefCache.get(nom)
+        val (cdNom, especeAffichee) = if (entry != null) {
+            val nomAffiche = entry.nomFrOriginal ?: nom
+            Pair(entry.cdNom, nomAffiche)
+        } else {
+            // Cas rare : la suggestion vient des listes embarquées (TaxRefLocal). On accepte
+            // la sélection sans cd_nom — l'utilisateur peut compléter via les détails.
+            Pair(null, nom)
+        }
+        pendingObs.add(PendingObs(
+            taxon = taxon,
+            espece = especeAffichee,
+            cdNom = cdNom,
+            nombre = nombre
+        ))
+        binding.etEspece.setText("")
+        taxRefStatut = null
+        updateTaxRefUI()
+        rafraichirListe()
+    }
+
+    private fun lancerRechercheTaxRef(nom: String) {
+        taxRefJob?.cancel()
+        if (nom.length < 2) {
+            taxRefStatut = null
+            updateTaxRefUI()
+            return
+        }
+        taxRefJob = viewLifecycleOwner.lifecycleScope.launch {
+            delay(500)
+            if (!isActive) return@launch
+            binding.taxrefProgress.visibility = View.VISIBLE
+            binding.tvTaxrefStatut.visibility = View.GONE
+            val (statut, _) = TaxRefService.rechercher(nom, taxon, gnConfig)
+            taxRefStatut = statut
+            binding.taxrefProgress.visibility = View.GONE
+            updateTaxRefUI()
+        }
+    }
+
+    private fun updateTaxRefUI() {
+        when (val s = taxRefStatut) {
+            is TaxRefStatut.Trouve -> {
+                binding.tvTaxrefStatut.visibility = View.VISIBLE
+                binding.tvTaxrefStatut.text = "✓ ${s.nomScientifique}  •  cd_nom ${s.cdNom}"
+                binding.tvTaxrefStatut.setTextColor(ContextCompat.getColor(requireContext(), android.R.color.holo_green_dark))
+            }
+            TaxRefStatut.NonTrouve -> {
+                binding.tvTaxrefStatut.visibility = View.VISIBLE
+                binding.tvTaxrefStatut.text = getString(R.string.taxref_non_trouve)
+                binding.tvTaxrefStatut.setTextColor(ContextCompat.getColor(requireContext(), android.R.color.holo_orange_dark))
+            }
+            TaxRefStatut.Indisponible -> {
+                binding.tvTaxrefStatut.visibility = View.VISIBLE
+                binding.tvTaxrefStatut.text = getString(R.string.taxref_indisponible)
+                binding.tvTaxrefStatut.setTextColor(ContextCompat.getColor(requireContext(), android.R.color.darker_gray))
+            }
+            null -> {
+                binding.tvTaxrefStatut.visibility = View.GONE
+                binding.taxrefProgress.visibility = View.GONE
+            }
+        }
+    }
+
+    private fun updateBtnEnregistrerState() {
+        binding.btnEnregistrer.isEnabled = pendingObs.isNotEmpty()
+    }
+
+    // ─── Nombre ───────────────────────────────────────────────────────────────
+
+    private fun setupNombreControls() {
+        binding.btnMoins.setOnClickListener {
+            if (nombre > 1) {
+                nombre--
+                binding.tvNombre.text = if (nombre == 1) "1 individu" else "$nombre individus"
+            }
+        }
+        binding.btnPlus.setOnClickListener {
+            if (nombre < 999) {
+                nombre++
+                binding.tvNombre.text = "$nombre individus"
+            }
+        }
+    }
+
+    // ─── Enregistrement ───────────────────────────────────────────────────────
+
+    private fun enregistrer() {
+        if (pendingObs.isEmpty()) {
+            findNavController().navigateUp()
+            return
+        }
+        for (obs in pendingObs) {
+            val nomFinal = obs.espece.ifEmpty { "Espèce inconnue" }
+            val cdNomFinal = obs.cdNom ?: obs.cdNomManuel.trim().toIntOrNull()
+            if (obs.existingId != null) {
+                val base = traceViewModel.observations.value?.find { it.id == obs.existingId } ?: continue
+                traceViewModel.modifierObservation(base.copy(
+                    espece        = nomFinal,
+                    taxon         = obs.taxon,
+                    cdNom         = cdNomFinal,
+                    notes         = obs.notes,
+                    nombre        = obs.nombre,
+                    sexe          = obs.sexe.ifEmpty { null },
+                    stadeVie      = obs.stadeVie.ifEmpty { null },
+                    techniqueObs  = obs.techniqueObs.ifEmpty { null },
+                    statutBio     = obs.statutBio.ifEmpty { null },
+                    etaBio        = obs.etaBio.ifEmpty { null },
+                    preuveExist   = obs.preuveExist.ifEmpty { null },
+                    objDenbr      = obs.objDenbr.ifEmpty { null },
+                    typDenbr      = obs.typDenbr.ifEmpty { null },
+                    comportement  = obs.comportement.ifEmpty { null },
+                    methDetermin  = obs.methDetermin.ifEmpty { null },
+                    determinateur = obs.determinateur.ifEmpty { null }
+                ))
+            } else {
+                traceViewModel.ajouterObservation(Observation(
+                    espece        = nomFinal,
+                    taxon         = obs.taxon,
+                    cdNom         = cdNomFinal,
+                    latitude      = latitude,
+                    longitude     = longitude,
+                    notes         = obs.notes,
+                    nombre        = obs.nombre,
+                    sexe          = obs.sexe.ifEmpty { null },
+                    stadeVie      = obs.stadeVie.ifEmpty { null },
+                    techniqueObs  = obs.techniqueObs.ifEmpty { null },
+                    statutBio     = obs.statutBio.ifEmpty { null },
+                    etaBio        = obs.etaBio.ifEmpty { null },
+                    preuveExist   = obs.preuveExist.ifEmpty { null },
+                    objDenbr      = obs.objDenbr.ifEmpty { null },
+                    typDenbr      = obs.typDenbr.ifEmpty { null },
+                    comportement  = obs.comportement.ifEmpty { null },
+                    methDetermin  = obs.methDetermin.ifEmpty { null },
+                    determinateur = obs.determinateur.ifEmpty { null }
+                ))
+            }
+        }
+        findNavController().navigateUp()
+    }
+
+    // ─── Dictée vocale ────────────────────────────────────────────────────────
 
     private fun lancerDictee() {
         if (!SpeechRecognizer.isRecognitionAvailable(requireContext())) {
@@ -320,222 +636,6 @@ class SaisieObservationFragment : Fragment() {
         }
     }
 
-    private fun setupAutocomplete() {
-        binding.etEspece.threshold = 1
-        refreshAutocompleteAdapter()
-        binding.tilEspece.setEndIconOnClickListener { lancerDictee() }
-
-        binding.switchNomSci.setOnCheckedChangeListener { _, isChecked ->
-            rechercheNomSci = isChecked
-            binding.etEspece.setText("")
-            taxRefStatut = null
-            updateTaxRefUI()
-            refreshAutocompleteAdapter()
-            updateEspeceHint()
-        }
-
-        binding.btnEnregistrer.isEnabled = false
-        binding.etEspece.addTextChangedListener(object : TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
-            override fun afterTextChanged(s: Editable?) {
-                // Désactivé tant qu'on n'a pas un match TaxRef confirmé (ou un cd_nom manuel valide).
-                updateBtnEnregistrerState()
-                lancerRechercheTaxRef(s?.toString() ?: "")
-            }
-        })
-    }
-
-    private fun updateBtnEnregistrerState() {
-        val texte = binding.etEspece.text?.toString()?.trim().orEmpty()
-        val matchTaxRef = taxRefStatut is TaxRefStatut.Trouve
-        val cdNomManuelOk = (cdNomManuel.trim().toIntOrNull() ?: 0) > 0
-        binding.btnEnregistrer.isEnabled = texte.isNotEmpty() && (matchTaxRef || cdNomManuelOk)
-    }
-
-    private fun lancerRechercheTaxRef(nom: String) {
-        taxRefJob?.cancel()
-        if (nom.length < 2) {
-            taxRefStatut = null
-            updateTaxRefUI()
-            return
-        }
-        taxRefJob = viewLifecycleOwner.lifecycleScope.launch {
-            delay(500)
-            if (!isActive) return@launch
-            binding.taxrefProgress.visibility = View.VISIBLE
-            binding.tvTaxrefStatut.visibility = View.GONE
-            val (statut, _) = TaxRefService.rechercher(nom, taxon, gnConfig)
-            taxRefStatut = statut
-            binding.taxrefProgress.visibility = View.GONE
-            updateTaxRefUI()
-        }
-    }
-
-    private fun updateTaxRefUI() {
-        when (val s = taxRefStatut) {
-            is TaxRefStatut.Trouve -> {
-                binding.tvTaxrefStatut.visibility = View.VISIBLE
-                binding.tvTaxrefStatut.text = "✓ ${s.nomScientifique}  •  cd_nom ${s.cdNom}"
-                binding.tvTaxrefStatut.setTextColor(ContextCompat.getColor(requireContext(), android.R.color.holo_green_dark))
-            }
-            TaxRefStatut.NonTrouve -> {
-                binding.tvTaxrefStatut.visibility = View.VISIBLE
-                binding.tvTaxrefStatut.text = getString(R.string.taxref_non_trouve)
-                binding.tvTaxrefStatut.setTextColor(ContextCompat.getColor(requireContext(), android.R.color.holo_orange_dark))
-            }
-            TaxRefStatut.Indisponible -> {
-                binding.tvTaxrefStatut.visibility = View.VISIBLE
-                binding.tvTaxrefStatut.text = getString(R.string.taxref_indisponible)
-                binding.tvTaxrefStatut.setTextColor(ContextCompat.getColor(requireContext(), android.R.color.darker_gray))
-            }
-            null -> {
-                binding.tvTaxrefStatut.visibility = View.GONE
-                binding.taxrefProgress.visibility = View.GONE
-            }
-        }
-        updateBtnEnregistrerState()
-    }
-
-    private fun setupNombreControls() {
-        binding.btnMoins.setOnClickListener {
-            if (nombre > 1) {
-                nombre--
-                binding.tvNombre.text = if (nombre == 1) "1 individu" else "$nombre individus"
-            }
-        }
-        binding.btnPlus.setOnClickListener {
-            if (nombre < 999) {
-                nombre++
-                binding.tvNombre.text = "$nombre individus"
-            }
-        }
-    }
-
-    private fun setupDetails() {
-        binding.btnDetails.setOnClickListener {
-            val cdNom = (taxRefStatut as? TaxRefStatut.Trouve)?.cdNom
-            val groupe2Inpn = cdNom?.let { TaxRefCache.tousLesGroupes()[it.toString()] }
-                ?: when (taxon) {
-                    Taxon.MAMMIFERE   -> "Mammifères"
-                    Taxon.REPTILE     -> "Reptiles"
-                    Taxon.BATRACIEN   -> "Amphibiens"
-                    Taxon.POISSON     -> "Poissons"
-                    Taxon.INSECTE     -> "Insectes"
-                    Taxon.PLANTE,
-                    Taxon.FONGE,
-                    Taxon.INVERTEBRES -> null
-                    else              -> "Oiseaux"
-                }
-            val bundle = Bundle().apply {
-                putString("taxon",         taxon.name)
-                putString("groupe2Inpn",   groupe2Inpn)
-                putString("notes",         notes)
-                putString("sexe",          sexe)
-                putString("stadeVie",      stadeVie)
-                putString("techniqueObs",  techniqueObs)
-                putString("statutBio",     statutBio)
-                putString("etaBio",        etaBio)
-                putString("preuveExist",   preuveExist)
-                putString("objDenbr",      objDenbr)
-                putString("typDenbr",      typDenbr)
-                putString("comportement",  comportement)
-                putString("methDetermin",  methDetermin)
-                putString("determinateur", determinateur)
-                putString("cdNomManuel",   cdNomManuel)
-                putBoolean("taxrefNonTrouve", taxRefStatut == TaxRefStatut.NonTrouve || taxRefStatut == TaxRefStatut.Indisponible)
-                putDouble("latitude", latitude)
-                putDouble("longitude", longitude)
-            }
-            findNavController().navigate(R.id.action_saisie_to_details, bundle)
-        }
-    }
-
-    override fun onViewStateRestored(savedInstanceState: Bundle?) {
-        super.onViewStateRestored(savedInstanceState)
-        // Récupérer les détails retournés
-        findNavController().currentBackStackEntry?.savedStateHandle?.apply {
-            getLiveData<String>("notes").observe(viewLifecycleOwner)         { notes = it; updateDetailsIndicator() }
-            getLiveData<String>("sexe").observe(viewLifecycleOwner)          { sexe = it; updateDetailsIndicator() }
-            getLiveData<String>("stadeVie").observe(viewLifecycleOwner)      { stadeVie = it; updateDetailsIndicator() }
-            getLiveData<String>("techniqueObs").observe(viewLifecycleOwner)  { techniqueObs = it; updateDetailsIndicator() }
-            getLiveData<String>("statutBio").observe(viewLifecycleOwner)     { statutBio = it; updateDetailsIndicator() }
-            getLiveData<String>("etaBio").observe(viewLifecycleOwner)        { etaBio = it; updateDetailsIndicator() }
-            getLiveData<String>("preuveExist").observe(viewLifecycleOwner)   { preuveExist = it; updateDetailsIndicator() }
-            getLiveData<String>("objDenbr").observe(viewLifecycleOwner)      { objDenbr = it; updateDetailsIndicator() }
-            getLiveData<String>("typDenbr").observe(viewLifecycleOwner)      { typDenbr = it; updateDetailsIndicator() }
-            getLiveData<String>("comportement").observe(viewLifecycleOwner)  { comportement = it; updateDetailsIndicator() }
-            getLiveData<String>("methDetermin").observe(viewLifecycleOwner)  { methDetermin = it; updateDetailsIndicator() }
-            getLiveData<String>("determinateur").observe(viewLifecycleOwner) { determinateur = it }
-            getLiveData<String>("cdNomManuel").observe(viewLifecycleOwner)   { cdNomManuel = it; updateBtnEnregistrerState() }
-        }
-    }
-
-    private fun updateDetailsIndicator() {
-        val hasDetails = notes.isNotEmpty() || sexe.isNotEmpty() || stadeVie.isNotEmpty() ||
-            techniqueObs.isNotEmpty() || statutBio.isNotEmpty() || etaBio.isNotEmpty() ||
-            preuveExist.isNotEmpty() || objDenbr.isNotEmpty() || typDenbr.isNotEmpty() ||
-            comportement.isNotEmpty() || methDetermin.isNotEmpty()
-        binding.ivDetailsIndicator.visibility = if (hasDetails) View.VISIBLE else View.GONE
-    }
-
-    private fun enregistrer() {
-        val especeText = binding.etEspece.text.toString().trim()
-        val (cdNomFinal, nomAffiche) = when (val s = taxRefStatut) {
-            is TaxRefStatut.Trouve -> Pair(s.cdNom, s.nomFrancais ?: s.nomScientifique)
-            else -> Pair(cdNomManuel.trim().toIntOrNull(), especeText)
-        }
-        val nomFinal = if (nomAffiche.isEmpty()) "Espèce inconnue" else nomAffiche
-
-        val idExistant = obsId
-        val obsBase = idExistant?.let { id ->
-            traceViewModel.observations.value?.find { it.id == id }
-        }
-
-        if (obsBase != null) {
-            traceViewModel.modifierObservation(obsBase.copy(
-                espece        = nomFinal,
-                taxon         = taxon,
-                cdNom         = cdNomFinal,
-                notes         = notes,
-                nombre        = nombre,
-                sexe          = sexe.ifEmpty { null },
-                stadeVie      = stadeVie.ifEmpty { null },
-                techniqueObs  = techniqueObs.ifEmpty { null },
-                statutBio     = statutBio.ifEmpty { null },
-                etaBio        = etaBio.ifEmpty { null },
-                preuveExist   = preuveExist.ifEmpty { null },
-                objDenbr      = objDenbr.ifEmpty { null },
-                typDenbr      = typDenbr.ifEmpty { null },
-                comportement  = comportement.ifEmpty { null },
-                methDetermin  = methDetermin.ifEmpty { null },
-                determinateur = determinateur.ifEmpty { null }
-            ))
-        } else {
-            traceViewModel.ajouterObservation(Observation(
-                espece        = nomFinal,
-                taxon         = taxon,
-                cdNom         = cdNomFinal,
-                latitude      = latitude,
-                longitude     = longitude,
-                notes         = notes,
-                nombre        = nombre,
-                sexe          = sexe.ifEmpty { null },
-                stadeVie      = stadeVie.ifEmpty { null },
-                techniqueObs  = techniqueObs.ifEmpty { null },
-                statutBio     = statutBio.ifEmpty { null },
-                etaBio        = etaBio.ifEmpty { null },
-                preuveExist   = preuveExist.ifEmpty { null },
-                objDenbr      = objDenbr.ifEmpty { null },
-                typDenbr      = typDenbr.ifEmpty { null },
-                comportement  = comportement.ifEmpty { null },
-                methDetermin  = methDetermin.ifEmpty { null },
-                determinateur = determinateur.ifEmpty { null }
-            ))
-        }
-        findNavController().navigateUp()
-    }
-
     override fun onDestroyView() {
         super.onDestroyView()
         taxRefJob?.cancel()
@@ -543,5 +643,4 @@ class SaisieObservationFragment : Fragment() {
         speechRecognizer = null
         _binding = null
     }
-
 }

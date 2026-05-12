@@ -262,29 +262,13 @@
                 android:src="@drawable/ic_add" />
         </LinearLayout>
 
-        <!-- Bouton Détails -->
-        <FrameLayout
+        <!-- Liste des observations en attente d'enregistrement -->
+        <LinearLayout
+            android:id="@+id/ll_pending_obs"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="16dp">
-
-            <Button
-                android:id="@+id/btn_details"
-                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="Notes, sexe, stade, technique…" />
-
-            <ImageView
-                android:id="@+id/iv_details_indicator"
-                android:layout_width="18dp"
-                android:layout_height="18dp"
-                android:layout_gravity="center_vertical|end"
-                android:layout_marginEnd="12dp"
-                android:src="@drawable/ic_check_circle"
-                app:tint="@android:color/holo_green_dark"
-                android:visibility="gone" />
-        </FrameLayout>
+            android:layout_marginTop="16dp"
+            android:orientation="vertical" />
 
         <!-- Boutons action -->
         <LinearLayout

@@ -127,7 +127,10 @@ object GeoNatureService {
             val (token, _) = login(base, config.login, config.motDePasse)
                 ?: throw GNErreur.AuthEchouee(401)
 
-            val url = URL("$base/api/meta/datasets")
+            // Filtre côté serveur : ne récupère que les datasets actifs (active=true côté
+            // GeoNature). On filtre aussi côté client en lisant le champ "active" au cas où
+            // l'instance serveur ignore le paramètre.
+            val url = URL("$base/api/meta/datasets?active=true")
             val conn = url.openConnection() as java.net.HttpURLConnection
             conn.connectTimeout = 10000
             conn.readTimeout = 10000
@@ -149,9 +152,15 @@ object GeoNatureService {
                 val d = parsed.getJSONObject(i)
                 val id = d.optInt("id_dataset", -1)
                 val nom = d.optString("dataset_name", "")
-                if (id > 0 && nom.isNotEmpty()) result.add(GeoNatureDataset(id, nom))
+                // active peut être absent (anciennes instances) — dans ce cas on garde.
+                val actif = if (d.has("active") && !d.isNull("active")) d.optBoolean("active", true) else true
+                if (id > 0 && nom.isNotEmpty() && actif) result.add(GeoNatureDataset(id, nom))
             }
-            result
+            // Tri alphabétique insensible à la casse + diacritiques pour un classement
+            // intuitif quel que soit l'ordre serveur.
+            result.sortedWith(compareBy(java.text.Collator.getInstance(java.util.Locale.FRANCE).apply {
+                strength = java.text.Collator.PRIMARY
+            }) { it.nom })
         }
 
     suspend fun chargerListesTaxons(config: GeoNatureConfig): List<GeoNatureListe> =

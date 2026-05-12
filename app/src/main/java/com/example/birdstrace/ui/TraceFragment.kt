@@ -388,7 +388,14 @@ class TraceFragment : Fragment() {
     }
 
     private fun showConfirmTerminer() {
-        val peutEnvoyerGn = gnConfig.estConfiguree && (traceViewModel.observations.value?.any { it.cdNom != null } == true)
+        // Aucune observation = rien à enregistrer ; on quitte directement sans dialog.
+        val obs = traceViewModel.observations.value ?: emptyList()
+        if (obs.isEmpty()) {
+            findNavController().navigateUp()
+            return
+        }
+
+        val peutEnvoyerGn = gnConfig.estConfiguree && obs.any { it.cdNom != null }
 
         val options = mutableListOf(
             getString(R.string.enregistrer_quitter),

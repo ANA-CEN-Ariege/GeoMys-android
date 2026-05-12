@@ -67,8 +67,7 @@ class SortiesFragment : Fragment() {
                 findNavController().navigate(R.id.action_sorties_to_detail, bundle)
             },
             onDelete = { sortie ->
-                sortieStore.supprimer(sortie.id)
-                refreshList()
+                confirmerSuppression(sortie)
             }
         )
 
@@ -128,6 +127,25 @@ class SortiesFragment : Fragment() {
         binding.tabLayout.getTabAt(0)?.text = "À envoyer ($aEnvoyer)"
         binding.tabLayout.getTabAt(1)?.text = "Envoyées ($envoyees)"
         binding.tabLayout.getTabAt(2)?.text = "Importées ($importees)"
+    }
+
+    private fun confirmerSuppression(sortie: Sortie) {
+        val date = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.FRANCE).format(Date(sortie.date))
+        val nbObs = sortie.observations.size
+        val descr = when {
+            nbObs == 0 -> "saisie du $date"
+            nbObs == 1 -> "saisie du $date (1 observation)"
+            else       -> "saisie du $date ($nbObs observations)"
+        }
+        AlertDialog.Builder(requireContext())
+            .setTitle("Supprimer la saisie ?")
+            .setMessage("Supprimer la $descr ? Cette action est définitive.")
+            .setPositiveButton("Supprimer") { _, _ ->
+                sortieStore.supprimer(sortie.id)
+                refreshList()
+            }
+            .setNegativeButton(R.string.annuler, null)
+            .show()
     }
 
     private fun lancerImport() {

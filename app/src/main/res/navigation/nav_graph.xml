@@ -78,7 +78,7 @@
     <fragment
         android:id="@+id/sortiesFragment"
         android:name="com.example.birdstrace.ui.SortiesFragment"
-        android:label="Mes sorties">
+        android:label="Mes saisies">
         <action
             android:id="@+id/action_sorties_to_detail"
             app:destination="@id/sortieDetailFragment" />

@@ -82,7 +82,6 @@ class SaisieObservationFragment : Fragment() {
     private var rechercheNomSci = false
     private var taxRefStatut: TaxRefStatut? = null
     private var taxRefJob: Job? = null
-    private var nombre = 1
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         _binding = FragmentSaisieObservationBinding.inflate(inflater, container, false)
@@ -129,11 +128,8 @@ class SaisieObservationFragment : Fragment() {
             longitude = arguments?.getDouble("longitude") ?: 0.0
         }
 
-        binding.tvNombre.text = if (nombre == 1) "1 individu" else "$nombre individus"
-
         setupTaxonSelector()
         setupAutocomplete()
-        setupNombreControls()
         rafraichirListe()
 
         binding.btnAnnuler.setOnClickListener { findNavController().navigateUp() }
@@ -149,10 +145,18 @@ class SaisieObservationFragment : Fragment() {
         pendingObs.forEachIndexed { index, obs ->
             val row = inflater.inflate(R.layout.item_pending_obs, binding.llPendingObs, false)
             row.findViewById<ImageView>(R.id.iv_taxon).setImageResource(iconeTaxon(obs.taxon))
-            val label = if (obs.nombre > 1) "${obs.espece}  ·  ${obs.nombre} indiv." else obs.espece
             row.findViewById<TextView>(R.id.tv_espece).apply {
-                text = label
+                text = obs.espece
                 setOnClickListener { dupliquer(index) }
+            }
+            row.findViewById<TextView>(R.id.tv_nombre).apply {
+                text = "× ${obs.nombre}"
+                setOnClickListener {
+                    showNombrePickerDialog(obs.nombre) { nouveauNombre ->
+                        pendingObs[index] = obs.copy(nombre = nouveauNombre)
+                        rafraichirListe()
+                    }
+                }
             }
             row.findViewById<ImageButton>(R.id.btn_edit).setOnClickListener { reediter(index) }
             row.findViewById<ImageButton>(R.id.btn_info).setOnClickListener { ouvrirDetails(index) }
@@ -181,9 +185,9 @@ class SaisieObservationFragment : Fragment() {
     }
 
     /** Clic sur le nom d'une ligne : ajoute une nouvelle PendingObs avec le même
-     *  taxon / espèce / cd_nom — le nombre courant est utilisé, les détails repartent
-     *  à vide pour ne pas répliquer un sexe ou un stade qui appartiennent à l'autre
-     *  individu observé. */
+     *  taxon / espèce / cd_nom — le nombre repart à 1 (l'utilisateur ajuste via le chip
+     *  de la nouvelle ligne si besoin), les détails repartent à vide pour ne pas répliquer
+     *  un sexe ou un stade qui appartiennent à l'autre individu observé. */
     private fun dupliquer(index: Int) {
         if (index !in pendingObs.indices) return
         val source = pendingObs[index]
@@ -191,7 +195,7 @@ class SaisieObservationFragment : Fragment() {
             taxon = source.taxon,
             espece = source.espece,
             cdNom = source.cdNom,
-            nombre = nombre
+            nombre = 1
         ))
         rafraichirListe()
     }
@@ -201,9 +205,8 @@ class SaisieObservationFragment : Fragment() {
     private fun reediter(index: Int) {
         if (index !in pendingObs.indices) return
         val obs = pendingObs.removeAt(index)
+        pendingNombreForNextAdd = obs.nombre
         taxon = obs.taxon
-        nombre = obs.nombre
-        binding.tvNombre.text = if (nombre == 1) "1 individu" else "$nombre individus"
         updateTaxonUI()
         refreshAutocompleteAdapter()
         binding.etEspece.setText(obs.espece)
@@ -211,6 +214,11 @@ class SaisieObservationFragment : Fragment() {
         binding.etEspece.requestFocus()
         rafraichirListe()
     }
+
+    /** Nombre à appliquer à la prochaine PendingObs ajoutée via l'autocomplétion. Mis à jour
+     *  par reediter() pour préserver le compteur de la ligne réouverte. Toujours remis à 1
+     *  après chaque ajout — les ajouts normaux et la duplication partent toujours de 1. */
+    private var pendingNombreForNextAdd = 1
 
     private fun ouvrirDetails(index: Int) {
         if (index !in pendingObs.indices) return
@@ -464,8 +472,9 @@ class SaisieObservationFragment : Fragment() {
             taxon = taxon,
             espece = especeAffichee,
             cdNom = cdNom,
-            nombre = nombre
+            nombre = pendingNombreForNextAdd
         ))
+        pendingNombreForNextAdd = 1
         binding.etEspece.setText("")
         taxRefStatut = null
         updateTaxRefUI()
@@ -521,19 +530,28 @@ class SaisieObservationFragment : Fragment() {
 
     // ─── Nombre ───────────────────────────────────────────────────────────────
 
-    private fun setupNombreControls() {
-        binding.btnMoins.setOnClickListener {
-            if (nombre > 1) {
-                nombre--
-                binding.tvNombre.text = if (nombre == 1) "1 individu" else "$nombre individus"
-            }
+    private fun showNombrePickerDialog(initial: Int, onResult: (Int) -> Unit) {
+        val view = LayoutInflater.from(requireContext()).inflate(R.layout.dialog_nombre_picker, null)
+        val et = view.findViewById<com.google.android.material.textfield.TextInputEditText>(R.id.et_nombre)
+        val btnMoins = view.findViewById<ImageButton>(R.id.btn_moins)
+        val btnPlus = view.findViewById<ImageButton>(R.id.btn_plus)
+        et.setText(initial.toString())
+        et.setSelection(et.text?.length ?: 0)
+        fun current(): Int = et.text?.toString()?.toIntOrNull()?.coerceIn(1, 999) ?: 1
+        btnMoins.setOnClickListener {
+            val v = (current() - 1).coerceAtLeast(1)
+            et.setText(v.toString()); et.setSelection(et.text?.length ?: 0)
         }
-        binding.btnPlus.setOnClickListener {
-            if (nombre < 999) {
-                nombre++
-                binding.tvNombre.text = "$nombre individus"
-            }
+        btnPlus.setOnClickListener {
+            val v = (current() + 1).coerceAtMost(999)
+            et.setText(v.toString()); et.setSelection(et.text?.length ?: 0)
         }
+        androidx.appcompat.app.AlertDialog.Builder(requireContext())
+            .setTitle("Nombre d'individus")
+            .setView(view)
+            .setPositiveButton("OK") { _, _ -> onResult(current()) }
+            .setNegativeButton(R.string.annuler, null)
+            .show()
     }
 
     // ─── Enregistrement ───────────────────────────────────────────────────────

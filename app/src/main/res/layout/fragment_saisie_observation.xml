@@ -222,45 +222,6 @@
             android:textSize="13sp"
             android:visibility="gone" />
 
-        <!-- Nombre d'individus -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:gravity="center_vertical"
-            android:orientation="horizontal">
-
-            <TextView
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="Nombre d'individus"
-                android:textSize="15sp" />
-
-            <ImageButton
-                android:id="@+id/btn_moins"
-                android:layout_width="36dp"
-                android:layout_height="36dp"
-                android:background="@drawable/btn_circle_outline"
-                android:contentDescription="Moins"
-                android:src="@drawable/ic_remove" />
-
-            <TextView
-                android:id="@+id/tv_nombre"
-                android:layout_width="100dp"
-                android:layout_height="wrap_content"
-                android:gravity="center"
-                android:text="1 individu"
-                android:textSize="15sp" />
-
-            <ImageButton
-                android:id="@+id/btn_plus"
-                android:layout_width="36dp"
-                android:layout_height="36dp"
-                android:background="@drawable/btn_circle_outline"
-                android:contentDescription="Plus"
-                android:src="@drawable/ic_add" />
-        </LinearLayout>
 
         <!-- Liste des observations en attente d'enregistrement -->
         <LinearLayout

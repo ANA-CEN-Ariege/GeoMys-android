@@ -28,6 +28,22 @@
         android:paddingVertical="6dp"
         android:textSize="15sp" />
 
+    <!-- Chip de comptage : tap → popup pour ajuster le nombre d'individus de cette ligne -->
+    <TextView
+        android:id="@+id/tv_nombre"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="4dp"
+        android:background="@drawable/chip_count_bg"
+        android:clickable="true"
+        android:focusable="true"
+        android:gravity="center"
+        android:minWidth="36dp"
+        android:paddingHorizontal="10dp"
+        android:paddingVertical="4dp"
+        android:textSize="13sp"
+        android:textStyle="bold" />
+
     <ImageButton
         android:id="@+id/btn_edit"
         android:layout_width="36dp"

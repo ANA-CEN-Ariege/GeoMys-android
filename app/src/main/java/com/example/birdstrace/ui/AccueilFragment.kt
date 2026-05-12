@@ -35,6 +35,8 @@ class AccueilFragment : Fragment() {
         binding.topRightContainer.applyStatusBarInset()
         binding.accueilContent.applySystemBarInsets()
 
+        binding.tvVersion.text = "v${versionName()}"
+
         val prefs = requireContext().getSharedPreferences("GeoNat_prefs", android.content.Context.MODE_PRIVATE)
         binding.switchTrace.isChecked = prefs.getBoolean("enregistrer_trace", true)
         binding.switchTrace.setOnCheckedChangeListener { _, isChecked ->
@@ -95,6 +97,12 @@ class AccueilFragment : Fragment() {
     private fun updateGnIndicator() {
         binding.indicateurGn.visibility = if (gnConfig.estConfiguree) View.VISIBLE else View.GONE
     }
+
+    private fun versionName(): String = try {
+        val pkg = requireContext().packageName
+        val pm = requireContext().packageManager
+        pm.getPackageInfo(pkg, 0).versionName ?: ""
+    } catch (_: Exception) { "" }
 
     override fun onDestroyView() {
         super.onDestroyView()

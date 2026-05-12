@@ -21,7 +21,10 @@ object TaxRefService {
         withContext(Dispatchers.IO) {
             // 1. Cache synchronisé depuis le serveur GeoNature (cd_nom autoritatif du serveur)
             TaxRefCache.get(nom)?.let { entry ->
-                return@withContext Pair(TaxRefStatut.Trouve(entry.cdNom, entry.sciNom, entry.premierVern), false)
+                // Préfère le nom français de la clé matchée ; sinon n'importe quel nom
+                // français connu pour ce cd_nom (cas où la clé est le nom scientifique).
+                val nomFr = entry.nomFrOriginal ?: TaxRefCache.getVernaculaireParCdNom(entry.cdNom)
+                return@withContext Pair(TaxRefStatut.Trouve(entry.cdNom, entry.sciNom, nomFr), false)
             }
 
             // 2. Base embarquée TaxRefLocal

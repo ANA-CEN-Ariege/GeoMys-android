@@ -4,7 +4,6 @@ import com.example.birdstrace.model.Taxon
 import com.example.birdstrace.network.TaxRefStatut
 import com.example.birdstrace.store.NomenclatureCache
 import com.example.birdstrace.store.TaxRefCache
-import com.example.birdstrace.store.TaxRefEntry
 
 // Extrait de TaxRef v18 (PatriNat/MNHN) — oiseaux de France métropolitaine
 object TaxRefLocal {
@@ -529,38 +528,42 @@ object TaxRefLocal {
         val groupes1 = TaxRefCache.tousLesGroupes1()
         val regnes   = TaxRefCache.tousLesRegnes()
 
-        // Conversion liste d'entries → suggestions : en mode vernaculaire, on déplie tous
-        // les vernNoms ; quand un taxon n'a aucun nom français, on retombe sur sciNom pour
-        // ne pas le rendre invisible (fréquent en flore, fonge, invertébrés).
-        fun entriesToSuggestions(entries: Collection<TaxRefEntry>): List<String> = if (scientifique) {
-            entries.asSequence().map { it.sciNom }.filter { it.isNotEmpty() }.distinct().sorted().toList()
-        } else {
-            entries.asSequence().flatMap { e ->
-                if (e.vernNoms.isNotEmpty()) e.vernNoms.asSequence()
-                else sequenceOf(e.sciNom)
-            }.filter { it.isNotEmpty() }.distinct().sorted().toList()
+        // Avec une entrée par clé (alignement iOS), les noms français pour un cd_nom donné
+        // sont dispersés sur plusieurs clés du cache : on passe par les helpers cdNom →
+        // (sciNom, listeNomsFr) pour reconstruire les suggestions sans dupliquer le scan.
+        val parCdNom = TaxRefCache.entreesParCdNom()
+        val vernsParCdNom = TaxRefCache.vernsParCdNom()
+
+        fun suggestionsPour(cdNoms: Collection<Int>): List<String> {
+            if (scientifique) {
+                return cdNoms.asSequence()
+                    .mapNotNull { parCdNom[it]?.sciNom?.takeIf { s -> s.isNotEmpty() } }
+                    .distinct().sorted().toList()
+            }
+            // Vernaculaire : on déplie tous les noms français pour ce cd_nom ; fallback
+            // sciNom quand aucun nom français n'est connu (fréquent en flore/fonge/invertébrés).
+            val result = LinkedHashSet<String>()
+            for (cd in cdNoms) {
+                val verns = vernsParCdNom[cd]
+                if (!verns.isNullOrEmpty()) result.addAll(verns)
+                else parCdNom[cd]?.sciNom?.takeIf { it.isNotEmpty() }?.let { result.add(it) }
+            }
+            return result.sorted()
         }
 
-        fun toList(parCdNom: Map<Int, TaxRefEntry>): List<String> = entriesToSuggestions(parCdNom.values)
-
-        // Fast-path : si l'index pré-calculé existe pour ce taxon, on l'utilise
-        // (évite de rescanner toutes les entrées à chaque switch).
+        // Fast-path : index pré-calculé Taxon → cdNoms (construit lors de la synchro).
         if (taxon != null) {
             val cdNoms = TaxRefCache.indexParTaxon(taxon)
             if (!cdNoms.isNullOrEmpty()) {
-                val parCdNom = TaxRefCache.entreesParCdNom()
-                val entries = cdNoms.mapNotNull { parCdNom[it] }
-                if (entries.isNotEmpty()) return entriesToSuggestions(entries)
+                val res = suggestionsPour(cdNoms)
+                if (res.isNotEmpty()) return res
             }
         }
 
         fun filtrerParGroup2(ensemble: Set<String>): List<String> {
-            val parCdNom = mutableMapOf<Int, TaxRefEntry>()
-            for ((_, entry) in TaxRefCache.toutesLesEntrees()) {
-                val g2 = groupes2[entry.cdNom.toString()]
-                if (g2 != null && g2 in ensemble) parCdNom[entry.cdNom] = entry
-            }
-            return toList(parCdNom)
+            val cdNoms = HashSet<Int>()
+            for ((cdStr, g2) in groupes2) if (g2 in ensemble) cdStr.toIntOrNull()?.let(cdNoms::add)
+            return suggestionsPour(cdNoms)
         }
 
         if (groupes2.isEmpty()) {
@@ -575,20 +578,15 @@ object TaxRefLocal {
         }
 
         return when (taxon) {
-            // Flore : critère officiel group1_inpn IN ('Phanérogames', 'Ptéridophytes', 'Bryophytes').
-            // Beaucoup d'instances GeoNature ne peuplent pas group1_inpn pour les plantes
-            // (champ NULL en base ou absent de la réponse JSON) — on retombe sur le règne "Plantae"
-            // pour ne pas perdre la quasi-totalité des taxons en autocomplétion.
+            // Flore : group2_inpn botanique (Angiospermes, Trachéophytes, Mousses, Lichens…) —
+            // critère principal, identique iOS. Complété par group1_inpn (Phanérogames,
+            // Ptéridophytes, Bryophytes) et regne=Plantae quand ils sont disponibles.
             Taxon.PLANTE -> {
-                val groupes1Flore = NomenclatureCache.GROUPES1_FLORE
-                val parCdNom = mutableMapOf<Int, TaxRefEntry>()
-                for ((_, entry) in TaxRefCache.toutesLesEntrees()) {
-                    val cdNomStr = entry.cdNom.toString()
-                    if (groupes1[cdNomStr] in groupes1Flore || regnes[cdNomStr] == "Plantae") {
-                        parCdNom[entry.cdNom] = entry
-                    }
-                }
-                if (parCdNom.isNotEmpty()) return toList(parCdNom)
+                val cdNoms = HashSet<Int>()
+                for ((cdStr, g2) in groupes2) if (g2 in NomenclatureCache.GROUPES_BOTANIQUES) cdStr.toIntOrNull()?.let(cdNoms::add)
+                for ((cdStr, g1) in groupes1) if (g1 in NomenclatureCache.GROUPES1_FLORE) cdStr.toIntOrNull()?.let(cdNoms::add)
+                for ((cdStr, r) in regnes) if (r == "Plantae") cdStr.toIntOrNull()?.let(cdNoms::add)
+                if (cdNoms.isNotEmpty()) return suggestionsPour(cdNoms)
                 filtrerParGroup2(NomenclatureCache.groupesBotaniquesConnus())
             }
 
@@ -598,11 +596,9 @@ object TaxRefLocal {
             // Fonge : règne = 'Fungi'
             Taxon.FONGE -> {
                 if (regnes.isNotEmpty()) {
-                    val parCdNom = mutableMapOf<Int, TaxRefEntry>()
-                    for ((_, entry) in TaxRefCache.toutesLesEntrees()) {
-                        if (regnes[entry.cdNom.toString()] == "Fungi") parCdNom[entry.cdNom] = entry
-                    }
-                    if (parCdNom.isNotEmpty()) return toList(parCdNom)
+                    val cdNoms = HashSet<Int>()
+                    for ((cdStr, r) in regnes) if (r == "Fungi") cdStr.toIntOrNull()?.let(cdNoms::add)
+                    if (cdNoms.isNotEmpty()) return suggestionsPour(cdNoms)
                 }
                 filtrerParGroup2(NomenclatureCache.GROUPES_FONGE)
             }
@@ -612,11 +608,9 @@ object TaxRefLocal {
                 val parG2 = filtrerParGroup2(setOf("Poissons"))
                 if (parG2.isNotEmpty()) return parG2
                 if (groupes1.isNotEmpty()) {
-                    val parCdNom = mutableMapOf<Int, TaxRefEntry>()
-                    for ((_, entry) in TaxRefCache.toutesLesEntrees()) {
-                        if (groupes1[entry.cdNom.toString()] == "Poissons") parCdNom[entry.cdNom] = entry
-                    }
-                    if (parCdNom.isNotEmpty()) return toList(parCdNom)
+                    val cdNoms = HashSet<Int>()
+                    for ((cdStr, g1) in groupes1) if (g1 == "Poissons") cdStr.toIntOrNull()?.let(cdNoms::add)
+                    if (cdNoms.isNotEmpty()) return suggestionsPour(cdNoms)
                 }
                 filtrerParGroup2(NomenclatureCache.GROUP2_POISSONS)
             }
@@ -624,23 +618,21 @@ object TaxRefLocal {
             // Invertébrés : règne = 'Animalia' AND group2 NOT IN vertébrés + insectes + poissons
             Taxon.INVERTEBRES -> {
                 val exclusG2 = setOf("Oiseaux", "Mammifères", "Reptiles", "Amphibiens", "Insectes", "Poissons")
-                val parCdNom = mutableMapOf<Int, TaxRefEntry>()
+                val cdNoms = HashSet<Int>()
                 if (regnes.isNotEmpty()) {
-                    for ((_, entry) in TaxRefCache.toutesLesEntrees()) {
-                        val cdStr = entry.cdNom.toString()
+                    for ((cdStr, r) in regnes) {
+                        if (r != "Animalia") continue
                         val g2 = groupes2[cdStr] ?: ""
-                        val r  = regnes[cdStr] ?: ""
-                        if (r == "Animalia" && g2 !in exclusG2) parCdNom[entry.cdNom] = entry
+                        if (g2 !in exclusG2) cdStr.toIntOrNull()?.let(cdNoms::add)
                     }
                 } else {
                     val exclusFallback = exclusG2 + NomenclatureCache.GROUP2_POISSONS +
                         NomenclatureCache.GROUPES_BOTANIQUES + NomenclatureCache.GROUPES_FONGE
-                    for ((_, entry) in TaxRefCache.toutesLesEntrees()) {
-                        val g2 = groupes2[entry.cdNom.toString()] ?: continue
-                        if (g2 !in exclusFallback) parCdNom[entry.cdNom] = entry
+                    for ((cdStr, g2) in groupes2) {
+                        if (g2 !in exclusFallback) cdStr.toIntOrNull()?.let(cdNoms::add)
                     }
                 }
-                toList(parCdNom)
+                suggestionsPour(cdNoms)
             }
 
             else -> {

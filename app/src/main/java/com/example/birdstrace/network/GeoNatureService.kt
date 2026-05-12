@@ -393,7 +393,11 @@ object GeoNatureService {
             groupe2.filter { it.value in NomenclatureCache.GROUP2_POISSONS }.keys).toSet()
         val insectes   = parG2["Insectes"].orEmpty().toSet()
         val fonge      = regne.filterValues { it == "Fungi" }.keys
-        val plantes    = (groupe1.filter { it.value in NomenclatureCache.GROUPES1_FLORE }.keys +
+        // Plantes : group2_inpn botanique (Angiospermes, Trachéophytes, Mousses, Lichens…)
+        // — critère principal, identique iOS. Complété par group1 et regne pour les instances
+        // où ces champs sont mieux peuplés que group2.
+        val plantes    = (groupe2.filterValues { it in NomenclatureCache.GROUPES_BOTANIQUES }.keys +
+            groupe1.filterValues { it in NomenclatureCache.GROUPES1_FLORE }.keys +
             regne.filterValues { it == "Plantae" }.keys).toSet()
 
         val tousAnimalia = regne.filterValues { it == "Animalia" }.keys
@@ -490,26 +494,26 @@ object GeoNatureService {
                     val item = array.getJSONObject(i)
                     val cdNom = item.optInt("cd_nom", -1).takeIf { it > 0 } ?: continue
                     val lbNom = item.optString("lb_nom", "").takeIf { it.isNotEmpty() } ?: continue
+                    // JSONObject.optString retourne la chaîne littérale "null" quand la valeur
+                    // JSON est null — il faut tester isNull() au préalable, sinon ça pollue
+                    // les compteurs (un cd_nom avec group1=null finirait dans le groupe "null").
                     val nomVernRaw = if (item.isNull("nom_vern")) "" else item.optString("nom_vern", "")
-                    val groupe = item.optString("group2_inpn", "")
-                    val groupe1 = item.optString("group1_inpn", "")
-                    val regne = item.optString("regne", "")
+                    val groupe  = if (item.isNull("group2_inpn")) "" else item.optString("group2_inpn", "")
+                    val groupe1 = if (item.isNull("group1_inpn")) "" else item.optString("group1_inpn", "")
+                    val regne   = if (item.isNull("regne"))       "" else item.optString("regne", "")
 
-                    // Tous les noms vernaculaires nettoyés (peuvent être plusieurs séparés par virgule).
-                    val tousVern: List<String> = nomVernRaw.split(",")
-                        .map { TaxRefCache.nettoyerSuffixeArticle(it.trim()) }
-                        .filter { it.isNotEmpty() }
-                        .distinct()
-                    val entryFinale = TaxRefEntry(cdNom, lbNom, tousVern)
-
-                    // Une clé par nom vernaculaire ET une clé par nom scientifique, toutes
-                    // pointant vers la même entrée — qui contient la liste complète des vernaculaires.
-                    for (vern in tousVern) {
-                        val cle = TaxRefCache.normaliser(vern)
-                        if (cle.isNotEmpty()) entrees[cle] = entryFinale
+                    // Une entrée par clé — alignement iOS. La clé pour un nom vernaculaire
+                    // pointe sur une entrée avec nomFrOriginal = ce nom français spécifique ;
+                    // la clé pour le nom scientifique pointe sur une entrée avec nomFrOriginal = null.
+                    // Évite la duplication massive (liste partagée sérialisée N fois en JSON).
+                    for (partie in nomVernRaw.split(",")) {
+                        val vernNettoye = TaxRefCache.nettoyerSuffixeArticle(partie.trim())
+                        if (vernNettoye.isEmpty()) continue
+                        val cle = TaxRefCache.normaliser(vernNettoye)
+                        if (cle.isNotEmpty()) entrees[cle] = TaxRefEntry(cdNom, lbNom, vernNettoye)
                     }
                     val cleSci = TaxRefCache.normaliser(lbNom)
-                    if (cleSci.isNotEmpty()) entrees[cleSci] = entryFinale
+                    if (cleSci.isNotEmpty()) entrees[cleSci] = TaxRefEntry(cdNom, lbNom, null)
 
                     if (groupe.isNotEmpty()) {
                         groupeMap[cdNom] = groupe
@@ -559,12 +563,10 @@ object GeoNatureService {
         // Fonge : règne = 'Fungi' ; Invertébrés : règne = 'Animalia' hors vertébrés+insectes+poissons
         val nbCh  = regneMap.values.count { it == "Fungi" }
         val nbInv = maxOf(0, regneMap.values.count { it == "Animalia" } - nbO - nbM - nbR - nbB - nbPo - nbI)
-        // Flore : group1_inpn IN ('Phanérogames', 'Ptéridophytes', 'Bryophytes')
-        // ou règne = 'Plantae' (fallback quand group1_inpn n'est pas peuplé côté serveur).
-        val cdNomsPlantes = mutableSetOf<Int>()
-        for ((cd, g1) in groupe1Map) if (g1 in NomenclatureCache.GROUPES1_FLORE) cdNomsPlantes.add(cd)
-        for ((cd, regne) in regneMap) if (regne == "Plantae") cdNomsPlantes.add(cd)
-        val nbP = cdNomsPlantes.size
+        // Flore : group2_inpn dans la liste des groupes botaniques INPN — même critère qu'iOS.
+        // group1_inpn (Phanérogames/Ptéridophytes/Bryophytes) est souvent NULL sur GeoNature,
+        // alors que group2_inpn (Angiospermes, Trachéophytes, Mousses, Lichens…) est mieux peuplé.
+        val nbP = NomenclatureCache.GROUPES_BOTANIQUES.sumOf { comptesTousGroupes[it] ?: 0 }
         val msg = buildString {
             append("${entrees.size} taxons indexés — $nbO oiseaux")
             if (nbM > 0) append(", $nbM mammifères")

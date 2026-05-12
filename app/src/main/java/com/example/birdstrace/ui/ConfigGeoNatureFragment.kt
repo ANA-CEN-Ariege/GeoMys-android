@@ -257,7 +257,8 @@ class ConfigGeoNatureFragment : Fragment() {
                     (comptes["Reptiles"] ?: 0) - (comptes["Amphibiens"] ?: 0) -
                     (comptes["Poissons"] ?: 0) - (comptes["Insectes"] ?: 0))
                 if (nbInv > 0) append(" · $nbInv invertébrés")
-                val nbPlantes = TaxRefCache.tousLesGroupes1().values.count { it in NomenclatureCache.GROUPES1_FLORE }
+                // Plantes : somme des comptes par group2_inpn botanique (cohérent avec sync + iOS).
+                val nbPlantes = NomenclatureCache.GROUPES_BOTANIQUES.sumOf { comptes[it] ?: 0 }
                 if (nbPlantes > 0) append(" · $nbPlantes plantes")
             }
             else -> "$count taxons en cache"

@@ -128,8 +128,6 @@ class SaisieRapideFragment : Fragment() {
         demanderPermissions()
         applyWindowInsets()
 
-        // Reprise d'une session rapide en cours : restaurer l'état avant d'afficher l'UI.
-        traceViewModel.saisieRapideSession.value?.let { restaurerSession(it) }
         updateModeUI()
     }
 
@@ -394,7 +392,10 @@ class SaisieRapideFragment : Fragment() {
     // ─── Contrôles principaux ─────────────────────────────────────────────────
 
     private fun setupControls() {
-        binding.btnRetour.setOnClickListener { findNavController().navigateUp() }
+        // Croix en haut à gauche : même comportement que le bouton "Terminer".
+        // Si aucune obs n'a encore été saisie, showConfirmTerminer() retombe sur
+        // navigateUp() — on quitte directement sans dialog parasite.
+        binding.btnRetour.setOnClickListener { showConfirmTerminer() }
 
         binding.btnDetailsDefaut.setOnClickListener {
             val bundle = Bundle().apply {
@@ -430,7 +431,6 @@ class SaisieRapideFragment : Fragment() {
 
         binding.btnEnregistrerIci.setOnClickListener { enregistrerIci() }
 
-        binding.btnTerminerRapide.setOnClickListener { showConfirmTerminer() }
 
         binding.btnCentrerGps.setOnClickListener {
             suivrePosition = true
@@ -507,61 +507,6 @@ class SaisieRapideFragment : Fragment() {
             binding.map.controller.animateTo(GeoPoint(loc.latitude, loc.longitude))
         }
         updateGpsLockIcon()
-
-        // Persister la session pour pouvoir reprendre depuis l'accueil.
-        traceViewModel.demarrerSaisieRapide(snapshotSession())
-    }
-
-    private fun snapshotSession(): TraceViewModel.SaisieRapideSession =
-        TraceViewModel.SaisieRapideSession(
-            taxon = taxon.name,
-            especeDefaut = especeDefaut,
-            cdNomDefaut = cdNomDefaut,
-            rechercheNomSci = rechercheNomSci,
-            sexe = sexe,
-            stadeVie = stadeVie,
-            techniqueObs = techniqueObs,
-            statutBio = statutBio,
-            etaBio = etaBio,
-            preuveExist = preuveExist,
-            objDenbr = objDenbr,
-            typDenbr = typDenbr,
-            comportement = comportement,
-            methDetermin = methDetermin,
-            determinateur = determinateur,
-            notes = notes,
-            cdNomManuel = cdNomManuel,
-        )
-
-    private fun restaurerSession(s: TraceViewModel.SaisieRapideSession) {
-        taxon = try { Taxon.valueOf(s.taxon) } catch (_: Exception) { Taxon.OISEAU }
-        especeDefaut = s.especeDefaut
-        cdNomDefaut = s.cdNomDefaut
-        rechercheNomSci = s.rechercheNomSci
-        sexe = s.sexe
-        stadeVie = s.stadeVie
-        techniqueObs = s.techniqueObs
-        statutBio = s.statutBio
-        etaBio = s.etaBio
-        preuveExist = s.preuveExist
-        objDenbr = s.objDenbr
-        typDenbr = s.typDenbr
-        comportement = s.comportement
-        methDetermin = s.methDetermin
-        determinateur = s.determinateur
-        notes = s.notes
-        cdNomManuel = s.cdNomManuel
-        modeActif = true
-        updateTaxonUI()
-        updateResumeActif()
-        updateGpsLockIcon()
-
-        // Même zoom et centrage que lors du démarrage initial — vue rue/champ proche.
-        traceViewModel.locationTracker.position.value?.let { loc ->
-            suivrePosition = true
-            binding.map.controller.setZoom(19.0)
-            binding.map.controller.setCenter(GeoPoint(loc.latitude, loc.longitude))
-        }
     }
 
     private fun hideKeyboard() {
@@ -843,7 +788,6 @@ class SaisieRapideFragment : Fragment() {
         super.onPause()
         binding.map.onPause()
         locationOverlay?.disableMyLocation()
-        traceViewModel.sauvegarder()
     }
 
     override fun onDestroyView() {

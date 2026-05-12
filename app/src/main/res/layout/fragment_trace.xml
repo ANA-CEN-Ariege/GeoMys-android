@@ -66,17 +66,17 @@
             android:textSize="14sp" />
     </LinearLayout>
 
-    <!-- Bouton retour (haut gauche) -->
+    <!-- Bouton terminer / quitter (haut gauche) — petit cercle rouge avec croix -->
     <ImageButton
         android:id="@+id/btn_retour"
-        android:layout_width="44dp"
-        android:layout_height="44dp"
+        android:layout_width="32dp"
+        android:layout_height="32dp"
         android:layout_gravity="top|start"
-        android:layout_margin="12dp"
+        android:layout_margin="16dp"
         android:background="?attr/selectableItemBackgroundBorderless"
-        android:contentDescription="Retour"
-        android:src="@drawable/ic_arrow_back"
-        app:tint="?attr/colorOnSurface" />
+        android:contentDescription="Terminer la sortie"
+        android:scaleType="fitCenter"
+        android:src="@drawable/croix" />
 
     <!-- Boussole (haut droite) -->
     <com.example.birdstrace.ui.CompassView
@@ -199,19 +199,6 @@
             android:background="@drawable/btn_circle_white"
             android:contentDescription="Observation"
             android:src="@drawable/ic_add" />
-
-        <View android:layout_width="0dp" android:layout_height="0dp" android:layout_weight="1" />
-
-        <!-- Bouton terminer -->
-        <ImageButton
-            android:id="@+id/btn_terminer"
-            android:layout_width="44dp"
-            android:layout_height="44dp"
-            android:alpha="0.4"
-            android:background="@drawable/btn_circle_white"
-            android:contentDescription="Terminer"
-            android:enabled="false"
-            android:src="@drawable/ic_close" />
 
         <View android:layout_width="0dp" android:layout_height="0dp" android:layout_weight="1" />
 

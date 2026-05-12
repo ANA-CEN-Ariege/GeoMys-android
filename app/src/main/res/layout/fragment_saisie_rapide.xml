@@ -43,17 +43,17 @@
             android:background="@drawable/reticule_dot" />
     </FrameLayout>
 
-    <!-- Bouton retour -->
+    <!-- Bouton terminer / quitter — petit cercle rouge avec croix -->
     <ImageButton
         android:id="@+id/btn_retour"
-        android:layout_width="44dp"
-        android:layout_height="44dp"
+        android:layout_width="32dp"
+        android:layout_height="32dp"
         android:layout_gravity="top|start"
-        android:layout_margin="12dp"
+        android:layout_margin="16dp"
         android:background="?attr/selectableItemBackgroundBorderless"
-        android:contentDescription="Retour"
-        android:src="@drawable/ic_arrow_back"
-        app:tint="?attr/colorOnSurface" />
+        android:contentDescription="Terminer la saisie"
+        android:scaleType="fitCenter"
+        android:src="@drawable/croix" />
 
     <!-- Compteur session (haut centre, mode actif) -->
     <TextView
@@ -471,13 +471,6 @@
             android:layout_marginTop="10dp"
             android:gravity="center_vertical"
             android:orientation="horizontal">
-
-            <Button
-                android:id="@+id/btn_terminer_rapide"
-                style="@style/Widget.MaterialComponents.Button.TextButton"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Terminer" />
 
             <View
                 android:layout_width="0dp"

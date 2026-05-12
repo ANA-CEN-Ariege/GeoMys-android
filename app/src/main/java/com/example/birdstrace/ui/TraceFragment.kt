@@ -167,7 +167,6 @@ class TraceFragment : Fragment() {
             } else {
                 traceViewModel.locationTracker.demarrerParcours()
             }
-            traceViewModel.sauvegarder()
         }
 
         binding.btnObservation.setOnClickListener {
@@ -179,10 +178,6 @@ class TraceFragment : Fragment() {
         binding.btnObservation.setOnLongClickListener {
             findNavController().navigate(R.id.action_trace_to_saisie_rapide)
             true
-        }
-
-        binding.btnTerminer.setOnClickListener {
-            showConfirmTerminer()
         }
 
         binding.btnListe.setOnClickListener {
@@ -198,7 +193,9 @@ class TraceFragment : Fragment() {
         }
 
         binding.btnRetour.setOnClickListener {
-            findNavController().navigateUp()
+            // Même menu que le bouton terminer en bas — l'utilisateur choisit
+            // explicitement entre enregistrer/supprimer/continuer.
+            showConfirmTerminer()
         }
 
         binding.btnFondCarte.setOnClickListener {
@@ -248,7 +245,6 @@ class TraceFragment : Fragment() {
         traceViewModel.locationTracker.parcours.observe(viewLifecycleOwner) { pts ->
             updatePolyline(pts)
             updateInfoBarre(traceViewModel.locationTracker.estEnCours.value == true)
-            updateTerminerButton()
         }
 
         traceViewModel.locationTracker.distanceTotale.observe(viewLifecycleOwner) { dist ->
@@ -258,7 +254,6 @@ class TraceFragment : Fragment() {
         traceViewModel.observations.observe(viewLifecycleOwner) { obs ->
             updateMarkers(obs)
             updateListeBadge(obs.size)
-            updateTerminerButton()
         }
     }
 
@@ -276,14 +271,6 @@ class TraceFragment : Fragment() {
             binding.tvDistance.text = "%.0f m".format(dist)
             binding.tvNbObs.text = "$nbObs obs."
         }
-    }
-
-    private fun updateTerminerButton() {
-        val hasParcours = traceViewModel.locationTracker.parcours.value?.isNotEmpty() == true
-        val hasObs = traceViewModel.observations.value?.isNotEmpty() == true
-        val hasData = hasParcours || hasObs
-        binding.btnTerminer.isEnabled = hasData
-        binding.btnTerminer.alpha = if (hasData) 1f else 0.4f
     }
 
     private fun updateListeBadge(count: Int) {
@@ -498,7 +485,6 @@ class TraceFragment : Fragment() {
         savedMapCenter = binding.map.mapCenter.let { GeoPoint(it.latitude, it.longitude) }
         savedMapZoom = binding.map.zoomLevelDouble
         binding.map.onPause()
-        traceViewModel.sauvegarder()
         sensorManager.unregisterListener(compassListener)
         gravityReady = false
         geomagneticReady = false

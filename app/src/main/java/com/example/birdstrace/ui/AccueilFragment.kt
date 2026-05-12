@@ -74,9 +74,6 @@ class AccueilFragment : Fragment() {
         }
 
         traceViewModel.locationTracker.estEnCours.observe(viewLifecycleOwner) { updateButtonState() }
-        traceViewModel.observations.observe(viewLifecycleOwner) { updateButtonState() }
-        traceViewModel.locationTracker.parcours.observe(viewLifecycleOwner) { updateButtonState() }
-        traceViewModel.saisieRapideSession.observe(viewLifecycleOwner) { updateButtonState() }
     }
 
     override fun onResume() {
@@ -88,19 +85,6 @@ class AccueilFragment : Fragment() {
 
     private fun updateButtonState() {
         val enCours = traceViewModel.locationTracker.estEnCours.value == true
-        val parcoursPresent = traceViewModel.locationTracker.parcours.value?.isNotEmpty() == true
-        val hasObs = traceViewModel.observations.value?.isNotEmpty() == true
-        val rapideActive = traceViewModel.saisieRapideSession.value != null
-
-        // La saisie rapide marque sa session ; sinon, des obs ou un parcours = saisie multi-taxons.
-        val multiTaxonsActif = enCours || parcoursPresent || (hasObs && !rapideActive)
-
-        binding.btnNouveauSortie.text =
-            if (multiTaxonsActif) getString(R.string.reprendre_saisie)
-            else getString(R.string.saisie_multi_taxons)
-        binding.btnSaisieRapide.text =
-            if (rapideActive) getString(R.string.reprendre_saisie_rapide)
-            else getString(R.string.saisie_mono_taxons)
         binding.indicateurEnregistrement.visibility = if (enCours) View.VISIBLE else View.GONE
     }
 

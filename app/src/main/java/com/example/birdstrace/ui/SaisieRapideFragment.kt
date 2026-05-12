@@ -21,8 +21,6 @@ import android.widget.Filter
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
 import androidx.lifecycle.lifecycleScope
@@ -825,13 +823,12 @@ class SaisieRapideFragment : Fragment() {
     }
 
     private fun applyWindowInsets() {
-        ViewCompat.setOnApplyWindowInsetsListener(binding.root) { _, insets ->
-            val top = insets.getInsets(WindowInsetsCompat.Type.statusBars()).top
-            binding.btnRetour.translationY = top.toFloat()
-            binding.tvCompteur.translationY = top.toFloat()
-            binding.btnFondCarte.translationY = top.toFloat()
-            insets
-        }
+        // Carte plein écran, overlays et panneaux à l'écart des barres système.
+        binding.btnRetour.applyStatusBarMargin()
+        binding.btnFondCarte.applyStatusBarMargin()
+        binding.tvCompteur.applyStatusBarMargin()
+        binding.panneauConfig.applySystemBarInsets(includeIme = true)
+        binding.panneauActif.applyNavBarInset()
     }
 
     override fun onResume() {

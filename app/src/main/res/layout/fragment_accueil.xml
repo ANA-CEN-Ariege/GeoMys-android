@@ -3,8 +3,7 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@drawable/bg_accueil"
-    android:fitsSystemWindows="true">
+    android:background="@drawable/bg_accueil">
 
     <!-- Bouton menu en haut à gauche -->
     <ImageButton
@@ -19,6 +18,7 @@
 
     <!-- Bouton config en haut à droite -->
     <FrameLayout
+        android:id="@+id/top_right_container"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="top|end"
@@ -45,6 +45,7 @@
 
     <!-- Contenu principal centré -->
     <LinearLayout
+        android:id="@+id/accueil_content"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:gravity="center"

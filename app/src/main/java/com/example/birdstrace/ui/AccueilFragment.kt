@@ -30,6 +30,11 @@ class AccueilFragment : Fragment() {
         sortieStore = SortieStore(requireContext())
         gnConfig = GeoNatureConfig(requireContext())
 
+        // Insets : fond plein écran, boutons à l'écart des barres système.
+        binding.btnMenu.applyStatusBarMargin()
+        binding.topRightContainer.applyStatusBarInset()
+        binding.accueilContent.applySystemBarInsets()
+
         val prefs = requireContext().getSharedPreferences("GeoNat_prefs", android.content.Context.MODE_PRIVATE)
         binding.switchTrace.isChecked = prefs.getBoolean("enregistrer_trace", true)
         binding.switchTrace.setOnCheckedChangeListener { _, isChecked ->

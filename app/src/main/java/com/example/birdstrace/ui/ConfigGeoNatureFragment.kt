@@ -32,6 +32,7 @@ class ConfigGeoNatureFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        binding.root.applySystemBarInsets(includeIme = true)
         gnConfig = GeoNatureConfig(requireContext())
 
         binding.etUrl.setText(gnConfig.urlServeur)

@@ -23,6 +23,7 @@ class ObservationDetailsFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        binding.root.applySystemBarInsets(includeIme = true)
 
         val taxon         = runCatching { Taxon.valueOf(arguments?.getString("taxon") ?: "") }.getOrDefault(Taxon.OISEAU)
         val groupe2Inpn   = arguments?.getString("groupe2Inpn") ?: ""

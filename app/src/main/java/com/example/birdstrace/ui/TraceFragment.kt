@@ -11,13 +11,9 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.FrameLayout
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.core.content.ContextCompat
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.updateLayoutParams
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
 import androidx.lifecycle.lifecycleScope
@@ -518,35 +514,15 @@ class TraceFragment : Fragment() {
 
 
     private fun applyWindowInsets() {
-        ViewCompat.setOnApplyWindowInsetsListener(binding.root) { _, insets ->
-            val top = insets.getInsets(WindowInsetsCompat.Type.statusBars()).top
-            val bottom = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
-            val dp = resources.displayMetrics.density
-            binding.btnRetour.updateLayoutParams<FrameLayout.LayoutParams> {
-                topMargin = top + 12.dp(dp)
-            }
-            binding.compass.updateLayoutParams<FrameLayout.LayoutParams> {
-                topMargin = top + 12.dp(dp)
-            }
-            binding.btnFondCarte.updateLayoutParams<FrameLayout.LayoutParams> {
-                topMargin = top + 12.dp(dp) + 44.dp(dp) + 8.dp(dp)
-            }
-            binding.bandeauPositionnement.updateLayoutParams<FrameLayout.LayoutParams> {
-                topMargin = top
-            }
-            binding.panneauControle.updateLayoutParams<FrameLayout.LayoutParams> {
-                bottomMargin = bottom
-            }
-            binding.panneauValidationPosition.updateLayoutParams<FrameLayout.LayoutParams> {
-                bottomMargin = bottom
-            }
-            binding.infoBarre.updateLayoutParams<FrameLayout.LayoutParams> {
-                bottomMargin = bottom
-            }
-            insets
-        }
+        // Carte plein écran, overlays à l'écart des barres système. Les helpers
+        // cumulent avec les marges XML (12dp pour les boutons, 68dp pour le bouton
+        // fond carte sous la boussole) — pas de double application.
+        binding.btnRetour.applyStatusBarMargin()
+        binding.compass.applyStatusBarMargin()
+        binding.btnFondCarte.applyStatusBarMargin()
+        binding.bandeauPositionnement.applyStatusBarMargin()
+        binding.panneauControle.applyNavBarMargin()
+        binding.panneauValidationPosition.applyNavBarMargin()
+        binding.infoBarre.applyNavBarMargin()
     }
-
-    private fun Int.dp(density: Float) = (this * density).toInt()
-
 }

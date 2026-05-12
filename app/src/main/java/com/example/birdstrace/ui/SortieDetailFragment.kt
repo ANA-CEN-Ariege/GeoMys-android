@@ -8,9 +8,6 @@ import android.view.View
 import android.view.ViewGroup
 import androidx.appcompat.app.AlertDialog
 import androidx.core.content.FileProvider
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.updateLayoutParams
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
@@ -64,21 +61,11 @@ class SortieDetailFragment : Fragment() {
         setupMap()
         setupButtons()
 
-        ViewCompat.setOnApplyWindowInsetsListener(binding.root) { _, insets ->
-            val top = insets.getInsets(WindowInsetsCompat.Type.statusBars()).top
-            val bottom = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
-            binding.btnRetour.updateLayoutParams<android.widget.FrameLayout.LayoutParams> {
-                topMargin = top + 12
-            }
-            binding.btnListeEspeces.updateLayoutParams<android.widget.FrameLayout.LayoutParams> {
-                topMargin = top + 12
-            }
-            val dp16 = (16 * resources.displayMetrics.density).toInt()
-            binding.conteneurFabs.updateLayoutParams<android.widget.FrameLayout.LayoutParams> {
-                bottomMargin = bottom + dp16
-            }
-            insets
-        }
+        // Carte plein écran, boutons à l'écart des barres système.
+        binding.btnRetour.applyStatusBarMargin()
+        binding.btnFondCarte.applyStatusBarMargin()
+        binding.btnListeEspeces.applyStatusBarMargin()
+        binding.conteneurFabs.applyNavBarMargin()
     }
 
     private fun setupButtons() {

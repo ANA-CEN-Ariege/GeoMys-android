@@ -75,6 +75,8 @@ class SaisieObservationFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        // ScrollView edge-to-edge : padding-top = status bar, padding-bottom = nav bar + IME.
+        binding.root.applySystemBarInsets(includeIme = true)
         gnConfig = GeoNatureConfig(requireContext())
         obsId = arguments?.getString("obsId")
 

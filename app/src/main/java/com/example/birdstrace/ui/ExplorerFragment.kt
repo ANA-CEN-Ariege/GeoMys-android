@@ -13,9 +13,6 @@ import android.view.View
 import android.view.ViewGroup
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.drawable.DrawableCompat
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.updateLayoutParams
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
@@ -68,20 +65,15 @@ class ExplorerFragment : Fragment() {
         binding.btnFondCarte.setOnClickListener { toggleFondCarte() }
         binding.btnCentrer.setOnClickListener { centrerSurPosition() }
 
-        ViewCompat.setOnApplyWindowInsetsListener(binding.root) { _, insets ->
-            val top = insets.getInsets(WindowInsetsCompat.Type.statusBars()).top
-            val bottom = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
-            val dp = resources.displayMetrics.density
-            val dp32 = (32 * dp).toInt()
-            binding.btnRetour.updateLayoutParams<android.widget.FrameLayout.LayoutParams> { topMargin = top + 12 }
-            binding.tvCompteur.updateLayoutParams<android.widget.FrameLayout.LayoutParams> { topMargin = top + 12 }
-            // Barre de filtres décalée bien sous le bouton retour pour libérer le clic
-            binding.barreFiltres.updateLayoutParams<android.widget.FrameLayout.LayoutParams> { topMargin = top + (96 * dp).toInt() }
-            binding.ctrlDroite.updateLayoutParams<android.widget.FrameLayout.LayoutParams> { bottomMargin = bottom + (12 * dp).toInt() }
-            binding.overlayChargement.updateLayoutParams<android.widget.FrameLayout.LayoutParams> { bottomMargin = bottom + dp32 }
-            binding.tvNonConfigure.updateLayoutParams<android.widget.FrameLayout.LayoutParams> { bottomMargin = bottom + dp32 }
-            insets
-        }
+        // Carte plein écran, boutons à l'écart des barres système. Les marges XML
+        // (12dp pour les boutons, 96dp pour la barre de filtres, 32dp pour les overlays)
+        // sont conservées et cumulées avec les insets.
+        binding.btnRetour.applyStatusBarMargin()
+        binding.barreFiltres.applyStatusBarMargin()
+        binding.ctrlDroite.applyNavBarMargin()
+        binding.tvCompteur.applyNavBarMargin()
+        binding.overlayChargement.applyNavBarMargin()
+        binding.tvNonConfigure.applyNavBarMargin()
 
         if (!gnConfig.connexionConfiguree) {
             binding.tvNonConfigure.visibility = View.VISIBLE

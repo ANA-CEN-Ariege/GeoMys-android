@@ -58,6 +58,7 @@ class SortiesFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        binding.root.applySystemBarInsets()
         sortieStore = SortieStore(requireContext())
 
         adapter = SortieAdapter(

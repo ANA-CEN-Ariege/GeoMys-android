@@ -36,6 +36,7 @@ class ObservationsFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        binding.root.applySystemBarInsets()
 
         adapter = ObservationAdapter(
             onDelete = { obs ->

@@ -6,8 +6,6 @@ import android.os.Build
 import android.os.Bundle
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
 import androidx.navigation.NavController
 import androidx.navigation.fragment.NavHostFragment
 import com.example.birdstrace.R
@@ -25,12 +23,10 @@ class MainActivity : AppCompatActivity() {
         com.example.birdstrace.store.MapTileCache.configurer(this)
         createNotificationChannel()
         setContentView(R.layout.activity_main)
-
-        ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.nav_host_fragment)) { v, windowInsets ->
-            val insets = windowInsets.getInsets(WindowInsetsCompat.Type.systemBars())
-            v.setPadding(insets.left, insets.top, insets.right, insets.bottom)
-            windowInsets
-        }
+        // Les insets sont gérés au cas par cas dans chaque fragment via les helpers
+        // de Insets.kt (applyStatusBarInset, applyNavBarInset, applySystemBarInsets).
+        // Permet aux backgrounds/cartes de rester edge-to-edge tout en gardant
+        // les boutons à l'écart des barres système.
 
         val navHostFragment = supportFragmentManager
             .findFragmentById(R.id.nav_host_fragment) as NavHostFragment

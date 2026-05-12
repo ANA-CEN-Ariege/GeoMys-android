@@ -150,7 +150,10 @@ class SaisieObservationFragment : Fragment() {
             val row = inflater.inflate(R.layout.item_pending_obs, binding.llPendingObs, false)
             row.findViewById<ImageView>(R.id.iv_taxon).setImageResource(iconeTaxon(obs.taxon))
             val label = if (obs.nombre > 1) "${obs.espece}  ·  ${obs.nombre} indiv." else obs.espece
-            row.findViewById<TextView>(R.id.tv_espece).text = label
+            row.findViewById<TextView>(R.id.tv_espece).apply {
+                text = label
+                setOnClickListener { dupliquer(index) }
+            }
             row.findViewById<ImageButton>(R.id.btn_edit).setOnClickListener { reediter(index) }
             row.findViewById<ImageButton>(R.id.btn_info).setOnClickListener { ouvrirDetails(index) }
             row.findViewById<ImageButton>(R.id.btn_delete).setOnClickListener { supprimer(index) }
@@ -174,6 +177,22 @@ class SaisieObservationFragment : Fragment() {
     private fun supprimer(index: Int) {
         if (index !in pendingObs.indices) return
         pendingObs.removeAt(index)
+        rafraichirListe()
+    }
+
+    /** Clic sur le nom d'une ligne : ajoute une nouvelle PendingObs avec le même
+     *  taxon / espèce / cd_nom — le nombre courant est utilisé, les détails repartent
+     *  à vide pour ne pas répliquer un sexe ou un stade qui appartiennent à l'autre
+     *  individu observé. */
+    private fun dupliquer(index: Int) {
+        if (index !in pendingObs.indices) return
+        val source = pendingObs[index]
+        pendingObs.add(PendingObs(
+            taxon = source.taxon,
+            espece = source.espece,
+            cdNom = source.cdNom,
+            nombre = nombre
+        ))
         rafraichirListe()
     }
 

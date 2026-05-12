@@ -199,8 +199,16 @@ class SaisieObservationFragment : Fragment() {
 
     private fun updateEspeceHint() {
         binding.tilEspece.hint = ""
-        binding.tilEspece.placeholderText = if (rechercheNomSci) {
-            "Nom scientifique (ex: Turdus merula, Rosa canina…)"
+        binding.tilEspece.placeholderText = if (rechercheNomSci) when (taxon) {
+            Taxon.MAMMIFERE   -> "Nom scientifique (ex: Vulpes vulpes, Meles meles…)"
+            Taxon.REPTILE     -> "Nom scientifique (ex: Podarcis muralis, Vipera aspis…)"
+            Taxon.BATRACIEN   -> "Nom scientifique (ex: Rana temporaria, Salamandra salamandra…)"
+            Taxon.POISSON     -> "Nom scientifique (ex: Esox lucius, Salmo trutta…)"
+            Taxon.INSECTE     -> "Nom scientifique (ex: Papilio machaon, Apis mellifera…)"
+            Taxon.FONGE       -> "Nom scientifique (ex: Boletus edulis, Cantharellus cibarius…)"
+            Taxon.INVERTEBRES -> "Nom scientifique (ex: Helix pomatia, Homarus gammarus…)"
+            Taxon.PLANTE      -> "Nom scientifique (ex: Quercus robur, Rosa canina…)"
+            else              -> "Nom scientifique (ex: Turdus merula, Erithacus rubecula…)"
         } else when (taxon) {
             Taxon.MAMMIFERE   -> "Espèce observée (ex: Renard roux, Blaireau…)"
             Taxon.REPTILE     -> "Espèce observée (ex: Lézard des murailles, Vipère aspic…)"

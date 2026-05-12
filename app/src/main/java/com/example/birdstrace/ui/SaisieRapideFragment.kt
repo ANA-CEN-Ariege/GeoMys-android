@@ -301,7 +301,17 @@ class SaisieRapideFragment : Fragment() {
     }
 
     private fun updateEspeceHint() {
-        binding.tilEspece.hint = if (rechercheNomSci) "Nom scientifique" else when (taxon) {
+        binding.tilEspece.hint = if (rechercheNomSci) when (taxon) {
+            Taxon.MAMMIFERE   -> "Nom scientifique (ex : Vulpes vulpes)"
+            Taxon.REPTILE     -> "Nom scientifique (ex : Podarcis muralis)"
+            Taxon.BATRACIEN   -> "Nom scientifique (ex : Rana temporaria)"
+            Taxon.POISSON     -> "Nom scientifique (ex : Esox lucius)"
+            Taxon.INSECTE     -> "Nom scientifique (ex : Papilio machaon)"
+            Taxon.FONGE       -> "Nom scientifique (ex : Boletus edulis)"
+            Taxon.INVERTEBRES -> "Nom scientifique (ex : Helix pomatia)"
+            Taxon.PLANTE      -> "Nom scientifique (ex : Quercus robur)"
+            else              -> "Nom scientifique (ex : Turdus merula)"
+        } else when (taxon) {
             Taxon.MAMMIFERE   -> "Espèce (ex : Renard roux)"
             Taxon.REPTILE     -> "Espèce (ex : Lézard des murailles)"
             Taxon.BATRACIEN   -> "Espèce (ex : Grenouille verte)"

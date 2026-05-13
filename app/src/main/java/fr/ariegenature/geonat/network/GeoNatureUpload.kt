@@ -1,5 +1,6 @@
 package fr.ariegenature.geonat.network
 
+import fr.ariegenature.geonat.model.Observation
 import fr.ariegenature.geonat.model.Sortie
 import fr.ariegenature.geonat.store.GeoNatureConfig
 import fr.ariegenature.geonat.store.NomenclatureCache
@@ -101,14 +102,27 @@ object GeoNatureUpload {
                 }
             }
 
-            for (obs in obsValides) {
-                val d = Date(obs.date)
+            // Regroupement explicite par releveId : la saisie multi-taxons stampille
+            // toutes ses obs avec un même UUID, qui devient ici un seul relevé GeoNature
+            // avec N occurrences. Pour les obs sans releveId (saisie mono-taxon, import GPX),
+            // on utilise obs.id comme clé : chaque obs forme son propre groupe d'1 élément.
+            val groupes = obsValides.groupBy { it.releveId ?: it.id }
+
+            for ((_, groupe) in groupes) {
+                // Coordonnées du relevé : la première obs du groupe (toutes identiques pour
+                // un batch multi-taxons issu de SaisieObservationFragment).
+                val lat = groupe.first().latitude
+                val lon = groupe.first().longitude
+                // Plage temporelle couvrant toutes les obs du groupe (date_min/max).
+                val dateMin = Date(groupe.minOf { it.date })
+                val dateMax = Date(groupe.maxOf { it.date })
+
                 val properties = JSONObject().apply {
                     put("id_dataset", datasetId)
-                    put("date_min", dateFmt.format(d))
-                    put("date_max", dateFmt.format(d))
-                    put("hour_min", heureFmt.format(d))
-                    put("hour_max", heureFmt.format(d))
+                    put("date_min", dateFmt.format(dateMin))
+                    put("date_max", dateFmt.format(dateMax))
+                    put("hour_min", heureFmt.format(dateMin))
+                    put("hour_max", heureFmt.format(dateMax))
                     put("additional_fields", JSONObject())
                     put("meta_device_entry", "mobile")
                     put("t_occurrences_occtax", JSONArray())
@@ -120,7 +134,7 @@ object GeoNatureUpload {
 
                 val geometry = JSONObject()
                     .put("type", "Point")
-                    .put("coordinates", JSONArray().put(obs.longitude).put(obs.latitude))
+                    .put("coordinates", JSONArray().put(lon).put(lat))
 
                 val body1 = JSONObject()
                     .put("geometry", geometry)
@@ -170,79 +184,36 @@ object GeoNatureUpload {
                 }
                 if (premierIdReleve == null) premierIdReleve = idReleve
 
-                val counting = JSONObject().apply {
-                    put("count_min", obs.nombre)
-                    put("count_max", obs.nombre)
-                    obs.sexe?.let { code ->
-                        resolverIdNomenclature(code, "SEXE", SEXE_LABELS, nomenclatures)
-                            ?.let { put("id_nomenclature_sex", it) }
-                    }
-                    obs.stadeVie?.let { code ->
-                        resolverIdNomenclature(code, "STADE_VIE", STADE_LABELS, nomenclatures)
-                            ?.let { put("id_nomenclature_life_stage", it) }
-                    }
-                    obs.objDenbr?.let { code ->
-                        resolverIdNomenclature(code, "OBJ_DENBR", OBJ_DENBR_LABELS, nomenclatures)
-                            ?.let { put("id_nomenclature_obj_count", it) }
-                    }
-                    obs.typDenbr?.let { code ->
-                        resolverIdNomenclature(code, "TYP_DENBR", TYP_DENBR_LABELS, nomenclatures)
-                            ?.let { put("id_nomenclature_type_count", it) }
+                // Une occurrence par taxon — toutes attachées au même relevé.
+                var nbReussisGroupe = 0
+                for (obs in groupe) {
+                    val occ = buildOccurrence(obs, nomenclatures)
+
+                    val urlOcc = URL("$base/api/occtax/OCCTAX/releve/$idReleve/occurrence")
+                    val conn2 = urlOcc.openConnection() as java.net.HttpURLConnection
+                    conn2.requestMethod = "POST"
+                    conn2.doOutput = true
+                    conn2.connectTimeout = 30000
+                    conn2.readTimeout = 30000
+                    conn2.setRequestProperty("Content-Type", "application/json")
+                    conn2.setRequestProperty("Accept", "application/json")
+                    if (token != null) conn2.setRequestProperty("Authorization", "Bearer $token")
+                    if (cookies.isNotEmpty()) conn2.setRequestProperty("Cookie", cookies)
+                    OutputStreamWriter(conn2.outputStream).use { it.write(occ.toString()) }
+
+                    val code2 = conn2.responseCode
+                    if (code2 in 200..299) {
+                        nbCrees++
+                        nbReussisGroupe++
+                    } else {
+                        val bodyErr = try { (conn2.errorStream ?: conn2.inputStream)?.bufferedReader()?.readText() } catch (_: Exception) { null }
+                        dernierCodeErreur = code2
+                        derniereErreur = parseErreur(code2, bodyErr)
                     }
                 }
 
-                val occ = JSONObject().apply {
-                    put("cd_nom", obs.cdNom!!)
-                    put("nom_cite", obs.espece)
-                    if (obs.notes.isNotEmpty()) put("comment", obs.notes)
-                    put("cor_counting_occtax", JSONArray().put(counting))
-                    val codeTechnique = obs.techniqueObs ?: "0"
-                    resolverIdNomenclature(codeTechnique, "METH_OBS", METH_OBS_LABELS, nomenclatures)
-                        ?.let { put("id_nomenclature_obs_technique", it) }
-                    obs.statutBio?.let { code ->
-                        resolverIdNomenclature(code, "STATUT_BIO", STATUT_BIO_LABELS, nomenclatures)
-                            ?.let { put("id_nomenclature_bio_status", it) }
-                    }
-                    obs.etaBio?.let { code ->
-                        resolverIdNomenclature(code, "ETA_BIO", ETA_BIO_LABELS, nomenclatures)
-                            ?.let { put("id_nomenclature_bio_condition", it) }
-                    }
-                    obs.preuveExist?.let { code ->
-                        resolverIdNomenclature(code, "PREUVE_EXIST", PREUVE_EXIST_LABELS, nomenclatures)
-                            ?.let { put("id_nomenclature_exist_proof", it) }
-                    }
-                    obs.comportement?.let { code ->
-                        resolverIdNomenclature(code, "OCC_COMPORTEMENT", COMPORTEMENT_LABELS, nomenclatures)
-                            ?.let { put("id_nomenclature_behaviour", it) }
-                    }
-                    obs.methDetermin?.let { code ->
-                        resolverIdNomenclature(code, "METH_DETERMIN", METH_DETERMIN_LABELS, nomenclatures)
-                            ?.let { put("id_nomenclature_determination_method", it) }
-                    }
-                    obs.determinateur?.takeIf { it.isNotEmpty() }?.let { put("determiner", it) }
-                }
-
-                val urlOcc = URL("$base/api/occtax/OCCTAX/releve/$idReleve/occurrence")
-                val conn2 = urlOcc.openConnection() as java.net.HttpURLConnection
-                conn2.requestMethod = "POST"
-                conn2.doOutput = true
-                conn2.connectTimeout = 30000
-                conn2.readTimeout = 30000
-                conn2.setRequestProperty("Content-Type", "application/json")
-                conn2.setRequestProperty("Accept", "application/json")
-                if (token != null) conn2.setRequestProperty("Authorization", "Bearer $token")
-                if (cookies.isNotEmpty()) conn2.setRequestProperty("Cookie", cookies)
-                OutputStreamWriter(conn2.outputStream).use { it.write(occ.toString()) }
-
-                val code2 = conn2.responseCode
-                if (code2 in 200..299) {
-                    nbCrees++
-                } else {
-                    val bodyErr = try { (conn2.errorStream ?: conn2.inputStream)?.bufferedReader()?.readText() } catch (_: Exception) { null }
-                    dernierCodeErreur = code2
-                    derniereErreur = parseErreur(code2, bodyErr)
-                    relevesOrphelins.add(idReleve)
-                }
+                // Relevé orphelin = créé côté serveur mais aucune occurrence n'a abouti.
+                if (nbReussisGroupe == 0) relevesOrphelins.add(idReleve)
             }
 
             if (nbCrees == 0) {
@@ -257,6 +228,63 @@ object GeoNatureUpload {
             }
             Triple(nbCrees, obsValides.size, premierIdReleve)
         }
+
+    private fun buildOccurrence(
+        obs: Observation,
+        nomenclatures: Map<String, Map<String, Int>>
+    ): JSONObject {
+        val counting = JSONObject().apply {
+            put("count_min", obs.nombre)
+            put("count_max", obs.nombre)
+            obs.sexe?.let { code ->
+                resolverIdNomenclature(code, "SEXE", SEXE_LABELS, nomenclatures)
+                    ?.let { put("id_nomenclature_sex", it) }
+            }
+            obs.stadeVie?.let { code ->
+                resolverIdNomenclature(code, "STADE_VIE", STADE_LABELS, nomenclatures)
+                    ?.let { put("id_nomenclature_life_stage", it) }
+            }
+            obs.objDenbr?.let { code ->
+                resolverIdNomenclature(code, "OBJ_DENBR", OBJ_DENBR_LABELS, nomenclatures)
+                    ?.let { put("id_nomenclature_obj_count", it) }
+            }
+            obs.typDenbr?.let { code ->
+                resolverIdNomenclature(code, "TYP_DENBR", TYP_DENBR_LABELS, nomenclatures)
+                    ?.let { put("id_nomenclature_type_count", it) }
+            }
+        }
+
+        return JSONObject().apply {
+            put("cd_nom", obs.cdNom!!)
+            put("nom_cite", obs.espece)
+            if (obs.notes.isNotEmpty()) put("comment", obs.notes)
+            put("cor_counting_occtax", JSONArray().put(counting))
+            val codeTechnique = obs.techniqueObs ?: "0"
+            resolverIdNomenclature(codeTechnique, "METH_OBS", METH_OBS_LABELS, nomenclatures)
+                ?.let { put("id_nomenclature_obs_technique", it) }
+            obs.statutBio?.let { code ->
+                resolverIdNomenclature(code, "STATUT_BIO", STATUT_BIO_LABELS, nomenclatures)
+                    ?.let { put("id_nomenclature_bio_status", it) }
+            }
+            obs.etaBio?.let { code ->
+                resolverIdNomenclature(code, "ETA_BIO", ETA_BIO_LABELS, nomenclatures)
+                    ?.let { put("id_nomenclature_bio_condition", it) }
+            }
+            obs.preuveExist?.let { code ->
+                resolverIdNomenclature(code, "PREUVE_EXIST", PREUVE_EXIST_LABELS, nomenclatures)
+                    ?.let { put("id_nomenclature_exist_proof", it) }
+            }
+            obs.comportement?.let { code ->
+                resolverIdNomenclature(code, "OCC_COMPORTEMENT", COMPORTEMENT_LABELS, nomenclatures)
+                    ?.let { put("id_nomenclature_behaviour", it) }
+            }
+            obs.methDetermin?.let { code ->
+                resolverIdNomenclature(code, "METH_DETERMIN", METH_DETERMIN_LABELS, nomenclatures)
+                    ?.let { put("id_nomenclature_determination_method", it) }
+            }
+            obs.determinateur?.takeIf { it.isNotEmpty() }?.let { put("determiner", it) }
+        }
+    }
 
     // Résout un code interne ou un id_nomenclature direct vers l'id GeoNature
     private fun resolverIdNomenclature(

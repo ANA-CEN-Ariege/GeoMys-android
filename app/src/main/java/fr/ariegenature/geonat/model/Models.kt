@@ -30,7 +30,11 @@ data class Observation(
     var typDenbr: String? = null,
     var comportement: String? = null,
     var methDetermin: String? = null,
-    var determinateur: String? = null
+    var determinateur: String? = null,
+    // UUID partagé par les obs d'une même saisie multi-taxons : à l'envoi, elles seront
+    // regroupées dans un seul relevé GeoNature (1 relevé = 1 point + N occurrences).
+    // null pour les obs mono-taxon (saisie rapide, import GPX) → chacune devient son propre relevé.
+    var releveId: String? = null
 )
 
 data class Sortie(

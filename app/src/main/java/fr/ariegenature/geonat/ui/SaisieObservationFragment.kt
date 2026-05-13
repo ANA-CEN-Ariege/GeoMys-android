@@ -405,6 +405,9 @@ class SaisieObservationFragment : Fragment() {
             findNavController().navigateUp()
             return
         }
+        // Toutes les obs créées dans cette session de saisie multi-taxons partagent un
+        // même releveId : à l'envoi, GeoNatureUpload les fusionnera en un seul relevé.
+        val releveIdBatch = java.util.UUID.randomUUID().toString()
         for (obs in pendingObs) {
             val nomFinal = obs.espece.ifEmpty { "Espèce inconnue" }
             val cdNomFinal = obs.cdNom ?: obs.cdNomManuel.trim().toIntOrNull()
@@ -447,7 +450,8 @@ class SaisieObservationFragment : Fragment() {
                     typDenbr      = obs.typDenbr.ifEmpty { null },
                     comportement  = obs.comportement.ifEmpty { null },
                     methDetermin  = obs.methDetermin.ifEmpty { null },
-                    determinateur = obs.determinateur.ifEmpty { null }
+                    determinateur = obs.determinateur.ifEmpty { null },
+                    releveId      = releveIdBatch
                 ))
             }
         }

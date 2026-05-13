@@ -58,7 +58,6 @@ class SaisieObservationFragment : Fragment() {
         var stadeVie: String = "",
         var objDenbr: String = "",
         var typDenbr: String = "",
-        var uuidSinpCounting0: String = "",
         // ── Dénombrements supplémentaires ──
         var denombrementsAdditionnels: List<fr.ariegenature.geonat.model.Denombrement> = emptyList(),
         // ── Caractérisation de l'occurrence ──
@@ -70,11 +69,11 @@ class SaisieObservationFragment : Fragment() {
         var comportement: String = "",
         var methDetermin: String = "",
         var determinateur: String = "",
-        var nomCite: String = "",
-        var preuveNumerique: String = "",
-        var preuveNonNumerique: String = "",
         var notes: String = "",
         var cdNomManuel: String = "",
+        // ── Média joint ──
+        var mediaUri: String = "",
+        var mediaMimeType: String = "",
         val existingId: String? = null
     )
 
@@ -241,20 +240,21 @@ class SaisieObservationFragment : Fragment() {
         val obs = pendingObs[index]
         editingDetailsIndex = index
         val bundle = Bundle().apply {
-            putString("taxon",              obs.taxon.name)
-            putString("groupe2Inpn",        groupe2InpnPour(obs))
-            putString("statutObs",          obs.statutObs)
-            putString("techniqueObs",       obs.techniqueObs)
-            putString("etaBio",             obs.etaBio)
-            putString("comportement",       obs.comportement)
-            putString("statutBio",          obs.statutBio)
-            putString("methDetermin",       obs.methDetermin)
-            putString("determinateur",      obs.determinateur)
-            putString("nomCite",            obs.nomCite.ifEmpty { obs.espece })
-            putString("preuveExist",        obs.preuveExist)
-            putString("preuveNumerique",    obs.preuveNumerique)
-            putString("preuveNonNumerique", obs.preuveNonNumerique)
-            putString("notes",              obs.notes)
+            putString("taxon",               obs.taxon.name)
+            putString("groupe2Inpn",         groupe2InpnPour(obs))
+            putString("statutObs",           obs.statutObs)
+            putString("techniqueObs",        obs.techniqueObs)
+            putString("etaBio",              obs.etaBio)
+            putString("comportement",        obs.comportement)
+            putString("statutBio",           obs.statutBio)
+            putString("methDetermin",        obs.methDetermin)
+            putString("determinateur",       obs.determinateur)
+            // Préremplissage déterminateur par défaut = login GeoNature courant.
+            putString("determinateurDefaut", gnConfig.login)
+            putString("preuveExist",         obs.preuveExist)
+            putString("notes",               obs.notes)
+            putString("mediaUri",            obs.mediaUri)
+            putString("mediaMimeType",       obs.mediaMimeType)
         }
         findNavController().navigate(R.id.action_saisie_to_caracterisation, bundle)
     }
@@ -271,7 +271,6 @@ class SaisieObservationFragment : Fragment() {
             stadeVie = obs.stadeVie.ifEmpty { null },
             objDenbr = obs.objDenbr.ifEmpty { null },
             typDenbr = obs.typDenbr.ifEmpty { null },
-            uuidSinp = obs.uuidSinpCounting0.ifEmpty { null },
         )
         val tous = listOf(counting0) + obs.denombrementsAdditionnels
         val json = com.google.gson.Gson().toJson(tous)
@@ -304,15 +303,10 @@ class SaisieObservationFragment : Fragment() {
             handler("statutBio")          { o, v -> o.statutBio = v }
             handler("methDetermin")       { o, v -> o.methDetermin = v }
             handler("determinateur")      { o, v -> o.determinateur = v }
-            handler("nomCite")            { o, v ->
-                o.nomCite = v
-                // Synchronise le nom affiché sur la ligne avec ce qu'a tapé l'utilisateur.
-                if (v.isNotEmpty()) o.espece = v
-            }
             handler("preuveExist")        { o, v -> o.preuveExist = v }
-            handler("preuveNumerique")    { o, v -> o.preuveNumerique = v }
-            handler("preuveNonNumerique") { o, v -> o.preuveNonNumerique = v }
             handler("notes")              { o, v -> o.notes = v }
+            handler("mediaUri")           { o, v -> o.mediaUri = v }
+            handler("mediaMimeType")      { o, v -> o.mediaMimeType = v }
             // Legacy : ObservationDetailsFragment (saisie rapide) renvoie aussi sexe/stade/etc.
             // mais cet écran n'est plus déclenché depuis la saisie multi-taxons — on garde quand
             // même les handlers au cas où.
@@ -341,7 +335,6 @@ class SaisieObservationFragment : Fragment() {
                 obs.stadeVie = c0.stadeVie ?: ""
                 obs.objDenbr = c0.objDenbr ?: ""
                 obs.typDenbr = c0.typDenbr ?: ""
-                obs.uuidSinpCounting0 = c0.uuidSinp ?: ""
                 obs.denombrementsAdditionnels = if (liste.size > 1) liste.drop(1) else emptyList()
                 rafraichirListe()
             }
@@ -369,35 +362,27 @@ class SaisieObservationFragment : Fragment() {
     }
 
     private fun updateEspeceHint() {
-        binding.tilEspece.hint = ""
-        binding.tilEspece.placeholderText = if (rechercheNomSci) when (taxonSelector.taxon) {
-            Taxon.MAMMIFERE   -> "Nom scientifique (ex: Vulpes vulpes, Meles meles…)"
-            Taxon.REPTILE     -> "Nom scientifique (ex: Podarcis muralis, Vipera aspis…)"
-            Taxon.BATRACIEN   -> "Nom scientifique (ex: Rana temporaria, Salamandra salamandra…)"
-            Taxon.POISSON     -> "Nom scientifique (ex: Esox lucius, Salmo trutta…)"
-            Taxon.INSECTE     -> "Nom scientifique (ex: Papilio machaon, Apis mellifera…)"
-            Taxon.FONGE       -> "Nom scientifique (ex: Boletus edulis, Cantharellus cibarius…)"
-            Taxon.MOLLUSQUE   -> "Nom scientifique (ex: Helix pomatia, Cornu aspersum…)"
-            Taxon.INVERTEBRES -> "Nom scientifique (ex: Araneus diadematus, Homarus gammarus…)"
-            Taxon.PLANTE      -> "Nom scientifique (ex: Quercus robur, Rosa canina…)"
-            else              -> "Nom scientifique (ex: Turdus merula, Erithacus rubecula…)"
-        } else when (taxonSelector.taxon) {
-            Taxon.MAMMIFERE   -> "Espèce observée (ex: Renard roux, Blaireau…)"
-            Taxon.REPTILE     -> "Espèce observée (ex: Lézard des murailles, Vipère aspic…)"
-            Taxon.BATRACIEN   -> "Espèce observée (ex: Grenouille verte, Salamandre tachetée…)"
-            Taxon.POISSON     -> "Espèce observée (ex: Brochet, Truite fario…)"
-            Taxon.INSECTE     -> "Espèce observée (ex: Criquet mélodieux, Machaon…)"
-            Taxon.FONGE       -> "Espèce observée (ex: Cèpe de Bordeaux, Chanterelle…)"
-            Taxon.MOLLUSQUE   -> "Espèce observée (ex: Escargot de Bourgogne, Petit-gris…)"
-            Taxon.INVERTEBRES -> "Espèce observée (ex: Épeire diadème, Homard…)"
-            Taxon.PLANTE      -> "Espèce observée (ex: Chêne pédonculé, Genêt purgatif…)"
-            else              -> "Espèce observée (ex: Merle noir, Rouge-gorge…)"
+        val nomGroupe = when (taxonSelector.taxon) {
+            Taxon.OISEAU      -> "Oiseaux"
+            Taxon.MAMMIFERE   -> "Mammifères"
+            Taxon.REPTILE     -> "Reptiles"
+            Taxon.BATRACIEN   -> "Amphibiens"
+            Taxon.POISSON     -> "Poissons"
+            Taxon.INSECTE     -> "Insectes"
+            Taxon.FONGE       -> "Champignons"
+            Taxon.MOLLUSQUE   -> "Mollusques"
+            Taxon.INVERTEBRES -> "Autres invertébrés"
+            Taxon.PLANTE      -> "Plantes"
         }
+        binding.tilEspece.hint = ""
+        binding.tilEspece.placeholderText = if (rechercheNomSci) "Nom scientifique ($nomGroupe)"
+                                            else                "Espèce observée ($nomGroupe)"
     }
 
     private fun setupAutocomplete() {
         binding.etEspece.threshold = 1
         refreshAutocompleteAdapter()
+        updateEspeceHint()
         binding.tilEspece.setEndIconOnClickListener { speech.lancer() }
 
         binding.switchNomSci.setOnCheckedChangeListener { _, isChecked ->
@@ -515,61 +500,57 @@ class SaisieObservationFragment : Fragment() {
         for (obs in pendingObs) {
             val nomFinal = obs.espece.ifEmpty { "Espèce inconnue" }
             val cdNomFinal = obs.cdNom ?: obs.cdNomManuel.trim().toIntOrNull()
-            // nom_cite : ce que l'observateur a cité (peut différer de espece si édité dans la caractérisation).
-            val nomCiteFinal = obs.nomCite.ifEmpty { nomFinal }
             if (obs.existingId != null) {
                 val base = traceViewModel.observations.value?.find { it.id == obs.existingId } ?: continue
                 traceViewModel.modifierObservation(base.copy(
-                    espece                   = nomCiteFinal,
-                    taxon                    = obs.taxon,
-                    cdNom                    = cdNomFinal,
-                    notes                    = obs.notes,
-                    nombre                   = obs.nombre,
-                    nombreMax                = obs.nombreMax,
-                    sexe                     = obs.sexe.ifEmpty { null },
-                    stadeVie                 = obs.stadeVie.ifEmpty { null },
-                    objDenbr                 = obs.objDenbr.ifEmpty { null },
-                    typDenbr                 = obs.typDenbr.ifEmpty { null },
-                    uuidSinpCounting0        = obs.uuidSinpCounting0.ifEmpty { null },
+                    espece                    = nomFinal,
+                    taxon                     = obs.taxon,
+                    cdNom                     = cdNomFinal,
+                    notes                     = obs.notes,
+                    nombre                    = obs.nombre,
+                    nombreMax                 = obs.nombreMax,
+                    sexe                      = obs.sexe.ifEmpty { null },
+                    stadeVie                  = obs.stadeVie.ifEmpty { null },
+                    objDenbr                  = obs.objDenbr.ifEmpty { null },
+                    typDenbr                  = obs.typDenbr.ifEmpty { null },
                     denombrementsAdditionnels = obs.denombrementsAdditionnels,
-                    techniqueObs             = obs.techniqueObs.ifEmpty { null },
-                    statutObs                = obs.statutObs.ifEmpty { null },
-                    statutBio                = obs.statutBio.ifEmpty { null },
-                    etaBio                   = obs.etaBio.ifEmpty { null },
-                    preuveExist              = obs.preuveExist.ifEmpty { null },
-                    preuveNumerique          = obs.preuveNumerique.ifEmpty { null },
-                    preuveNonNumerique       = obs.preuveNonNumerique.ifEmpty { null },
-                    comportement             = obs.comportement.ifEmpty { null },
-                    methDetermin             = obs.methDetermin.ifEmpty { null },
-                    determinateur            = obs.determinateur.ifEmpty { null }
+                    techniqueObs              = obs.techniqueObs.ifEmpty { null },
+                    statutObs                 = obs.statutObs.ifEmpty { null },
+                    statutBio                 = obs.statutBio.ifEmpty { null },
+                    etaBio                    = obs.etaBio.ifEmpty { null },
+                    preuveExist               = obs.preuveExist.ifEmpty { null },
+                    comportement              = obs.comportement.ifEmpty { null },
+                    methDetermin              = obs.methDetermin.ifEmpty { null },
+                    determinateur             = obs.determinateur.ifEmpty { null },
+                    mediaUri                  = obs.mediaUri.ifEmpty { null },
+                    mediaMimeType             = obs.mediaMimeType.ifEmpty { null },
                 ))
             } else {
                 traceViewModel.ajouterObservation(Observation(
-                    espece                   = nomCiteFinal,
-                    taxon                    = obs.taxon,
-                    cdNom                    = cdNomFinal,
-                    latitude                 = latitude,
-                    longitude                = longitude,
-                    notes                    = obs.notes,
-                    nombre                   = obs.nombre,
-                    nombreMax                = obs.nombreMax,
-                    sexe                     = obs.sexe.ifEmpty { null },
-                    stadeVie                 = obs.stadeVie.ifEmpty { null },
-                    objDenbr                 = obs.objDenbr.ifEmpty { null },
-                    typDenbr                 = obs.typDenbr.ifEmpty { null },
-                    uuidSinpCounting0        = obs.uuidSinpCounting0.ifEmpty { null },
+                    espece                    = nomFinal,
+                    taxon                     = obs.taxon,
+                    cdNom                     = cdNomFinal,
+                    latitude                  = latitude,
+                    longitude                 = longitude,
+                    notes                     = obs.notes,
+                    nombre                    = obs.nombre,
+                    nombreMax                 = obs.nombreMax,
+                    sexe                      = obs.sexe.ifEmpty { null },
+                    stadeVie                  = obs.stadeVie.ifEmpty { null },
+                    objDenbr                  = obs.objDenbr.ifEmpty { null },
+                    typDenbr                  = obs.typDenbr.ifEmpty { null },
                     denombrementsAdditionnels = obs.denombrementsAdditionnels,
-                    techniqueObs             = obs.techniqueObs.ifEmpty { null },
-                    statutObs                = obs.statutObs.ifEmpty { null },
-                    statutBio                = obs.statutBio.ifEmpty { null },
-                    etaBio                   = obs.etaBio.ifEmpty { null },
-                    preuveExist              = obs.preuveExist.ifEmpty { null },
-                    preuveNumerique          = obs.preuveNumerique.ifEmpty { null },
-                    preuveNonNumerique       = obs.preuveNonNumerique.ifEmpty { null },
-                    comportement             = obs.comportement.ifEmpty { null },
-                    methDetermin             = obs.methDetermin.ifEmpty { null },
-                    determinateur            = obs.determinateur.ifEmpty { null },
-                    releveId                 = releveIdBatch
+                    techniqueObs              = obs.techniqueObs.ifEmpty { null },
+                    statutObs                 = obs.statutObs.ifEmpty { null },
+                    statutBio                 = obs.statutBio.ifEmpty { null },
+                    etaBio                    = obs.etaBio.ifEmpty { null },
+                    preuveExist               = obs.preuveExist.ifEmpty { null },
+                    comportement              = obs.comportement.ifEmpty { null },
+                    methDetermin              = obs.methDetermin.ifEmpty { null },
+                    determinateur             = obs.determinateur.ifEmpty { null },
+                    mediaUri                  = obs.mediaUri.ifEmpty { null },
+                    mediaMimeType             = obs.mediaMimeType.ifEmpty { null },
+                    releveId                  = releveIdBatch,
                 ))
             }
         }

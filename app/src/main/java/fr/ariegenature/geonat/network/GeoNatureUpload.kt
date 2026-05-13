@@ -205,6 +205,23 @@ object GeoNatureUpload {
                     if (code2 in 200..299) {
                         nbCrees++
                         nbReussisGroupe++
+                        // Upload média (best-effort) : on lit l'UUID de l'occurrence dans la
+                        // réponse, puis on POST le fichier vers gn_commons. Si l'endpoint n'est
+                        // pas dispo ou que ça échoue, on n'invalide pas l'envoi de l'obs.
+                        if (obs.mediaUri.isNullOrEmpty().not()) {
+                            try {
+                                val resp2 = conn2.inputStream.bufferedReader().readText()
+                                val uuidOcc = extraireUuidOccurrence(resp2)
+                                if (uuidOcc != null) {
+                                    uploaderMedia(
+                                        base = base, token = token, cookies = cookies,
+                                        uuidOcc = uuidOcc, mediaUri = obs.mediaUri!!,
+                                        mediaMime = obs.mediaMimeType ?: "application/octet-stream",
+                                        titre = obs.espece,
+                                    )
+                                }
+                            } catch (_: Exception) { /* best-effort */ }
+                        }
                     } else {
                         val bodyErr = try { (conn2.errorStream ?: conn2.inputStream)?.bufferedReader()?.readText() } catch (_: Exception) { null }
                         dernierCodeErreur = code2
@@ -241,7 +258,6 @@ object GeoNatureUpload {
             stadeVie = obs.stadeVie,
             objDenbr = obs.objDenbr,
             typDenbr = obs.typDenbr,
-            uuidSinp = obs.uuidSinpCounting0,
             nomenclatures = nomenclatures,
         )
         val countings = JSONArray().put(counting0)
@@ -254,7 +270,6 @@ object GeoNatureUpload {
                 stadeVie = d.stadeVie,
                 objDenbr = d.objDenbr,
                 typDenbr = d.typDenbr,
-                uuidSinp = d.uuidSinp,
                 nomenclatures = nomenclatures,
             ))
         }
@@ -283,8 +298,6 @@ object GeoNatureUpload {
                 resolverIdNomenclature(code, "PREUVE_EXIST", PREUVE_EXIST_LABELS, nomenclatures)
                     ?.let { put("id_nomenclature_exist_proof", it) }
             }
-            obs.preuveNumerique?.takeIf { it.isNotEmpty() }?.let { put("digital_proof", it) }
-            obs.preuveNonNumerique?.takeIf { it.isNotEmpty() }?.let { put("non_digital_proof", it) }
             obs.comportement?.let { code ->
                 resolverIdNomenclature(code, "OCC_COMPORTEMENT", COMPORTEMENT_LABELS, nomenclatures)
                     ?.let { put("id_nomenclature_behaviour", it) }
@@ -304,7 +317,6 @@ object GeoNatureUpload {
         stadeVie: String?,
         objDenbr: String?,
         typDenbr: String?,
-        uuidSinp: String?,
         nomenclatures: Map<String, Map<String, Int>>,
     ): JSONObject = JSONObject().apply {
         put("count_min", nombreMin)
@@ -325,24 +337,20 @@ object GeoNatureUpload {
             resolverIdNomenclature(code, "TYP_DENBR", TYP_DENBR_LABELS, nomenclatures)
                 ?.let { put("id_nomenclature_type_count", it) }
         }
-        uuidSinp?.takeIf { it.isNotEmpty() }?.let { put("unique_id_sinp_occtax", it) }
     }
 
-    // Résout un code interne ou un id_nomenclature direct vers l'id GeoNature
+    // Résout un code interne ou un id_nomenclature direct vers l'id GeoNature.
+    // ATTENTION ordre des étapes : les ids serveur passent en PREMIER. Sinon un id serveur
+    // qui ressemble à un code interne (ex : Adulte a id=3 côté serveur, alors que notre code
+    // interne "3" représente "juvénile") serait mal traduit et on enverrait Juvénile.
     private fun resolverIdNomenclature(
         code: String,
         type: String,
         labels: Map<String, String>,
         nomenclatures: Map<String, Map<String, Int>>
     ): Int? {
-        // 1. Si c'est un de nos codes internes ("0", "1", "2"...), on DOIT résoudre par le label
-        if (labels.containsKey(code)) {
-            val label = labels[code]!!.lowercase()
-            return nomenclatures[type]?.get(label)
-        }
-
-        // 2. Si le code est déjà un id_nomenclature (ex: sélectionné via NomenclatureCache)
-        // On vérifie s'il existe dans la nomenclature récupérée du serveur
+        // 1. Si le code est déjà un id_nomenclature présent dans la nomenclature serveur
+        //    (ex : sélectionné via NomenclatureCache), on l'utilise tel quel.
         val idAsInt = code.toIntOrNull()
         if (idAsInt != null) {
             val serverIds = nomenclatures[type]?.values
@@ -351,8 +359,107 @@ object GeoNatureUpload {
             }
         }
 
-        // 3. Sinon résolution via le texte brut (fallback)
+        // 2. Sinon, si c'est un de nos codes internes ("0", "1", "2"…), on résout par le label.
+        if (labels.containsKey(code)) {
+            val label = labels[code]!!.lowercase()
+            return nomenclatures[type]?.get(label)
+        }
+
+        // 3. Fallback : résolution via le texte brut.
         return nomenclatures[type]?.get(code.lowercase())
+    }
+
+    /** Extrait l'UUID de l'occurrence depuis la réponse JSON du POST .../occurrence.
+     *  GeoNature renvoie en général `unique_id_occurence_occtax` (typo historique côté serveur). */
+    private fun extraireUuidOccurrence(json: String): String? {
+        return try {
+            val o = JSONObject(json)
+            o.optString("unique_id_occurence_occtax").takeIf { it.isNotEmpty() }
+                ?: o.optJSONObject("properties")?.optString("unique_id_occurence_occtax")?.takeIf { it.isNotEmpty() }
+                ?: o.optString("unique_id_occurrence_occtax").takeIf { it.isNotEmpty() } // variante orthographe correcte
+        } catch (_: Exception) { null }
+    }
+
+    /** Cache de l'id_table_location pour t_occurrences_occtax (résolu au premier appel). */
+    @Volatile private var idTableLocationOccurrenceCache: Int? = null
+
+    private fun resoudreIdTableLocation(base: String, token: String?, cookies: String): Int? {
+        idTableLocationOccurrenceCache?.let { return it }
+        return try {
+            // Endpoint standard de gn_commons. Cherche l'entrée correspondant à la table d'occurrences occtax.
+            val url = URL("$base/api/gn_commons/bib_tables_location")
+            val conn = url.openConnection() as java.net.HttpURLConnection
+            conn.connectTimeout = 10000
+            conn.readTimeout = 10000
+            conn.setRequestProperty("Accept", "application/json")
+            if (token != null) conn.setRequestProperty("Authorization", "Bearer $token")
+            if (cookies.isNotEmpty()) conn.setRequestProperty("Cookie", cookies)
+            if (conn.responseCode != 200) return null
+            val text = conn.inputStream.bufferedReader().readText()
+            val array = try { JSONArray(text) } catch (_: Exception) {
+                JSONObject(text).optJSONArray("items") ?: JSONObject(text).optJSONArray("data") ?: return null
+            }
+            for (i in 0 until array.length()) {
+                val item = array.getJSONObject(i)
+                val nomTable = item.optString("nom_table_loc", "")
+                if (nomTable.equals("t_occurrences_occtax", ignoreCase = true)) {
+                    val id = item.optInt("id_table_location", -1).takeIf { it > 0 }
+                    idTableLocationOccurrenceCache = id
+                    return id
+                }
+            }
+            null
+        } catch (_: Exception) { null }
+    }
+
+    /** Upload multipart d'un média vers `/api/gn_commons/medias` et liaison à l'occurrence
+     *  via `uuid_attached_row`. Best-effort : silencieux en cas d'échec (l'obs reste créée). */
+    private fun uploaderMedia(
+        base: String, token: String?, cookies: String,
+        uuidOcc: String, mediaUri: String, mediaMime: String, titre: String,
+    ) {
+        val idTableLoc = resoudreIdTableLocation(base, token, cookies) ?: return
+        val file = try { java.io.File(java.net.URI(mediaUri).path) } catch (_: Exception) { return }
+        if (!file.exists() || !file.canRead()) return
+
+        val boundary = "----GeoNatBoundary${System.currentTimeMillis()}"
+        val url = URL("$base/api/gn_commons/medias")
+        val conn = url.openConnection() as java.net.HttpURLConnection
+        conn.requestMethod = "POST"
+        conn.doOutput = true
+        conn.connectTimeout = 30000
+        conn.readTimeout = 60000
+        conn.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
+        conn.setRequestProperty("Accept", "application/json")
+        if (token != null) conn.setRequestProperty("Authorization", "Bearer $token")
+        if (cookies.isNotEmpty()) conn.setRequestProperty("Cookie", cookies)
+
+        fun part(field: String, value: String, sb: StringBuilder) {
+            sb.append("--").append(boundary).append("\r\n")
+            sb.append("Content-Disposition: form-data; name=\"").append(field).append("\"\r\n\r\n")
+            sb.append(value).append("\r\n")
+        }
+
+        val prefix = StringBuilder().apply {
+            part("id_table_location", idTableLoc.toString(), this)
+            part("uuid_attached_row", uuidOcc, this)
+            part("title_fr", titre, this)
+            part("description_fr", "Saisie GeoNat mobile", this)
+            part("is_public", "true", this)
+            append("--").append(boundary).append("\r\n")
+            append("Content-Disposition: form-data; name=\"file\"; filename=\"").append(file.name).append("\"\r\n")
+            append("Content-Type: ").append(mediaMime).append("\r\n\r\n")
+        }
+        val suffix = "\r\n--$boundary--\r\n"
+
+        try {
+            conn.outputStream.use { out ->
+                out.write(prefix.toString().toByteArray(Charsets.UTF_8))
+                file.inputStream().use { it.copyTo(out) }
+                out.write(suffix.toByteArray(Charsets.UTF_8))
+            }
+            conn.responseCode // déclenche la requête ; on ignore le code
+        } catch (_: Exception) { /* best-effort */ }
     }
 
     private fun parseErreur(code: Int, body: String?): String {

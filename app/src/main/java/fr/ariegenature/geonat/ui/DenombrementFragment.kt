@@ -117,8 +117,6 @@ class DenombrementFragment : Fragment() {
                 listOf("Non renseigné","Exact","Estimé","Minimum","Maximum"),
                 listOf("","1","2","3","4"))
 
-            row.findViewById<TextInputEditText>(R.id.et_uuid_sinp).setText(denom.uuidSinp ?: "")
-
             binding.llDenombrements.addView(row)
         }
     }
@@ -134,12 +132,10 @@ class DenombrementFragment : Fragment() {
             val stadeVie = selectedCode(row.findViewById(R.id.spinner_stade_vie)).ifEmpty { null }
             val objDenbr = selectedCode(row.findViewById(R.id.spinner_obj_denbr)).ifEmpty { null }
             val typDenbr = selectedCode(row.findViewById(R.id.spinner_typ_denbr)).ifEmpty { null }
-            val uuid = row.findViewById<TextInputEditText>(R.id.et_uuid_sinp).text?.toString()?.trim()?.ifEmpty { null }
             items[i] = items[i].copy(
                 nombreMin = min, nombreMax = max,
                 sexe = if (sexeActif) sexe else null,
                 stadeVie = stadeVie, objDenbr = objDenbr, typDenbr = typDenbr,
-                uuidSinp = uuid,
             )
         }
     }

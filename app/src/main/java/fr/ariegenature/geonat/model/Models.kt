@@ -20,8 +20,6 @@ data class Denombrement(
     var stadeVie: String? = null,
     var objDenbr: String? = null,
     var typDenbr: String? = null,
-    /** Optionnel : si vide, GeoNature génère un UUID côté serveur à l'insert. */
-    var uuidSinp: String? = null,
 )
 
 data class Observation(
@@ -54,19 +52,18 @@ data class Observation(
     // ── Extras counting #0 (mode multi-taxon) ──
     /** Si null, le counting #0 utilise `nombre` pour count_min ET count_max. */
     var nombreMax: Int? = null,
-    /** UUID SINP du counting #0 (optionnel). */
-    var uuidSinpCounting0: String? = null,
     // ── Dénombrements supplémentaires (mode multi-taxon : countings 1..N) ──
     /** Le counting #0 est représenté par les champs flat ci-dessus ; cette liste
      *  contient les dénombrements supplémentaires éventuels. À l'envoi GeoNature,
      *  un cor_counting_occtax est émis pour chaque (counting #0 + entrées de cette liste). */
     var denombrementsAdditionnels: List<Denombrement> = emptyList(),
-    // ── Nouveaux champs occurrence (caractérisation) ──
+    // ── Statut d'observation ──
     var statutObs: String? = null,
-    /** Preuve numérique — typiquement une URL (photo, audio…). Mappé sur digital_proof. */
-    var preuveNumerique: String? = null,
-    /** Preuve non numérique — description libre (carnet, plume conservée…). Mappé sur non_digital_proof. */
-    var preuveNonNumerique: String? = null,
+    // ── Média attaché (1 max par obs) ──
+    /** URI locale (file://) du média copié dans le storage privé de l'app, ou null. */
+    var mediaUri: String? = null,
+    /** Type MIME du média (ex: "image/jpeg", "audio/mp4"). */
+    var mediaMimeType: String? = null,
 )
 
 data class Sortie(

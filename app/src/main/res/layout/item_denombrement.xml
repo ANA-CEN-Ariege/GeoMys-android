@@ -130,18 +130,4 @@
         android:id="@+id/spinner_typ_denbr"
         android:layout_width="match_parent"
         android:layout_height="wrap_content" />
-
-    <com.google.android.material.textfield.TextInputLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:hint="UUID SINP (optionnel)">
-
-        <com.google.android.material.textfield.TextInputEditText
-            android:id="@+id/et_uuid_sinp"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:fontFamily="monospace"
-            android:inputType="text" />
-    </com.google.android.material.textfield.TextInputLayout>
 </LinearLayout>

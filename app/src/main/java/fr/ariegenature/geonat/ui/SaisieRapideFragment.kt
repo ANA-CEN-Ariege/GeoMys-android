@@ -283,29 +283,20 @@ class SaisieRapideFragment : Fragment() {
     }
 
     private fun updateEspeceHint() {
-        binding.tilEspece.hint = if (rechercheNomSci) when (taxon) {
-            Taxon.MAMMIFERE   -> "Nom scientifique (ex : Vulpes vulpes)"
-            Taxon.REPTILE     -> "Nom scientifique (ex : Podarcis muralis)"
-            Taxon.BATRACIEN   -> "Nom scientifique (ex : Rana temporaria)"
-            Taxon.POISSON     -> "Nom scientifique (ex : Esox lucius)"
-            Taxon.INSECTE     -> "Nom scientifique (ex : Papilio machaon)"
-            Taxon.FONGE       -> "Nom scientifique (ex : Boletus edulis)"
-            Taxon.MOLLUSQUE   -> "Nom scientifique (ex : Helix pomatia)"
-            Taxon.INVERTEBRES -> "Nom scientifique (ex : Araneus diadematus)"
-            Taxon.PLANTE      -> "Nom scientifique (ex : Quercus robur)"
-            else              -> "Nom scientifique (ex : Turdus merula)"
-        } else when (taxon) {
-            Taxon.MAMMIFERE   -> "Espèce (ex : Renard roux)"
-            Taxon.REPTILE     -> "Espèce (ex : Lézard des murailles)"
-            Taxon.BATRACIEN   -> "Espèce (ex : Grenouille verte)"
-            Taxon.POISSON     -> "Espèce (ex : Brochet)"
-            Taxon.INSECTE     -> "Espèce (ex : Machaon)"
-            Taxon.FONGE       -> "Espèce (ex : Cèpe de Bordeaux)"
-            Taxon.MOLLUSQUE   -> "Espèce (ex : Escargot de Bourgogne)"
-            Taxon.INVERTEBRES -> "Espèce (ex : Épeire diadème)"
-            Taxon.PLANTE      -> "Espèce (ex : Chêne pédonculé)"
-            else              -> "Espèce (ex : Merle noir)"
+        val nomGroupe = when (taxon) {
+            Taxon.OISEAU      -> "Oiseaux"
+            Taxon.MAMMIFERE   -> "Mammifères"
+            Taxon.REPTILE     -> "Reptiles"
+            Taxon.BATRACIEN   -> "Amphibiens"
+            Taxon.POISSON     -> "Poissons"
+            Taxon.INSECTE     -> "Insectes"
+            Taxon.FONGE       -> "Champignons"
+            Taxon.MOLLUSQUE   -> "Mollusques"
+            Taxon.INVERTEBRES -> "Autres invertébrés"
+            Taxon.PLANTE      -> "Plantes"
         }
+        binding.tilEspece.hint = if (rechercheNomSci) "Nom scientifique ($nomGroupe)"
+                                 else                "Espèce ($nomGroupe)"
     }
 
 

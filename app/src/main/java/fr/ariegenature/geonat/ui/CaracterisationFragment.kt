@@ -1,23 +1,39 @@
 package fr.ariegenature.geonat.ui
 
+import android.net.Uri
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ArrayAdapter
 import android.widget.Spinner
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.fragment.app.Fragment
 import androidx.navigation.fragment.findNavController
 import fr.ariegenature.geonat.databinding.FragmentCaracterisationBinding
 import fr.ariegenature.geonat.model.Taxon
 import fr.ariegenature.geonat.store.NomenclatureCache
+import java.io.File
 
 /** Édition des champs de caractérisation de l'occurrence pour une PendingObs en saisie multi-taxons.
- *  Le dénombrement (sexe, stade de vie, effectifs, OBJ/TYP_DENBR, UUID SINP) est édité ailleurs via
+ *  Le dénombrement (sexe, stade de vie, effectifs, OBJ/TYP_DENBR) est édité ailleurs via
  *  [DenombrementFragment]. */
 class CaracterisationFragment : Fragment() {
     private var _binding: FragmentCaracterisationBinding? = null
     private val binding get() = _binding!!
+
+    /** URI courante du média copié dans le storage privé (file:///…), ou null. */
+    private var mediaUri: String? = null
+    private var mediaMimeType: String? = null
+
+    /** Picker images. Le contrat GetContent retourne une content:// URI temporaire — on copie
+     *  immédiatement le fichier dans le storage privé pour avoir un chemin stable. */
+    private val pickImageLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        uri?.let { importerMedia(it, "image/*") }
+    }
+    private val pickAudioLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        uri?.let { importerMedia(it, "audio/*") }
+    }
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         _binding = FragmentCaracterisationBinding.inflate(inflater, container, false)
@@ -37,18 +53,17 @@ class CaracterisationFragment : Fragment() {
         val comportement     = a?.getString("comportement") ?: ""
         val statutBio        = a?.getString("statutBio") ?: ""
         val methDetermin     = a?.getString("methDetermin") ?: ""
-        val determinateur    = a?.getString("determinateur") ?: ""
-        val nomCite          = a?.getString("nomCite") ?: ""
+        val determinateurArg = a?.getString("determinateur") ?: ""
+        val determinateurDefaut = a?.getString("determinateurDefaut") ?: ""
         val preuveExist      = a?.getString("preuveExist") ?: ""
-        val preuveNumerique  = a?.getString("preuveNumerique") ?: ""
-        val preuveNonNumerique = a?.getString("preuveNonNumerique") ?: ""
         val notes            = a?.getString("notes") ?: ""
+        mediaUri      = a?.getString("mediaUri")?.takeIf { it.isNotEmpty() }
+        mediaMimeType = a?.getString("mediaMimeType")?.takeIf { it.isNotEmpty() }
 
-        binding.etDeterminateur.setText(determinateur)
-        binding.etNomCite.setText(nomCite)
-        binding.etPreuveNumerique.setText(preuveNumerique)
-        binding.etPreuveNonNumerique.setText(preuveNonNumerique)
+        // Préremplissage : si pas de déterminateur saisi, on prend le login GeoNature.
+        binding.etDeterminateur.setText(determinateurArg.ifEmpty { determinateurDefaut })
         binding.etNotes.setText(notes)
+        updateMediaPreview()
 
         val champs = champsActifsCaracterisation(taxon)
         binding.layoutEtaBio.visibility       = if ("ETA_BIO"          in champs) View.VISIBLE else View.GONE
@@ -86,21 +101,78 @@ class CaracterisationFragment : Fragment() {
             listOf("Non renseignée","Non","Oui","Non acquise","Inconnu"),
             listOf("","0","1","2","3"))
 
+        binding.btnPickImage.setOnClickListener { pickImageLauncher.launch("image/*") }
+        binding.btnPickAudio.setOnClickListener { pickAudioLauncher.launch("audio/*") }
+        binding.btnRemoveMedia.setOnClickListener {
+            supprimerMediaLocal()
+            mediaUri = null
+            mediaMimeType = null
+            updateMediaPreview()
+        }
+
         binding.btnOk.setOnClickListener {
             val sv = findNavController().previousBackStackEntry?.savedStateHandle ?: return@setOnClickListener
-            sv.set("statutObs",          selectedCode(binding.spinnerStatutObs))
-            sv.set("techniqueObs",       selectedCode(binding.spinnerTechnique))
-            sv.set("etaBio",             if ("ETA_BIO"          in champs) selectedCode(binding.spinnerEtaBio)       else "")
-            sv.set("comportement",       if ("OCC_COMPORTEMENT" in champs) selectedCode(binding.spinnerComportement) else "")
-            sv.set("statutBio",          if ("STATUT_BIO"       in champs) selectedCode(binding.spinnerStatutBio)    else "")
-            sv.set("methDetermin",       selectedCode(binding.spinnerMethDetermin))
-            sv.set("preuveExist",        selectedCode(binding.spinnerPreuveExist))
-            sv.set("determinateur",      binding.etDeterminateur.text.toString())
-            sv.set("nomCite",            binding.etNomCite.text.toString())
-            sv.set("preuveNumerique",    binding.etPreuveNumerique.text.toString())
-            sv.set("preuveNonNumerique", binding.etPreuveNonNumerique.text.toString())
-            sv.set("notes",              binding.etNotes.text.toString())
+            sv.set("statutObs",      selectedCode(binding.spinnerStatutObs))
+            sv.set("techniqueObs",   selectedCode(binding.spinnerTechnique))
+            sv.set("etaBio",         if ("ETA_BIO"          in champs) selectedCode(binding.spinnerEtaBio)       else "")
+            sv.set("comportement",   if ("OCC_COMPORTEMENT" in champs) selectedCode(binding.spinnerComportement) else "")
+            sv.set("statutBio",      if ("STATUT_BIO"       in champs) selectedCode(binding.spinnerStatutBio)    else "")
+            sv.set("methDetermin",   selectedCode(binding.spinnerMethDetermin))
+            sv.set("preuveExist",    selectedCode(binding.spinnerPreuveExist))
+            sv.set("determinateur",  binding.etDeterminateur.text.toString())
+            sv.set("notes",          binding.etNotes.text.toString())
+            sv.set("mediaUri",       mediaUri ?: "")
+            sv.set("mediaMimeType",  mediaMimeType ?: "")
             findNavController().navigateUp()
+        }
+    }
+
+    /** Copie le fichier sélectionné dans le storage privé de l'app pour avoir un chemin stable
+     *  qui survit à la révocation de la permission URI du picker. */
+    private fun importerMedia(source: Uri, mimeHint: String) {
+        val ctx = requireContext()
+        val mime = ctx.contentResolver.getType(source) ?: mimeHint
+        val ext = ext(mime)
+        // Supprime l'éventuel média précédent pour ne pas accumuler de fichiers orphelins.
+        supprimerMediaLocal()
+        val dir = File(ctx.filesDir, "medias").apply { mkdirs() }
+        val dest = File(dir, "media_${System.currentTimeMillis()}.$ext")
+        try {
+            ctx.contentResolver.openInputStream(source)?.use { input ->
+                dest.outputStream().use { out -> input.copyTo(out) }
+            }
+            mediaUri = dest.toURI().toString()
+            mediaMimeType = mime
+        } catch (e: Exception) {
+            android.widget.Toast.makeText(ctx, "Import média échoué : ${e.message}", android.widget.Toast.LENGTH_LONG).show()
+        }
+        updateMediaPreview()
+    }
+
+    private fun supprimerMediaLocal() {
+        mediaUri?.let { uri ->
+            try { File(Uri.parse(uri).path ?: return).delete() } catch (_: Exception) {}
+        }
+    }
+
+    private fun ext(mime: String): String = when {
+        mime == "image/jpeg" -> "jpg"
+        mime == "image/png"  -> "png"
+        mime == "image/webp" -> "webp"
+        mime == "audio/mpeg" -> "mp3"
+        mime == "audio/mp4"  -> "m4a"
+        mime == "audio/ogg"  -> "ogg"
+        mime == "audio/wav"  -> "wav"
+        else                 -> mime.substringAfter("/").ifEmpty { "bin" }
+    }
+
+    private fun updateMediaPreview() {
+        val uri = mediaUri
+        if (uri.isNullOrEmpty()) {
+            binding.layoutMediaPreview.visibility = View.GONE
+        } else {
+            binding.layoutMediaPreview.visibility = View.VISIBLE
+            binding.tvMediaNom.text = File(Uri.parse(uri).path ?: "").name
         }
     }
 

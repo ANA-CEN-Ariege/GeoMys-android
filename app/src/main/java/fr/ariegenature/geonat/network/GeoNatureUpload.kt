@@ -85,7 +85,7 @@ object GeoNatureUpload {
             val relevesOrphelins = mutableListOf<Int>()
 
             val nomenclatures = mutableMapOf<String, Map<String, Int>>()
-            val typesVoulus = listOf("METH_OBS", "SEXE", "STADE_VIE", "STATUT_BIO", "ETA_BIO",
+            val typesVoulus = listOf("METH_OBS", "STATUT_OBS", "SEXE", "STADE_VIE", "STATUT_BIO", "ETA_BIO",
                 "PREUVE_EXIST", "OBJ_DENBR", "TYP_DENBR", "OCC_COMPORTEMENT", "METH_DETERMIN")
 
             // Si le cache est vide, on tente une synchro automatique
@@ -233,35 +233,44 @@ object GeoNatureUpload {
         obs: Observation,
         nomenclatures: Map<String, Map<String, Int>>
     ): JSONObject {
-        val counting = JSONObject().apply {
-            put("count_min", obs.nombre)
-            put("count_max", obs.nombre)
-            obs.sexe?.let { code ->
-                resolverIdNomenclature(code, "SEXE", SEXE_LABELS, nomenclatures)
-                    ?.let { put("id_nomenclature_sex", it) }
-            }
-            obs.stadeVie?.let { code ->
-                resolverIdNomenclature(code, "STADE_VIE", STADE_LABELS, nomenclatures)
-                    ?.let { put("id_nomenclature_life_stage", it) }
-            }
-            obs.objDenbr?.let { code ->
-                resolverIdNomenclature(code, "OBJ_DENBR", OBJ_DENBR_LABELS, nomenclatures)
-                    ?.let { put("id_nomenclature_obj_count", it) }
-            }
-            obs.typDenbr?.let { code ->
-                resolverIdNomenclature(code, "TYP_DENBR", TYP_DENBR_LABELS, nomenclatures)
-                    ?.let { put("id_nomenclature_type_count", it) }
-            }
+        // Counting #0 — issu des champs flat de Observation (saisie mono-taxon ou 1er dénombrement multi).
+        val counting0 = buildCounting(
+            nombreMin = obs.nombre,
+            nombreMax = obs.nombreMax ?: obs.nombre,
+            sexe = obs.sexe,
+            stadeVie = obs.stadeVie,
+            objDenbr = obs.objDenbr,
+            typDenbr = obs.typDenbr,
+            uuidSinp = obs.uuidSinpCounting0,
+            nomenclatures = nomenclatures,
+        )
+        val countings = JSONArray().put(counting0)
+        // Countings supplémentaires (mode multi-taxon).
+        for (d in obs.denombrementsAdditionnels) {
+            countings.put(buildCounting(
+                nombreMin = d.nombreMin,
+                nombreMax = d.nombreMax,
+                sexe = d.sexe,
+                stadeVie = d.stadeVie,
+                objDenbr = d.objDenbr,
+                typDenbr = d.typDenbr,
+                uuidSinp = d.uuidSinp,
+                nomenclatures = nomenclatures,
+            ))
         }
 
         return JSONObject().apply {
             put("cd_nom", obs.cdNom!!)
             put("nom_cite", obs.espece)
             if (obs.notes.isNotEmpty()) put("comment", obs.notes)
-            put("cor_counting_occtax", JSONArray().put(counting))
+            put("cor_counting_occtax", countings)
             val codeTechnique = obs.techniqueObs ?: "0"
             resolverIdNomenclature(codeTechnique, "METH_OBS", METH_OBS_LABELS, nomenclatures)
                 ?.let { put("id_nomenclature_obs_technique", it) }
+            obs.statutObs?.let { code ->
+                resolverIdNomenclature(code, "STATUT_OBS", emptyMap(), nomenclatures)
+                    ?.let { put("id_nomenclature_observation_status", it) }
+            }
             obs.statutBio?.let { code ->
                 resolverIdNomenclature(code, "STATUT_BIO", STATUT_BIO_LABELS, nomenclatures)
                     ?.let { put("id_nomenclature_bio_status", it) }
@@ -274,6 +283,8 @@ object GeoNatureUpload {
                 resolverIdNomenclature(code, "PREUVE_EXIST", PREUVE_EXIST_LABELS, nomenclatures)
                     ?.let { put("id_nomenclature_exist_proof", it) }
             }
+            obs.preuveNumerique?.takeIf { it.isNotEmpty() }?.let { put("digital_proof", it) }
+            obs.preuveNonNumerique?.takeIf { it.isNotEmpty() }?.let { put("non_digital_proof", it) }
             obs.comportement?.let { code ->
                 resolverIdNomenclature(code, "OCC_COMPORTEMENT", COMPORTEMENT_LABELS, nomenclatures)
                     ?.let { put("id_nomenclature_behaviour", it) }
@@ -284,6 +295,37 @@ object GeoNatureUpload {
             }
             obs.determinateur?.takeIf { it.isNotEmpty() }?.let { put("determiner", it) }
         }
+    }
+
+    private fun buildCounting(
+        nombreMin: Int,
+        nombreMax: Int,
+        sexe: String?,
+        stadeVie: String?,
+        objDenbr: String?,
+        typDenbr: String?,
+        uuidSinp: String?,
+        nomenclatures: Map<String, Map<String, Int>>,
+    ): JSONObject = JSONObject().apply {
+        put("count_min", nombreMin)
+        put("count_max", nombreMax.coerceAtLeast(nombreMin))
+        sexe?.let { code ->
+            resolverIdNomenclature(code, "SEXE", SEXE_LABELS, nomenclatures)
+                ?.let { put("id_nomenclature_sex", it) }
+        }
+        stadeVie?.let { code ->
+            resolverIdNomenclature(code, "STADE_VIE", STADE_LABELS, nomenclatures)
+                ?.let { put("id_nomenclature_life_stage", it) }
+        }
+        objDenbr?.let { code ->
+            resolverIdNomenclature(code, "OBJ_DENBR", OBJ_DENBR_LABELS, nomenclatures)
+                ?.let { put("id_nomenclature_obj_count", it) }
+        }
+        typDenbr?.let { code ->
+            resolverIdNomenclature(code, "TYP_DENBR", TYP_DENBR_LABELS, nomenclatures)
+                ?.let { put("id_nomenclature_type_count", it) }
+        }
+        uuidSinp?.takeIf { it.isNotEmpty() }?.let { put("unique_id_sinp_occtax", it) }
     }
 
     // Résout un code interne ou un id_nomenclature direct vers l'id GeoNature

@@ -47,7 +47,23 @@
         <action
             android:id="@+id/action_saisie_to_details"
             app:destination="@id/observationDetailsFragment" />
+        <action
+            android:id="@+id/action_saisie_to_caracterisation"
+            app:destination="@id/caracterisationFragment" />
+        <action
+            android:id="@+id/action_saisie_to_denombrement"
+            app:destination="@id/denombrementFragment" />
     </fragment>
+
+    <fragment
+        android:id="@+id/caracterisationFragment"
+        android:name="fr.ariegenature.geonat.ui.CaracterisationFragment"
+        android:label="Caractérisation" />
+
+    <fragment
+        android:id="@+id/denombrementFragment"
+        android:name="fr.ariegenature.geonat.ui.DenombrementFragment"
+        android:label="Dénombrement" />
 
     <fragment
         android:id="@+id/saisieRapideFragment"

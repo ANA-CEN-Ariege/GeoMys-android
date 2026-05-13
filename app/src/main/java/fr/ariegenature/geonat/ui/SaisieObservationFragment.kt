@@ -51,18 +51,28 @@ class SaisieObservationFragment : Fragment() {
         var taxon: Taxon,
         var espece: String,
         var cdNom: Int?,
+        // ── Counting #0 ──
         var nombre: Int = 1,
+        var nombreMax: Int? = null,
         var sexe: String = "",
         var stadeVie: String = "",
+        var objDenbr: String = "",
+        var typDenbr: String = "",
+        var uuidSinpCounting0: String = "",
+        // ── Dénombrements supplémentaires ──
+        var denombrementsAdditionnels: List<fr.ariegenature.geonat.model.Denombrement> = emptyList(),
+        // ── Caractérisation de l'occurrence ──
+        var statutObs: String = "",
         var techniqueObs: String = "",
         var statutBio: String = "",
         var etaBio: String = "",
         var preuveExist: String = "",
-        var objDenbr: String = "",
-        var typDenbr: String = "",
         var comportement: String = "",
         var methDetermin: String = "",
         var determinateur: String = "",
+        var nomCite: String = "",
+        var preuveNumerique: String = "",
+        var preuveNonNumerique: String = "",
         var notes: String = "",
         var cdNomManuel: String = "",
         val existingId: String? = null
@@ -178,15 +188,12 @@ class SaisieObservationFragment : Fragment() {
                 setOnClickListener { dupliquer(index) }
             }
             row.findViewById<TextView>(R.id.tv_nombre).apply {
-                text = "× ${obs.nombre}"
-                setOnClickListener {
-                    showNombrePickerDialog(obs.nombre) { nouveauNombre ->
-                        pendingObs[index] = obs.copy(nombre = nouveauNombre)
-                        rafraichirListe()
-                    }
-                }
+                // Total = somme des count_min sur tous les dénombrements (counting #0 + additionnels).
+                val total = obs.nombre + obs.denombrementsAdditionnels.sumOf { it.nombreMin }
+                text = "× $total"
+                setOnClickListener { ouvrirDenombrement(index) }
             }
-            row.findViewById<ImageButton>(R.id.btn_info).setOnClickListener { ouvrirDetails(index) }
+            row.findViewById<ImageButton>(R.id.btn_info).setOnClickListener { ouvrirCaracterisation(index) }
             row.findViewById<ImageButton>(R.id.btn_delete).setOnClickListener { supprimer(index) }
             binding.llPendingObs.addView(row)
         }
@@ -214,11 +221,8 @@ class SaisieObservationFragment : Fragment() {
         rafraichirListe()
     }
 
-    private fun ouvrirDetails(index: Int) {
-        if (index !in pendingObs.indices) return
-        val obs = pendingObs[index]
-        editingDetailsIndex = index
-        val groupe2Inpn = obs.cdNom?.let { TaxRefCache.tousLesGroupes()[it.toString()] }
+    private fun groupe2InpnPour(obs: PendingObs): String? =
+        obs.cdNom?.let { TaxRefCache.tousLesGroupes()[it.toString()] }
             ?: when (obs.taxon) {
                 Taxon.MAMMIFERE   -> "Mammifères"
                 Taxon.REPTILE     -> "Reptiles"
@@ -231,27 +235,53 @@ class SaisieObservationFragment : Fragment() {
                 Taxon.INVERTEBRES -> null
                 else              -> "Oiseaux"
             }
+
+    private fun ouvrirCaracterisation(index: Int) {
+        if (index !in pendingObs.indices) return
+        val obs = pendingObs[index]
+        editingDetailsIndex = index
         val bundle = Bundle().apply {
-            putString("taxon",         obs.taxon.name)
-            putString("groupe2Inpn",   groupe2Inpn)
-            putString("notes",         obs.notes)
-            putString("sexe",          obs.sexe)
-            putString("stadeVie",      obs.stadeVie)
-            putString("techniqueObs",  obs.techniqueObs)
-            putString("statutBio",     obs.statutBio)
-            putString("etaBio",        obs.etaBio)
-            putString("preuveExist",   obs.preuveExist)
-            putString("objDenbr",      obs.objDenbr)
-            putString("typDenbr",      obs.typDenbr)
-            putString("comportement",  obs.comportement)
-            putString("methDetermin",  obs.methDetermin)
-            putString("determinateur", obs.determinateur)
-            putString("cdNomManuel",   obs.cdNomManuel)
-            putBoolean("taxrefNonTrouve", obs.cdNom == null)
-            putDouble("latitude", latitude)
-            putDouble("longitude", longitude)
+            putString("taxon",              obs.taxon.name)
+            putString("groupe2Inpn",        groupe2InpnPour(obs))
+            putString("statutObs",          obs.statutObs)
+            putString("techniqueObs",       obs.techniqueObs)
+            putString("etaBio",             obs.etaBio)
+            putString("comportement",       obs.comportement)
+            putString("statutBio",          obs.statutBio)
+            putString("methDetermin",       obs.methDetermin)
+            putString("determinateur",      obs.determinateur)
+            putString("nomCite",            obs.nomCite.ifEmpty { obs.espece })
+            putString("preuveExist",        obs.preuveExist)
+            putString("preuveNumerique",    obs.preuveNumerique)
+            putString("preuveNonNumerique", obs.preuveNonNumerique)
+            putString("notes",              obs.notes)
         }
-        findNavController().navigate(R.id.action_saisie_to_details, bundle)
+        findNavController().navigate(R.id.action_saisie_to_caracterisation, bundle)
+    }
+
+    private fun ouvrirDenombrement(index: Int) {
+        if (index !in pendingObs.indices) return
+        val obs = pendingObs[index]
+        editingDetailsIndex = index
+        // Sérialise la liste complète des dénombrements (counting #0 issu des champs flat + additionnels).
+        val counting0 = fr.ariegenature.geonat.model.Denombrement(
+            nombreMin = obs.nombre,
+            nombreMax = obs.nombreMax ?: obs.nombre,
+            sexe = obs.sexe.ifEmpty { null },
+            stadeVie = obs.stadeVie.ifEmpty { null },
+            objDenbr = obs.objDenbr.ifEmpty { null },
+            typDenbr = obs.typDenbr.ifEmpty { null },
+            uuidSinp = obs.uuidSinpCounting0.ifEmpty { null },
+        )
+        val tous = listOf(counting0) + obs.denombrementsAdditionnels
+        val json = com.google.gson.Gson().toJson(tous)
+        val bundle = Bundle().apply {
+            putString("taxon",             obs.taxon.name)
+            putString("groupe2Inpn",       groupe2InpnPour(obs))
+            putString("espece",            obs.espece)
+            putString("denombrementsJson", json)
+        }
+        findNavController().navigate(R.id.action_saisie_to_denombrement, bundle)
     }
 
     override fun onViewStateRestored(savedInstanceState: Bundle?) {
@@ -266,21 +296,54 @@ class SaisieObservationFragment : Fragment() {
                     }
                 }
             }
-            handler("notes")         { o, v -> o.notes = v }
-            handler("sexe")          { o, v -> o.sexe = v }
-            handler("stadeVie")      { o, v -> o.stadeVie = v }
-            handler("techniqueObs")  { o, v -> o.techniqueObs = v }
-            handler("statutBio")     { o, v -> o.statutBio = v }
-            handler("etaBio")        { o, v -> o.etaBio = v }
-            handler("preuveExist")   { o, v -> o.preuveExist = v }
-            handler("objDenbr")      { o, v -> o.objDenbr = v }
-            handler("typDenbr")      { o, v -> o.typDenbr = v }
-            handler("comportement")  { o, v -> o.comportement = v }
-            handler("methDetermin")  { o, v -> o.methDetermin = v }
-            handler("determinateur") { o, v -> o.determinateur = v }
-            handler("cdNomManuel")   { o, v ->
+            // Caractérisation (renvoyée par CaracterisationFragment)
+            handler("statutObs")          { o, v -> o.statutObs = v }
+            handler("techniqueObs")       { o, v -> o.techniqueObs = v }
+            handler("etaBio")             { o, v -> o.etaBio = v }
+            handler("comportement")       { o, v -> o.comportement = v }
+            handler("statutBio")          { o, v -> o.statutBio = v }
+            handler("methDetermin")       { o, v -> o.methDetermin = v }
+            handler("determinateur")      { o, v -> o.determinateur = v }
+            handler("nomCite")            { o, v ->
+                o.nomCite = v
+                // Synchronise le nom affiché sur la ligne avec ce qu'a tapé l'utilisateur.
+                if (v.isNotEmpty()) o.espece = v
+            }
+            handler("preuveExist")        { o, v -> o.preuveExist = v }
+            handler("preuveNumerique")    { o, v -> o.preuveNumerique = v }
+            handler("preuveNonNumerique") { o, v -> o.preuveNonNumerique = v }
+            handler("notes")              { o, v -> o.notes = v }
+            // Legacy : ObservationDetailsFragment (saisie rapide) renvoie aussi sexe/stade/etc.
+            // mais cet écran n'est plus déclenché depuis la saisie multi-taxons — on garde quand
+            // même les handlers au cas où.
+            handler("sexe")        { o, v -> o.sexe = v }
+            handler("stadeVie")    { o, v -> o.stadeVie = v }
+            handler("objDenbr")    { o, v -> o.objDenbr = v }
+            handler("typDenbr")    { o, v -> o.typDenbr = v }
+            handler("cdNomManuel") { o, v ->
                 o.cdNomManuel = v
                 v.trim().toIntOrNull()?.takeIf { it > 0 }?.let { o.cdNom = it }
+            }
+            // Dénombrements (renvoyés par DenombrementFragment) — JSON sérialisé d'une List<Denombrement>
+            getLiveData<String>("denombrementsJson").observe(viewLifecycleOwner) { json ->
+                val idx = editingDetailsIndex ?: return@observe
+                if (idx !in pendingObs.indices) return@observe
+                val type = object : com.google.gson.reflect.TypeToken<List<fr.ariegenature.geonat.model.Denombrement>>() {}.type
+                val liste: List<fr.ariegenature.geonat.model.Denombrement> = try {
+                    com.google.gson.Gson().fromJson(json, type) ?: emptyList()
+                } catch (_: Exception) { emptyList() }
+                if (liste.isEmpty()) return@observe
+                val obs = pendingObs[idx]
+                val c0 = liste[0]
+                obs.nombre = c0.nombreMin
+                obs.nombreMax = if (c0.nombreMax != c0.nombreMin) c0.nombreMax else null
+                obs.sexe = c0.sexe ?: ""
+                obs.stadeVie = c0.stadeVie ?: ""
+                obs.objDenbr = c0.objDenbr ?: ""
+                obs.typDenbr = c0.typDenbr ?: ""
+                obs.uuidSinpCounting0 = c0.uuidSinp ?: ""
+                obs.denombrementsAdditionnels = if (liste.size > 1) liste.drop(1) else emptyList()
+                rafraichirListe()
             }
         }
     }
@@ -452,47 +515,61 @@ class SaisieObservationFragment : Fragment() {
         for (obs in pendingObs) {
             val nomFinal = obs.espece.ifEmpty { "Espèce inconnue" }
             val cdNomFinal = obs.cdNom ?: obs.cdNomManuel.trim().toIntOrNull()
+            // nom_cite : ce que l'observateur a cité (peut différer de espece si édité dans la caractérisation).
+            val nomCiteFinal = obs.nomCite.ifEmpty { nomFinal }
             if (obs.existingId != null) {
                 val base = traceViewModel.observations.value?.find { it.id == obs.existingId } ?: continue
                 traceViewModel.modifierObservation(base.copy(
-                    espece        = nomFinal,
-                    taxon         = obs.taxon,
-                    cdNom         = cdNomFinal,
-                    notes         = obs.notes,
-                    nombre        = obs.nombre,
-                    sexe          = obs.sexe.ifEmpty { null },
-                    stadeVie      = obs.stadeVie.ifEmpty { null },
-                    techniqueObs  = obs.techniqueObs.ifEmpty { null },
-                    statutBio     = obs.statutBio.ifEmpty { null },
-                    etaBio        = obs.etaBio.ifEmpty { null },
-                    preuveExist   = obs.preuveExist.ifEmpty { null },
-                    objDenbr      = obs.objDenbr.ifEmpty { null },
-                    typDenbr      = obs.typDenbr.ifEmpty { null },
-                    comportement  = obs.comportement.ifEmpty { null },
-                    methDetermin  = obs.methDetermin.ifEmpty { null },
-                    determinateur = obs.determinateur.ifEmpty { null }
+                    espece                   = nomCiteFinal,
+                    taxon                    = obs.taxon,
+                    cdNom                    = cdNomFinal,
+                    notes                    = obs.notes,
+                    nombre                   = obs.nombre,
+                    nombreMax                = obs.nombreMax,
+                    sexe                     = obs.sexe.ifEmpty { null },
+                    stadeVie                 = obs.stadeVie.ifEmpty { null },
+                    objDenbr                 = obs.objDenbr.ifEmpty { null },
+                    typDenbr                 = obs.typDenbr.ifEmpty { null },
+                    uuidSinpCounting0        = obs.uuidSinpCounting0.ifEmpty { null },
+                    denombrementsAdditionnels = obs.denombrementsAdditionnels,
+                    techniqueObs             = obs.techniqueObs.ifEmpty { null },
+                    statutObs                = obs.statutObs.ifEmpty { null },
+                    statutBio                = obs.statutBio.ifEmpty { null },
+                    etaBio                   = obs.etaBio.ifEmpty { null },
+                    preuveExist              = obs.preuveExist.ifEmpty { null },
+                    preuveNumerique          = obs.preuveNumerique.ifEmpty { null },
+                    preuveNonNumerique       = obs.preuveNonNumerique.ifEmpty { null },
+                    comportement             = obs.comportement.ifEmpty { null },
+                    methDetermin             = obs.methDetermin.ifEmpty { null },
+                    determinateur            = obs.determinateur.ifEmpty { null }
                 ))
             } else {
                 traceViewModel.ajouterObservation(Observation(
-                    espece        = nomFinal,
-                    taxon         = obs.taxon,
-                    cdNom         = cdNomFinal,
-                    latitude      = latitude,
-                    longitude     = longitude,
-                    notes         = obs.notes,
-                    nombre        = obs.nombre,
-                    sexe          = obs.sexe.ifEmpty { null },
-                    stadeVie      = obs.stadeVie.ifEmpty { null },
-                    techniqueObs  = obs.techniqueObs.ifEmpty { null },
-                    statutBio     = obs.statutBio.ifEmpty { null },
-                    etaBio        = obs.etaBio.ifEmpty { null },
-                    preuveExist   = obs.preuveExist.ifEmpty { null },
-                    objDenbr      = obs.objDenbr.ifEmpty { null },
-                    typDenbr      = obs.typDenbr.ifEmpty { null },
-                    comportement  = obs.comportement.ifEmpty { null },
-                    methDetermin  = obs.methDetermin.ifEmpty { null },
-                    determinateur = obs.determinateur.ifEmpty { null },
-                    releveId      = releveIdBatch
+                    espece                   = nomCiteFinal,
+                    taxon                    = obs.taxon,
+                    cdNom                    = cdNomFinal,
+                    latitude                 = latitude,
+                    longitude                = longitude,
+                    notes                    = obs.notes,
+                    nombre                   = obs.nombre,
+                    nombreMax                = obs.nombreMax,
+                    sexe                     = obs.sexe.ifEmpty { null },
+                    stadeVie                 = obs.stadeVie.ifEmpty { null },
+                    objDenbr                 = obs.objDenbr.ifEmpty { null },
+                    typDenbr                 = obs.typDenbr.ifEmpty { null },
+                    uuidSinpCounting0        = obs.uuidSinpCounting0.ifEmpty { null },
+                    denombrementsAdditionnels = obs.denombrementsAdditionnels,
+                    techniqueObs             = obs.techniqueObs.ifEmpty { null },
+                    statutObs                = obs.statutObs.ifEmpty { null },
+                    statutBio                = obs.statutBio.ifEmpty { null },
+                    etaBio                   = obs.etaBio.ifEmpty { null },
+                    preuveExist              = obs.preuveExist.ifEmpty { null },
+                    preuveNumerique          = obs.preuveNumerique.ifEmpty { null },
+                    preuveNonNumerique       = obs.preuveNonNumerique.ifEmpty { null },
+                    comportement             = obs.comportement.ifEmpty { null },
+                    methDetermin             = obs.methDetermin.ifEmpty { null },
+                    determinateur            = obs.determinateur.ifEmpty { null },
+                    releveId                 = releveIdBatch
                 ))
             }
         }

@@ -14,6 +14,7 @@ fun taxonCouleur(context: Context, taxon: Taxon): Int = ContextCompat.getColor(c
     Taxon.POISSON     -> R.color.blue_poisson
     Taxon.INSECTE     -> R.color.amber_insecte
     Taxon.FONGE       -> R.color.brown_fonge
+    Taxon.MOLLUSQUE   -> R.color.purple_invertebres
     Taxon.INVERTEBRES -> R.color.purple_invertebres
     Taxon.PLANTE      -> R.color.teal
 })
@@ -28,6 +29,7 @@ fun taxonIcon(taxon: Taxon): Int = when (taxon) {
     Taxon.POISSON     -> R.drawable.poissons
     Taxon.INSECTE     -> R.drawable.insectes
     Taxon.FONGE       -> R.drawable.champignons2
-    Taxon.INVERTEBRES -> R.drawable.mollusques
+    Taxon.MOLLUSQUE   -> R.drawable.mollusques
+    Taxon.INVERTEBRES -> R.drawable.araignees
     Taxon.PLANTE      -> R.drawable.fleurs
 }

@@ -130,6 +130,7 @@ object GeoNatureBrowse {
         val cdNomsCache = TaxRefCache.tousLesCdNoms()
         val groupeParCdNom = TaxRefCache.tousLesGroupes()
         val regneParCdNom = TaxRefCache.tousLesRegnes()
+        val groupe1ParCdNom = TaxRefCache.tousLesGroupes1()
         try {
             val root = JSONObject(text)
             val array: JSONArray = root.optJSONArray("features")
@@ -159,6 +160,9 @@ object GeoNatureBrowse {
                         props.optString("group_inpn", "")
                     }
                 }
+                // group1_inpn n'est généralement pas exposé par la synthèse → on retombe
+                // sur le cache TaxRef indexé par cd_nom pour discriminer mollusques vs autres invertébrés.
+                val group1Synthese = props.optString("group1_inpn", "")
                 fun mapperTaxon(group2: String, cdNom: Int): Taxon {
                     when (group2) {
                         "Oiseaux"    -> return Taxon.OISEAU
@@ -169,6 +173,8 @@ object GeoNatureBrowse {
                         "Insectes"   -> return Taxon.INSECTE
                     }
                     val cdNomStr = cdNom.toString()
+                    val group1 = group1Synthese.ifEmpty { groupe1ParCdNom[cdNomStr] ?: "" }
+                    if (group1 == "Mollusques") return Taxon.MOLLUSQUE
                     return when (regneParCdNom[cdNomStr]) {
                         "Fungi"   -> Taxon.FONGE
                         "Plantae" -> Taxon.PLANTE

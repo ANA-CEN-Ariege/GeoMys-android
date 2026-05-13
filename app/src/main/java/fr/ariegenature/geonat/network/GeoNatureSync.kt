@@ -159,9 +159,11 @@ object GeoNatureSync {
         for ((k, v) in comptesTousGroupes) if (v > 0) comptes[k] = v
         TaxRefCache.comptesGroupes = comptes
         verifierVersionTaxRef(config)?.let { TaxRefCache.versionSauvegardee = it }
-        // Fonge : règne = 'Fungi' ; Invertébrés : règne = 'Animalia' hors vertébrés+insectes+poissons
+        // Fonge : règne = 'Fungi'. Mollusques : group1_inpn = 'Mollusques'.
+        // Invertébrés "autres" : Animalia hors vertébrés + insectes + poissons + mollusques.
         val nbCh  = regneMap.values.count { it == "Fungi" }
-        val nbInv = maxOf(0, regneMap.values.count { it == "Animalia" } - nbO - nbM - nbR - nbB - nbPo - nbI)
+        val nbMol = groupe1Map.values.count { it == "Mollusques" }
+        val nbInv = maxOf(0, regneMap.values.count { it == "Animalia" } - nbO - nbM - nbR - nbB - nbPo - nbI - nbMol)
         // Flore : group2_inpn dans la liste des groupes botaniques INPN — même critère qu'iOS.
         // group1_inpn (Phanérogames/Ptéridophytes/Bryophytes) est souvent NULL sur GeoNature,
         // alors que group2_inpn (Angiospermes, Trachéophytes, Mousses, Lichens…) est mieux peuplé.
@@ -174,7 +176,8 @@ object GeoNatureSync {
             if (nbPo > 0) append(", $nbPo poissons")
             if (nbI  > 0) append(", $nbI insectes")
             if (nbCh > 0) append(", $nbCh fonge")
-            if (nbInv > 0) append(", $nbInv invertébrés")
+            if (nbMol > 0) append(", $nbMol mollusques")
+            if (nbInv > 0) append(", $nbInv autres invertébrés")
             if (nbP > 0) append(", $nbP plantes")
         }
         Pair(entrees.size, msg)
@@ -298,7 +301,9 @@ object GeoNatureSync {
             regne.filterValues { it == "Plantae" }.keys).toSet()
 
         val tousAnimalia = regne.filterValues { it == "Animalia" }.keys
-        val invertebres = (tousAnimalia - oiseaux - mammiferes - reptiles - batraciens - poissons - insectes).toSet()
+        // Mollusques : group1_inpn = 'Mollusques'. Sont retirés du sac invertébrés "autres".
+        val mollusques = groupe1.filterValues { it == "Mollusques" }.keys.toSet()
+        val invertebres = (tousAnimalia - oiseaux - mammiferes - reptiles - batraciens - poissons - insectes - mollusques).toSet()
 
         return mapOf(
             Taxon.OISEAU      to oiseaux.sorted(),
@@ -308,6 +313,7 @@ object GeoNatureSync {
             Taxon.POISSON     to poissons.sorted(),
             Taxon.INSECTE     to insectes.sorted(),
             Taxon.FONGE       to fonge.sorted(),
+            Taxon.MOLLUSQUE   to mollusques.sorted(),
             Taxon.INVERTEBRES to invertebres.sorted(),
             Taxon.PLANTE      to plantes.sorted(),
         )

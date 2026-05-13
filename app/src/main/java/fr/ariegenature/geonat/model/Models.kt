@@ -3,7 +3,7 @@ package fr.ariegenature.geonat.model
 import java.util.Date
 import java.util.UUID
 
-enum class Taxon { OISEAU, MAMMIFERE, REPTILE, BATRACIEN, POISSON, INSECTE, FONGE, INVERTEBRES, PLANTE }
+enum class Taxon { OISEAU, MAMMIFERE, REPTILE, BATRACIEN, POISSON, INSECTE, FONGE, MOLLUSQUE, INVERTEBRES, PLANTE }
 
 data class PointTrace(
     val latitude: Double,

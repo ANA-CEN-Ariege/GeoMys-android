@@ -111,6 +111,7 @@ class ExplorerFragment : Fragment() {
         Taxon.MAMMIFERE   to binding.btnFiltreMammifere,
         Taxon.REPTILE     to binding.btnFiltreReptile,
         Taxon.BATRACIEN   to binding.btnFiltreBatracien,
+        Taxon.MOLLUSQUE   to binding.btnFiltreMollusque,
         Taxon.INVERTEBRES to binding.btnFiltreInvertebres,
         Taxon.POISSON     to binding.btnFiltrePoisson,
         Taxon.INSECTE     to binding.btnFiltreInsecte,
@@ -128,6 +129,7 @@ class ExplorerFragment : Fragment() {
             Taxon.POISSON     -> R.color.blue_poisson
             Taxon.INSECTE     -> R.color.amber_insecte
             Taxon.FONGE       -> R.color.brown_fonge
+            Taxon.MOLLUSQUE   -> R.color.purple_invertebres
             Taxon.INVERTEBRES -> R.color.purple_invertebres
             Taxon.PLANTE      -> R.color.teal
         }
@@ -304,7 +306,8 @@ class ExplorerFragment : Fragment() {
                 Taxon.BATRACIEN -> R.drawable.amphibiens
                 Taxon.POISSON   -> R.drawable.poissons
                 Taxon.INSECTE   -> R.drawable.insectes
-                Taxon.INVERTEBRES -> R.drawable.mollusques
+                Taxon.MOLLUSQUE -> R.drawable.mollusques
+                Taxon.INVERTEBRES -> R.drawable.araignees
                 Taxon.PLANTE    -> R.drawable.fleurs
             }
             val drawable = ContextCompat.getDrawable(requireContext(), iconeRes)!!.mutate()

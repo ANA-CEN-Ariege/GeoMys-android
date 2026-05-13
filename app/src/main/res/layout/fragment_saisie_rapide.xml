@@ -202,7 +202,7 @@
                         app:iconSize="24dp" />
 
                     <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btn_taxon_invertebres"
+                        android:id="@+id/btn_taxon_mollusque"
                         style="@style/Widget.MaterialComponents.Button.TextButton"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
@@ -213,6 +213,22 @@
                         android:text=""
                         app:cornerRadius="8dp"
                         app:icon="@drawable/mollusques"
+                        app:iconGravity="textStart"
+                        app:iconPadding="0dp"
+                        app:iconSize="24dp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btn_taxon_invertebres"
+                        style="@style/Widget.MaterialComponents.Button.TextButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:paddingHorizontal="14dp"
+                        android:paddingVertical="10dp"
+                        android:text=""
+                        app:cornerRadius="8dp"
+                        app:icon="@drawable/araignees"
                         app:iconGravity="textStart"
                         app:iconPadding="0dp"
                         app:iconSize="24dp" />

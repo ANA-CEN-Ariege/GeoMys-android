@@ -136,6 +136,7 @@ class SaisieObservationFragment : Fragment() {
                 Taxon.POISSON     to binding.btnTaxonPoisson,
                 Taxon.INSECTE     to binding.btnTaxonInsecte,
                 Taxon.FONGE       to binding.btnTaxonFonge,
+                Taxon.MOLLUSQUE   to binding.btnTaxonMollusque,
                 Taxon.INVERTEBRES to binding.btnTaxonInvertebres,
                 Taxon.PLANTE      to binding.btnTaxonPlante,
             ),
@@ -226,6 +227,7 @@ class SaisieObservationFragment : Fragment() {
                 Taxon.INSECTE     -> "Insectes"
                 Taxon.PLANTE,
                 Taxon.FONGE,
+                Taxon.MOLLUSQUE,
                 Taxon.INVERTEBRES -> null
                 else              -> "Oiseaux"
             }
@@ -312,7 +314,8 @@ class SaisieObservationFragment : Fragment() {
             Taxon.POISSON     -> "Nom scientifique (ex: Esox lucius, Salmo trutta…)"
             Taxon.INSECTE     -> "Nom scientifique (ex: Papilio machaon, Apis mellifera…)"
             Taxon.FONGE       -> "Nom scientifique (ex: Boletus edulis, Cantharellus cibarius…)"
-            Taxon.INVERTEBRES -> "Nom scientifique (ex: Helix pomatia, Homarus gammarus…)"
+            Taxon.MOLLUSQUE   -> "Nom scientifique (ex: Helix pomatia, Cornu aspersum…)"
+            Taxon.INVERTEBRES -> "Nom scientifique (ex: Araneus diadematus, Homarus gammarus…)"
             Taxon.PLANTE      -> "Nom scientifique (ex: Quercus robur, Rosa canina…)"
             else              -> "Nom scientifique (ex: Turdus merula, Erithacus rubecula…)"
         } else when (taxonSelector.taxon) {
@@ -322,7 +325,8 @@ class SaisieObservationFragment : Fragment() {
             Taxon.POISSON     -> "Espèce observée (ex: Brochet, Truite fario…)"
             Taxon.INSECTE     -> "Espèce observée (ex: Criquet mélodieux, Machaon…)"
             Taxon.FONGE       -> "Espèce observée (ex: Cèpe de Bordeaux, Chanterelle…)"
-            Taxon.INVERTEBRES -> "Espèce observée (ex: Escargot de Bourgogne, Homard…)"
+            Taxon.MOLLUSQUE   -> "Espèce observée (ex: Escargot de Bourgogne, Petit-gris…)"
+            Taxon.INVERTEBRES -> "Espèce observée (ex: Épeire diadème, Homard…)"
             Taxon.PLANTE      -> "Espèce observée (ex: Chêne pédonculé, Genêt purgatif…)"
             else              -> "Espèce observée (ex: Merle noir, Rouge-gorge…)"
         }

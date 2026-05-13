@@ -615,7 +615,15 @@ object TaxRefLocal {
                 filtrerParGroup2(NomenclatureCache.GROUP2_POISSONS)
             }
 
-            // Invertébrés : règne = 'Animalia' AND group2 NOT IN vertébrés + insectes + poissons
+            // Mollusques : group1_inpn = 'Mollusques'
+            Taxon.MOLLUSQUE -> {
+                val cdNoms = HashSet<Int>()
+                for ((cdStr, g1) in groupes1) if (g1 == "Mollusques") cdStr.toIntOrNull()?.let(cdNoms::add)
+                suggestionsPour(cdNoms)
+            }
+
+            // Autres invertébrés : règne = 'Animalia' AND group2 NOT IN vertébrés + insectes + poissons
+            //                     AND group1 != 'Mollusques'
             Taxon.INVERTEBRES -> {
                 val exclusG2 = setOf("Oiseaux", "Mammifères", "Reptiles", "Amphibiens", "Insectes", "Poissons")
                 val cdNoms = HashSet<Int>()
@@ -623,13 +631,17 @@ object TaxRefLocal {
                     for ((cdStr, r) in regnes) {
                         if (r != "Animalia") continue
                         val g2 = groupes2[cdStr] ?: ""
-                        if (g2 !in exclusG2) cdStr.toIntOrNull()?.let(cdNoms::add)
+                        if (g2 in exclusG2) continue
+                        if ((groupes1[cdStr] ?: "") == "Mollusques") continue
+                        cdStr.toIntOrNull()?.let(cdNoms::add)
                     }
                 } else {
                     val exclusFallback = exclusG2 + NomenclatureCache.GROUP2_POISSONS +
                         NomenclatureCache.GROUPES_BOTANIQUES + NomenclatureCache.GROUPES_FONGE
                     for ((cdStr, g2) in groupes2) {
-                        if (g2 !in exclusFallback) cdStr.toIntOrNull()?.let(cdNoms::add)
+                        if (g2 in exclusFallback) continue
+                        if ((groupes1[cdStr] ?: "") == "Mollusques") continue
+                        cdStr.toIntOrNull()?.let(cdNoms::add)
                     }
                 }
                 suggestionsPour(cdNoms)

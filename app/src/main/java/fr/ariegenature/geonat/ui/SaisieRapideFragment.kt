@@ -209,6 +209,7 @@ class SaisieRapideFragment : Fragment() {
                 Taxon.POISSON     to binding.btnTaxonPoisson,
                 Taxon.INSECTE     to binding.btnTaxonInsecte,
                 Taxon.FONGE       to binding.btnTaxonFonge,
+                Taxon.MOLLUSQUE   to binding.btnTaxonMollusque,
                 Taxon.INVERTEBRES to binding.btnTaxonInvertebres,
                 Taxon.PLANTE      to binding.btnTaxonPlante,
             ),
@@ -289,7 +290,8 @@ class SaisieRapideFragment : Fragment() {
             Taxon.POISSON     -> "Nom scientifique (ex : Esox lucius)"
             Taxon.INSECTE     -> "Nom scientifique (ex : Papilio machaon)"
             Taxon.FONGE       -> "Nom scientifique (ex : Boletus edulis)"
-            Taxon.INVERTEBRES -> "Nom scientifique (ex : Helix pomatia)"
+            Taxon.MOLLUSQUE   -> "Nom scientifique (ex : Helix pomatia)"
+            Taxon.INVERTEBRES -> "Nom scientifique (ex : Araneus diadematus)"
             Taxon.PLANTE      -> "Nom scientifique (ex : Quercus robur)"
             else              -> "Nom scientifique (ex : Turdus merula)"
         } else when (taxon) {
@@ -299,7 +301,8 @@ class SaisieRapideFragment : Fragment() {
             Taxon.POISSON     -> "Espèce (ex : Brochet)"
             Taxon.INSECTE     -> "Espèce (ex : Machaon)"
             Taxon.FONGE       -> "Espèce (ex : Cèpe de Bordeaux)"
-            Taxon.INVERTEBRES -> "Espèce (ex : Escargot de Bourgogne)"
+            Taxon.MOLLUSQUE   -> "Espèce (ex : Escargot de Bourgogne)"
+            Taxon.INVERTEBRES -> "Espèce (ex : Épeire diadème)"
             Taxon.PLANTE      -> "Espèce (ex : Chêne pédonculé)"
             else              -> "Espèce (ex : Merle noir)"
         }
@@ -725,6 +728,7 @@ private fun Taxon.nomGroupe(): String = when (this) {
     Taxon.POISSON     -> "Poisson"
     Taxon.INSECTE     -> "Insecte"
     Taxon.FONGE       -> "Champignon"
-    Taxon.INVERTEBRES -> "Invertébré"
+    Taxon.MOLLUSQUE   -> "Mollusque"
+    Taxon.INVERTEBRES -> "Autre invertébré"
     Taxon.PLANTE      -> "Plante"
 }

@@ -167,8 +167,12 @@ class ObservationAdapter(
                     ivTaxonIcon.setImageResource(R.drawable.champignons2)
                     ivTaxonIcon.imageTintList = ColorStateList.valueOf(ContextCompat.getColor(ctx, R.color.brown_fonge))
                 }
-                Taxon.INVERTEBRES -> {
+                Taxon.MOLLUSQUE -> {
                     ivTaxonIcon.setImageResource(R.drawable.mollusques)
+                    ivTaxonIcon.imageTintList = ColorStateList.valueOf(ContextCompat.getColor(ctx, R.color.purple_invertebres))
+                }
+                Taxon.INVERTEBRES -> {
+                    ivTaxonIcon.setImageResource(R.drawable.araignees)
                     ivTaxonIcon.imageTintList = ColorStateList.valueOf(ContextCompat.getColor(ctx, R.color.purple_invertebres))
                 }
                 Taxon.PLANTE -> {

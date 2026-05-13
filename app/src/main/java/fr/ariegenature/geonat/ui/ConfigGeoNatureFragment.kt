@@ -253,11 +253,14 @@ class ConfigGeoNatureFragment : Fragment() {
                 val regnes = TaxRefCache.tousLesRegnes()
                 val nbFonge = regnes.values.count { it == "Fungi" }
                 if (nbFonge > 0) append(" · $nbFonge fonge")
+                val groupes1 = TaxRefCache.tousLesGroupes1()
+                val nbMol = groupes1.values.count { it == "Mollusques" }
+                if (nbMol > 0) append(" · $nbMol mollusques")
                 val nbInv = maxOf(0, regnes.values.count { it == "Animalia" } -
                     (comptes["Oiseaux"] ?: 0) - (comptes["Mammifères"] ?: 0) -
                     (comptes["Reptiles"] ?: 0) - (comptes["Amphibiens"] ?: 0) -
-                    (comptes["Poissons"] ?: 0) - (comptes["Insectes"] ?: 0))
-                if (nbInv > 0) append(" · $nbInv invertébrés")
+                    (comptes["Poissons"] ?: 0) - (comptes["Insectes"] ?: 0) - nbMol)
+                if (nbInv > 0) append(" · $nbInv autres invertébrés")
                 // Plantes : somme des comptes par group2_inpn botanique (cohérent avec sync + iOS).
                 val nbPlantes = NomenclatureCache.GROUPES_BOTANIQUES.sumOf { comptes[it] ?: 0 }
                 if (nbPlantes > 0) append(" · $nbPlantes plantes")

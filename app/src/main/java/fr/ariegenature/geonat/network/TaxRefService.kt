@@ -56,7 +56,7 @@ object TaxRefService {
                     Taxon.FONGE -> "&regne=Fungi"
                     Taxon.PLANTE -> "&regne=Plantae"
                     Taxon.OISEAU, Taxon.MAMMIFERE, Taxon.REPTILE, Taxon.BATRACIEN,
-                    Taxon.POISSON, Taxon.INSECTE, Taxon.INVERTEBRES -> "&regne=Animalia"
+                    Taxon.POISSON, Taxon.INSECTE, Taxon.MOLLUSQUE, Taxon.INVERTEBRES -> "&regne=Animalia"
                     null -> ""
                 }
 

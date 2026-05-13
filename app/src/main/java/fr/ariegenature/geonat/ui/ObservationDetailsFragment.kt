@@ -105,6 +105,8 @@ class ObservationDetailsFragment : Fragment() {
         Taxon.INSECTE     -> setOf("METH_OBS","SEXE","STADE_VIE","ETA_BIO",
                                    "PREUVE_EXIST","OBJ_DENBR","TYP_DENBR","METH_DETERMIN")
         Taxon.FONGE       -> setOf("METH_OBS","PREUVE_EXIST","OBJ_DENBR","TYP_DENBR","METH_DETERMIN")
+        Taxon.MOLLUSQUE   -> setOf("METH_OBS","SEXE","STADE_VIE","ETA_BIO",
+                                   "PREUVE_EXIST","OBJ_DENBR","TYP_DENBR","METH_DETERMIN")
         Taxon.INVERTEBRES -> setOf("METH_OBS","SEXE","STADE_VIE","ETA_BIO",
                                    "PREUVE_EXIST","OBJ_DENBR","TYP_DENBR","METH_DETERMIN")
         Taxon.PLANTE      -> setOf("METH_OBS","STADE_VIE",
@@ -119,7 +121,7 @@ class ObservationDetailsFragment : Fragment() {
             Pair(NomenclatureCache.groupesBotaniquesConnus(), "Plantae")
         Taxon.FONGE ->
             Pair(NomenclatureCache.GROUPES_FONGE, "Fungi")
-        Taxon.INVERTEBRES ->
+        Taxon.MOLLUSQUE, Taxon.INVERTEBRES ->
             // Pas de group2 dédié : on cible le règne Animalia avec un groupe fictif
             // pour que filtrerPourGroupes inclue les entrées "Animalia, all"
             Pair(setOf("Animalia"), "Animalia")

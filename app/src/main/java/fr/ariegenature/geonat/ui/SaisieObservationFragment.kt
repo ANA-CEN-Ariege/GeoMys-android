@@ -75,6 +75,9 @@ class SaisieObservationFragment : Fragment() {
     private var latitude = 0.0
     private var longitude = 0.0
     private var rechercheNomSci = false
+    /** Vrai entre le résultat final de la dictée vocale et l'arrivée du statut TaxRef
+     *  correspondant : à ce moment-là, un match auto-ajoute une obs sans intervention. */
+    private var attendreRetourVoix = false
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         _binding = FragmentSaisieObservationBinding.inflate(inflater, container, false)
@@ -140,13 +143,17 @@ class SaisieObservationFragment : Fragment() {
         ) { onTaxonChanged() }
         taxonSelector.init()
 
-        speech = SpeechToTextHelper(this, binding.tilEspece, binding.etEspece, micPermissionLauncher)
+        speech = SpeechToTextHelper(
+            this, binding.tilEspece, binding.etEspece, micPermissionLauncher,
+            onFinalText = { attendreRetourVoix = true }
+        )
         taxrefLookup = TaxRefLookupController(
             scope = viewLifecycleOwner.lifecycleScope,
             progress = binding.taxrefProgress,
             tvStatut = binding.tvTaxrefStatut,
             taxonProvider = { taxonSelector.taxon },
             configProvider = { gnConfig },
+            onChange = { s -> consommerRetourVoix(s) },
         )
 
         setupAutocomplete()
@@ -346,6 +353,36 @@ class SaisieObservationFragment : Fragment() {
                 taxrefLookup.rechercher(s?.toString() ?: "")
             }
         })
+    }
+
+    /** Consomme le flag dicté : sur un match TaxRef, ajoute automatiquement l'obs.
+     *  Le flag est consommé dans tous les cas pour éviter qu'une frappe clavier
+     *  ultérieure ne déclenche un ajout fantôme. */
+    private fun consommerRetourVoix(statut: TaxRefStatut?) {
+        if (!attendreRetourVoix || statut == null) return
+        attendreRetourVoix = false
+        if (statut is TaxRefStatut.Trouve) ajouterDepuisVoix(statut)
+    }
+
+    /** Ajoute une PendingObs à partir d'un match TaxRef issu de la dictée vocale.
+     *  Privilégie le premier nom français du statut (TaxRefStatut.nomFrancais peut être
+     *  une liste séparée par virgules) ; à défaut, retombe sur le nom scientifique. */
+    private fun ajouterDepuisVoix(statut: TaxRefStatut.Trouve) {
+        val premierNomFr = statut.nomFrancais
+            ?.split(",")
+            ?.firstOrNull()
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+        val espece = premierNomFr ?: statut.nomScientifique
+        pendingObs.add(PendingObs(
+            taxon = taxonSelector.taxon,
+            espece = espece,
+            cdNom = statut.cdNom,
+            nombre = 1,
+        ))
+        binding.etEspece.setText("")
+        taxrefLookup.reset()
+        rafraichirListe()
     }
 
     /** Ajoute une nouvelle PendingObs à partir d'une suggestion d'autocomplétion. */

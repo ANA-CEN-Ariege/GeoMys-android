@@ -25,6 +25,10 @@ class SpeechToTextHelper(
     private val til: TextInputLayout,
     private val et: AutoCompleteTextView,
     private val micPermissionLauncher: ActivityResultLauncher<String>,
+    /** Invoqué après le résultat final de la reconnaissance, juste après écriture du texte
+     *  dans le champ. Permet au caller de réagir spécifiquement à la dictée (vs un
+     *  changement de texte manuel) — ex. déclencher un ajout automatique sur match TaxRef. */
+    private val onFinalText: ((String) -> Unit)? = null,
 ) {
     private var recognizer: SpeechRecognizer? = null
 
@@ -57,6 +61,7 @@ class SpeechToTextHelper(
                         ?.firstOrNull() ?: return
                     et.setText(texte)
                     et.setSelection(texte.length)
+                    onFinalText?.invoke(texte)
                 }
                 override fun onError(error: Int) {
                     til.setEndIconDrawable(R.drawable.ic_mic)

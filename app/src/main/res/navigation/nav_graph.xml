@@ -6,7 +6,7 @@
 
     <fragment
         android:id="@+id/accueilFragment"
-        android:name="com.example.birdstrace.ui.AccueilFragment"
+        android:name="fr.ariegenature.geonat.ui.AccueilFragment"
         android:label="GeoNat">
         <action
             android:id="@+id/action_accueil_to_trace"
@@ -27,7 +27,7 @@
 
     <fragment
         android:id="@+id/traceFragment"
-        android:name="com.example.birdstrace.ui.TraceFragment"
+        android:name="fr.ariegenature.geonat.ui.TraceFragment"
         android:label="Sortie">
         <action
             android:id="@+id/action_trace_to_observations"
@@ -42,7 +42,7 @@
 
     <fragment
         android:id="@+id/saisieObservationFragment"
-        android:name="com.example.birdstrace.ui.SaisieObservationFragment"
+        android:name="fr.ariegenature.geonat.ui.SaisieObservationFragment"
         android:label="Nouvelle observation">
         <action
             android:id="@+id/action_saisie_to_details"
@@ -51,7 +51,7 @@
 
     <fragment
         android:id="@+id/saisieRapideFragment"
-        android:name="com.example.birdstrace.ui.SaisieRapideFragment"
+        android:name="fr.ariegenature.geonat.ui.SaisieRapideFragment"
         android:label="Saisie rapide">
         <action
             android:id="@+id/action_saisieRapide_to_details"
@@ -63,12 +63,12 @@
 
     <fragment
         android:id="@+id/observationDetailsFragment"
-        android:name="com.example.birdstrace.ui.ObservationDetailsFragment"
+        android:name="fr.ariegenature.geonat.ui.ObservationDetailsFragment"
         android:label="Détails" />
 
     <fragment
         android:id="@+id/observationsFragment"
-        android:name="com.example.birdstrace.ui.ObservationsFragment"
+        android:name="fr.ariegenature.geonat.ui.ObservationsFragment"
         android:label="Observations">
         <action
             android:id="@+id/action_observations_to_saisie"
@@ -77,7 +77,7 @@
 
     <fragment
         android:id="@+id/sortiesFragment"
-        android:name="com.example.birdstrace.ui.SortiesFragment"
+        android:name="fr.ariegenature.geonat.ui.SortiesFragment"
         android:label="Mes saisies">
         <action
             android:id="@+id/action_sorties_to_detail"
@@ -86,7 +86,7 @@
 
     <fragment
         android:id="@+id/sortieDetailFragment"
-        android:name="com.example.birdstrace.ui.SortieDetailFragment"
+        android:name="fr.ariegenature.geonat.ui.SortieDetailFragment"
         android:label="Sortie">
         <argument
             android:name="sortieId"
@@ -95,11 +95,11 @@
 
     <fragment
         android:id="@+id/configGeoNatureFragment"
-        android:name="com.example.birdstrace.ui.ConfigGeoNatureFragment"
+        android:name="fr.ariegenature.geonat.ui.ConfigGeoNatureFragment"
         android:label="GeoNature" />
 
     <fragment
         android:id="@+id/explorerFragment"
-        android:name="com.example.birdstrace.ui.ExplorerFragment"
+        android:name="fr.ariegenature.geonat.ui.ExplorerFragment"
         android:label="Explorer" />
 </navigation>

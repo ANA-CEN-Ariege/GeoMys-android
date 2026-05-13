@@ -3,15 +3,15 @@ plugins {
 }
 
 android {
-    namespace = "com.example.birdstrace"
+    namespace = "fr.ariegenature.geonat"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.example.bioscope"
+        applicationId = "fr.ariegenature.geonat"
         minSdk = 24
         targetSdk = 36
-        versionCode = 20
-        versionName = "0.7.4"
+        versionCode = 21
+        versionName = "0.8.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

@@ -79,7 +79,7 @@
         android:src="@drawable/croix" />
 
     <!-- Boussole (haut droite) -->
-    <com.example.birdstrace.ui.CompassView
+    <fr.ariegenature.geonat.ui.CompassView
         android:id="@+id/compass"
         android:layout_width="44dp"
         android:layout_height="44dp"

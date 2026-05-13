@@ -43,7 +43,7 @@
             android:background="@drawable/reticule_dot" />
     </FrameLayout>
 
-    <!-- Bouton terminer / quitter — petit cercle rouge avec croix -->
+    <!-- Bouton terminer / quitter — petit cercle vert avec coche -->
     <ImageButton
         android:id="@+id/btn_retour"
         android:layout_width="32dp"
@@ -53,7 +53,7 @@
         android:background="?attr/selectableItemBackgroundBorderless"
         android:contentDescription="Terminer la saisie"
         android:scaleType="fitCenter"
-        android:src="@drawable/croix" />
+        android:src="@drawable/coche" />
 
     <!-- Compteur session (haut centre, mode actif) -->
     <TextView

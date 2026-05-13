@@ -113,22 +113,6 @@
                     app:cornerRadius="8dp" />
 
                 <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btn_taxon_invertebres"
-                    style="@style/Widget.MaterialComponents.Button.TextButton"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:insetTop="0dp"
-                    android:insetBottom="0dp"
-                    android:paddingHorizontal="14dp"
-                    android:paddingVertical="10dp"
-                    android:text=""
-                    app:icon="@drawable/araignees"
-                    app:iconGravity="textStart"
-                    app:iconPadding="0dp"
-                    app:iconSize="24dp"
-                    app:cornerRadius="8dp" />
-
-                <com.google.android.material.button.MaterialButton
                     android:id="@+id/btn_taxon_poisson"
                     style="@style/Widget.MaterialComponents.Button.TextButton"
                     android:layout_width="wrap_content"
@@ -161,7 +145,7 @@
                     app:cornerRadius="8dp" />
 
                 <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btn_taxon_fonge"
+                    android:id="@+id/btn_taxon_invertebres"
                     style="@style/Widget.MaterialComponents.Button.TextButton"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
@@ -170,7 +154,7 @@
                     android:paddingHorizontal="14dp"
                     android:paddingVertical="10dp"
                     android:text=""
-                    app:icon="@drawable/champignons2"
+                    app:icon="@drawable/araignees"
                     app:iconGravity="textStart"
                     app:iconPadding="0dp"
                     app:iconSize="24dp"
@@ -187,6 +171,22 @@
                     android:paddingVertical="10dp"
                     android:text=""
                     app:icon="@drawable/fleurs"
+                    app:iconGravity="textStart"
+                    app:iconPadding="0dp"
+                    app:iconSize="24dp"
+                    app:cornerRadius="8dp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_taxon_fonge"
+                    style="@style/Widget.MaterialComponents.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    android:paddingHorizontal="14dp"
+                    android:paddingVertical="10dp"
+                    android:text=""
+                    app:icon="@drawable/champignons2"
                     app:iconGravity="textStart"
                     app:iconPadding="0dp"
                     app:iconSize="24dp"

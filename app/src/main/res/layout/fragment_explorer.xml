@@ -125,23 +125,6 @@
                 app:iconSize="24dp" />
 
             <com.google.android.material.button.MaterialButton
-                android:id="@+id/btn_filtre_invertebres"
-                style="@style/Widget.MaterialComponents.Button.TextButton"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:contentDescription="Autres invertébrés"
-                android:insetTop="0dp"
-                android:insetBottom="0dp"
-                android:paddingHorizontal="14dp"
-                android:paddingVertical="10dp"
-                android:text=""
-                app:cornerRadius="8dp"
-                app:icon="@drawable/araignees"
-                app:iconGravity="textStart"
-                app:iconPadding="0dp"
-                app:iconSize="24dp" />
-
-            <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_filtre_poisson"
                 style="@style/Widget.MaterialComponents.Button.TextButton"
                 android:layout_width="wrap_content"
@@ -176,18 +159,18 @@
                 app:iconSize="24dp" />
 
             <com.google.android.material.button.MaterialButton
-                android:id="@+id/btn_filtre_fonge"
+                android:id="@+id/btn_filtre_invertebres"
                 style="@style/Widget.MaterialComponents.Button.TextButton"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:contentDescription="Fonge"
+                android:contentDescription="Autres invertébrés"
                 android:insetTop="0dp"
                 android:insetBottom="0dp"
                 android:paddingHorizontal="14dp"
                 android:paddingVertical="10dp"
                 android:text=""
                 app:cornerRadius="8dp"
-                app:icon="@drawable/champignons2"
+                app:icon="@drawable/araignees"
                 app:iconGravity="textStart"
                 app:iconPadding="0dp"
                 app:iconSize="24dp" />
@@ -205,6 +188,23 @@
                 android:text=""
                 app:cornerRadius="8dp"
                 app:icon="@drawable/fleurs"
+                app:iconGravity="textStart"
+                app:iconPadding="0dp"
+                app:iconSize="24dp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_filtre_fonge"
+                style="@style/Widget.MaterialComponents.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:contentDescription="Fonge"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:paddingHorizontal="14dp"
+                android:paddingVertical="10dp"
+                android:text=""
+                app:cornerRadius="8dp"
+                app:icon="@drawable/champignons2"
                 app:iconGravity="textStart"
                 app:iconPadding="0dp"
                 app:iconSize="24dp" />

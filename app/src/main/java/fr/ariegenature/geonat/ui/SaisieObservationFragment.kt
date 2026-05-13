@@ -182,10 +182,7 @@ class SaisieObservationFragment : Fragment() {
         pendingObs.forEachIndexed { index, obs ->
             val row = inflater.inflate(R.layout.item_pending_obs, binding.llPendingObs, false)
             row.findViewById<ImageView>(R.id.iv_taxon).setImageResource(taxonIcon(obs.taxon))
-            row.findViewById<TextView>(R.id.tv_espece).apply {
-                text = obs.espece
-                setOnClickListener { dupliquer(index) }
-            }
+            row.findViewById<TextView>(R.id.tv_espece).text = obs.espece
             row.findViewById<TextView>(R.id.tv_nombre).apply {
                 // Total = somme des count_min sur tous les dénombrements (counting #0 + additionnels).
                 val total = obs.nombre + obs.denombrementsAdditionnels.sumOf { it.nombreMin }
@@ -202,21 +199,6 @@ class SaisieObservationFragment : Fragment() {
     private fun supprimer(index: Int) {
         if (index !in pendingObs.indices) return
         pendingObs.removeAt(index)
-        rafraichirListe()
-    }
-
-    /** Clic sur le nom d'une ligne : ajoute une nouvelle PendingObs avec le même
-     *  taxon / espèce / cd_nom — le nombre repart à 1, les détails repartent à vide
-     *  pour ne pas répliquer un sexe ou un stade qui appartiennent à un autre individu. */
-    private fun dupliquer(index: Int) {
-        if (index !in pendingObs.indices) return
-        val source = pendingObs[index]
-        pendingObs.add(PendingObs(
-            taxon = source.taxon,
-            espece = source.espece,
-            cdNom = source.cdNom,
-            nombre = 1
-        ))
         rafraichirListe()
     }
 

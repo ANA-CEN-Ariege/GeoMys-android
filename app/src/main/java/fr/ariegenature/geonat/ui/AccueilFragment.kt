@@ -51,6 +51,10 @@ class AccueilFragment : Fragment() {
             findNavController().navigate(R.id.action_accueil_to_saisie_rapide)
         }
 
+        binding.btnSuivis.setOnClickListener {
+            findNavController().navigate(R.id.action_accueil_to_suivis)
+        }
+
         binding.btnMenu.setOnClickListener { view ->
             PopupMenu(requireContext(), view).apply {
                 menuInflater.inflate(R.menu.menu_accueil, menu)

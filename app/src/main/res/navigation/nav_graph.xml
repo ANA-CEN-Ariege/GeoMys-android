@@ -23,7 +23,15 @@
         <action
             android:id="@+id/action_accueil_to_saisie_rapide"
             app:destination="@id/saisieRapideFragment" />
+        <action
+            android:id="@+id/action_accueil_to_suivis"
+            app:destination="@id/suivisFragment" />
     </fragment>
+
+    <fragment
+        android:id="@+id/suivisFragment"
+        android:name="fr.ariegenature.geonat.ui.SuivisFragment"
+        android:label="Suivis" />
 
     <fragment
         android:id="@+id/traceFragment"

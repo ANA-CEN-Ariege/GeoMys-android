@@ -142,6 +142,19 @@
                     android:textAllCaps="false" />
             </LinearLayout>
 
+            <!-- Bouton Suivis (module Monitoring GeoNature) -->
+            <Button
+                android:id="@+id/btn_suivis"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="12dp"
+                android:backgroundTint="@color/green_85"
+                android:paddingVertical="16dp"
+                android:text="Suivis"
+                android:textColor="@android:color/white"
+                android:textSize="15sp"
+                android:textAllCaps="false" />
+
             <!-- Switch enregistrer trace -->
             <LinearLayout
                 android:layout_width="match_parent"

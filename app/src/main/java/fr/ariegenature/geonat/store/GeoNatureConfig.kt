@@ -81,6 +81,11 @@ class GeoNatureConfig(context: Context) {
         get() = prefs.getString("gn_cache_obs", "") ?: ""
         set(v) = prefs.edit().putString("gn_cache_obs", v).apply()
 
+    /** Cache JSON des champs additionnels Occtax (List<AdditionalFieldDef>) — tous niveaux confondus. */
+    var additionalFieldsOcctaxJson: String
+        get() = prefs.getString("gn_cache_add_fields_occtax", "") ?: ""
+        set(v) = prefs.edit().putString("gn_cache_add_fields_occtax", v).apply()
+
     val connexionConfiguree: Boolean
         get() = urlServeur.trim().isNotEmpty() && login.trim().isNotEmpty() && motDePasse.isNotEmpty()
 

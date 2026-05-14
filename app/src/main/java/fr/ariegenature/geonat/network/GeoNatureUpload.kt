@@ -139,13 +139,17 @@ object GeoNatureUpload {
                 val dateMin = Date(groupe.minOf { it.date })
                 val dateMax = Date(groupe.maxOf { it.date })
 
+                // additional_fields du relevé : on prend les valeurs portées par la 1re obs du
+                // groupe (toutes les obs d'un même releveId portent la même copie — édition côté
+                // CaracterisationFragment).
+                val additionalReleve = jsonDepuisMap(groupe.first().additionalFieldsReleve)
                 val properties = JSONObject().apply {
                     put("id_dataset", datasetId)
                     put("date_min", dateFmt.format(dateMin))
                     put("date_max", dateFmt.format(dateMax))
                     put("hour_min", heureFmt.format(dateMin))
                     put("hour_max", heureFmt.format(dateMax))
-                    put("additional_fields", JSONObject())
+                    put("additional_fields", additionalReleve)
                     put("meta_device_entry", "mobile")
                     put("t_occurrences_occtax", JSONArray())
                     if (idRole != null) {
@@ -315,6 +319,7 @@ object GeoNatureUpload {
             objDenbr = obs.objDenbr,
             typDenbr = obs.typDenbr,
             medias = mediasParCounting.getOrNull(0) ?: emptyList(),
+            additionalFields = obs.additionalFieldsCounting0,
             nomenclatures = nomenclatures,
         )
         val countings = JSONArray().put(counting0)
@@ -328,6 +333,7 @@ object GeoNatureUpload {
                 objDenbr = d.objDenbr,
                 typDenbr = d.typDenbr,
                 medias = mediasParCounting.getOrNull(i + 1) ?: emptyList(),
+                additionalFields = d.additionalFields,
                 nomenclatures = nomenclatures,
             ))
         }
@@ -365,6 +371,24 @@ object GeoNatureUpload {
                     ?.let { put("id_nomenclature_determination_method", it) }
             }
             obs.determinateur?.takeIf { it.isNotEmpty() }?.let { put("determiner", it) }
+            if (obs.additionalFieldsOccurrence.isNotEmpty()) {
+                put("additional_fields", jsonDepuisMap(obs.additionalFieldsOccurrence))
+            }
+        }
+    }
+
+    /** Convertit une Map<field_name, valeur stringifiée> en JSONObject typé.
+     *  "true"/"false" → bool, entiers/décimaux → number, sinon string. */
+    private fun jsonDepuisMap(map: Map<String, String>): JSONObject = JSONObject().apply {
+        for ((k, v) in map) {
+            if (v.isEmpty()) continue
+            when {
+                v.equals("true", ignoreCase = true) -> put(k, true)
+                v.equals("false", ignoreCase = true) -> put(k, false)
+                v.toIntOrNull() != null -> put(k, v.toInt())
+                v.toDoubleOrNull() != null -> put(k, v.toDouble())
+                else -> put(k, v)
+            }
         }
     }
 
@@ -376,6 +400,7 @@ object GeoNatureUpload {
         objDenbr: String?,
         typDenbr: String?,
         medias: List<JSONObject> = emptyList(),
+        additionalFields: Map<String, String> = emptyMap(),
         nomenclatures: Map<String, Map<String, Int>>,
     ): JSONObject = JSONObject().apply {
         put("count_min", nombreMin)
@@ -402,6 +427,9 @@ object GeoNatureUpload {
             val arr = JSONArray()
             medias.forEach { arr.put(it) }
             put("medias", arr)
+        }
+        if (additionalFields.isNotEmpty()) {
+            put("additional_fields", jsonDepuisMap(additionalFields))
         }
     }
 

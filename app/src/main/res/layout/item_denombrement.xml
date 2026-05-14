@@ -168,4 +168,11 @@
             android:layout_weight="1"
             android:text="＋ Audio" />
     </LinearLayout>
+
+    <!-- Champs additionnels (config gn_commons OCCTAX_DENOMBREMENT) — rendu dynamique. -->
+    <LinearLayout
+        android:id="@+id/ll_add_counting"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical" />
 </LinearLayout>

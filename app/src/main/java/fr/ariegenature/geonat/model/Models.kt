@@ -23,6 +23,8 @@ data class Denombrement(
     /** URIs locales (file:///…) des photos attachées à ce counting. Uploadées à l'envoi
      *  via POST /api/gn_commons/media, puis référencées dans le JSON du counting. */
     var mediaUris: List<String> = emptyList(),
+    /** Champs additionnels OCCTAX_DENOMBREMENT (configurables côté instance GN). */
+    var additionalFields: Map<String, String> = emptyMap(),
 )
 
 data class Observation(
@@ -65,6 +67,13 @@ data class Observation(
     /** Photos attachées au counting #0 (URIs locales). Les countings additionnels portent
      *  leurs photos via Denombrement.mediaUris. */
     var mediaUrisCounting0: List<String> = emptyList(),
+    // ── Champs additionnels (config gn_commons.t_additional_fields, dynamiques par instance) ──
+    /** Champs additionnels du relevé (OCCTAX_RELEVE) — partagés entre toutes les obs d'un même releveId. */
+    var additionalFieldsReleve: Map<String, String> = emptyMap(),
+    /** Champs additionnels de l'occurrence (OCCTAX_OCCURRENCE). */
+    var additionalFieldsOccurrence: Map<String, String> = emptyMap(),
+    /** Champs additionnels OCCTAX_DENOMBREMENT pour le counting #0. */
+    var additionalFieldsCounting0: Map<String, String> = emptyMap(),
 )
 
 data class Sortie(

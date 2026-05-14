@@ -10,6 +10,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import fr.ariegenature.geonat.R
 import fr.ariegenature.geonat.databinding.FragmentConfigGeonatureBinding
+import fr.ariegenature.geonat.network.AdditionalFieldsApi
 import fr.ariegenature.geonat.network.GeoNatureAuth
 import fr.ariegenature.geonat.network.GeoNatureBrowse
 import fr.ariegenature.geonat.network.GeoNatureDataset
@@ -64,6 +65,7 @@ class ConfigGeoNatureFragment : Fragment() {
             chargerDatasets()
             chargerListes()
             chargerObservateurs()
+            chargerAdditionalFields()
         }
 
         binding.btnSyncTaxRef.setOnClickListener {
@@ -289,6 +291,20 @@ class ConfigGeoNatureFragment : Fragment() {
                 val l: List<GeoNatureObservateur>? = gson.fromJson(json, t)
                 if (!l.isNullOrEmpty()) peuplerSpinnerObservateurs(l)
             } catch (_: Exception) {}
+        }
+    }
+
+    private fun chargerAdditionalFields() {
+        viewLifecycleOwner.lifecycleScope.launch {
+            try {
+                val result = AdditionalFieldsApi.charger(gnConfig, "OCCTAX")
+                // Cache uniquement si on a quelque chose — sinon on garde l'ancien cache.
+                if (result.isNotEmpty()) gnConfig.additionalFieldsOcctaxJson = gson.toJson(result)
+                else if (gnConfig.additionalFieldsOcctaxJson.isEmpty()) {
+                    // Marqueur d'absence pour ne pas re-tenter à chaque ouverture.
+                    gnConfig.additionalFieldsOcctaxJson = "[]"
+                }
+            } catch (_: Exception) { /* silencieux : feature optionnelle */ }
         }
     }
 

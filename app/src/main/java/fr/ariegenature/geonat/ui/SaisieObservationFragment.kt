@@ -73,6 +73,10 @@ class SaisieObservationFragment : Fragment() {
         var cdNomManuel: String = "",
         // ── Médias par counting ──
         var mediaUrisCounting0: List<String> = emptyList(),
+        // ── Champs additionnels gn_commons ──
+        var additionalFieldsReleve: Map<String, String> = emptyMap(),
+        var additionalFieldsOccurrence: Map<String, String> = emptyMap(),
+        var additionalFieldsCounting0: Map<String, String> = emptyMap(),
         val existingId: String? = null
     )
 
@@ -234,6 +238,9 @@ class SaisieObservationFragment : Fragment() {
             putString("determinateurDefaut", determinateurParDefaut())
             putString("preuveExist",         obs.preuveExist)
             putString("notes",               obs.notes)
+            // Champs additionnels (sérialisés JSON Map<field_name, value>).
+            putString("addReleveJson", com.google.gson.Gson().toJson(obs.additionalFieldsReleve))
+            putString("addOccJson", com.google.gson.Gson().toJson(obs.additionalFieldsOccurrence))
         }
         findNavController().navigate(R.id.action_saisie_to_caracterisation, bundle)
     }
@@ -251,6 +258,7 @@ class SaisieObservationFragment : Fragment() {
             objDenbr = obs.objDenbr.ifEmpty { null },
             typDenbr = obs.typDenbr.ifEmpty { null },
             mediaUris = obs.mediaUrisCounting0,
+            additionalFields = obs.additionalFieldsCounting0,
         )
         val tous = listOf(counting0) + obs.denombrementsAdditionnels
         val json = com.google.gson.Gson().toJson(tous)
@@ -285,6 +293,18 @@ class SaisieObservationFragment : Fragment() {
             handler("determinateur")      { o, v -> o.determinateur = v }
             handler("preuveExist")        { o, v -> o.preuveExist = v }
             handler("notes")              { o, v -> o.notes = v }
+            // Champs additionnels (relevé + occurrence) — JSON Map<field_name, value>.
+            val mapType = object : com.google.gson.reflect.TypeToken<Map<String, String>>() {}.type
+            handler("addReleveJson") { o, v ->
+                o.additionalFieldsReleve = try {
+                    com.google.gson.Gson().fromJson<Map<String, String>>(v, mapType) ?: emptyMap()
+                } catch (_: Exception) { emptyMap() }
+            }
+            handler("addOccJson") { o, v ->
+                o.additionalFieldsOccurrence = try {
+                    com.google.gson.Gson().fromJson<Map<String, String>>(v, mapType) ?: emptyMap()
+                } catch (_: Exception) { emptyMap() }
+            }
             // Legacy : ObservationDetailsFragment (saisie rapide) renvoie aussi sexe/stade/etc.
             // mais cet écran n'est plus déclenché depuis la saisie multi-taxons — on garde quand
             // même les handlers au cas où.
@@ -314,6 +334,7 @@ class SaisieObservationFragment : Fragment() {
                 obs.objDenbr = c0.objDenbr ?: ""
                 obs.typDenbr = c0.typDenbr ?: ""
                 obs.mediaUrisCounting0 = c0.mediaUris
+                obs.additionalFieldsCounting0 = c0.additionalFields
                 obs.denombrementsAdditionnels = if (liste.size > 1) liste.drop(1) else emptyList()
                 rafraichirListe()
             }
@@ -512,6 +533,9 @@ class SaisieObservationFragment : Fragment() {
                     methDetermin              = obs.methDetermin.ifEmpty { null },
                     determinateur             = obs.determinateur.ifEmpty { null },
                     mediaUrisCounting0        = obs.mediaUrisCounting0,
+                    additionalFieldsReleve    = obs.additionalFieldsReleve,
+                    additionalFieldsOccurrence = obs.additionalFieldsOccurrence,
+                    additionalFieldsCounting0 = obs.additionalFieldsCounting0,
                 ))
             } else {
                 traceViewModel.ajouterObservation(Observation(
@@ -537,6 +561,9 @@ class SaisieObservationFragment : Fragment() {
                     methDetermin              = obs.methDetermin.ifEmpty { null },
                     determinateur             = obs.determinateur.ifEmpty { null },
                     mediaUrisCounting0        = obs.mediaUrisCounting0,
+                    additionalFieldsReleve    = obs.additionalFieldsReleve,
+                    additionalFieldsOccurrence = obs.additionalFieldsOccurrence,
+                    additionalFieldsCounting0 = obs.additionalFieldsCounting0,
                     releveId                  = releveIdBatch,
                 ))
             }

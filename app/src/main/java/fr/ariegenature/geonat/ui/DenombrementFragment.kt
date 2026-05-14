@@ -21,7 +21,11 @@ import fr.ariegenature.geonat.R
 import fr.ariegenature.geonat.databinding.FragmentDenombrementBinding
 import fr.ariegenature.geonat.model.Denombrement
 import fr.ariegenature.geonat.model.Taxon
+import fr.ariegenature.geonat.network.AdditionalFieldDef
+import fr.ariegenature.geonat.network.AdditionalFieldsObject
+import fr.ariegenature.geonat.store.GeoNatureConfig
 import fr.ariegenature.geonat.store.NomenclatureCache
+import fr.ariegenature.geonat.ui.saisie.AdditionalFieldsRenderer
 import java.io.File
 
 /** Édition de la liste des dénombrements d'une PendingObs en saisie multi-taxons.
@@ -38,6 +42,8 @@ class DenombrementFragment : Fragment() {
     private lateinit var groupes: Set<String>
     private var regno: String = ""
     private var sexeActif: Boolean = true
+    /** Définitions des champs additionnels OCCTAX_DENOMBREMENT (chargées depuis le cache config). */
+    private var defsCounting: List<AdditionalFieldDef> = emptyList()
 
     /** Index du counting pour lequel on attend le retour d'un picker (-1 si aucun).
      *  Partagé entre photo et audio puisqu'ils ne tournent jamais en parallèle. */
@@ -82,6 +88,10 @@ class DenombrementFragment : Fragment() {
         groupes = g
         regno = r
         sexeActif = sexeActifPourTaxon(taxon)
+        // Filtre les définitions OCCTAX_DENOMBREMENT depuis le cache config (peut être vide).
+        val gnConfig = GeoNatureConfig(requireContext())
+        defsCounting = AdditionalFieldsRenderer.fromJson(gnConfig.additionalFieldsOcctaxJson)
+            .filter { it.appliqueA(AdditionalFieldsObject.COUNTING) }
 
         val type = object : TypeToken<List<Denombrement>>() {}.type
         val initial: List<Denombrement> = try { gson.fromJson(denombrementsJson, type) ?: emptyList() } catch (_: Exception) { emptyList() }
@@ -171,6 +181,10 @@ class DenombrementFragment : Fragment() {
                 pickAudioLauncher.launch("audio/*")
             }
 
+            // ── Champs additionnels OCCTAX_DENOMBREMENT pour ce counting ──
+            val llAdd = row.findViewById<LinearLayout>(R.id.ll_add_counting)
+            AdditionalFieldsRenderer.rendre(llAdd, defsCounting, denom.additionalFields)
+
             binding.llDenombrements.addView(row)
         }
     }
@@ -226,10 +240,12 @@ class DenombrementFragment : Fragment() {
             val stadeVie = selectedCode(row.findViewById(R.id.spinner_stade_vie)).ifEmpty { null }
             val objDenbr = selectedCode(row.findViewById(R.id.spinner_obj_denbr)).ifEmpty { null }
             val typDenbr = selectedCode(row.findViewById(R.id.spinner_typ_denbr)).ifEmpty { null }
+            val addCounting = AdditionalFieldsRenderer.collecter(row.findViewById(R.id.ll_add_counting))
             items[i] = items[i].copy(
                 nombreMin = min, nombreMax = max,
                 sexe = if (sexeActif) sexe else null,
                 stadeVie = stadeVie, objDenbr = objDenbr, typDenbr = typDenbr,
+                additionalFields = addCounting,
                 // mediaUris : conservées telles quelles (déjà mises à jour par le picker / suppression).
             )
         }

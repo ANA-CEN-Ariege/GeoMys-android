@@ -10,7 +10,12 @@ import androidx.fragment.app.Fragment
 import androidx.navigation.fragment.findNavController
 import fr.ariegenature.geonat.databinding.FragmentCaracterisationBinding
 import fr.ariegenature.geonat.model.Taxon
+import fr.ariegenature.geonat.network.AdditionalFieldsObject
+import fr.ariegenature.geonat.store.GeoNatureConfig
 import fr.ariegenature.geonat.store.NomenclatureCache
+import fr.ariegenature.geonat.ui.saisie.AdditionalFieldsRenderer
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 
 /** Édition des champs de caractérisation de l'occurrence pour une PendingObs en saisie multi-taxons.
  *  Le dénombrement (sexe, stade de vie, effectifs, OBJ/TYP_DENBR, photos) est édité ailleurs via
@@ -44,6 +49,25 @@ class CaracterisationFragment : Fragment() {
 
         binding.etDeterminateur.setText(determinateurArg.ifEmpty { determinateurDefaut })
         binding.etNotes.setText(notes)
+
+        // ── Champs additionnels (relevé + occurrence) ──
+        val gnConfig = GeoNatureConfig(requireContext())
+        val allDefs = AdditionalFieldsRenderer.fromJson(gnConfig.additionalFieldsOcctaxJson)
+        val defsReleve = allDefs.filter { it.appliqueA(AdditionalFieldsObject.RELEVE) }
+        val defsOcc = allDefs.filter { it.appliqueA(AdditionalFieldsObject.OCCURRENCE) }
+        val gson = Gson()
+        val mapType = object : TypeToken<Map<String, String>>() {}.type
+        val valeursReleve: Map<String, String> = try {
+            gson.fromJson(a?.getString("addReleveJson") ?: "{}", mapType) ?: emptyMap()
+        } catch (_: Exception) { emptyMap() }
+        val valeursOcc: Map<String, String> = try {
+            gson.fromJson(a?.getString("addOccJson") ?: "{}", mapType) ?: emptyMap()
+        } catch (_: Exception) { emptyMap() }
+
+        binding.tvLabelAddReleve.visibility = if (defsReleve.isNotEmpty()) View.VISIBLE else View.GONE
+        AdditionalFieldsRenderer.rendre(binding.llAddReleve, defsReleve, valeursReleve)
+        binding.tvLabelAddOccurrence.visibility = if (defsOcc.isNotEmpty()) View.VISIBLE else View.GONE
+        AdditionalFieldsRenderer.rendre(binding.llAddOccurrence, defsOcc, valeursOcc)
 
         val champs = champsActifsCaracterisation(taxon)
         binding.layoutEtaBio.visibility       = if ("ETA_BIO"          in champs) View.VISIBLE else View.GONE
@@ -92,6 +116,10 @@ class CaracterisationFragment : Fragment() {
             sv.set("preuveExist",    selectedCode(binding.spinnerPreuveExist))
             sv.set("determinateur",  binding.etDeterminateur.text.toString())
             sv.set("notes",          binding.etNotes.text.toString())
+            // Champs additionnels sérialisés JSON pour retour vers SaisieObservationFragment.
+            val gsonOut = Gson()
+            sv.set("addReleveJson", gsonOut.toJson(AdditionalFieldsRenderer.collecter(binding.llAddReleve)))
+            sv.set("addOccJson", gsonOut.toJson(AdditionalFieldsRenderer.collecter(binding.llAddOccurrence)))
             findNavController().navigateUp()
         }
     }

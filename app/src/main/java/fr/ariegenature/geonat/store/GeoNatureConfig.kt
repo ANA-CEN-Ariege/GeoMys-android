@@ -66,6 +66,21 @@ class GeoNatureConfig(context: Context) {
         get() = prefs.getString("gn_obs_defaut_id", "") ?: ""
         set(v) = prefs.edit().putString("gn_obs_defaut_id", v).apply()
 
+    /** Cache JSON des datasets chargés depuis le serveur (List<GeoNatureDataset>). */
+    var datasetsCacheJson: String
+        get() = prefs.getString("gn_cache_datasets", "") ?: ""
+        set(v) = prefs.edit().putString("gn_cache_datasets", v).apply()
+
+    /** Cache JSON des listes de taxons chargées (List<GeoNatureListe>). */
+    var listesCacheJson: String
+        get() = prefs.getString("gn_cache_listes", "") ?: ""
+        set(v) = prefs.edit().putString("gn_cache_listes", v).apply()
+
+    /** Cache JSON des observateurs chargés (List<GeoNatureObservateur>). */
+    var observateursCacheJson: String
+        get() = prefs.getString("gn_cache_obs", "") ?: ""
+        set(v) = prefs.edit().putString("gn_cache_obs", v).apply()
+
     val connexionConfiguree: Boolean
         get() = urlServeur.trim().isNotEmpty() && login.trim().isNotEmpty() && motDePasse.isNotEmpty()
 

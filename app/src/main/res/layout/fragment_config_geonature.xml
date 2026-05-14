@@ -79,38 +79,6 @@
                 android:inputType="textPassword" />
         </com.google.android.material.textfield.TextInputLayout>
 
-        <!-- Jeu de données -->
-        <com.google.android.material.textfield.TextInputLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:hint="Jeu de données">
-
-            <com.google.android.material.textfield.TextInputEditText
-                android:id="@+id/et_dataset"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:clickable="false"
-                android:focusable="false" />
-        </com.google.android.material.textfield.TextInputLayout>
-
-        <!-- Spinner datasets -->
-        <Spinner
-            android:id="@+id/spinner_datasets"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:visibility="gone" />
-
-        <TextView
-            android:id="@+id/tv_erreur_datasets"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:textColor="@android:color/holo_red_dark"
-            android:textSize="12sp"
-            android:visibility="gone" />
-
         <!-- Actions connexion -->
         <LinearLayout
             android:layout_width="match_parent"
@@ -128,12 +96,13 @@
                 android:text="Tester" />
 
             <Button
-                android:id="@+id/btn_charger_datasets"
+                android:id="@+id/btn_charger_parametres"
                 style="@style/Widget.MaterialComponents.Button.OutlinedButton"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="Charger datasets" />
+                android:enabled="false"
+                android:text="Charger les données" />
         </LinearLayout>
 
         <ProgressBar
@@ -158,12 +127,56 @@
             android:textSize="13sp"
             android:visibility="gone" />
 
+        <!-- Jeu de données -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:layout_marginBottom="4dp"
+            android:text="Jeu de données"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
+        <com.google.android.material.textfield.TextInputLayout
+            android:id="@+id/til_datasets"
+            style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:hint="Rechercher un jeu de données"
+            android:visibility="gone">
+
+            <com.google.android.material.textfield.MaterialAutoCompleteTextView
+                android:id="@+id/ac_datasets"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="text" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <TextView
+            android:id="@+id/tv_erreur_datasets"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:textColor="@android:color/holo_red_dark"
+            android:textSize="12sp"
+            android:visibility="gone" />
+
         <!-- Liste de taxons -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:layout_marginBottom="4dp"
+            android:text="Listes"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
         <com.google.android.material.textfield.TextInputLayout
             android:id="@+id/til_taxa_liste"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
+            android:layout_marginTop="4dp"
             android:hint="id_liste (saisie manuelle)">
 
             <com.google.android.material.textfield.TextInputEditText
@@ -189,13 +202,6 @@
             android:textSize="12sp"
             android:visibility="gone" />
 
-        <Button
-            android:id="@+id/btn_charger_listes"
-            style="@style/Widget.MaterialComponents.Button.TextButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Charger les listes disponibles" />
-
         <!-- Observateur par défaut -->
         <TextView
             android:layout_width="wrap_content"
@@ -206,12 +212,21 @@
             android:textSize="14sp"
             android:textStyle="bold" />
 
-        <Spinner
-            android:id="@+id/spinner_observateurs"
+        <com.google.android.material.textfield.TextInputLayout
+            android:id="@+id/til_observateurs"
+            style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
-            android:visibility="gone" />
+            android:hint="Rechercher un observateur"
+            android:visibility="gone">
+
+            <com.google.android.material.textfield.MaterialAutoCompleteTextView
+                android:id="@+id/ac_observateurs"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="text" />
+        </com.google.android.material.textfield.TextInputLayout>
 
         <TextView
             android:id="@+id/tv_erreur_observateurs"
@@ -221,13 +236,6 @@
             android:textColor="@android:color/holo_red_dark"
             android:textSize="12sp"
             android:visibility="gone" />
-
-        <Button
-            android:id="@+id/btn_charger_observateurs"
-            style="@style/Widget.MaterialComponents.Button.TextButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Charger les observateurs" />
 
         <!-- TaxRef Cache -->
         <TextView

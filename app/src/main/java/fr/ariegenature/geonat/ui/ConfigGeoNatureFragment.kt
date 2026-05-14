@@ -19,6 +19,8 @@ import fr.ariegenature.geonat.network.GeoNatureSync
 import fr.ariegenature.geonat.store.GeoNatureConfig
 import fr.ariegenature.geonat.store.NomenclatureCache
 import fr.ariegenature.geonat.store.TaxRefCache
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.launch
 
 class ConfigGeoNatureFragment : Fragment() {
@@ -28,6 +30,7 @@ class ConfigGeoNatureFragment : Fragment() {
     private val datasets = mutableListOf<GeoNatureDataset>()
     private val listes = mutableListOf<GeoNatureListe>()
     private val observateurs = mutableListOf<GeoNatureObservateur>()
+    private val gson = Gson()
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         _binding = FragmentConfigGeonatureBinding.inflate(inflater, container, false)
@@ -42,9 +45,11 @@ class ConfigGeoNatureFragment : Fragment() {
         binding.etUrl.setText(gnConfig.urlServeur)
         binding.etLogin.setText(gnConfig.login)
         binding.etMotDePasse.setText(gnConfig.motDePasse)
-        // Affichage du nom du jeu sélectionné (l'id reste dans gnConfig.idDataset pour l'envoi GN).
-        binding.etDataset.setText(gnConfig.nomDataset.ifEmpty { gnConfig.idDataset })
         binding.etTaxaListe.setText(gnConfig.taxaListeId)
+
+        // Restaure les spinners (datasets/listes/observateurs) depuis le cache local
+        // si déjà chargés lors d'une session précédente.
+        restaurerCaches()
 
         updateStatusIndicator()
         updateCacheInfo()
@@ -54,18 +59,10 @@ class ConfigGeoNatureFragment : Fragment() {
             testerConnexion()
         }
 
-        binding.btnChargerDatasets.setOnClickListener {
+        binding.btnChargerParametres.setOnClickListener {
             sauvegarderChamps()
             chargerDatasets()
-        }
-
-        binding.btnChargerListes.setOnClickListener {
-            sauvegarderChamps()
             chargerListes()
-        }
-
-        binding.btnChargerObservateurs.setOnClickListener {
-            sauvegarderChamps()
             chargerObservateurs()
         }
 
@@ -116,47 +113,32 @@ class ConfigGeoNatureFragment : Fragment() {
 
     private fun testerConnexion() {
         binding.btnTesterConnexion.isEnabled = false
+        binding.btnChargerParametres.isEnabled = false
         binding.progressTest.visibility = View.VISIBLE
         binding.tvResultatTest.visibility = View.GONE
         viewLifecycleOwner.lifecycleScope.launch {
             val (success, msg) = GeoNatureAuth.testerConnexion(gnConfig)
             binding.progressTest.visibility = View.GONE
             binding.btnTesterConnexion.isEnabled = true
+            binding.btnChargerParametres.isEnabled = success
             binding.tvResultatTest.visibility = View.VISIBLE
             binding.tvResultatTest.text = msg
             binding.tvResultatTest.setTextColor(
                 if (success) 0xFF2E7D32.toInt() else 0xFFC62828.toInt()
             )
             updateStatusIndicator()
-            if (success) { chargerDatasets(); chargerListes() }
         }
     }
 
     private fun chargerDatasets() {
-        binding.btnChargerDatasets.isEnabled = false
+        binding.btnChargerParametres.isEnabled = false
         binding.progressDatasets.visibility = View.VISIBLE
         viewLifecycleOwner.lifecycleScope.launch {
             try {
                 val result = GeoNatureBrowse.chargerDatasets(gnConfig)
-                datasets.clear()
-                datasets.addAll(result)
                 if (result.isNotEmpty()) {
-                    val noms = result.map { "${it.nom} (${it.id})" }
-                    val adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, noms)
-                    adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-                    binding.spinnerDatasets.adapter = adapter
-                    binding.spinnerDatasets.visibility = View.VISIBLE
-                    binding.spinnerDatasets.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
-                        override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
-                            gnConfig.idDataset = datasets[position].id.toString()
-                            gnConfig.nomDataset = datasets[position].nom
-                            binding.etDataset.setText(gnConfig.nomDataset)
-                        }
-                        override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
-                    }
-                    val currentId = gnConfig.idDataset.toIntOrNull()
-                    val idx = datasets.indexOfFirst { it.id == currentId }
-                    if (idx >= 0) binding.spinnerDatasets.setSelection(idx)
+                    peuplerSpinnerDatasets(result)
+                    gnConfig.datasetsCacheJson = gson.toJson(result)
                 }
                 binding.tvErreurDatasets.visibility = if (result.isEmpty()) View.VISIBLE else View.GONE
                 binding.tvErreurDatasets.text = if (result.isEmpty()) "Aucun jeu de données accessible" else ""
@@ -165,41 +147,43 @@ class ConfigGeoNatureFragment : Fragment() {
                 binding.tvErreurDatasets.text = e.message
             } finally {
                 binding.progressDatasets.visibility = View.GONE
-                binding.btnChargerDatasets.isEnabled = true
+                binding.btnChargerParametres.isEnabled = true
             }
         }
     }
 
+    private fun peuplerSpinnerDatasets(result: List<GeoNatureDataset>) {
+        datasets.clear()
+        datasets.addAll(result)
+        val noms = result.map { "${it.nom} (${it.id})" }
+        val adapter = ArrayAdapter(requireContext(), android.R.layout.simple_dropdown_item_1line, noms)
+        binding.acDatasets.setAdapter(adapter)
+        binding.tilDatasets.visibility = View.VISIBLE
+        binding.acDatasets.threshold = 1
+        binding.acDatasets.setOnItemClickListener { _, _, position, _ ->
+            // Le position passé est l'index dans la liste filtrée — on retrouve l'objet par son label.
+            val labelChoisi = adapter.getItem(position) ?: return@setOnItemClickListener
+            val idx = noms.indexOf(labelChoisi)
+            if (idx >= 0) {
+                gnConfig.idDataset = datasets[idx].id.toString()
+                gnConfig.nomDataset = datasets[idx].nom
+            }
+        }
+        // Affiche la sélection courante si elle existe (sinon vide).
+        val currentId = gnConfig.idDataset.toIntOrNull()
+        val idx = datasets.indexOfFirst { it.id == currentId }
+        binding.acDatasets.setText(if (idx >= 0) noms[idx] else "", false)
+    }
+
     private fun chargerListes() {
-        binding.btnChargerListes.isEnabled = false
+        binding.btnChargerParametres.isEnabled = false
         binding.tvErreurListes.visibility = View.GONE
         viewLifecycleOwner.lifecycleScope.launch {
             try {
                 val result = GeoNatureBrowse.chargerListesTaxons(gnConfig)
-                listes.clear()
-                listes.addAll(result)
                 if (result.isNotEmpty()) {
-                    val noms = result.map { "${it.nom} (${it.id})" }
-                    val adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, noms)
-                    adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-                    binding.spinnerListes.adapter = adapter
-                    binding.spinnerListes.visibility = View.VISIBLE
-                    binding.tilTaxaListe.visibility = View.GONE
-                    binding.spinnerListes.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
-                        override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
-                            gnConfig.taxaListeId = listes[position].id.toString()
-                            binding.etTaxaListe.setText(gnConfig.taxaListeId)
-                        }
-                        override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
-                    }
-                    val currentId = gnConfig.taxaListeId.toIntOrNull()
-                    val idx = listes.indexOfFirst { it.id == currentId }
-                    if (idx >= 0) binding.spinnerListes.setSelection(idx)
-                    else if (result.size == 1) {
-                        binding.spinnerListes.setSelection(0)
-                        gnConfig.taxaListeId = result[0].id.toString()
-                        binding.etTaxaListe.setText(gnConfig.taxaListeId)
-                    }
+                    peuplerSpinnerListes(result)
+                    gnConfig.listesCacheJson = gson.toJson(result)
                 } else {
                     binding.tvErreurListes.visibility = View.VISIBLE
                     binding.tvErreurListes.text = "Aucune liste de taxons trouvée sur ce serveur"
@@ -208,35 +192,46 @@ class ConfigGeoNatureFragment : Fragment() {
                 binding.tvErreurListes.visibility = View.VISIBLE
                 binding.tvErreurListes.text = e.message
             } finally {
-                binding.btnChargerListes.isEnabled = true
+                binding.btnChargerParametres.isEnabled = true
             }
         }
     }
 
+    private fun peuplerSpinnerListes(result: List<GeoNatureListe>) {
+        listes.clear()
+        listes.addAll(result)
+        val noms = result.map { "${it.nom} (${it.id})" }
+        val adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, noms)
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        binding.spinnerListes.adapter = adapter
+        binding.spinnerListes.visibility = View.VISIBLE
+        binding.tilTaxaListe.visibility = View.GONE
+        binding.spinnerListes.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
+                gnConfig.taxaListeId = listes[position].id.toString()
+                binding.etTaxaListe.setText(gnConfig.taxaListeId)
+            }
+            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
+        }
+        val currentId = gnConfig.taxaListeId.toIntOrNull()
+        val idx = listes.indexOfFirst { it.id == currentId }
+        if (idx >= 0) binding.spinnerListes.setSelection(idx)
+        else if (result.size == 1) {
+            binding.spinnerListes.setSelection(0)
+            gnConfig.taxaListeId = result[0].id.toString()
+            binding.etTaxaListe.setText(gnConfig.taxaListeId)
+        }
+    }
+
     private fun chargerObservateurs() {
-        binding.btnChargerObservateurs.isEnabled = false
+        binding.btnChargerParametres.isEnabled = false
         binding.tvErreurObservateurs.visibility = View.GONE
         viewLifecycleOwner.lifecycleScope.launch {
             try {
                 val result = GeoNatureBrowse.chargerObservateurs(gnConfig)
-                observateurs.clear()
-                observateurs.addAll(result)
                 if (result.isNotEmpty()) {
-                    val noms = result.map { it.nomComplet }
-                    val adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, noms)
-                    adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-                    binding.spinnerObservateurs.adapter = adapter
-                    binding.spinnerObservateurs.visibility = View.VISIBLE
-                    binding.spinnerObservateurs.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
-                        override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
-                            gnConfig.observateurDefautId = observateurs[position].idRole.toString()
-                            gnConfig.observateurDefautNom = observateurs[position].nomComplet
-                        }
-                        override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
-                    }
-                    val currentId = gnConfig.observateurDefautId.toIntOrNull()
-                    val idx = observateurs.indexOfFirst { it.idRole == currentId }
-                    if (idx >= 0) binding.spinnerObservateurs.setSelection(idx)
+                    peuplerSpinnerObservateurs(result)
+                    gnConfig.observateursCacheJson = gson.toJson(result)
                 } else {
                     binding.tvErreurObservateurs.visibility = View.VISIBLE
                     binding.tvErreurObservateurs.text = "Aucun observateur retourné par /api/users/roles"
@@ -245,8 +240,55 @@ class ConfigGeoNatureFragment : Fragment() {
                 binding.tvErreurObservateurs.visibility = View.VISIBLE
                 binding.tvErreurObservateurs.text = e.message
             } finally {
-                binding.btnChargerObservateurs.isEnabled = true
+                binding.btnChargerParametres.isEnabled = true
             }
+        }
+    }
+
+    private fun peuplerSpinnerObservateurs(result: List<GeoNatureObservateur>) {
+        observateurs.clear()
+        observateurs.addAll(result)
+        val noms = result.map { it.nomComplet }
+        val adapter = ArrayAdapter(requireContext(), android.R.layout.simple_dropdown_item_1line, noms)
+        binding.acObservateurs.setAdapter(adapter)
+        binding.tilObservateurs.visibility = View.VISIBLE
+        binding.acObservateurs.threshold = 1
+        binding.acObservateurs.setOnItemClickListener { _, _, position, _ ->
+            val labelChoisi = adapter.getItem(position) ?: return@setOnItemClickListener
+            val idx = noms.indexOf(labelChoisi)
+            if (idx >= 0) {
+                gnConfig.observateurDefautId = observateurs[idx].idRole.toString()
+                gnConfig.observateurDefautNom = observateurs[idx].nomComplet
+            }
+        }
+        // Affiche la sélection courante si elle existe (sinon vide).
+        val currentId = gnConfig.observateurDefautId.toIntOrNull()
+        val idx = observateurs.indexOfFirst { it.idRole == currentId }
+        binding.acObservateurs.setText(if (idx >= 0) noms[idx] else "", false)
+    }
+
+    /** Restaure les 3 spinners depuis le cache SharedPreferences si présent. */
+    private fun restaurerCaches() {
+        gnConfig.datasetsCacheJson.takeIf { it.isNotEmpty() }?.let { json ->
+            try {
+                val t = object : TypeToken<List<GeoNatureDataset>>() {}.type
+                val l: List<GeoNatureDataset>? = gson.fromJson(json, t)
+                if (!l.isNullOrEmpty()) peuplerSpinnerDatasets(l)
+            } catch (_: Exception) {}
+        }
+        gnConfig.listesCacheJson.takeIf { it.isNotEmpty() }?.let { json ->
+            try {
+                val t = object : TypeToken<List<GeoNatureListe>>() {}.type
+                val l: List<GeoNatureListe>? = gson.fromJson(json, t)
+                if (!l.isNullOrEmpty()) peuplerSpinnerListes(l)
+            } catch (_: Exception) {}
+        }
+        gnConfig.observateursCacheJson.takeIf { it.isNotEmpty() }?.let { json ->
+            try {
+                val t = object : TypeToken<List<GeoNatureObservateur>>() {}.type
+                val l: List<GeoNatureObservateur>? = gson.fromJson(json, t)
+                if (!l.isNullOrEmpty()) peuplerSpinnerObservateurs(l)
+            } catch (_: Exception) {}
         }
     }
 

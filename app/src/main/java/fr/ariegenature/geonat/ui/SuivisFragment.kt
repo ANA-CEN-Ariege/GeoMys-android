@@ -42,7 +42,15 @@ class SuivisFragment : Fragment() {
         binding.llModules.removeAllViews()
 
         viewLifecycleOwner.lifecycleScope.launch {
-            val modules = MonitoringApi.chargerModules(gnConfig)
+            val modules = try {
+                MonitoringApi.chargerModules(gnConfig)
+            } catch (e: Exception) {
+                if (!isAdded) return@launch
+                binding.progressSuivis.visibility = View.GONE
+                binding.tvErreurSuivis.visibility = View.VISIBLE
+                binding.tvErreurSuivis.text = "Erreur de chargement : ${e.message}"
+                return@launch
+            }
             if (!isAdded) return@launch
             binding.progressSuivis.visibility = View.GONE
             if (modules.isEmpty()) {

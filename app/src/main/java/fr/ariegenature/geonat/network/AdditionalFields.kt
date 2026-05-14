@@ -41,28 +41,32 @@ data class AdditionalFieldDef(
 object AdditionalFieldsApi {
 
     /** GET /api/gn_commons/additional_fields?module_code=OCCTAX
-     *  Retourne la liste de tous les champs additionnels Occtax (tous niveaux confondus). */
+     *  Retourne la liste de tous les champs additionnels Occtax (tous niveaux confondus).
+     *  Renvoie [] silencieusement si HTTP 404 (endpoint absent — feature optionnelle).
+     *  Sur toute autre erreur (timeout, 5xx, parse), propage l'exception au caller. */
     suspend fun charger(config: GeoNatureConfig, moduleCode: String = "OCCTAX"): List<AdditionalFieldDef> =
         withContext(Dispatchers.IO) {
-            try {
-                val base = config.urlServeur.trim().trimEnd('/')
-                val (token, _, cookies) = GeoNatureAuth.loginAvecCookies(base, config.login, config.motDePasse)
-                    ?: return@withContext emptyList()
+            val base = config.urlServeur.trim().trimEnd('/')
+            val (token, _, cookies) = GeoNatureAuth.loginAvecCookies(base, config.login, config.motDePasse)
+                ?: throw GNErreur.AuthEchouee(401)
 
-                val url = URL("$base/api/gn_commons/additional_fields?module_code=$moduleCode")
-                val conn = url.openConnection() as java.net.HttpURLConnection
-                conn.connectTimeout = 10000
-                conn.readTimeout = 10000
-                conn.setRequestProperty("Accept", "application/json")
-                if (token != null) conn.setRequestProperty("Authorization", "Bearer $token")
-                if (cookies.isNotEmpty()) conn.setRequestProperty("Cookie", cookies)
-                if (conn.responseCode != 200) return@withContext emptyList()
+            val url = URL("$base/api/gn_commons/additional_fields?module_code=$moduleCode")
+            val conn = url.openConnection() as java.net.HttpURLConnection
+            conn.connectTimeout = 10000
+            conn.readTimeout = 10000
+            conn.setRequestProperty("Accept", "application/json")
+            if (token != null) conn.setRequestProperty("Authorization", "Bearer $token")
+            if (cookies.isNotEmpty()) conn.setRequestProperty("Cookie", cookies)
+            val code = conn.responseCode
+            if (code == 404) return@withContext emptyList() // endpoint absent — feature optionnelle
+            if (code != 200) throw GNErreur.EnvoiEchoue(code, "additional_fields : HTTP $code")
 
-                val text = conn.inputStream.bufferedReader().readText()
-                val array: JSONArray = try { JSONArray(text) } catch (_: Exception) {
-                    val obj = JSONObject(text)
-                    obj.optJSONArray("data") ?: obj.optJSONArray("items") ?: return@withContext emptyList()
-                }
+            val text = conn.inputStream.bufferedReader().readText()
+            val array: JSONArray = try { JSONArray(text) } catch (_: Exception) {
+                val obj = JSONObject(text)
+                obj.optJSONArray("data") ?: obj.optJSONArray("items")
+                    ?: throw GNErreur.EnvoiEchoue(code, "additional_fields : format JSON inattendu")
+            }
                 val result = mutableListOf<AdditionalFieldDef>()
                 for (i in 0 until array.length()) {
                     val item = array.getJSONObject(i)
@@ -111,8 +115,7 @@ object AdditionalFieldsApi {
                         widgetServeur = widgetName,
                     ))
                 }
-                // Tri par field_order si disponible, sinon par label.
-                result.sortedBy { it.fieldLabel.lowercase() }
-            } catch (_: Exception) { emptyList() }
+            // Tri par field_order si disponible, sinon par label.
+            result.sortedBy { it.fieldLabel.lowercase() }
         }
 }

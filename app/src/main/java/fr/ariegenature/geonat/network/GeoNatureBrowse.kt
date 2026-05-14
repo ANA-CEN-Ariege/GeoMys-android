@@ -74,28 +74,28 @@ object GeoNatureBrowse {
 
     suspend fun chargerListesTaxons(config: GeoNatureConfig): List<GeoNatureListe> =
         withContext(Dispatchers.IO) {
-            try {
-                val base = config.urlServeur.trim().trimEnd('/')
-                val url = URL("$base/api/taxhub/api/biblistes")
-                val conn = url.openConnection() as java.net.HttpURLConnection
-                conn.connectTimeout = 10000
-                conn.readTimeout = 10000
-                conn.setRequestProperty("Accept", "application/json")
-                if (conn.responseCode != 200) return@withContext emptyList()
-                val text = conn.inputStream.bufferedReader().readText()
-                val array: JSONArray = try { JSONArray(text) } catch (_: Exception) {
-                    val obj = JSONObject(text)
-                    obj.optJSONArray("data") ?: obj.optJSONArray("items") ?: obj.optJSONArray("results") ?: return@withContext emptyList()
-                }
-                val result = mutableListOf<GeoNatureListe>()
-                for (i in 0 until array.length()) {
-                    val item = array.getJSONObject(i)
-                    val id = item.optInt("id_liste", -1)
-                    val nom = item.optString("nom_liste", "")
-                    if (id > 0 && nom.isNotEmpty()) result.add(GeoNatureListe(id, nom))
-                }
-                result.sortedBy { it.nom }
-            } catch (_: Exception) { emptyList() }
+            val base = config.urlServeur.trim().trimEnd('/')
+            val url = URL("$base/api/taxhub/api/biblistes")
+            val conn = url.openConnection() as java.net.HttpURLConnection
+            conn.connectTimeout = 10000
+            conn.readTimeout = 10000
+            conn.setRequestProperty("Accept", "application/json")
+            val code = conn.responseCode
+            if (code != 200) throw GNErreur.EnvoiEchoue(code, "Listes taxons : HTTP $code")
+            val text = conn.inputStream.bufferedReader().readText()
+            val array: JSONArray = try { JSONArray(text) } catch (_: Exception) {
+                val obj = JSONObject(text)
+                obj.optJSONArray("data") ?: obj.optJSONArray("items") ?: obj.optJSONArray("results")
+                    ?: throw GNErreur.EnvoiEchoue(code, "Listes taxons : format JSON inattendu")
+            }
+            val result = mutableListOf<GeoNatureListe>()
+            for (i in 0 until array.length()) {
+                val item = array.getJSONObject(i)
+                val id = item.optInt("id_liste", -1)
+                val nom = item.optString("nom_liste", "")
+                if (id > 0 && nom.isNotEmpty()) result.add(GeoNatureListe(id, nom))
+            }
+            result.sortedBy { it.nom }
         }
 
     /** Récupère la liste des observateurs GeoNature via `/api/users/roles` (tous les utilisateurs,
@@ -103,43 +103,38 @@ object GeoNatureBrowse {
      *  son observateur par défaut dans la config. */
     suspend fun chargerObservateurs(config: GeoNatureConfig): List<GeoNatureObservateur> =
         withContext(Dispatchers.IO) {
-            try {
-                val base = config.urlServeur.trim().trimEnd('/')
-                val (token, _, cookies) = GeoNatureAuth.loginAvecCookies(base, config.login, config.motDePasse)
-                    ?: return@withContext emptyList()
+            val base = config.urlServeur.trim().trimEnd('/')
+            val (token, _, cookies) = GeoNatureAuth.loginAvecCookies(base, config.login, config.motDePasse)
+                ?: throw GNErreur.AuthEchouee(401)
 
-                val url = URL("$base/api/users/roles")
-                val conn = url.openConnection() as java.net.HttpURLConnection
-                conn.connectTimeout = 10000
-                conn.readTimeout = 10000
-                conn.setRequestProperty("Accept", "application/json")
-                if (token != null) conn.setRequestProperty("Authorization", "Bearer $token")
-                if (cookies.isNotEmpty()) conn.setRequestProperty("Cookie", cookies)
-                if (conn.responseCode != 200) return@withContext emptyList()
+            val url = URL("$base/api/users/roles")
+            val conn = url.openConnection() as java.net.HttpURLConnection
+            conn.connectTimeout = 10000
+            conn.readTimeout = 10000
+            conn.setRequestProperty("Accept", "application/json")
+            if (token != null) conn.setRequestProperty("Authorization", "Bearer $token")
+            if (cookies.isNotEmpty()) conn.setRequestProperty("Cookie", cookies)
+            val code = conn.responseCode
+            if (code != 200) throw GNErreur.EnvoiEchoue(code, "Observateurs : HTTP $code")
 
-                val text = conn.inputStream.bufferedReader().readText()
-                val array: JSONArray = try { JSONArray(text) } catch (_: Exception) {
-                    val obj = JSONObject(text)
-                    obj.optJSONArray("data") ?: obj.optJSONArray("items") ?: obj.optJSONArray("results") ?: return@withContext emptyList()
-                }
-                val result = mutableListOf<GeoNatureObservateur>()
-                for (i in 0 until array.length()) {
-                    val item = array.getJSONObject(i)
-                    val idRole = item.optInt("id_role", -1).takeIf { it > 0 } ?: continue
-                    // Exclure les groupes (groupe=true) — on ne garde que les utilisateurs réels.
-                    if (item.optBoolean("groupe", false)) continue
-                    // Format "Prénom Nom" (l'utilisateur le demande explicitement).
-                    // On ne se rabat sur nom_complet du serveur qu'en dernier recours, car GeoNature
-                    // le renvoie souvent en format "NOM Prénom" (nom en majuscules) — qui n'est pas
-                    // ce qu'on veut afficher dans le champ déterminateur.
-                    val prenom = item.optString("prenom_role", "").trim()
-                    val nom = item.optString("nom_role", "").trim()
-                    val nomComplet = listOf(prenom, nom).filter { it.isNotEmpty() }.joinToString(" ")
-                        .ifEmpty { item.optString("nom_complet", "") }
-                    if (nomComplet.isNotEmpty()) result.add(GeoNatureObservateur(idRole, nomComplet))
-                }
-                result.sortedBy { it.nomComplet.lowercase() }
-            } catch (_: Exception) { emptyList() }
+            val text = conn.inputStream.bufferedReader().readText()
+            val array: JSONArray = try { JSONArray(text) } catch (_: Exception) {
+                val obj = JSONObject(text)
+                obj.optJSONArray("data") ?: obj.optJSONArray("items") ?: obj.optJSONArray("results")
+                    ?: throw GNErreur.EnvoiEchoue(code, "Observateurs : format JSON inattendu")
+            }
+            val result = mutableListOf<GeoNatureObservateur>()
+            for (i in 0 until array.length()) {
+                val item = array.getJSONObject(i)
+                val idRole = item.optInt("id_role", -1).takeIf { it > 0 } ?: continue
+                if (item.optBoolean("groupe", false)) continue
+                val prenom = item.optString("prenom_role", "").trim()
+                val nom = item.optString("nom_role", "").trim()
+                val nomComplet = listOf(prenom, nom).filter { it.isNotEmpty() }.joinToString(" ")
+                    .ifEmpty { item.optString("nom_complet", "") }
+                if (nomComplet.isNotEmpty()) result.add(GeoNatureObservateur(idRole, nomComplet))
+            }
+            result.sortedBy { it.nomComplet.lowercase() }
         }
 
     suspend fun recupererObsExplorer(

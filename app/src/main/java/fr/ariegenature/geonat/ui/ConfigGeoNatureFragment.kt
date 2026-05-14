@@ -298,13 +298,17 @@ class ConfigGeoNatureFragment : Fragment() {
         viewLifecycleOwner.lifecycleScope.launch {
             try {
                 val result = AdditionalFieldsApi.charger(gnConfig, "OCCTAX")
-                // Cache uniquement si on a quelque chose — sinon on garde l'ancien cache.
                 if (result.isNotEmpty()) gnConfig.additionalFieldsOcctaxJson = gson.toJson(result)
                 else if (gnConfig.additionalFieldsOcctaxJson.isEmpty()) {
-                    // Marqueur d'absence pour ne pas re-tenter à chaque ouverture.
                     gnConfig.additionalFieldsOcctaxJson = "[]"
                 }
-            } catch (_: Exception) { /* silencieux : feature optionnelle */ }
+            } catch (e: Exception) {
+                android.widget.Toast.makeText(
+                    requireContext(),
+                    "Champs additionnels : ${e.message}",
+                    android.widget.Toast.LENGTH_LONG
+                ).show()
+            }
         }
     }
 
@@ -313,19 +317,22 @@ class ConfigGeoNatureFragment : Fragment() {
         binding.progressSync.visibility = View.VISIBLE
         binding.tvSyncResultat.visibility = View.GONE
         viewLifecycleOwner.lifecycleScope.launch {
-            val (_, msgTaxRef) = GeoNatureSync.synchroniserTaxRef(gnConfig) { fait, _ ->
+            val (nbTaxons, msgTaxRef) = GeoNatureSync.synchroniserTaxRef(gnConfig) { fait, _ ->
                 activity?.runOnUiThread {
                     binding.tvSyncResultat.visibility = View.VISIBLE
                     binding.tvSyncResultat.text = "$fait taxons reçus…"
                 }
             }
-            // Sync silencieuse des nomenclatures — pas d'affichage du résumé technique
-            // (METH_OBS:5val/3taxref…), seulement le compte de taxons indexés.
-            GeoNatureSync.synchroniserNomenclatures(gnConfig)
+            // Sync des nomenclatures (METH_OBS, STADE_VIE, …) : on remonte le message d'erreur
+            // s'il y en a un (count = 0 indique un échec côté serveur).
+            val (nbNom, msgNom) = GeoNatureSync.synchroniserNomenclatures(gnConfig)
             binding.progressSync.visibility = View.GONE
             binding.btnSyncTaxRef.isEnabled = true
             binding.tvSyncResultat.visibility = View.VISIBLE
-            binding.tvSyncResultat.text = msgTaxRef
+            binding.tvSyncResultat.text = buildString {
+                append(msgTaxRef)
+                if (nbTaxons > 0 && nbNom == 0) append("\n⚠ Nomenclatures : $msgNom")
+            }
             updateCacheInfo()
         }
     }

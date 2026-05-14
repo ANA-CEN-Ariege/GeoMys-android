@@ -2,6 +2,7 @@ package fr.ariegenature.geonat.store
 
 import android.content.Context
 import android.util.Log
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -24,7 +25,12 @@ object MapTileCache {
         Configuration.getInstance().tileFileSystemCacheTrimBytes = CACHE_MAX_BYTES * 3 / 4
     }
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    /** Handler explicite : sans lui, une exception non interceptée dans `scope.launch`
+     *  remonte à `Thread.UncaughtExceptionHandler` et crashe l'app. */
+    private val swallowExceptions = CoroutineExceptionHandler { _, e ->
+        Log.w("TuileCache", "Purge échouée : ${e.message}")
+    }
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + swallowExceptions)
 
     fun purgerSiNecessaire(context: Context) {
         val prefs = context.getSharedPreferences("GeoNat_prefs", Context.MODE_PRIVATE)

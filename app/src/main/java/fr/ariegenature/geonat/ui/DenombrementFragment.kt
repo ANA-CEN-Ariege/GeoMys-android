@@ -95,8 +95,11 @@ class DenombrementFragment : Fragment() {
 
         val type = object : TypeToken<List<Denombrement>>() {}.type
         val initial: List<Denombrement> = try { gson.fromJson(denombrementsJson, type) ?: emptyList() } catch (_: Exception) { emptyList() }
+        // Normalisation : Gson ne respecte pas les valeurs par défaut Kotlin lors de la
+        // désérialisation — si un champ collection manque du JSON (cas d'un payload antérieur
+        // à l'ajout du champ), il devient null à l'exécution. On le remplit ici.
         items.clear()
-        items.addAll(if (initial.isEmpty()) listOf(Denombrement()) else initial)
+        items.addAll(if (initial.isEmpty()) listOf(Denombrement()) else initial.map { normaliser(it) })
 
         rafraichir()
 
@@ -250,6 +253,21 @@ class DenombrementFragment : Fragment() {
             )
         }
     }
+
+    /** Garantit que les collections non-nullables du Denombrement le sont vraiment.
+     *  Contournement Gson : un champ absent du JSON est laissé à null malgré le default Kotlin. */
+    @Suppress("USELESS_ELVIS", "UNNECESSARY_SAFE_CALL")
+    private fun normaliser(d: Denombrement): Denombrement = Denombrement(
+        id = (d.id as String?) ?: java.util.UUID.randomUUID().toString(),
+        nombreMin = d.nombreMin,
+        nombreMax = d.nombreMax,
+        sexe = d.sexe,
+        stadeVie = d.stadeVie,
+        objDenbr = d.objDenbr,
+        typDenbr = d.typDenbr,
+        mediaUris = (d.mediaUris as List<String>?) ?: emptyList(),
+        additionalFields = (d.additionalFields as Map<String, String>?) ?: emptyMap(),
+    )
 
     private fun sexeActifPourTaxon(taxon: Taxon): Boolean = when (taxon) {
         Taxon.OISEAU, Taxon.MAMMIFERE, Taxon.REPTILE, Taxon.BATRACIEN,

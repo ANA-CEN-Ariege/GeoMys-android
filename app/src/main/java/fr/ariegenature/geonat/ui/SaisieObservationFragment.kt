@@ -333,8 +333,12 @@ class SaisieObservationFragment : Fragment() {
                 obs.stadeVie = c0.stadeVie ?: ""
                 obs.objDenbr = c0.objDenbr ?: ""
                 obs.typDenbr = c0.typDenbr ?: ""
-                obs.mediaUrisCounting0 = c0.mediaUris
-                obs.additionalFieldsCounting0 = c0.additionalFields
+                // Gson peut laisser ces champs à null si le JSON n'avait pas la clé.
+                @Suppress("USELESS_ELVIS")
+                run {
+                    obs.mediaUrisCounting0 = (c0.mediaUris as List<String>?) ?: emptyList()
+                    obs.additionalFieldsCounting0 = (c0.additionalFields as Map<String, String>?) ?: emptyMap()
+                }
                 obs.denombrementsAdditionnels = if (liste.size > 1) liste.drop(1) else emptyList()
                 rafraichirListe()
             }

@@ -32,17 +32,18 @@ object AdditionalFieldsRenderer {
     }
 
     /** Vide le container et rend tous les champs définis dans `defs`.
-     *  Les valeurs courantes sont lues depuis `valeurs` (Map<field_name, valeur stringifiée>). */
+     *  Les valeurs courantes sont lues depuis `valeurs` (Map<field_name, valeur stringifiée>).
+     *  Tolère un `valeurs == null` (cas Gson : champ absent du JSON désérialisé). */
     fun rendre(
         container: LinearLayout,
         defs: List<AdditionalFieldDef>,
-        valeurs: Map<String, String>,
+        valeurs: Map<String, String>?,
     ) {
         container.removeAllViews()
         if (defs.isEmpty()) return
         val ctx = container.context
         defs.forEach { def ->
-            container.addView(buildWidget(ctx, def, valeurs[def.fieldName] ?: def.defaultValue ?: ""))
+            container.addView(buildWidget(ctx, def, valeurs?.get(def.fieldName) ?: def.defaultValue ?: ""))
         }
     }
 
@@ -123,9 +124,11 @@ object AdditionalFieldsRenderer {
                         hint = "Type ${def.widgetServeur} (saisi en texte)"
                 }
                 val et = TextInputEditText(ctx).apply {
-                    layoutParams = ViewGroup.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.WRAP_CONTENT
+                    // TextInputLayout hérite de LinearLayout → ses enfants DOIVENT avoir
+                    // des LinearLayout.LayoutParams, sinon ClassCastException au layout pass.
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
                     )
                     tag = "input"
                     inputType = when (def.widget) {

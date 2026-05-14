@@ -117,9 +117,12 @@ class SortieDetailFragment : Fragment() {
         binding.btnEnvoyerGn.isEnabled = false
         lifecycleScope.launch {
             try {
-                val (nb, total, premierReleve) = GeoNatureUpload.envoyer(sortie, gnConfig)
+                val res = GeoNatureUpload.envoyer(sortie, gnConfig)
+                val nb = res.nbCrees; val total = res.nbTotal; val premierReleve = res.premierIdReleve
                 var msg = "$nb/$total relevé${if (total > 1) "s" else ""} créé${if (nb > 1) "s" else ""} sur GeoNature"
                 if (premierReleve != null) msg += "\nPremier id_releve_occtax : $premierReleve"
+                if (res.mediasOK > 0) msg += "\n${res.mediasOK} média(s) uploadé(s)"
+                if (res.mediasKO > 0) msg += "\n⚠ ${res.mediasKO} média(s) échoué(s) : ${res.mediaErreurMsg ?: ""}"
                 sortieStore.marquerEnvoyee(sortie.id)
                 binding.btnEnvoyerGn.visibility = View.GONE
                 AlertDialog.Builder(requireContext())

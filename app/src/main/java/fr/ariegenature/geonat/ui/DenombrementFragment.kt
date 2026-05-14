@@ -1,14 +1,17 @@
 package fr.ariegenature.geonat.ui
 
+import android.net.Uri
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ArrayAdapter
+import android.widget.Button
 import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.Spinner
 import android.widget.TextView
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.fragment.app.Fragment
 import androidx.navigation.fragment.findNavController
 import com.google.android.material.textfield.TextInputEditText
@@ -19,9 +22,11 @@ import fr.ariegenature.geonat.databinding.FragmentDenombrementBinding
 import fr.ariegenature.geonat.model.Denombrement
 import fr.ariegenature.geonat.model.Taxon
 import fr.ariegenature.geonat.store.NomenclatureCache
+import java.io.File
 
 /** Édition de la liste des dénombrements d'une PendingObs en saisie multi-taxons.
- *  Permet d'ajouter, supprimer, modifier chaque counting (≥ 1 requis). */
+ *  Chaque dénombrement peut avoir ses propres photos attachées (uploadées au counting
+ *  côté gn_commons lors de l'envoi du relevé). */
 class DenombrementFragment : Fragment() {
     private var _binding: FragmentDenombrementBinding? = null
     private val binding get() = _binding!!
@@ -33,6 +38,28 @@ class DenombrementFragment : Fragment() {
     private lateinit var groupes: Set<String>
     private var regno: String = ""
     private var sexeActif: Boolean = true
+
+    /** Index du counting pour lequel on attend le retour d'un picker (-1 si aucun).
+     *  Partagé entre photo et audio puisqu'ils ne tournent jamais en parallèle. */
+    private var pickMediaTargetIndex: Int = -1
+
+    private val pickPhotoLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        consommerPickerResult(uri, defaultMime = "image/jpeg")
+    }
+
+    private val pickAudioLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        consommerPickerResult(uri, defaultMime = "audio/mp4")
+    }
+
+    private fun consommerPickerResult(uri: android.net.Uri?, defaultMime: String) {
+        val targetIdx = pickMediaTargetIndex
+        pickMediaTargetIndex = -1
+        if (uri == null || targetIdx < 0 || targetIdx >= items.size) return
+        collecter()
+        val localUri = importerMedia(uri, defaultMime) ?: return
+        items[targetIdx] = items[targetIdx].copy(mediaUris = items[targetIdx].mediaUris + localUri)
+        rafraichir()
+    }
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         _binding = FragmentDenombrementBinding.inflate(inflater, container, false)
@@ -64,7 +91,6 @@ class DenombrementFragment : Fragment() {
         rafraichir()
 
         binding.btnAjouter.setOnClickListener {
-            // Sauvegarde l'état UI courant dans items avant de re-rendre
             collecter()
             items.add(Denombrement())
             rafraichir()
@@ -89,6 +115,8 @@ class DenombrementFragment : Fragment() {
             btnSuppr.setOnClickListener {
                 collecter()
                 if (items.size > 1) {
+                    // Nettoie les photos locales du counting supprimé.
+                    items[index].mediaUris.forEach { supprimerFichierLocal(it) }
                     items.removeAt(index)
                     rafraichir()
                 }
@@ -117,11 +145,77 @@ class DenombrementFragment : Fragment() {
                 listOf("Non renseigné","Exact","Estimé","Minimum","Maximum"),
                 listOf("","1","2","3","4"))
 
+            // ── Photos attachées à ce counting ──
+            val llPhotos = row.findViewById<LinearLayout>(R.id.ll_photos)
+            llPhotos.removeAllViews()
+            denom.mediaUris.forEach { uri ->
+                val photoRow = inflater.inflate(R.layout.item_photo_denombrement, llPhotos, false)
+                photoRow.findViewById<TextView>(R.id.tv_photo_nom).text =
+                    File(Uri.parse(uri).path ?: "").name
+                photoRow.findViewById<ImageButton>(R.id.btn_supprimer_photo).setOnClickListener {
+                    collecter()
+                    supprimerFichierLocal(uri)
+                    items[index] = items[index].copy(mediaUris = items[index].mediaUris - uri)
+                    rafraichir()
+                }
+                llPhotos.addView(photoRow)
+            }
+            row.findViewById<Button>(R.id.btn_ajouter_photo).setOnClickListener {
+                collecter()
+                pickMediaTargetIndex = index
+                pickPhotoLauncher.launch("image/*")
+            }
+            row.findViewById<Button>(R.id.btn_ajouter_audio).setOnClickListener {
+                collecter()
+                pickMediaTargetIndex = index
+                pickAudioLauncher.launch("audio/*")
+            }
+
             binding.llDenombrements.addView(row)
         }
     }
 
-    /** Relit les valeurs des champs UI vers `items` (mutation in-place). */
+    /** Copie le fichier sélectionné (photo ou audio) dans le storage privé pour avoir un chemin stable.
+     *  Le préfixe de nom (photo_/audio_) sert juste de hint humain ; le mime réel est déduit
+     *  côté upload via guessContentTypeFromName. */
+    private fun importerMedia(source: Uri, defaultMime: String): String? {
+        val ctx = requireContext()
+        val mime = ctx.contentResolver.getType(source) ?: defaultMime
+        val (prefix, ext) = when {
+            mime.startsWith("image/") -> "photo" to when (mime) {
+                "image/jpeg" -> "jpg"
+                "image/png"  -> "png"
+                "image/webp" -> "webp"
+                else         -> mime.substringAfter("/").ifEmpty { "jpg" }
+            }
+            mime.startsWith("audio/") -> "audio" to when (mime) {
+                "audio/mpeg" -> "mp3"
+                "audio/mp4"  -> "m4a"
+                "audio/aac"  -> "aac"
+                "audio/ogg"  -> "ogg"
+                "audio/wav", "audio/x-wav" -> "wav"
+                else         -> mime.substringAfter("/").ifEmpty { "mp3" }
+            }
+            else -> "media" to mime.substringAfter("/").ifEmpty { "bin" }
+        }
+        val dir = File(ctx.filesDir, "medias").apply { mkdirs() }
+        val dest = File(dir, "${prefix}_${System.currentTimeMillis()}.$ext")
+        return try {
+            ctx.contentResolver.openInputStream(source)?.use { input ->
+                dest.outputStream().use { out -> input.copyTo(out) }
+            }
+            dest.toURI().toString()
+        } catch (e: Exception) {
+            android.widget.Toast.makeText(ctx, "Import média échoué : ${e.message}", android.widget.Toast.LENGTH_LONG).show()
+            null
+        }
+    }
+
+    private fun supprimerFichierLocal(uri: String) {
+        try { File(Uri.parse(uri).path ?: return).delete() } catch (_: Exception) {}
+    }
+
+    /** Relit les valeurs des champs UI vers `items` (mutation in-place). Préserve les photos. */
     private fun collecter() {
         for (i in items.indices) {
             val row = binding.llDenombrements.getChildAt(i) ?: continue
@@ -136,6 +230,7 @@ class DenombrementFragment : Fragment() {
                 nombreMin = min, nombreMax = max,
                 sexe = if (sexeActif) sexe else null,
                 stadeVie = stadeVie, objDenbr = objDenbr, typDenbr = typDenbr,
+                // mediaUris : conservées telles quelles (déjà mises à jour par le picker / suppression).
             )
         }
     }

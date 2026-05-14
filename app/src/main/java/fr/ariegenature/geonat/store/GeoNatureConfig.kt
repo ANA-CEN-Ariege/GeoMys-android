@@ -40,9 +40,31 @@ class GeoNatureConfig(context: Context) {
         get() = prefs.getString("gn_dataset", "") ?: ""
         set(v) = prefs.edit().putString("gn_dataset", v).apply()
 
+    /** Nom du jeu de données sélectionné (affiché dans Config GeoNature à la place de l'id). */
+    var nomDataset: String
+        get() = prefs.getString("gn_dataset_nom", "") ?: ""
+        set(v) = prefs.edit().putString("gn_dataset_nom", v).apply()
+
     var taxaListeId: String
         get() = prefs.getString("gn_taxa_liste", "") ?: ""
         set(v) = prefs.edit().putString("gn_taxa_liste", v).apply()
+
+    /** Nom complet (prénom + nom) renvoyé par GeoNature lors de la dernière connexion réussie.
+     *  Mis à jour par GeoNatureAuth.testerConnexion. Fallback pour le déterminateur si
+     *  aucun observateur par défaut n'est sélectionné. */
+    var nomUtilisateur: String
+        get() = prefs.getString("gn_nom_utilisateur", "") ?: ""
+        set(v) = prefs.edit().putString("gn_nom_utilisateur", v).apply()
+
+    /** Nom complet de l'observateur sélectionné comme déterminateur par défaut. */
+    var observateurDefautNom: String
+        get() = prefs.getString("gn_obs_defaut_nom", "") ?: ""
+        set(v) = prefs.edit().putString("gn_obs_defaut_nom", v).apply()
+
+    /** id_role de l'observateur sélectionné comme déterminateur par défaut. */
+    var observateurDefautId: String
+        get() = prefs.getString("gn_obs_defaut_id", "") ?: ""
+        set(v) = prefs.edit().putString("gn_obs_defaut_id", v).apply()
 
     val connexionConfiguree: Boolean
         get() = urlServeur.trim().isNotEmpty() && login.trim().isNotEmpty() && motDePasse.isNotEmpty()

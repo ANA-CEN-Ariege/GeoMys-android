@@ -14,6 +14,7 @@ import fr.ariegenature.geonat.network.GeoNatureAuth
 import fr.ariegenature.geonat.network.GeoNatureBrowse
 import fr.ariegenature.geonat.network.GeoNatureDataset
 import fr.ariegenature.geonat.network.GeoNatureListe
+import fr.ariegenature.geonat.network.GeoNatureObservateur
 import fr.ariegenature.geonat.network.GeoNatureSync
 import fr.ariegenature.geonat.store.GeoNatureConfig
 import fr.ariegenature.geonat.store.NomenclatureCache
@@ -26,6 +27,7 @@ class ConfigGeoNatureFragment : Fragment() {
     private lateinit var gnConfig: GeoNatureConfig
     private val datasets = mutableListOf<GeoNatureDataset>()
     private val listes = mutableListOf<GeoNatureListe>()
+    private val observateurs = mutableListOf<GeoNatureObservateur>()
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         _binding = FragmentConfigGeonatureBinding.inflate(inflater, container, false)
@@ -40,7 +42,8 @@ class ConfigGeoNatureFragment : Fragment() {
         binding.etUrl.setText(gnConfig.urlServeur)
         binding.etLogin.setText(gnConfig.login)
         binding.etMotDePasse.setText(gnConfig.motDePasse)
-        binding.etDataset.setText(gnConfig.idDataset)
+        // Affichage du nom du jeu sélectionné (l'id reste dans gnConfig.idDataset pour l'envoi GN).
+        binding.etDataset.setText(gnConfig.nomDataset.ifEmpty { gnConfig.idDataset })
         binding.etTaxaListe.setText(gnConfig.taxaListeId)
 
         updateStatusIndicator()
@@ -59,6 +62,11 @@ class ConfigGeoNatureFragment : Fragment() {
         binding.btnChargerListes.setOnClickListener {
             sauvegarderChamps()
             chargerListes()
+        }
+
+        binding.btnChargerObservateurs.setOnClickListener {
+            sauvegarderChamps()
+            chargerObservateurs()
         }
 
         binding.btnSyncTaxRef.setOnClickListener {
@@ -102,7 +110,7 @@ class ConfigGeoNatureFragment : Fragment() {
         gnConfig.urlServeur = binding.etUrl.text.toString()
         gnConfig.login = binding.etLogin.text.toString()
         gnConfig.motDePasse = binding.etMotDePasse.text.toString()
-        gnConfig.idDataset = binding.etDataset.text.toString()
+        // idDataset / nomDataset sont positionnés via le spinner — pas via le champ texte.
         gnConfig.taxaListeId = binding.etTaxaListe.text.toString()
     }
 
@@ -141,7 +149,8 @@ class ConfigGeoNatureFragment : Fragment() {
                     binding.spinnerDatasets.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
                         override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
                             gnConfig.idDataset = datasets[position].id.toString()
-                            binding.etDataset.setText(gnConfig.idDataset)
+                            gnConfig.nomDataset = datasets[position].nom
+                            binding.etDataset.setText(gnConfig.nomDataset)
                         }
                         override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
                     }
@@ -200,6 +209,43 @@ class ConfigGeoNatureFragment : Fragment() {
                 binding.tvErreurListes.text = e.message
             } finally {
                 binding.btnChargerListes.isEnabled = true
+            }
+        }
+    }
+
+    private fun chargerObservateurs() {
+        binding.btnChargerObservateurs.isEnabled = false
+        binding.tvErreurObservateurs.visibility = View.GONE
+        viewLifecycleOwner.lifecycleScope.launch {
+            try {
+                val result = GeoNatureBrowse.chargerObservateurs(gnConfig)
+                observateurs.clear()
+                observateurs.addAll(result)
+                if (result.isNotEmpty()) {
+                    val noms = result.map { it.nomComplet }
+                    val adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, noms)
+                    adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+                    binding.spinnerObservateurs.adapter = adapter
+                    binding.spinnerObservateurs.visibility = View.VISIBLE
+                    binding.spinnerObservateurs.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+                        override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
+                            gnConfig.observateurDefautId = observateurs[position].idRole.toString()
+                            gnConfig.observateurDefautNom = observateurs[position].nomComplet
+                        }
+                        override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
+                    }
+                    val currentId = gnConfig.observateurDefautId.toIntOrNull()
+                    val idx = observateurs.indexOfFirst { it.idRole == currentId }
+                    if (idx >= 0) binding.spinnerObservateurs.setSelection(idx)
+                } else {
+                    binding.tvErreurObservateurs.visibility = View.VISIBLE
+                    binding.tvErreurObservateurs.text = "Aucun observateur retourné par /api/users/roles"
+                }
+            } catch (e: Exception) {
+                binding.tvErreurObservateurs.visibility = View.VISIBLE
+                binding.tvErreurObservateurs.text = e.message
+            } finally {
+                binding.btnChargerObservateurs.isEnabled = true
             }
         }
     }

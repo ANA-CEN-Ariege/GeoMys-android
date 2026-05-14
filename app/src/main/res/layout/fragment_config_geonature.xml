@@ -84,13 +84,14 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
-            android:hint="id_dataset">
+            android:hint="Jeu de données">
 
             <com.google.android.material.textfield.TextInputEditText
                 android:id="@+id/et_dataset"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:inputType="number" />
+                android:clickable="false"
+                android:focusable="false" />
         </com.google.android.material.textfield.TextInputLayout>
 
         <!-- Spinner datasets -->
@@ -194,6 +195,39 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="Charger les listes disponibles" />
+
+        <!-- Observateur par défaut -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:layout_marginBottom="4dp"
+            android:text="Observateur par défaut"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
+        <Spinner
+            android:id="@+id/spinner_observateurs"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/tv_erreur_observateurs"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:textColor="@android:color/holo_red_dark"
+            android:textSize="12sp"
+            android:visibility="gone" />
+
+        <Button
+            android:id="@+id/btn_charger_observateurs"
+            style="@style/Widget.MaterialComponents.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Charger les observateurs" />
 
         <!-- TaxRef Cache -->
         <TextView

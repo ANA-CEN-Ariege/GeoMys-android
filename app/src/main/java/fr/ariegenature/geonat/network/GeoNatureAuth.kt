@@ -32,6 +32,9 @@ object GeoNatureAuth {
                     200 -> {
                         val json = JSONObject(conn.inputStream.bufferedReader().readText())
                         val token = extractToken(json)
+                        // Sauvegarde du nom complet de l'utilisateur (utilisé comme déterminateur
+                        // par défaut dans la saisie multi-taxons). Best-effort.
+                        extraireNomComplet(json)?.let { config.nomUtilisateur = it }
                         if (token != null) Pair(true, "Connexion réussie")
                         else Pair(false, "Token absent de la réponse")
                     }
@@ -78,6 +81,15 @@ object GeoNatureAuth {
 
     internal fun login(base: String, login: String, password: String): Pair<String?, Int?>? =
         loginAvecCookies(base, login, password)?.let { (token, idRole, _) -> Pair(token, idRole) }
+
+    /** Extrait le nom complet (prénom + nom) du payload JSON de login. Renvoie null si absent. */
+    private fun extraireNomComplet(json: JSONObject): String? {
+        val userJson = json.optJSONObject("user") ?: return null
+        val prenom = userJson.optString("prenom_role", "").trim()
+        val nom = userJson.optString("nom_role", "").trim()
+        val complet = listOf(prenom, nom).filter { it.isNotEmpty() }.joinToString(" ")
+        return complet.takeIf { it.isNotEmpty() }
+    }
 
     private fun extractToken(json: JSONObject): String? {
         val userJson = json.optJSONObject("user")

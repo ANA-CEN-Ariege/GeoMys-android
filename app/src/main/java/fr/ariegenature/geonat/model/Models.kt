@@ -11,7 +11,7 @@ data class PointTrace(
 )
 
 /** Un dénombrement (counting) GeoNature : 1 occurrence peut en avoir plusieurs.
- *  Chacun a sa propre tranche d'effectif + caractéristiques (sexe, stade…). */
+ *  Chacun a sa propre tranche d'effectif + caractéristiques (sexe, stade…) + médias attachés. */
 data class Denombrement(
     val id: String = UUID.randomUUID().toString(),
     var nombreMin: Int = 1,
@@ -20,6 +20,9 @@ data class Denombrement(
     var stadeVie: String? = null,
     var objDenbr: String? = null,
     var typDenbr: String? = null,
+    /** URIs locales (file:///…) des photos attachées à ce counting. Uploadées à l'envoi
+     *  via POST /api/gn_commons/media, puis référencées dans le JSON du counting. */
+    var mediaUris: List<String> = emptyList(),
 )
 
 data class Observation(
@@ -59,11 +62,9 @@ data class Observation(
     var denombrementsAdditionnels: List<Denombrement> = emptyList(),
     // ── Statut d'observation ──
     var statutObs: String? = null,
-    // ── Média attaché (1 max par obs) ──
-    /** URI locale (file://) du média copié dans le storage privé de l'app, ou null. */
-    var mediaUri: String? = null,
-    /** Type MIME du média (ex: "image/jpeg", "audio/mp4"). */
-    var mediaMimeType: String? = null,
+    /** Photos attachées au counting #0 (URIs locales). Les countings additionnels portent
+     *  leurs photos via Denombrement.mediaUris. */
+    var mediaUrisCounting0: List<String> = emptyList(),
 )
 
 data class Sortie(

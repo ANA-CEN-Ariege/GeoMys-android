@@ -690,10 +690,12 @@ class SaisieRapideFragment : Fragment() {
     private fun envoyerVersGeoNature(sortie: Sortie) {
         envoiJob = viewLifecycleOwner.lifecycleScope.launch {
             try {
-                val (nb, total, premierReleve) = GeoNatureUpload.envoyer(sortie, gnConfig)
+                val res = GeoNatureUpload.envoyer(sortie, gnConfig)
                 sortieStore.marquerEnvoyee(sortie.id)
-                var msg = "$nb/$total relevé${if (total > 1) "s" else ""} créé${if (nb > 1) "s" else ""}"
-                if (premierReleve != null) msg += " (premier #$premierReleve)"
+                var msg = "${res.nbCrees}/${res.nbTotal} relevé${if (res.nbTotal > 1) "s" else ""} créé${if (res.nbCrees > 1) "s" else ""}"
+                if (res.premierIdReleve != null) msg += " (premier #${res.premierIdReleve})"
+                if (res.mediasOK > 0) msg += "\n${res.mediasOK} média(s) uploadé(s)"
+                if (res.mediasKO > 0) msg += "\n⚠ ${res.mediasKO} média(s) échoué(s) : ${res.mediaErreurMsg ?: ""}"
                 showResult(msg, true)
             } catch (e: Exception) {
                 showResult(e.message ?: "Erreur inconnue", false)

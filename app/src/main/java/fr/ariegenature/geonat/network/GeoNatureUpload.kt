@@ -14,8 +14,26 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+/** Résultat d'un envoi (`GeoNatureUpload.envoyer`).
+ *  Les 3 premiers champs sont compatibles avec l'ancien `Triple<Int, Int, Int?>` via `component1/2/3()`. */
+data class EnvoiResult(
+    /** Nombre d'occurrences créées avec succès côté serveur. */
+    val nbCrees: Int,
+    /** Nombre total d'occurrences candidates. */
+    val nbTotal: Int,
+    /** Premier id_releve_occtax créé (pour navigation). */
+    val premierIdReleve: Int?,
+    /** Nombre de médias uploadés avec succès vers gn_commons. */
+    val mediasOK: Int = 0,
+    /** Nombre de médias dont l'upload a échoué. */
+    val mediasKO: Int = 0,
+    /** Message d'erreur du premier média en échec (debug — surfacé dans le toast). */
+    val mediaErreurMsg: String? = null,
+)
+
 object GeoNatureUpload {
 
+    private const val TAG_MEDIA = "GeoNatMedia"
     private val nomenclatureCache = mutableMapOf<String, Int>()
 
     // Correspondance code interne → label minuscule stable (même logique qu'OrniTrace)
@@ -61,7 +79,7 @@ object GeoNatureUpload {
         "6" to "autre méthode de détermination"
     )
 
-    suspend fun envoyer(sortie: Sortie, config: GeoNatureConfig): Triple<Int, Int, Int?> =
+    suspend fun envoyer(sortie: Sortie, config: GeoNatureConfig): EnvoiResult =
         withContext(Dispatchers.IO) {
             val base = config.urlServeur.trim().trimEnd('/')
             val (token, idRole, cookies) = GeoNatureAuth.loginAvecCookies(base, config.login, config.motDePasse)
@@ -80,13 +98,17 @@ object GeoNatureUpload {
             var premierIdReleve: Int? = null
             var derniereErreur: String? = null
             var dernierCodeErreur: Int = 0
+            // Compteurs média (gn_commons).
+            var mediasOK = 0
+            var mediasKO = 0
+            var mediaErreurMsg: String? = null
             // Relevés créés côté serveur pour lesquels le POST de l'occurrence a échoué.
             // Ils restent vides sur GeoNature et doivent être signalés à l'utilisateur.
             val relevesOrphelins = mutableListOf<Int>()
 
             val nomenclatures = mutableMapOf<String, Map<String, Int>>()
             val typesVoulus = listOf("METH_OBS", "STATUT_OBS", "SEXE", "STADE_VIE", "STATUT_BIO", "ETA_BIO",
-                "PREUVE_EXIST", "OBJ_DENBR", "TYP_DENBR", "OCC_COMPORTEMENT", "METH_DETERMIN")
+                "PREUVE_EXIST", "OBJ_DENBR", "TYP_DENBR", "OCC_COMPORTEMENT", "METH_DETERMIN", "TYPE_MEDIA")
 
             // Si le cache est vide, on tente une synchro automatique
             if (!NomenclatureCache.estDisponible) {
@@ -187,7 +209,54 @@ object GeoNatureUpload {
                 // Une occurrence par taxon — toutes attachées au même relevé.
                 var nbReussisGroupe = 0
                 for (obs in groupe) {
-                    val occ = buildOccurrence(obs, nomenclatures)
+                    // ── Étape A : upload des médias par counting AVANT le POST de l'occurrence ──
+                    // (chaque media uploadé renvoie un JSON Media à inclure dans le counting).
+                    val mediasParCounting = mutableListOf<List<JSONObject>>()
+                    val urisCounting0 = obs.mediaUrisCounting0
+                    val urisAdditionnels = obs.denombrementsAdditionnels.map { it.mediaUris }
+                    val besoinMedia = urisCounting0.isNotEmpty() || urisAdditionnels.any { it.isNotEmpty() }
+                    if (besoinMedia) {
+                        val (idTableLoc, errTable) = resoudreIdTableLocationCounting(base, token, cookies)
+                        // Mapping mime → label TYPE_MEDIA. Le label exact dépend de l'instance
+                        // GeoNature ; on essaie quelques variantes courantes.
+                        fun idTypeMediaPour(mime: String): Int? {
+                            val cache = nomenclatures["TYPE_MEDIA"] ?: return null
+                            val candidats = when {
+                                mime.startsWith("image/") -> listOf("photo", "photo (fichier local)", "photo (lien web)")
+                                mime.startsWith("audio/") -> listOf("audio", "audio (fichier local)", "audio (lien web)")
+                                mime.startsWith("video/") -> listOf("vidéo", "vidéo (fichier local)", "vidéo (lien web)", "video")
+                                else -> emptyList()
+                            }
+                            return candidats.firstNotNullOfOrNull { cache[it] }
+                        }
+                        val author = config.observateurDefautNom.ifEmpty {
+                            config.nomUtilisateur.ifEmpty { config.login }
+                        }
+                        fun upload(uris: List<String>): List<JSONObject> = uris.mapNotNull { uri ->
+                            if (idTableLoc == null) {
+                                mediasKO++; if (mediaErreurMsg == null) mediaErreurMsg = errTable
+                                return@mapNotNull null
+                            }
+                            // Inférence du mime depuis l'extension du fichier copié localement.
+                            val mimeHint = try {
+                                val path = android.net.Uri.parse(uri).path ?: ""
+                                java.net.URLConnection.guessContentTypeFromName(path) ?: "image/jpeg"
+                            } catch (_: Exception) { "image/jpeg" }
+                            val idTypeMedia = idTypeMediaPour(mimeHint)
+                            val (json, err) = uploaderMediaFile(
+                                base = base, token = token, cookies = cookies,
+                                mediaPath = uri, author = author, titre = obs.espece,
+                                idTableLocation = idTableLoc, idTypeMedia = idTypeMedia,
+                            )
+                            if (json != null) { mediasOK++; json }
+                            else { mediasKO++; if (mediaErreurMsg == null) mediaErreurMsg = err; null }
+                        }
+                        mediasParCounting.add(upload(urisCounting0))
+                        urisAdditionnels.forEach { mediasParCounting.add(upload(it)) }
+                    }
+
+                    // ── Étape B : construction + POST du JSON occurrence avec medias[] inclus ──
+                    val occ = buildOccurrence(obs, nomenclatures, mediasParCounting)
 
                     val urlOcc = URL("$base/api/occtax/OCCTAX/releve/$idReleve/occurrence")
                     val conn2 = urlOcc.openConnection() as java.net.HttpURLConnection
@@ -205,23 +274,6 @@ object GeoNatureUpload {
                     if (code2 in 200..299) {
                         nbCrees++
                         nbReussisGroupe++
-                        // Upload média (best-effort) : on lit l'UUID de l'occurrence dans la
-                        // réponse, puis on POST le fichier vers gn_commons. Si l'endpoint n'est
-                        // pas dispo ou que ça échoue, on n'invalide pas l'envoi de l'obs.
-                        if (obs.mediaUri.isNullOrEmpty().not()) {
-                            try {
-                                val resp2 = conn2.inputStream.bufferedReader().readText()
-                                val uuidOcc = extraireUuidOccurrence(resp2)
-                                if (uuidOcc != null) {
-                                    uploaderMedia(
-                                        base = base, token = token, cookies = cookies,
-                                        uuidOcc = uuidOcc, mediaUri = obs.mediaUri!!,
-                                        mediaMime = obs.mediaMimeType ?: "application/octet-stream",
-                                        titre = obs.espece,
-                                    )
-                                }
-                            } catch (_: Exception) { /* best-effort */ }
-                        }
                     } else {
                         val bodyErr = try { (conn2.errorStream ?: conn2.inputStream)?.bufferedReader()?.readText() } catch (_: Exception) { null }
                         dernierCodeErreur = code2
@@ -243,12 +295,16 @@ object GeoNatureUpload {
                 }
                 throw GNErreur.EnvoiEchoue(dernierCodeErreur, msg)
             }
-            Triple(nbCrees, obsValides.size, premierIdReleve)
+            EnvoiResult(
+                nbCrees = nbCrees, nbTotal = obsValides.size, premierIdReleve = premierIdReleve,
+                mediasOK = mediasOK, mediasKO = mediasKO, mediaErreurMsg = mediaErreurMsg,
+            )
         }
 
     private fun buildOccurrence(
         obs: Observation,
-        nomenclatures: Map<String, Map<String, Int>>
+        nomenclatures: Map<String, Map<String, Int>>,
+        mediasParCounting: List<List<JSONObject>> = emptyList(),
     ): JSONObject {
         // Counting #0 — issu des champs flat de Observation (saisie mono-taxon ou 1er dénombrement multi).
         val counting0 = buildCounting(
@@ -258,11 +314,12 @@ object GeoNatureUpload {
             stadeVie = obs.stadeVie,
             objDenbr = obs.objDenbr,
             typDenbr = obs.typDenbr,
+            medias = mediasParCounting.getOrNull(0) ?: emptyList(),
             nomenclatures = nomenclatures,
         )
         val countings = JSONArray().put(counting0)
         // Countings supplémentaires (mode multi-taxon).
-        for (d in obs.denombrementsAdditionnels) {
+        obs.denombrementsAdditionnels.forEachIndexed { i, d ->
             countings.put(buildCounting(
                 nombreMin = d.nombreMin,
                 nombreMax = d.nombreMax,
@@ -270,6 +327,7 @@ object GeoNatureUpload {
                 stadeVie = d.stadeVie,
                 objDenbr = d.objDenbr,
                 typDenbr = d.typDenbr,
+                medias = mediasParCounting.getOrNull(i + 1) ?: emptyList(),
                 nomenclatures = nomenclatures,
             ))
         }
@@ -317,6 +375,7 @@ object GeoNatureUpload {
         stadeVie: String?,
         objDenbr: String?,
         typDenbr: String?,
+        medias: List<JSONObject> = emptyList(),
         nomenclatures: Map<String, Map<String, Int>>,
     ): JSONObject = JSONObject().apply {
         put("count_min", nombreMin)
@@ -336,6 +395,13 @@ object GeoNatureUpload {
         typDenbr?.let { code ->
             resolverIdNomenclature(code, "TYP_DENBR", TYP_DENBR_LABELS, nomenclatures)
                 ?.let { put("id_nomenclature_type_count", it) }
+        }
+        // medias[] : objets renvoyés par POST /api/gn_commons/media — le serveur lie au counting
+        // par référence (id_media). Le pattern suit gn_mobile_occtax/TaxonRecordJsonWriter.
+        if (medias.isNotEmpty()) {
+            val arr = JSONArray()
+            medias.forEach { arr.put(it) }
+            put("medias", arr)
         }
     }
 
@@ -369,61 +435,68 @@ object GeoNatureUpload {
         return nomenclatures[type]?.get(code.lowercase())
     }
 
-    /** Extrait l'UUID de l'occurrence depuis la réponse JSON du POST .../occurrence.
-     *  GeoNature renvoie en général `unique_id_occurence_occtax` (typo historique côté serveur). */
-    private fun extraireUuidOccurrence(json: String): String? {
-        return try {
-            val o = JSONObject(json)
-            o.optString("unique_id_occurence_occtax").takeIf { it.isNotEmpty() }
-                ?: o.optJSONObject("properties")?.optString("unique_id_occurence_occtax")?.takeIf { it.isNotEmpty() }
-                ?: o.optString("unique_id_occurrence_occtax").takeIf { it.isNotEmpty() } // variante orthographe correcte
-        } catch (_: Exception) { null }
-    }
+    /** Cache de l'id_table_location pour pr_occtax.cor_counting_occtax (résolu au premier appel).
+     *  Endpoint dédié : `/api/gn_commons/get_id_table_location/pr_occtax.cor_counting_occtax`
+     *  renvoie directement un Long (cf. gn_mobile_core). */
+    @Volatile private var idTableLocationCountingCache: Long? = null
 
-    /** Cache de l'id_table_location pour t_occurrences_occtax (résolu au premier appel). */
-    @Volatile private var idTableLocationOccurrenceCache: Int? = null
-
-    private fun resoudreIdTableLocation(base: String, token: String?, cookies: String): Int? {
-        idTableLocationOccurrenceCache?.let { return it }
+    private fun resoudreIdTableLocationCounting(base: String, token: String?, cookies: String): Pair<Long?, String?> {
+        idTableLocationCountingCache?.let { return Pair(it, null) }
         return try {
-            // Endpoint standard de gn_commons. Cherche l'entrée correspondant à la table d'occurrences occtax.
-            val url = URL("$base/api/gn_commons/bib_tables_location")
+            val url = URL("$base/api/gn_commons/get_id_table_location/pr_occtax.cor_counting_occtax")
             val conn = url.openConnection() as java.net.HttpURLConnection
             conn.connectTimeout = 10000
             conn.readTimeout = 10000
             conn.setRequestProperty("Accept", "application/json")
             if (token != null) conn.setRequestProperty("Authorization", "Bearer $token")
             if (cookies.isNotEmpty()) conn.setRequestProperty("Cookie", cookies)
-            if (conn.responseCode != 200) return null
-            val text = conn.inputStream.bufferedReader().readText()
-            val array = try { JSONArray(text) } catch (_: Exception) {
-                JSONObject(text).optJSONArray("items") ?: JSONObject(text).optJSONArray("data") ?: return null
+            val code = conn.responseCode
+            if (code != 200) {
+                val body = try { (conn.errorStream ?: conn.inputStream)?.bufferedReader()?.readText()?.take(200) } catch (_: Exception) { null }
+                android.util.Log.e(TAG_MEDIA, "get_id_table_location HTTP $code : $body")
+                return Pair(null, "get_id_table_location HTTP $code")
             }
-            for (i in 0 until array.length()) {
-                val item = array.getJSONObject(i)
-                val nomTable = item.optString("nom_table_loc", "")
-                if (nomTable.equals("t_occurrences_occtax", ignoreCase = true)) {
-                    val id = item.optInt("id_table_location", -1).takeIf { it > 0 }
-                    idTableLocationOccurrenceCache = id
-                    return id
-                }
+            val text = conn.inputStream.bufferedReader().readText().trim()
+            // L'endpoint renvoie soit un nombre nu, soit un nombre entre guillemets, soit un JSON.
+            val id = text.trim('"').toLongOrNull()
+                ?: try { JSONObject(text).optLong("id_table_location", -1L).takeIf { it > 0 } } catch (_: Exception) { null }
+            if (id != null && id > 0) {
+                idTableLocationCountingCache = id
+                android.util.Log.i(TAG_MEDIA, "id_table_location pour cor_counting_occtax = $id")
+                Pair(id, null)
+            } else {
+                android.util.Log.e(TAG_MEDIA, "Réponse get_id_table_location non parsable : $text")
+                Pair(null, "Réponse get_id_table_location non parsable : ${text.take(100)}")
             }
-            null
-        } catch (_: Exception) { null }
+        } catch (e: Exception) {
+            android.util.Log.e(TAG_MEDIA, "Exception get_id_table_location", e)
+            Pair(null, "Exception : ${e.message}")
+        }
     }
 
-    /** Upload multipart d'un média vers `/api/gn_commons/medias` et liaison à l'occurrence
-     *  via `uuid_attached_row`. Best-effort : silencieux en cas d'échec (l'obs reste créée). */
-    private fun uploaderMedia(
+    /** Upload multipart d'un fichier média vers `/api/gn_commons/media` (singulier).
+     *  Retourne le JSON Media renvoyé par le serveur (à inclure dans le counting JSON), ou null si échec. */
+    private fun uploaderMediaFile(
         base: String, token: String?, cookies: String,
-        uuidOcc: String, mediaUri: String, mediaMime: String, titre: String,
-    ) {
-        val idTableLoc = resoudreIdTableLocation(base, token, cookies) ?: return
-        val file = try { java.io.File(java.net.URI(mediaUri).path) } catch (_: Exception) { return }
-        if (!file.exists() || !file.canRead()) return
+        mediaPath: String, author: String, titre: String,
+        idTableLocation: Long, idTypeMedia: Int?,
+    ): Pair<JSONObject?, String?> {
+        val file = try {
+            val parsed = android.net.Uri.parse(mediaPath)
+            val path = parsed.path ?: throw Exception("path null")
+            java.io.File(path)
+        } catch (e: Exception) {
+            android.util.Log.e(TAG_MEDIA, "URI fichier invalide : $mediaPath", e)
+            return Pair(null, "URI fichier invalide : $mediaPath")
+        }
+        if (!file.exists() || !file.canRead()) {
+            android.util.Log.e(TAG_MEDIA, "Fichier inaccessible : ${file.absolutePath}")
+            return Pair(null, "Fichier inaccessible : ${file.absolutePath}")
+        }
 
+        val mediaMime = (java.net.URLConnection.guessContentTypeFromName(file.name) ?: "image/jpeg")
         val boundary = "----GeoNatBoundary${System.currentTimeMillis()}"
-        val url = URL("$base/api/gn_commons/medias")
+        val url = URL("$base/api/gn_commons/media")
         val conn = url.openConnection() as java.net.HttpURLConnection
         conn.requestMethod = "POST"
         conn.doOutput = true
@@ -441,25 +514,37 @@ object GeoNatureUpload {
         }
 
         val prefix = StringBuilder().apply {
-            part("id_table_location", idTableLoc.toString(), this)
-            part("uuid_attached_row", uuidOcc, this)
+            part("id_table_location", idTableLocation.toString(), this)
+            idTypeMedia?.let { part("id_nomenclature_media_type", it.toString(), this) }
+            part("author", author, this)
             part("title_fr", titre, this)
             part("description_fr", "Saisie GeoNat mobile", this)
-            part("is_public", "true", this)
             append("--").append(boundary).append("\r\n")
             append("Content-Disposition: form-data; name=\"file\"; filename=\"").append(file.name).append("\"\r\n")
             append("Content-Type: ").append(mediaMime).append("\r\n\r\n")
         }
         val suffix = "\r\n--$boundary--\r\n"
 
-        try {
+        return try {
             conn.outputStream.use { out ->
                 out.write(prefix.toString().toByteArray(Charsets.UTF_8))
                 file.inputStream().use { it.copyTo(out) }
                 out.write(suffix.toByteArray(Charsets.UTF_8))
             }
-            conn.responseCode // déclenche la requête ; on ignore le code
-        } catch (_: Exception) { /* best-effort */ }
+            val code = conn.responseCode
+            if (code in 200..299) {
+                val body = conn.inputStream.bufferedReader().readText()
+                android.util.Log.i(TAG_MEDIA, "POST /api/gn_commons/media → $code OK (${file.length()} octets)")
+                Pair(try { JSONObject(body) } catch (_: Exception) { JSONObject() }, null)
+            } else {
+                val body = try { (conn.errorStream ?: conn.inputStream)?.bufferedReader()?.readText() } catch (_: Exception) { null }
+                android.util.Log.e(TAG_MEDIA, "POST /api/gn_commons/media → HTTP $code : $body")
+                Pair(null, "HTTP $code : ${body?.take(200) ?: "(corps vide)"}")
+            }
+        } catch (e: Exception) {
+            android.util.Log.e(TAG_MEDIA, "Exception upload média", e)
+            Pair(null, "Exception : ${e.message}")
+        }
     }
 
     private fun parseErreur(code: Int, body: String?): String {

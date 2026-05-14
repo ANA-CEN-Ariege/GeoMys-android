@@ -227,7 +227,7 @@ object GeoNatureSync {
                 }
 
                 val typesVoulus = setOf("METH_OBS", "STATUT_OBS", "SEXE", "STADE_VIE", "STATUT_BIO", "ETA_BIO",
-                                        "PREUVE_EXIST", "OBJ_DENBR", "TYP_DENBR", "OCC_COMPORTEMENT", "METH_DETERMIN")
+                                        "PREUVE_EXIST", "OBJ_DENBR", "TYP_DENBR", "OCC_COMPORTEMENT", "METH_DETERMIN", "TYPE_MEDIA")
                 val result = mutableMapOf<String, List<NomValeur>>()
 
                 for (i in 0 until array.length()) {

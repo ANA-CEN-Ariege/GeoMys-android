@@ -71,9 +71,8 @@ class SaisieObservationFragment : Fragment() {
         var determinateur: String = "",
         var notes: String = "",
         var cdNomManuel: String = "",
-        // ── Média joint ──
-        var mediaUri: String = "",
-        var mediaMimeType: String = "",
+        // ── Médias par counting ──
+        var mediaUrisCounting0: List<String> = emptyList(),
         val existingId: String? = null
     )
 
@@ -231,12 +230,10 @@ class SaisieObservationFragment : Fragment() {
             putString("statutBio",           obs.statutBio)
             putString("methDetermin",        obs.methDetermin)
             putString("determinateur",       obs.determinateur)
-            // Préremplissage déterminateur par défaut = login GeoNature courant.
-            putString("determinateurDefaut", gnConfig.login)
+            // Même chaîne de fallback que la création d'obs (helper determinateurParDefaut).
+            putString("determinateurDefaut", determinateurParDefaut())
             putString("preuveExist",         obs.preuveExist)
             putString("notes",               obs.notes)
-            putString("mediaUri",            obs.mediaUri)
-            putString("mediaMimeType",       obs.mediaMimeType)
         }
         findNavController().navigate(R.id.action_saisie_to_caracterisation, bundle)
     }
@@ -253,6 +250,7 @@ class SaisieObservationFragment : Fragment() {
             stadeVie = obs.stadeVie.ifEmpty { null },
             objDenbr = obs.objDenbr.ifEmpty { null },
             typDenbr = obs.typDenbr.ifEmpty { null },
+            mediaUris = obs.mediaUrisCounting0,
         )
         val tous = listOf(counting0) + obs.denombrementsAdditionnels
         val json = com.google.gson.Gson().toJson(tous)
@@ -287,8 +285,6 @@ class SaisieObservationFragment : Fragment() {
             handler("determinateur")      { o, v -> o.determinateur = v }
             handler("preuveExist")        { o, v -> o.preuveExist = v }
             handler("notes")              { o, v -> o.notes = v }
-            handler("mediaUri")           { o, v -> o.mediaUri = v }
-            handler("mediaMimeType")      { o, v -> o.mediaMimeType = v }
             // Legacy : ObservationDetailsFragment (saisie rapide) renvoie aussi sexe/stade/etc.
             // mais cet écran n'est plus déclenché depuis la saisie multi-taxons — on garde quand
             // même les handlers au cas où.
@@ -317,6 +313,7 @@ class SaisieObservationFragment : Fragment() {
                 obs.stadeVie = c0.stadeVie ?: ""
                 obs.objDenbr = c0.objDenbr ?: ""
                 obs.typDenbr = c0.typDenbr ?: ""
+                obs.mediaUrisCounting0 = c0.mediaUris
                 obs.denombrementsAdditionnels = if (liste.size > 1) liste.drop(1) else emptyList()
                 rafraichirListe()
             }
@@ -413,6 +410,7 @@ class SaisieObservationFragment : Fragment() {
             espece = espece,
             cdNom = statut.cdNom,
             nombre = 1,
+            determinateur = determinateurParDefaut(),
         ))
         binding.etEspece.setText("")
         taxrefLookup.reset()
@@ -432,12 +430,21 @@ class SaisieObservationFragment : Fragment() {
             taxon = taxonSelector.taxon,
             espece = especeAffichee,
             cdNom = cdNom,
-            nombre = 1
+            nombre = 1,
+            determinateur = determinateurParDefaut(),
         ))
         binding.etEspece.setText("")
         taxrefLookup.reset()
         rafraichirListe()
     }
+
+    /** Déterminateur préfilé à la création d'une nouvelle obs (et utilisé comme défaut
+     *  dans l'écran caractérisation) : observateur sélectionné en config, sinon nom du user
+     *  GeoNature connecté, sinon login en dernier recours. */
+    private fun determinateurParDefaut(): String =
+        gnConfig.observateurDefautNom.ifEmpty {
+            gnConfig.nomUtilisateur.ifEmpty { gnConfig.login }
+        }
 
     private fun updateBtnEnregistrerState() {
         binding.btnEnregistrer.isEnabled = pendingObs.isNotEmpty()
@@ -504,8 +511,7 @@ class SaisieObservationFragment : Fragment() {
                     comportement              = obs.comportement.ifEmpty { null },
                     methDetermin              = obs.methDetermin.ifEmpty { null },
                     determinateur             = obs.determinateur.ifEmpty { null },
-                    mediaUri                  = obs.mediaUri.ifEmpty { null },
-                    mediaMimeType             = obs.mediaMimeType.ifEmpty { null },
+                    mediaUrisCounting0        = obs.mediaUrisCounting0,
                 ))
             } else {
                 traceViewModel.ajouterObservation(Observation(
@@ -530,8 +536,7 @@ class SaisieObservationFragment : Fragment() {
                     comportement              = obs.comportement.ifEmpty { null },
                     methDetermin              = obs.methDetermin.ifEmpty { null },
                     determinateur             = obs.determinateur.ifEmpty { null },
-                    mediaUri                  = obs.mediaUri.ifEmpty { null },
-                    mediaMimeType             = obs.mediaMimeType.ifEmpty { null },
+                    mediaUrisCounting0        = obs.mediaUrisCounting0,
                     releveId                  = releveIdBatch,
                 ))
             }

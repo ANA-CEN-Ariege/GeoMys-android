@@ -374,9 +374,8 @@ class SaisieObservationFragment : Fragment() {
             Taxon.INVERTEBRES -> "Autres invertébrés"
             Taxon.PLANTE      -> "Plantes"
         }
-        binding.tilEspece.hint = ""
-        binding.tilEspece.placeholderText = if (rechercheNomSci) "Nom scientifique ($nomGroupe)"
-                                            else                "Espèce observée ($nomGroupe)"
+        binding.tilEspece.hint = if (rechercheNomSci) "Nom scientifique ($nomGroupe)"
+                                 else                "Espèce observée ($nomGroupe)"
     }
 
     private fun setupAutocomplete() {

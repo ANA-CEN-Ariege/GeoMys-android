@@ -220,6 +220,7 @@ class SaisieRapideFragment : Fragment() {
             taxRefStatut = null
             taxrefLookup.reset()
             refreshAutocompleteAdapter()
+            updateEspeceHint()
         }
         taxonSelector.init()
     }

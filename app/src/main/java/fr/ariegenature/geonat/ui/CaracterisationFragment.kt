@@ -52,7 +52,10 @@ class CaracterisationFragment : Fragment() {
 
         // ── Champs additionnels (relevé + occurrence) ──
         val gnConfig = GeoNatureConfig(requireContext())
+        val idDataset = gnConfig.idDataset.toIntOrNull()
+        val idListeTaxons = gnConfig.taxaListeId.toIntOrNull()
         val allDefs = AdditionalFieldsRenderer.fromJson(gnConfig.additionalFieldsOcctaxJson)
+            .filter { it.visiblePour(idDataset, idListeTaxons) }
         val defsReleve = allDefs.filter { it.appliqueA(AdditionalFieldsObject.RELEVE) }
         val defsOcc = allDefs.filter { it.appliqueA(AdditionalFieldsObject.OCCURRENCE) }
         val gson = Gson()

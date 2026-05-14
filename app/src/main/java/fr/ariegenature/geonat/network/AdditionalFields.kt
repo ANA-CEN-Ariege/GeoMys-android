@@ -32,10 +32,24 @@ data class AdditionalFieldDef(
     val defaultValue: String? = null,
     /** Codes des objets concernés (OCCTAX_RELEVE / OCCTAX_OCCURRENCE / OCCTAX_DENOMBREMENT). */
     val objectsCode: List<String> = emptyList(),
+    /** Liste des id_dataset où ce champ s'applique. Vide = tous les datasets. */
+    val datasetsIds: List<Int> = emptyList(),
+    /** id_list UsersHub auquel ce champ se restreint (null = aucune restriction). */
+    val idList: Int? = null,
     /** Nom du widget tel que renvoyé par le serveur (utile pour debug si type non supporté). */
     val widgetServeur: String = "",
 ) {
     fun appliqueA(codeObjet: String): Boolean = objectsCode.contains(codeObjet)
+
+    /** Vrai si ce champ doit s'afficher pour le dataset et la liste de taxons donnés.
+     *  - datasets vide → applies à tous les datasets
+     *  - idList null  → applies à tous les taxons */
+    fun visiblePour(idDataset: Int?, idListeTaxons: Int?): Boolean {
+        if (datasetsIds.isNotEmpty() && idDataset != null && idDataset !in datasetsIds) return false
+        if (datasetsIds.isNotEmpty() && idDataset == null) return false
+        if (idList != null && idList != idListeTaxons) return false
+        return true
+    }
 }
 
 object AdditionalFieldsApi {
@@ -102,6 +116,20 @@ object AdditionalFieldsApi {
                                 ?.takeIf { it.isNotEmpty() }?.let(objectsCode::add)
                         }
                     }
+                    // Restrictions par dataset : tableau d'objets {id_dataset, ...} ou d'ids nus.
+                    val datasetsIds = mutableListOf<Int>()
+                    item.optJSONArray("datasets")?.let { arr ->
+                        for (j in 0 until arr.length()) {
+                            val v = arr.opt(j)
+                            when (v) {
+                                is Int -> datasetsIds.add(v)
+                                is Long -> datasetsIds.add(v.toInt())
+                                is JSONObject -> v.optInt("id_dataset", -1).takeIf { it > 0 }?.let(datasetsIds::add)
+                            }
+                        }
+                    }
+                    // Restriction par liste UsersHub de taxons.
+                    val idList = item.optInt("id_list", -1).takeIf { it > 0 }
                     result.add(AdditionalFieldDef(
                         idField = idField,
                         fieldName = fieldName,
@@ -112,6 +140,8 @@ object AdditionalFieldsApi {
                         description = item.optString("description", "").takeIf { it.isNotEmpty() },
                         defaultValue = item.optString("default_value", "").takeIf { it.isNotEmpty() },
                         objectsCode = objectsCode,
+                        datasetsIds = datasetsIds,
+                        idList = idList,
                         widgetServeur = widgetName,
                     ))
                 }

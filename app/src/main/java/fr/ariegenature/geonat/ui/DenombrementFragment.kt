@@ -89,9 +89,15 @@ class DenombrementFragment : Fragment() {
         regno = r
         sexeActif = sexeActifPourTaxon(taxon)
         // Filtre les définitions OCCTAX_DENOMBREMENT depuis le cache config (peut être vide).
+        // Restreint aussi par dataset courant + liste de taxons configurée pour éviter qu'un champ
+        // dédié à un autre type d'obs (ex : "Recouvrement litière" en list flore) ne s'affiche
+        // pour un dénombrement d'oiseau.
         val gnConfig = GeoNatureConfig(requireContext())
+        val idDataset = gnConfig.idDataset.toIntOrNull()
+        val idListeTaxons = gnConfig.taxaListeId.toIntOrNull()
         defsCounting = AdditionalFieldsRenderer.fromJson(gnConfig.additionalFieldsOcctaxJson)
             .filter { it.appliqueA(AdditionalFieldsObject.COUNTING) }
+            .filter { it.visiblePour(idDataset, idListeTaxons) }
 
         val type = object : TypeToken<List<Denombrement>>() {}.type
         val initial: List<Denombrement> = try { gson.fromJson(denombrementsJson, type) ?: emptyList() } catch (_: Exception) { emptyList() }

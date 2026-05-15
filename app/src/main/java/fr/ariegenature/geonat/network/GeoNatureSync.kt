@@ -159,6 +159,9 @@ object GeoNatureSync {
         // les suggestions sans rescanner l'ensemble du cache à chaque switch de taxon.
         val indexTaxon = construireIndexTaxon(groupeMap, groupe1Map, regneMap)
         TaxRefCache.setIndexParTaxon(indexTaxon)
+        // Mémorise l'id_liste qui vient d'être synchronisé — utilisé par l'écran de config
+        // pour avertir l'utilisateur si la liste sélectionnée diffère du cache courant.
+        TaxRefCache.listeSynchroniseeId = listeId.toString()
         val nbO = cdNomsOiseaux.size
         val nbM = cdNomsMammiferes.size
         val nbR = cdNomsReptiles.size

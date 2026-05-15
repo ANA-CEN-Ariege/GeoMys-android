@@ -46,6 +46,7 @@ object TaxRefCache {
     // Petites clés conservées en SharedPreferences.
     private const val KEY_VERSION = "gn_taxref_version_cache"
     private const val KEY_COMPTES = "gn_taxref_comptes_v1"
+    private const val KEY_LISTE_SYNC = "gn_taxref_liste_sync"
 
     // Gros fichiers stockés sur disque dans filesDir/taxref/.
     // SharedPreferences (XML lu/écrit en bloc) tronque ou échoue silencieusement
@@ -278,7 +279,7 @@ object TaxRefCache {
     fun vider() {
         listOf(FILE_CACHE, FILE_GROUPES, FILE_GROUPES1, FILE_REGNES, FILE_INDEX_TAXON)
             .forEach { runCatching { fichier(it).delete() } }
-        prefs.edit().remove(KEY_VERSION).remove(KEY_COMPTES).apply()
+        prefs.edit().remove(KEY_VERSION).remove(KEY_COMPTES).remove(KEY_LISTE_SYNC).apply()
         mem = null
         memGroupes = null
         memGroupes1 = null
@@ -291,6 +292,12 @@ object TaxRefCache {
     var versionSauvegardee: String?
         get() = prefs.getString(KEY_VERSION, null)
         set(v) = prefs.edit().putString(KEY_VERSION, v).apply()
+
+    /** id_liste UsersHub utilisé lors de la dernière synchro réussie — sert à détecter
+     *  un changement de liste dans la config sans re-sync (cache obsolète). */
+    var listeSynchroniseeId: String?
+        get() = prefs.getString(KEY_LISTE_SYNC, null)
+        set(v) = prefs.edit().putString(KEY_LISTE_SYNC, v).apply()
 
     fun normaliser(nom: String): String =
         nom.trim().lowercase()

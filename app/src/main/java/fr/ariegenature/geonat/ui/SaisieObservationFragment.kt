@@ -28,6 +28,7 @@ import fr.ariegenature.geonat.ui.saisie.SpeechToTextHelper
 import fr.ariegenature.geonat.ui.saisie.TaxRefLookupController
 import fr.ariegenature.geonat.ui.saisie.TaxonSelector
 import fr.ariegenature.geonat.ui.saisie.createSpeciesAutocompleteAdapter
+import fr.ariegenature.geonat.ui.saisie.filtrerBoutonsGroupesNonVides
 import fr.ariegenature.geonat.ui.saisie.taxonIcon
 import kotlinx.coroutines.*
 
@@ -138,8 +139,7 @@ class SaisieObservationFragment : Fragment() {
             taxonInitial = Taxon.OISEAU
         }
 
-        taxonSelector = TaxonSelector(
-            requireContext(),
+        val boutonsTaxons = filtrerBoutonsGroupesNonVides(
             mapOf(
                 Taxon.OISEAU      to binding.btnTaxonOiseau,
                 Taxon.MAMMIFERE   to binding.btnTaxonMammifere,
@@ -151,8 +151,16 @@ class SaisieObservationFragment : Fragment() {
                 Taxon.MOLLUSQUE   to binding.btnTaxonMollusque,
                 Taxon.INVERTEBRES to binding.btnTaxonInvertebres,
                 Taxon.PLANTE      to binding.btnTaxonPlante,
-            ),
-            initial = taxonInitial,
+            )
+        )
+        // Si le taxon initial n'a aucun cd_nom chargé (groupe masqué), on bascule sur
+        // le premier groupe disponible pour éviter une sélection sur un bouton GONE.
+        val taxonDepart = if (taxonInitial in boutonsTaxons.keys) taxonInitial
+            else boutonsTaxons.keys.firstOrNull() ?: taxonInitial
+        taxonSelector = TaxonSelector(
+            requireContext(),
+            boutonsTaxons,
+            initial = taxonDepart,
         ) { onTaxonChanged() }
         taxonSelector.init()
 

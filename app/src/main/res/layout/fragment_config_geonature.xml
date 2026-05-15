@@ -173,6 +173,22 @@
             android:textStyle="bold" />
 
         <com.google.android.material.textfield.TextInputLayout
+            android:id="@+id/til_listes"
+            style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:hint="Rechercher une liste"
+            android:visibility="gone">
+
+            <com.google.android.material.textfield.MaterialAutoCompleteTextView
+                android:id="@+id/ac_listes"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="text" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <com.google.android.material.textfield.TextInputLayout
             android:id="@+id/til_taxa_liste"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -185,13 +201,6 @@
                 android:layout_height="wrap_content"
                 android:inputType="number" />
         </com.google.android.material.textfield.TextInputLayout>
-
-        <Spinner
-            android:id="@+id/spinner_listes"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:visibility="gone" />
 
         <TextView
             android:id="@+id/tv_erreur_listes"
@@ -247,6 +256,16 @@
             android:textSize="16sp"
             android:textStyle="bold" />
 
+        <TextView
+            android:id="@+id/tv_avertissement_liste"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="6dp"
+            android:textColor="@android:color/holo_orange_dark"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            android:visibility="gone" />
+
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -293,6 +312,13 @@
             android:layout_marginTop="4dp"
             android:textColor="?attr/colorControlNormal"
             android:textSize="13sp" />
+
+        <LinearLayout
+            android:id="@+id/ll_groupes_details"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:orientation="vertical" />
 
         <TextView
             android:id="@+id/tv_tax_ref_version"

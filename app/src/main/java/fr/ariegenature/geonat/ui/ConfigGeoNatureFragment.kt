@@ -1,6 +1,8 @@
 package fr.ariegenature.geonat.ui
 
 import android.os.Bundle
+import android.text.Editable
+import android.text.TextWatcher
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -10,6 +12,8 @@ import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import fr.ariegenature.geonat.R
 import fr.ariegenature.geonat.databinding.FragmentConfigGeonatureBinding
+import fr.ariegenature.geonat.databinding.ItemConfigGroupeBinding
+import fr.ariegenature.geonat.model.Taxon
 import fr.ariegenature.geonat.network.AdditionalFieldsApi
 import fr.ariegenature.geonat.network.GeoNatureAuth
 import fr.ariegenature.geonat.network.GeoNatureBrowse
@@ -54,6 +58,16 @@ class ConfigGeoNatureFragment : Fragment() {
 
         updateStatusIndicator()
         updateCacheInfo()
+        updateAvertissementListe()
+
+        binding.etTaxaListe.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: Editable?) {
+                gnConfig.taxaListeId = s?.toString() ?: ""
+                updateAvertissementListe()
+            }
+        })
 
         binding.btnTesterConnexion.setOnClickListener {
             sauvegarderChamps()
@@ -76,6 +90,7 @@ class ConfigGeoNatureFragment : Fragment() {
         binding.btnViderCache.setOnClickListener {
             TaxRefCache.vider()
             updateCacheInfo()
+            updateAvertissementListe()
         }
 
         binding.btnFermer.setOnClickListener {
@@ -203,23 +218,27 @@ class ConfigGeoNatureFragment : Fragment() {
         listes.clear()
         listes.addAll(result)
         val noms = result.map { "${it.nom} (${it.id})" }
-        val adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, noms)
-        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-        binding.spinnerListes.adapter = adapter
-        binding.spinnerListes.visibility = View.VISIBLE
+        val adapter = ArrayAdapter(requireContext(), android.R.layout.simple_dropdown_item_1line, noms)
+        binding.acListes.setAdapter(adapter)
+        binding.tilListes.visibility = View.VISIBLE
         binding.tilTaxaListe.visibility = View.GONE
-        binding.spinnerListes.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
-                gnConfig.taxaListeId = listes[position].id.toString()
+        binding.acListes.threshold = 1
+        binding.acListes.setOnItemClickListener { _, _, position, _ ->
+            val labelChoisi = adapter.getItem(position) ?: return@setOnItemClickListener
+            val idx = noms.indexOf(labelChoisi)
+            if (idx >= 0) {
+                gnConfig.taxaListeId = listes[idx].id.toString()
                 binding.etTaxaListe.setText(gnConfig.taxaListeId)
+                updateAvertissementListe()
             }
-            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
         }
+        
         val currentId = gnConfig.taxaListeId.toIntOrNull()
         val idx = listes.indexOfFirst { it.id == currentId }
-        if (idx >= 0) binding.spinnerListes.setSelection(idx)
-        else if (result.size == 1) {
-            binding.spinnerListes.setSelection(0)
+        if (idx >= 0) {
+            binding.acListes.setText(noms[idx], false)
+        } else if (result.size == 1) {
+            binding.acListes.setText(noms[0], false)
             gnConfig.taxaListeId = result[0].id.toString()
             binding.etTaxaListe.setText(gnConfig.taxaListeId)
         }
@@ -334,6 +353,22 @@ class ConfigGeoNatureFragment : Fragment() {
                 if (nbTaxons > 0 && nbNom == 0) append("\n⚠ Nomenclatures : $msgNom")
             }
             updateCacheInfo()
+            updateAvertissementListe()
+        }
+    }
+
+    /** Affiche un avertissement quand la liste sélectionnée diffère de celle qui a été
+     *  utilisée lors de la dernière synchro — le cache TaxRef est alors obsolète et
+     *  les filtres par groupe (saisie) ne reflètent pas la liste actuelle. */
+    private fun updateAvertissementListe() {
+        val configuree = binding.etTaxaListe.text?.toString()?.trim().orEmpty()
+        val synchronisee = TaxRefCache.listeSynchroniseeId?.trim().orEmpty()
+        val cacheNonVide = TaxRefCache.count > 0
+        val differe = configuree.isNotEmpty() && cacheNonVide && configuree != synchronisee
+        binding.tvAvertissementListe.visibility = if (differe) View.VISIBLE else View.GONE
+        if (differe) {
+            binding.tvAvertissementListe.text =
+                "⚠ Liste de taxons modifiée (cache : liste $synchronisee) — synchroniser pour mettre à jour les taxons."
         }
     }
 
@@ -351,35 +386,52 @@ class ConfigGeoNatureFragment : Fragment() {
     private fun updateCacheInfo() {
         val count = TaxRefCache.count
         val comptes = TaxRefCache.comptesGroupes
+
+        binding.llGroupesDetails.removeAllViews()
+
         val taxrefText = when {
             count == 0 -> "Cache vide"
-            comptes.isNotEmpty() -> buildString {
-                append("$count taxons en cache")
-                (comptes["Oiseaux"] ?: 0).let { if (it > 0) append(" · $it oiseaux") }
-                (comptes["Mammifères"] ?: 0).let { if (it > 0) append(" · $it mammifères") }
-                (comptes["Reptiles"] ?: 0).let { if (it > 0) append(" · $it reptiles") }
-                (comptes["Amphibiens"] ?: 0).let { if (it > 0) append(" · $it batraciens") }
-                (comptes["Poissons"] ?: 0).let { if (it > 0) append(" · $it poissons") }
-                (comptes["Insectes"] ?: 0).let { if (it > 0) append(" · $it insectes") }
+            comptes.isNotEmpty() -> {
+                ajouterLigneGroupe("Oiseaux", Taxon.OISEAU, comptes["Oiseaux"] ?: 0)
+                ajouterLigneGroupe("Mammifères", Taxon.MAMMIFERE, comptes["Mammifères"] ?: 0)
+                ajouterLigneGroupe("Reptiles", Taxon.REPTILE, comptes["Reptiles"] ?: 0)
+                ajouterLigneGroupe("Amphibiens", Taxon.BATRACIEN, comptes["Amphibiens"] ?: 0)
+                ajouterLigneGroupe("Poissons", Taxon.POISSON, comptes["Poissons"] ?: 0)
+                ajouterLigneGroupe("Insectes", Taxon.INSECTE, comptes["Insectes"] ?: 0)
+
                 val regnes = TaxRefCache.tousLesRegnes()
                 val nbFonge = regnes.values.count { it == "Fungi" }
-                if (nbFonge > 0) append(" · $nbFonge fonge")
+                if (nbFonge > 0) ajouterLigneGroupe("Fonge", Taxon.FONGE, nbFonge)
+
                 val groupes1 = TaxRefCache.tousLesGroupes1()
                 val nbMol = groupes1.values.count { it == "Mollusques" }
-                if (nbMol > 0) append(" · $nbMol mollusques")
+                if (nbMol > 0) ajouterLigneGroupe("Mollusques", Taxon.MOLLUSQUE, nbMol)
+
                 val nbInv = maxOf(0, regnes.values.count { it == "Animalia" } -
-                    (comptes["Oiseaux"] ?: 0) - (comptes["Mammifères"] ?: 0) -
-                    (comptes["Reptiles"] ?: 0) - (comptes["Amphibiens"] ?: 0) -
-                    (comptes["Poissons"] ?: 0) - (comptes["Insectes"] ?: 0) - nbMol)
-                if (nbInv > 0) append(" · $nbInv autres invertébrés")
-                // Plantes : somme des comptes par group2_inpn botanique (cohérent avec sync + iOS).
+                        (comptes["Oiseaux"] ?: 0) - (comptes["Mammifères"] ?: 0) -
+                        (comptes["Reptiles"] ?: 0) - (comptes["Amphibiens"] ?: 0) -
+                        (comptes["Poissons"] ?: 0) - (comptes["Insectes"] ?: 0) - nbMol)
+                if (nbInv > 0) ajouterLigneGroupe("Invertébrés", Taxon.INVERTEBRES, nbInv)
+
                 val nbPlantes = NomenclatureCache.GROUPES_BOTANIQUES.sumOf { comptes[it] ?: 0 }
-                if (nbPlantes > 0) append(" · $nbPlantes plantes")
+                if (nbPlantes > 0) ajouterLigneGroupe("Plantes", Taxon.PLANTE, nbPlantes)
+
+                "$count taxons en cache"
             }
             else -> "$count taxons en cache"
         }
         binding.tvCacheInfo.text = taxrefText
         binding.btnViderCache.isEnabled = count > 0
+    }
+
+    private fun ajouterLigneGroupe(label: String, taxon: Taxon, count: Int) {
+        if (count == 0) return
+        val itemBinding = ItemConfigGroupeBinding.inflate(layoutInflater, binding.llGroupesDetails, true)
+        itemBinding.tvGroupeNom.text = "$label ($count)"
+        itemBinding.btnVoirTaxons.setOnClickListener {
+            val bundle = Bundle().apply { putString("taxonName", taxon.name) }
+            findNavController().navigate(R.id.action_config_to_taxons, bundle)
+        }
     }
 
     override fun onDestroyView() {

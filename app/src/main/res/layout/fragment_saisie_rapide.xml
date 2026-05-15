@@ -341,14 +341,31 @@
                 android:textSize="12sp"
                 android:visibility="gone" />
 
-            <!-- Bouton détails par défaut -->
-            <Button
-                android:id="@+id/btn_details_defaut"
-                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            <!-- Boutons détails par défaut : caractérisation + dénombrement -->
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
-                android:text="Sexe, stade de vie, technique…" />
+                android:orientation="horizontal">
+
+                <Button
+                    android:id="@+id/btn_caracterisation_defaut"
+                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="4dp"
+                    android:layout_weight="1"
+                    android:text="Caractérisation" />
+
+                <Button
+                    android:id="@+id/btn_denombrement_defaut"
+                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="4dp"
+                    android:layout_weight="1"
+                    android:text="Dénombrement" />
+            </LinearLayout>
 
             <TextView
                 android:id="@+id/tv_details_indicator"

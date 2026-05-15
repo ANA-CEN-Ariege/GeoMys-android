@@ -19,9 +19,12 @@ import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 import fr.ariegenature.geonat.R
 import fr.ariegenature.geonat.TaxRefLocal
 import fr.ariegenature.geonat.databinding.FragmentSaisieRapideBinding
+import fr.ariegenature.geonat.model.Denombrement
 import fr.ariegenature.geonat.model.Observation
 import fr.ariegenature.geonat.model.Taxon
 import fr.ariegenature.geonat.model.Sortie
@@ -34,6 +37,7 @@ import fr.ariegenature.geonat.ui.saisie.SpeechToTextHelper
 import fr.ariegenature.geonat.ui.saisie.TaxRefLookupController
 import fr.ariegenature.geonat.ui.saisie.TaxonSelector
 import fr.ariegenature.geonat.ui.saisie.createSpeciesAutocompleteAdapter
+import fr.ariegenature.geonat.ui.saisie.filtrerBoutonsGroupesNonVides
 import fr.ariegenature.geonat.ui.saisie.taxonCouleur
 import fr.ariegenature.geonat.ui.saisie.taxonIcon
 import fr.ariegenature.geonat.location.LocationForegroundService
@@ -74,19 +78,28 @@ class SaisieRapideFragment : Fragment() {
     private lateinit var speech: SpeechToTextHelper
     private lateinit var taxrefLookup: TaxRefLookupController
 
-    // Détails par défaut
+    // Détails par défaut — caractérisation
+    private var statutObs = ""
     private var notes = ""
-    private var sexe = ""
-    private var stadeVie = ""
     private var techniqueObs = ""
     private var statutBio = ""
     private var etaBio = ""
     private var preuveExist = ""
-    private var objDenbr = ""
-    private var typDenbr = ""
     private var comportement = ""
     private var methDetermin = ""
     private var determinateur = ""
+    private var additionalFieldsReleve: Map<String, String> = emptyMap()
+    private var additionalFieldsOccurrence: Map<String, String> = emptyMap()
+
+    // Détails par défaut — dénombrement (counting #0 + éventuels countings additionnels)
+    private var sexe = ""
+    private var stadeVie = ""
+    private var objDenbr = ""
+    private var typDenbr = ""
+    private var nombreMax: Int? = null
+    private var mediaUrisCounting0: List<String> = emptyList()
+    private var additionalFieldsCounting0: Map<String, String> = emptyMap()
+    private var denombrementsAdditionnels: List<Denombrement> = emptyList()
 
     // État
     private var modeActif = false
@@ -199,8 +212,7 @@ class SaisieRapideFragment : Fragment() {
     // ─── Sélecteur taxon ──────────────────────────────────────────────────────
 
     private fun setupTaxonSelector() {
-        taxonSelector = TaxonSelector(
-            requireContext(),
+        val boutons = filtrerBoutonsGroupesNonVides(
             mapOf(
                 Taxon.OISEAU      to binding.btnTaxonOiseau,
                 Taxon.MAMMIFERE   to binding.btnTaxonMammifere,
@@ -212,7 +224,12 @@ class SaisieRapideFragment : Fragment() {
                 Taxon.MOLLUSQUE   to binding.btnTaxonMollusque,
                 Taxon.INVERTEBRES to binding.btnTaxonInvertebres,
                 Taxon.PLANTE      to binding.btnTaxonPlante,
-            ),
+            )
+        )
+        if (taxon !in boutons.keys) taxon = boutons.keys.firstOrNull() ?: taxon
+        taxonSelector = TaxonSelector(
+            requireContext(),
+            boutons,
             initial = taxon,
         ) { t ->
             taxon = t
@@ -309,29 +326,8 @@ class SaisieRapideFragment : Fragment() {
         // navigateUp() — on quitte directement sans dialog parasite.
         binding.btnRetour.setOnClickListener { showConfirmTerminer() }
 
-        binding.btnDetailsDefaut.setOnClickListener {
-            val bundle = Bundle().apply {
-                putString("taxon", taxon.name)
-                putString("groupe2Inpn", null)
-                putString("notes", notes)
-                putString("sexe", sexe)
-                putString("stadeVie", stadeVie)
-                putString("techniqueObs", techniqueObs)
-                putString("statutBio", statutBio)
-                putString("etaBio", etaBio)
-                putString("preuveExist", preuveExist)
-                putString("objDenbr", objDenbr)
-                putString("typDenbr", typDenbr)
-                putString("comportement", comportement)
-                putString("methDetermin", methDetermin)
-                putString("determinateur", determinateur)
-                putString("cdNomManuel", cdNomManuel)
-                putBoolean("taxrefNonTrouve", false)
-                putDouble("latitude", 0.0)
-                putDouble("longitude", 0.0)
-            }
-            findNavController().navigate(R.id.action_saisieRapide_to_details, bundle)
-        }
+        binding.btnCaracterisationDefaut.setOnClickListener { ouvrirCaracterisationDefaut() }
+        binding.btnDenombrementDefaut.setOnClickListener { ouvrirDenombrementDefaut() }
 
         binding.btnDemarrer.setOnClickListener { demarrer() }
         binding.btnAnnulerSaisie.setOnClickListener { findNavController().navigateUp() }
@@ -364,27 +360,132 @@ class SaisieRapideFragment : Fragment() {
     override fun onViewStateRestored(savedInstanceState: Bundle?) {
         super.onViewStateRestored(savedInstanceState)
         findNavController().currentBackStackEntry?.savedStateHandle?.apply {
-            getLiveData<String>("notes").observe(viewLifecycleOwner)         { notes = it; updateDetailsIndicator() }
-            getLiveData<String>("sexe").observe(viewLifecycleOwner)          { sexe = it; updateDetailsIndicator() }
-            getLiveData<String>("stadeVie").observe(viewLifecycleOwner)      { stadeVie = it; updateDetailsIndicator() }
+            // ─── Retour de CaracterisationFragment ───
+            getLiveData<String>("statutObs").observe(viewLifecycleOwner)     { statutObs = it; updateDetailsIndicator() }
             getLiveData<String>("techniqueObs").observe(viewLifecycleOwner)  { techniqueObs = it; updateDetailsIndicator() }
-            getLiveData<String>("statutBio").observe(viewLifecycleOwner)     { statutBio = it; updateDetailsIndicator() }
             getLiveData<String>("etaBio").observe(viewLifecycleOwner)        { etaBio = it; updateDetailsIndicator() }
-            getLiveData<String>("preuveExist").observe(viewLifecycleOwner)   { preuveExist = it; updateDetailsIndicator() }
-            getLiveData<String>("objDenbr").observe(viewLifecycleOwner)      { objDenbr = it; updateDetailsIndicator() }
-            getLiveData<String>("typDenbr").observe(viewLifecycleOwner)      { typDenbr = it; updateDetailsIndicator() }
             getLiveData<String>("comportement").observe(viewLifecycleOwner)  { comportement = it; updateDetailsIndicator() }
+            getLiveData<String>("statutBio").observe(viewLifecycleOwner)     { statutBio = it; updateDetailsIndicator() }
             getLiveData<String>("methDetermin").observe(viewLifecycleOwner)  { methDetermin = it; updateDetailsIndicator() }
+            getLiveData<String>("preuveExist").observe(viewLifecycleOwner)   { preuveExist = it; updateDetailsIndicator() }
             getLiveData<String>("determinateur").observe(viewLifecycleOwner) { determinateur = it }
-            getLiveData<String>("cdNomManuel").observe(viewLifecycleOwner)   { cdNomManuel = it; updateDemarrerState() }
+            getLiveData<String>("notes").observe(viewLifecycleOwner)         { notes = it; updateDetailsIndicator() }
+            val mapType = object : TypeToken<Map<String, String>>() {}.type
+            getLiveData<String>("addReleveJson").observe(viewLifecycleOwner) { json ->
+                additionalFieldsReleve = try {
+                    Gson().fromJson<Map<String, String>?>(json, mapType) ?: emptyMap()
+                } catch (_: Exception) { emptyMap() }
+            }
+            getLiveData<String>("addOccJson").observe(viewLifecycleOwner) { json ->
+                additionalFieldsOccurrence = try {
+                    Gson().fromJson<Map<String, String>?>(json, mapType) ?: emptyMap()
+                } catch (_: Exception) { emptyMap() }
+            }
+            // ─── Retour de DenombrementFragment ───
+            // counting #0 (= 1ʳᵉ entrée de la liste) → champs flat de la saisie rapide.
+            // Les éventuels countings additionnels sont mémorisés pour être réémis tels quels
+            // à chaque "Enregistrer ici".
+            val listType = object : TypeToken<List<Denombrement>>() {}.type
+            getLiveData<String>("denombrementsJson").observe(viewLifecycleOwner) { json ->
+                val tous: List<Denombrement> = try {
+                    Gson().fromJson<List<Denombrement>?>(json, listType) ?: emptyList()
+                } catch (_: Exception) { emptyList() }
+                if (tous.isNotEmpty()) {
+                    val c0 = tous[0]
+                    nombre = c0.nombreMin
+                    nombreMax = if (c0.nombreMax != c0.nombreMin) c0.nombreMax else null
+                    sexe = c0.sexe.orEmpty()
+                    stadeVie = c0.stadeVie.orEmpty()
+                    objDenbr = c0.objDenbr.orEmpty()
+                    typDenbr = c0.typDenbr.orEmpty()
+                    mediaUrisCounting0 = c0.mediaUris
+                    additionalFieldsCounting0 = c0.additionalFields
+                    denombrementsAdditionnels = tous.drop(1)
+                } else {
+                    denombrementsAdditionnels = emptyList()
+                }
+                updateDetailsIndicator()
+            }
         }
+    }
+
+    private fun determinateurParDefaut(): String =
+        gnConfig.observateurDefautNom.ifEmpty {
+            gnConfig.nomUtilisateur.ifEmpty { gnConfig.login }
+        }
+
+    /** cd_nom courant — résolu via TaxRef si l'autocomplete a trouvé une correspondance,
+     *  sinon parse le champ saisi à la main. Null tant qu'aucune espèce n'est identifiée. */
+    private fun cdNomCourant(): Int? =
+        (taxRefStatut as? TaxRefStatut.Trouve)?.cdNom ?: cdNomManuel.trim().toIntOrNull()
+
+    /** group2_inpn courant — déduit du cd_nom si connu, sinon fallback par taxon
+     *  (alignement avec la logique de SaisieObservationFragment). */
+    private fun groupe2InpnDefaut(): String? =
+        cdNomCourant()?.let { TaxRefCache.tousLesGroupes()[it.toString()] }
+            ?: when (taxon) {
+                Taxon.MAMMIFERE   -> "Mammifères"
+                Taxon.REPTILE     -> "Reptiles"
+                Taxon.BATRACIEN   -> "Amphibiens"
+                Taxon.POISSON     -> "Poissons"
+                Taxon.INSECTE     -> "Insectes"
+                Taxon.PLANTE,
+                Taxon.FONGE,
+                Taxon.MOLLUSQUE,
+                Taxon.INVERTEBRES -> null
+                else              -> "Oiseaux"
+            }
+
+    private fun ouvrirCaracterisationDefaut() {
+        val gson = Gson()
+        val bundle = Bundle().apply {
+            putString("taxon",               taxon.name)
+            putString("groupe2Inpn",         groupe2InpnDefaut())
+            putInt("cdNom",                  cdNomCourant() ?: -1)
+            putString("statutObs",           statutObs)
+            putString("techniqueObs",        techniqueObs)
+            putString("etaBio",              etaBio)
+            putString("comportement",        comportement)
+            putString("statutBio",           statutBio)
+            putString("methDetermin",        methDetermin)
+            putString("determinateur",       determinateur)
+            putString("determinateurDefaut", determinateurParDefaut())
+            putString("preuveExist",         preuveExist)
+            putString("notes",               notes)
+            putString("addReleveJson",       gson.toJson(additionalFieldsReleve))
+            putString("addOccJson",          gson.toJson(additionalFieldsOccurrence))
+        }
+        findNavController().navigate(R.id.action_saisieRapide_to_caracterisation, bundle)
+    }
+
+    private fun ouvrirDenombrementDefaut() {
+        val counting0 = Denombrement(
+            nombreMin = nombre,
+            nombreMax = nombreMax ?: nombre,
+            sexe = sexe.ifEmpty { null },
+            stadeVie = stadeVie.ifEmpty { null },
+            objDenbr = objDenbr.ifEmpty { null },
+            typDenbr = typDenbr.ifEmpty { null },
+            mediaUris = mediaUrisCounting0,
+            additionalFields = additionalFieldsCounting0,
+        )
+        val tous = listOf(counting0) + denombrementsAdditionnels
+        val bundle = Bundle().apply {
+            putString("taxon",             taxon.name)
+            putString("groupe2Inpn",       groupe2InpnDefaut())
+            putInt("cdNom",                cdNomCourant() ?: -1)
+            putString("espece",            binding.etEspece.text.toString().ifEmpty { taxon.nomGroupe() })
+            putString("denombrementsJson", Gson().toJson(tous))
+        }
+        findNavController().navigate(R.id.action_saisieRapide_to_denombrement, bundle)
     }
 
     private fun updateDetailsIndicator() {
         val hasDetails = notes.isNotEmpty() || sexe.isNotEmpty() || stadeVie.isNotEmpty() ||
             techniqueObs.isNotEmpty() || statutBio.isNotEmpty() || etaBio.isNotEmpty() ||
             preuveExist.isNotEmpty() || objDenbr.isNotEmpty() || typDenbr.isNotEmpty() ||
-            comportement.isNotEmpty() || methDetermin.isNotEmpty()
+            comportement.isNotEmpty() || methDetermin.isNotEmpty() || statutObs.isNotEmpty() ||
+            denombrementsAdditionnels.isNotEmpty()
         val chips = listOfNotNull(
             sexe.ifEmpty { null },
             stadeVie.ifEmpty { null },
@@ -451,6 +552,7 @@ class SaisieRapideFragment : Fragment() {
             longitude     = lon,
             notes         = notes,
             nombre        = nombre,
+            nombreMax     = nombreMax,
             sexe          = sexe.ifEmpty { null },
             stadeVie      = stadeVie.ifEmpty { null },
             techniqueObs  = techniqueObs.ifEmpty { null },
@@ -461,7 +563,13 @@ class SaisieRapideFragment : Fragment() {
             typDenbr      = typDenbr.ifEmpty { null },
             comportement  = comportement.ifEmpty { null },
             methDetermin  = methDetermin.ifEmpty { null },
-            determinateur = determinateur.ifEmpty { null }
+            determinateur = determinateur.ifEmpty { null },
+            statutObs     = statutObs.ifEmpty { null },
+            mediaUrisCounting0          = mediaUrisCounting0,
+            additionalFieldsCounting0   = additionalFieldsCounting0,
+            additionalFieldsReleve      = additionalFieldsReleve,
+            additionalFieldsOccurrence  = additionalFieldsOccurrence,
+            denombrementsAdditionnels   = denombrementsAdditionnels,
         )
         traceViewModel.ajouterObservation(obs)
         derniereObsId = obs.id

@@ -1,9 +1,12 @@
 package fr.ariegenature.geonat.ui.saisie
 
 import android.content.Context
+import android.view.View
 import androidx.core.content.ContextCompat
+import com.google.android.material.button.MaterialButton
 import fr.ariegenature.geonat.R
 import fr.ariegenature.geonat.model.Taxon
+import fr.ariegenature.geonat.store.TaxRefCache
 
 /** Couleurs canoniques des 9 taxons, partagées entre tous les écrans de saisie. */
 fun taxonCouleur(context: Context, taxon: Taxon): Int = ContextCompat.getColor(context, when (taxon) {
@@ -32,4 +35,22 @@ fun taxonIcon(taxon: Taxon): Int = when (taxon) {
     Taxon.MOLLUSQUE   -> R.drawable.mollusques
     Taxon.INVERTEBRES -> R.drawable.araignees
     Taxon.PLANTE      -> R.drawable.fleurs
+}
+
+/** Masque les boutons des groupes vides (aucun cd_nom chargé pour ce taxon) et
+ *  retourne la sous-map des boutons restants — utilisée par les écrans de saisie
+ *  pour ne proposer que les groupes effectivement présents dans la liste chargée. */
+fun filtrerBoutonsGroupesNonVides(
+    buttons: Map<Taxon, MaterialButton>
+): Map<Taxon, MaterialButton> {
+    val res = LinkedHashMap<Taxon, MaterialButton>()
+    for ((t, btn) in buttons) {
+        if (!TaxRefCache.indexParTaxon(t).isNullOrEmpty()) {
+            btn.visibility = View.VISIBLE
+            res[t] = btn
+        } else {
+            btn.visibility = View.GONE
+        }
+    }
+    return res
 }

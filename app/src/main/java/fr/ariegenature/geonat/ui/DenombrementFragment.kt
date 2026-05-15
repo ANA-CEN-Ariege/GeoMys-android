@@ -25,6 +25,7 @@ import fr.ariegenature.geonat.network.AdditionalFieldDef
 import fr.ariegenature.geonat.network.AdditionalFieldsObject
 import fr.ariegenature.geonat.store.GeoNatureConfig
 import fr.ariegenature.geonat.store.NomenclatureCache
+import fr.ariegenature.geonat.store.TaxRefCache
 import fr.ariegenature.geonat.ui.saisie.AdditionalFieldsRenderer
 import java.io.File
 
@@ -89,15 +90,15 @@ class DenombrementFragment : Fragment() {
         regno = r
         sexeActif = sexeActifPourTaxon(taxon)
         // Filtre les définitions OCCTAX_DENOMBREMENT depuis le cache config (peut être vide).
-        // Restreint aussi par dataset courant + liste de taxons configurée pour éviter qu'un champ
-        // dédié à un autre type d'obs (ex : "Recouvrement litière" en list flore) ne s'affiche
-        // pour un dénombrement d'oiseau.
+        // Restreint par dataset courant + listes UsersHub du cd_nom observé (info récupérée au
+        // sync TaxRef) : un champ avec id_list = X ne s'affiche que si le taxon appartient à X.
         val gnConfig = GeoNatureConfig(requireContext())
         val idDataset = gnConfig.idDataset.toIntOrNull()
-        val idListeTaxons = gnConfig.taxaListeId.toIntOrNull()
+        val cdNom = (a?.getInt("cdNom", -1) ?: -1).takeIf { it > 0 }
+        val listesDuTaxon = cdNom?.let { TaxRefCache.listesPourCdNom(it) } ?: emptyList()
         defsCounting = AdditionalFieldsRenderer.fromJson(gnConfig.additionalFieldsOcctaxJson)
             .filter { it.appliqueA(AdditionalFieldsObject.COUNTING) }
-            .filter { it.visiblePour(idDataset, idListeTaxons) }
+            .filter { it.visiblePour(idDataset, listesDuTaxon) }
 
         val type = object : TypeToken<List<Denombrement>>() {}.type
         val initial: List<Denombrement> = try { gson.fromJson(denombrementsJson, type) ?: emptyList() } catch (_: Exception) { emptyList() }

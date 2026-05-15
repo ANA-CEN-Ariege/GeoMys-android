@@ -45,6 +45,7 @@ object GeoNatureSync {
         val groupeMap = mutableMapOf<Int, String>()
         val groupe1Map = mutableMapOf<Int, String>()
         val regneMap = mutableMapOf<Int, String>()
+        val listesParCdNom = mutableMapOf<Int, List<Int>>()
         val cdNomsOiseaux    = mutableSetOf<Int>()
         val cdNomsMammiferes = mutableSetOf<Int>()
         val cdNomsReptiles   = mutableSetOf<Int>()
@@ -120,6 +121,15 @@ object GeoNatureSync {
                     }
                     if (groupe1.isNotEmpty()) groupe1Map[cdNom] = groupe1
                     if (regne.isNotEmpty()) regneMap[cdNom] = regne
+                    // Stockage des listes UsersHub auxquelles ce cd_nom appartient.
+                    // Sert au filtrage des additional_fields restreints à un id_list.
+                    item.optJSONArray("listes")?.let { arr ->
+                        val ids = mutableListOf<Int>()
+                        for (j in 0 until arr.length()) {
+                            arr.optJSONObject(j)?.optInt("id_liste", -1)?.takeIf { it > 0 }?.let(ids::add)
+                        }
+                        if (ids.isNotEmpty()) listesParCdNom[cdNom] = ids
+                    }
                     when (groupe) {
                         "Oiseaux"    -> cdNomsOiseaux.add(cdNom)
                         "Mammifères" -> cdNomsMammiferes.add(cdNom)
@@ -143,6 +153,7 @@ object GeoNatureSync {
         if (entrees.isNotEmpty()) TaxRefCache.ajouter(entrees)
         if (groupeMap.isNotEmpty()) TaxRefCache.ajouterGroupes(groupeMap)
         if (groupe1Map.isNotEmpty() || regneMap.isNotEmpty()) TaxRefCache.ajouterGroupes1etRegnes(groupe1Map, regneMap)
+        if (listesParCdNom.isNotEmpty()) TaxRefCache.ajouterListesParCdNom(listesParCdNom)
 
         // Index pré-calculé Taxon → cdNoms : permet à l'autocomplétion de servir
         // les suggestions sans rescanner l'ensemble du cache à chaque switch de taxon.

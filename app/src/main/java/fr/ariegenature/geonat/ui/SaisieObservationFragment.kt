@@ -227,6 +227,7 @@ class SaisieObservationFragment : Fragment() {
         val bundle = Bundle().apply {
             putString("taxon",               obs.taxon.name)
             putString("groupe2Inpn",         groupe2InpnPour(obs))
+            putInt("cdNom",                  obs.cdNom ?: -1)
             putString("statutObs",           obs.statutObs)
             putString("techniqueObs",        obs.techniqueObs)
             putString("etaBio",              obs.etaBio)
@@ -265,6 +266,7 @@ class SaisieObservationFragment : Fragment() {
         val bundle = Bundle().apply {
             putString("taxon",             obs.taxon.name)
             putString("groupe2Inpn",       groupe2InpnPour(obs))
+            putInt("cdNom",                obs.cdNom ?: -1)
             putString("espece",            obs.espece)
             putString("denombrementsJson", json)
         }

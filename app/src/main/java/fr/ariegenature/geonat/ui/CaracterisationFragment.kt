@@ -13,6 +13,7 @@ import fr.ariegenature.geonat.model.Taxon
 import fr.ariegenature.geonat.network.AdditionalFieldsObject
 import fr.ariegenature.geonat.store.GeoNatureConfig
 import fr.ariegenature.geonat.store.NomenclatureCache
+import fr.ariegenature.geonat.store.TaxRefCache
 import fr.ariegenature.geonat.ui.saisie.AdditionalFieldsRenderer
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
@@ -53,9 +54,10 @@ class CaracterisationFragment : Fragment() {
         // ── Champs additionnels (relevé + occurrence) ──
         val gnConfig = GeoNatureConfig(requireContext())
         val idDataset = gnConfig.idDataset.toIntOrNull()
-        val idListeTaxons = gnConfig.taxaListeId.toIntOrNull()
+        val cdNom = (a?.getInt("cdNom", -1) ?: -1).takeIf { it > 0 }
+        val listesDuTaxon = cdNom?.let { TaxRefCache.listesPourCdNom(it) } ?: emptyList()
         val allDefs = AdditionalFieldsRenderer.fromJson(gnConfig.additionalFieldsOcctaxJson)
-            .filter { it.visiblePour(idDataset, idListeTaxons) }
+            .filter { it.visiblePour(idDataset, listesDuTaxon) }
         val defsReleve = allDefs.filter { it.appliqueA(AdditionalFieldsObject.RELEVE) }
         val defsOcc = allDefs.filter { it.appliqueA(AdditionalFieldsObject.OCCURRENCE) }
         val gson = Gson()

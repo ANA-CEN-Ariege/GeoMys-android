@@ -41,13 +41,19 @@ data class AdditionalFieldDef(
 ) {
     fun appliqueA(codeObjet: String): Boolean = objectsCode.contains(codeObjet)
 
-    /** Vrai si ce champ doit s'afficher pour le dataset et la liste de taxons donnés.
+    /** Vrai si ce champ doit s'afficher pour le dataset courant et le taxon observé.
+     *  - `idDataset` : id du dataset courant (gnConfig.idDataset)
+     *  - `listesDuTaxon` : id_liste UsersHub auxquelles appartient le cd_nom observé
+     *    (récupéré via TaxRefCache.listesPourCdNom(cdNom))
+     *
+     *  Règles :
      *  - datasets vide → applies à tous les datasets
-     *  - idList null  → applies à tous les taxons */
-    fun visiblePour(idDataset: Int?, idListeTaxons: Int?): Boolean {
+     *  - idList null  → applies à tous les taxons (pas de restriction par liste)
+     *  - sinon : il faut que le taxon appartienne à cette liste */
+    fun visiblePour(idDataset: Int?, listesDuTaxon: Collection<Int>): Boolean {
         if (datasetsIds.isNotEmpty() && idDataset != null && idDataset !in datasetsIds) return false
         if (datasetsIds.isNotEmpty() && idDataset == null) return false
-        if (idList != null && idList != idListeTaxons) return false
+        if (idList != null && idList !in listesDuTaxon) return false
         return true
     }
 }

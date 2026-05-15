@@ -55,6 +55,7 @@ object TaxRefCache {
     private const val FILE_GROUPES1 = "groupes1_v1.json"
     private const val FILE_REGNES = "regnes_v1.json"
     private const val FILE_INDEX_TAXON = "index_taxon_v1.json"
+    private const val FILE_LISTES = "listes_v1.json"
 
     // Anciennes clés SharedPreferences — purgées à l'init pour libérer l'espace
     // après migration vers le stockage fichier.
@@ -75,6 +76,7 @@ object TaxRefCache {
     @Volatile private var memGroupes1: Map<String, String>? = null
     @Volatile private var memRegnes: Map<String, String>? = null
     @Volatile private var memIndexTaxon: Map<String, List<Int>>? = null
+    @Volatile private var memListes: Map<String, List<Int>>? = null
     @Volatile private var memEntreesParCdNom: Map<Int, TaxRefEntry>? = null
     @Volatile private var memVernsParCdNom: Map<Int, List<String>>? = null
 
@@ -213,6 +215,29 @@ object TaxRefCache {
 
     fun tousLesGroupes1(): Map<String, String> = chargerGroupes1()
     fun tousLesRegnes(): Map<String, String> = chargerRegnes()
+
+    /** Stocke les listes UsersHub auxquelles chaque cd_nom appartient.
+     *  Sert au filtrage des additional_fields (un champ avec `id_list = X` ne s'affiche que
+     *  si le taxon observé est dans la liste X). */
+    fun ajouterListesParCdNom(listes: Map<Int, List<Int>>) {
+        if (listes.isEmpty()) return
+        val existing = chargerListesParCdNom().toMutableMap()
+        listes.forEach { (cd, l) -> if (l.isNotEmpty()) existing[cd.toString()] = l }
+        ecrireFichier(FILE_LISTES, gson.toJson(existing))
+        memListes = existing
+    }
+
+    /** Retourne les id_liste UsersHub auxquelles le cd_nom appartient (vide si inconnu). */
+    fun listesPourCdNom(cdNom: Int): List<Int> = chargerListesParCdNom()[cdNom.toString()] ?: emptyList()
+
+    private fun chargerListesParCdNom(): Map<String, List<Int>> {
+        memListes?.let { return it }
+        val json = lireFichier(FILE_LISTES) ?: return emptyMap()
+        return try {
+            val type = object : TypeToken<Map<String, List<Int>>>() {}.type
+            (gson.fromJson(json, type) ?: emptyMap<String, List<Int>>()).also { memListes = it }
+        } catch (e: Exception) { emptyMap() }
+    }
 
     private fun chargerGroupes1(): Map<String, String> {
         memGroupes1?.let { return it }

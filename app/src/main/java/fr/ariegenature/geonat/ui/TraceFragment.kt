@@ -467,6 +467,7 @@ class TraceFragment : Fragment() {
                 if (res.premierIdReleve != null) msg += " (premier #${res.premierIdReleve})"
                 if (res.mediasOK > 0) msg += "\n${res.mediasOK} média(s) uploadé(s)"
                 if (res.mediasKO > 0) msg += "\n⚠ ${res.mediasKO} média(s) échoué(s) : ${res.mediaErreurMsg ?: ""}"
+                if (res.relevesOrphelins.isNotEmpty()) msg += "\n⚠ ${res.relevesOrphelins.size} relevé(s) vide(s) côté GeoNature (id : ${res.relevesOrphelins.joinToString(", ")}), à supprimer manuellement."
                 showResult(msg, true)
             } catch (e: Exception) {
                 showResult(e.message ?: "Erreur inconnue", false)

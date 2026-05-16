@@ -29,6 +29,10 @@ data class EnvoiResult(
     val mediasKO: Int = 0,
     /** Message d'erreur du premier média en échec (debug — surfacé dans le toast). */
     val mediaErreurMsg: String? = null,
+    /** Relevés créés côté serveur dont toutes les occurrences ont échoué ET dont le DELETE
+     *  de rollback a aussi échoué — restent vides côté GeoNature et doivent être supprimés
+     *  manuellement. Vide en cas de succès complet ou de rollback réussi. */
+    val relevesOrphelins: List<Int> = emptyList(),
 )
 
 object GeoNatureUpload {
@@ -212,6 +216,9 @@ object GeoNatureUpload {
 
                 // Une occurrence par taxon — toutes attachées au même relevé.
                 var nbReussisGroupe = 0
+                // Ids des médias gn_commons uploadés pour ce groupe : sert au rollback si
+                // toutes les occurrences du groupe échouent (pattern gn_mobile_occtax officiel).
+                val mediaIdsGroupe = mutableListOf<Int>()
                 for (obs in groupe) {
                     // ── Étape A : upload des médias par counting AVANT le POST de l'occurrence ──
                     // (chaque media uploadé renvoie un JSON Media à inclure dans le counting).
@@ -252,7 +259,14 @@ object GeoNatureUpload {
                                 mediaPath = uri, author = author, titre = obs.espece,
                                 idTableLocation = idTableLoc, idTypeMedia = idTypeMedia,
                             )
-                            if (json != null) { mediasOK++; json }
+                            if (json != null) {
+                                mediasOK++
+                                // Capture l'id_media pour rollback éventuel (cf. mediaIdsGroupe).
+                                val idMedia = json.optInt("id_media", -1).takeIf { it > 0 }
+                                    ?: json.optInt("id", -1).takeIf { it > 0 }
+                                if (idMedia != null) mediaIdsGroupe.add(idMedia)
+                                json
+                            }
                             else { mediasKO++; if (mediaErreurMsg == null) mediaErreurMsg = err; null }
                         }
                         mediasParCounting.add(upload(urisCounting0))
@@ -285,8 +299,19 @@ object GeoNatureUpload {
                     }
                 }
 
-                // Relevé orphelin = créé côté serveur mais aucune occurrence n'a abouti.
-                if (nbReussisGroupe == 0) relevesOrphelins.add(idReleve)
+                // Rollback : si aucune occurrence n'a abouti, on supprime le relevé côté
+                // serveur (et les médias déjà uploadés pour ce groupe) pour ne pas laisser
+                // un relevé vide dans Occtax. Pattern repris de gn_mobile_occtax officiel
+                // (SynchronizeObservationRecordRepositoryImpl). Si le DELETE échoue lui-même
+                // (réseau, droit, etc.), on signale le relevé comme vraiment orphelin.
+                if (nbReussisGroupe == 0) {
+                    val mediasSupprimes = mediaIdsGroupe.count {
+                        tenterSupprimerMedia(base, token, cookies, it)
+                    }
+                    mediasOK -= mediasSupprimes
+                    val releveSupprime = tenterSupprimerReleve(base, token, cookies, idReleve)
+                    if (!releveSupprime) relevesOrphelins.add(idReleve)
+                }
             }
 
             if (nbCrees == 0) {
@@ -302,6 +327,7 @@ object GeoNatureUpload {
             EnvoiResult(
                 nbCrees = nbCrees, nbTotal = obsValides.size, premierIdReleve = premierIdReleve,
                 mediasOK = mediasOK, mediasKO = mediasKO, mediaErreurMsg = mediaErreurMsg,
+                relevesOrphelins = relevesOrphelins.toList(),
             )
         }
 
@@ -573,6 +599,46 @@ object GeoNatureUpload {
             android.util.Log.e(TAG_MEDIA, "Exception upload média", e)
             Pair(null, "Exception : ${e.message}")
         }
+    }
+
+    /** DELETE /api/occtax/OCCTAX/releve/{id} — rollback d'un relevé créé dont aucune
+     *  occurrence n'a abouti. Retourne true si le serveur a accepté la suppression
+     *  (HTTP 2xx ou 404 = déjà absent). Pattern gn_mobile_occtax officiel. */
+    private fun tenterSupprimerReleve(
+        base: String, token: String?, cookies: String, idReleve: Int,
+    ): Boolean = try {
+        val url = URL("$base/api/occtax/OCCTAX/releve/$idReleve")
+        val conn = url.openConnection() as java.net.HttpURLConnection
+        conn.requestMethod = "DELETE"
+        conn.connectTimeout = 15000
+        conn.readTimeout = 15000
+        conn.setRequestProperty("Accept", "application/json")
+        if (token != null) conn.setRequestProperty("Authorization", "Bearer $token")
+        if (cookies.isNotEmpty()) conn.setRequestProperty("Cookie", cookies)
+        val code = conn.responseCode
+        code in 200..299 || code == 404
+    } catch (_: Exception) {
+        false
+    }
+
+    /** DELETE /api/gn_commons/media/{id} — rollback d'un média uploadé sur gn_commons
+     *  quand le relevé/occurrence parent est lui-même rollback. Évite des médias orphelins
+     *  côté serveur. */
+    private fun tenterSupprimerMedia(
+        base: String, token: String?, cookies: String, idMedia: Int,
+    ): Boolean = try {
+        val url = URL("$base/api/gn_commons/media/$idMedia")
+        val conn = url.openConnection() as java.net.HttpURLConnection
+        conn.requestMethod = "DELETE"
+        conn.connectTimeout = 15000
+        conn.readTimeout = 15000
+        conn.setRequestProperty("Accept", "application/json")
+        if (token != null) conn.setRequestProperty("Authorization", "Bearer $token")
+        if (cookies.isNotEmpty()) conn.setRequestProperty("Cookie", cookies)
+        val code = conn.responseCode
+        code in 200..299 || code == 404
+    } catch (_: Exception) {
+        false
     }
 
     private fun parseErreur(code: Int, body: String?): String {

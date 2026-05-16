@@ -81,6 +81,17 @@
         android:src="@drawable/ic_map"
         android:visibility="gone" />
 
+    <!-- Boussole (sous le bouton fond de carte) — toggle rotation carte -->
+    <fr.ariegenature.geonat.ui.CompassView
+        android:id="@+id/compass"
+        android:layout_width="44dp"
+        android:layout_height="44dp"
+        android:layout_gravity="top|end"
+        android:layout_marginTop="68dp"
+        android:layout_marginEnd="12dp"
+        android:elevation="4dp"
+        android:visibility="gone" />
+
     <!-- ═══════════════════════════════════════════
          PANNEAU CONFIGURATION (état initial)
          ═══════════════════════════════════════════ -->

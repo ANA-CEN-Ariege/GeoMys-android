@@ -3,6 +3,10 @@ package fr.ariegenature.geonat.ui
 import android.Manifest
 import android.content.pm.PackageManager
 import android.content.res.ColorStateList
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.os.Bundle
 import android.os.VibrationEffect
 import android.os.Vibrator
@@ -108,6 +112,56 @@ class SaisieRapideFragment : Fragment() {
     private var suivrePosition = true
     private var derniereObsId: String? = null
     private var snackJob: Job? = null
+    /** false (défaut) = carte figée nord en haut du téléphone.
+     *  true = carte tournée par la boussole pour garder le nord en haut de l'écran. */
+    private var carteSuitBoussole = false
+
+    private var sensorManager: SensorManager? = null
+    private val gravity = FloatArray(3)
+    private val geomagnetic = FloatArray(3)
+    private var gravityReady = false
+    private var geomagneticReady = false
+
+    private val compassListener = object : SensorEventListener {
+        override fun onSensorChanged(event: SensorEvent) {
+            val azimuth: Float = when (event.sensor.type) {
+                Sensor.TYPE_ROTATION_VECTOR -> {
+                    val R = FloatArray(9)
+                    SensorManager.getRotationMatrixFromVector(R, event.values)
+                    val o = FloatArray(3)
+                    SensorManager.getOrientation(R, o)
+                    Math.toDegrees(o[0].toDouble()).toFloat()
+                }
+                Sensor.TYPE_ACCELEROMETER -> {
+                    System.arraycopy(event.values, 0, gravity, 0, 3)
+                    gravityReady = true
+                    return
+                }
+                Sensor.TYPE_MAGNETIC_FIELD -> {
+                    System.arraycopy(event.values, 0, geomagnetic, 0, 3)
+                    geomagneticReady = true
+                    if (!gravityReady) return
+                    val R = FloatArray(9)
+                    if (!SensorManager.getRotationMatrix(R, null, gravity, geomagnetic)) return
+                    val o = FloatArray(3)
+                    SensorManager.getOrientation(R, o)
+                    Math.toDegrees(o[0].toDouble()).toFloat()
+                }
+                else -> return
+            }
+            val compass = _binding?.compass ?: return
+            compass.post { compass.setAzimuth(-azimuth) }
+            // Mode boussole : la carte compense la rotation du téléphone — voir TraceFragment.
+            if (carteSuitBoussole) {
+                val map = _binding?.map ?: return
+                map.post {
+                    map.setMapOrientation(-azimuth)
+                    map.invalidate()
+                }
+            }
+        }
+        override fun onAccuracyChanged(sensor: Sensor, accuracy: Int) {}
+    }
     private var fondCarte = FondCarte.OSM
 
     // Carte
@@ -202,6 +256,16 @@ class SaisieRapideFragment : Fragment() {
             fondCarte = fondCarte.suivant()
             binding.map.setTileSource(tileSourcePour(fondCarte))
             binding.map.invalidate()
+        }
+
+        binding.compass.setOnClickListener {
+            carteSuitBoussole = !carteSuitBoussole
+            binding.compass.setActif(carteSuitBoussole)
+            if (!carteSuitBoussole) {
+                // Retour au mode figé : on remet la carte nord en haut.
+                binding.map.setMapOrientation(0f)
+                binding.map.invalidate()
+            }
         }
     }
 
@@ -649,6 +713,8 @@ class SaisieRapideFragment : Fragment() {
         // Carte et bouton fond de carte cachés tant qu'on n'a pas démarré la saisie
         binding.map.visibility           = if (modeActif) View.VISIBLE else View.GONE
         binding.btnFondCarte.visibility  = if (modeActif) View.VISIBLE else View.GONE
+        binding.compass.visibility       = if (modeActif) View.VISIBLE else View.GONE
+        if (modeActif) binding.compass.setActif(carteSuitBoussole)
         if (!modeActif) {
             snackJob?.cancel()
             binding.snackConfirmation.visibility = View.GONE
@@ -748,6 +814,7 @@ class SaisieRapideFragment : Fragment() {
         // Carte plein écran, overlays et panneaux à l'écart des barres système.
         binding.btnRetour.applyStatusBarMargin()
         binding.btnFondCarte.applyStatusBarMargin()
+        binding.compass.applyStatusBarMargin()
         binding.tvCompteur.applyStatusBarMargin()
         binding.panneauConfig.applySystemBarInsets(includeIme = true)
         binding.panneauActif.applyNavBarInset()
@@ -759,12 +826,30 @@ class SaisieRapideFragment : Fragment() {
         if (ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
             locationOverlay?.enableMyLocation()
         }
+        // Boussole : préférence au rotation_vector, fallback accel + magnéto. Même
+        // logique que TraceFragment.
+        val sm = requireContext().getSystemService(SensorManager::class.java)
+        sensorManager = sm
+        val rotVec = sm.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
+        if (rotVec != null) {
+            sm.registerListener(compassListener, rotVec, SensorManager.SENSOR_DELAY_UI)
+        } else {
+            sm.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)?.let {
+                sm.registerListener(compassListener, it, SensorManager.SENSOR_DELAY_UI)
+            }
+            sm.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD)?.let {
+                sm.registerListener(compassListener, it, SensorManager.SENSOR_DELAY_UI)
+            }
+        }
     }
 
     override fun onPause() {
         super.onPause()
         binding.map.onPause()
         locationOverlay?.disableMyLocation()
+        sensorManager?.unregisterListener(compassListener)
+        gravityReady = false
+        geomagneticReady = false
     }
 
     override fun onDestroyView() {

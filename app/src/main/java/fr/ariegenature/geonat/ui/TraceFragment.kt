@@ -51,6 +51,9 @@ class TraceFragment : Fragment() {
     private var modePositionnement = false
     private var obsARepositionner: Observation? = null
     private var fondCarte = FondCarte.OSM
+    /** false (défaut) = carte figée nord en haut du téléphone.
+     *  true = carte tournée par la boussole pour garder le nord en haut de l'écran. */
+    private var carteSuitBoussole = false
 
     private var savedMapCenter: GeoPoint? = null
     private var savedMapZoom: Double = 18.0
@@ -99,6 +102,16 @@ class TraceFragment : Fragment() {
             }
             val compass = _binding?.compass ?: return
             compass.post { compass.setAzimuth(-azimuth) }
+            // Mode boussole : la carte compense la rotation du téléphone pour garder le
+            // nord en haut de l'écran. setMapOrientation prend une rotation horaire en
+            // degrés ; on passe -azimuth comme pour l'aiguille de la boussole.
+            if (carteSuitBoussole) {
+                val map = _binding?.map ?: return
+                map.post {
+                    map.setMapOrientation(-azimuth)
+                    map.invalidate()
+                }
+            }
         }
         override fun onAccuracyChanged(sensor: Sensor, accuracy: Int) {}
     }
@@ -156,6 +169,10 @@ class TraceFragment : Fragment() {
         binding.map.controller.setCenter(positionCourante ?: savedMapCenter ?: GeoPoint(46.5, 2.5))
         suivrePosition = true
         binding.btnCentrer.setImageResource(R.drawable.ic_location_on)
+        // Restaure l'état du mode boussole (persisté sur l'instance fragment, mais
+        // le binding est recréé). En mode figé, on remet la carte nord en haut.
+        binding.compass.setActif(carteSuitBoussole)
+        if (!carteSuitBoussole) binding.map.setMapOrientation(0f)
 
         locationOverlay = MyLocationNewOverlay(GpsMyLocationProvider(requireContext()), binding.map).apply {
             setPersonIcon(ContextCompat.getDrawable(requireContext(), R.drawable.ic_gps_blue_dot)?.toBitmap())
@@ -221,6 +238,16 @@ class TraceFragment : Fragment() {
             fondCarte = fondCarte.suivant()
             binding.map.setTileSource(tileSourcePour(fondCarte))
             binding.map.invalidate()
+        }
+
+        binding.compass.setOnClickListener {
+            carteSuitBoussole = !carteSuitBoussole
+            binding.compass.setActif(carteSuitBoussole)
+            if (!carteSuitBoussole) {
+                // Retour au mode figé : on remet la carte nord en haut.
+                binding.map.setMapOrientation(0f)
+                binding.map.invalidate()
+            }
         }
 
         binding.btnValiderPosition.setOnClickListener {

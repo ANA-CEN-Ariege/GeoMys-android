@@ -11,10 +11,17 @@ class CompassView @JvmOverloads constructor(
 ) : View(context, attrs) {
 
     private var azimuth = 0f
+    private var actif = false
 
     private val paintBg = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = 0xFFFFFFFF.toInt()
         style = Paint.Style.FILL
+    }
+    // Anneau bleu pour indiquer que la boussole pilote la rotation de la carte.
+    private val paintRingActif = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0xFF1976D2.toInt()
+        style = Paint.Style.STROKE
+        strokeWidth = 4f
     }
     private val paintNord = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = 0xFFE53935.toInt()
@@ -39,12 +46,20 @@ class CompassView @JvmOverloads constructor(
         invalidate()
     }
 
+    /** Indique si la boussole pilote la rotation de la carte — dessine un anneau bleu. */
+    fun setActif(actif: Boolean) {
+        if (this.actif == actif) return
+        this.actif = actif
+        invalidate()
+    }
+
     override fun onDraw(canvas: Canvas) {
         val cx = width / 2f
         val cy = height / 2f
         val r = minOf(cx, cy) - 2f
 
         canvas.drawCircle(cx, cy, r, paintBg)
+        if (actif) canvas.drawCircle(cx, cy, r - paintRingActif.strokeWidth / 2f, paintRingActif)
 
         canvas.save()
         canvas.rotate(azimuth, cx, cy)

@@ -99,6 +99,18 @@
         android:contentDescription="Changer fond"
         android:src="@drawable/ic_map" />
 
+    <!-- Bouton centrer (haut droite, sous btn_fond_carte) -->
+    <ImageButton
+        android:id="@+id/btn_centrer"
+        android:layout_width="44dp"
+        android:layout_height="44dp"
+        android:layout_gravity="top|end"
+        android:layout_marginTop="124dp"
+        android:layout_marginEnd="12dp"
+        android:background="@drawable/btn_circle_white"
+        android:contentDescription="Centrer"
+        android:src="@drawable/ic_location_on" />
+
     <!-- Barre d'info parcours -->
     <LinearLayout
         android:id="@+id/info_barre"
@@ -225,17 +237,6 @@
                 android:textSize="10sp"
                 android:visibility="gone" />
         </FrameLayout>
-
-        <View android:layout_width="0dp" android:layout_height="0dp" android:layout_weight="1" />
-
-        <!-- Bouton centrer -->
-        <ImageButton
-            android:id="@+id/btn_centrer"
-            android:layout_width="44dp"
-            android:layout_height="44dp"
-            android:background="@drawable/btn_circle_white"
-            android:contentDescription="Centrer"
-            android:src="@drawable/ic_location_on" />
     </LinearLayout>
 
     <!-- Panneau validation positionnement -->

@@ -147,7 +147,15 @@ class TraceFragment : Fragment() {
         binding.map.setTileSource(tileSourcePour(fondCarte))
         binding.map.setMultiTouchControls(true)
         binding.map.controller.setZoom(savedMapZoom)
-        binding.map.controller.setCenter(savedMapCenter ?: GeoPoint(46.5, 2.5))
+        // Au retour sur la carte (après saisie), on recentre sur la position du téléphone
+        // et on réactive le suivi pour que la carte (et donc le réticule, fixé au centre
+        // de l'écran) suive le déplacement. Sans ça, la carte restait collée à l'endroit
+        // de la dernière obs validée et `suivrePosition` était à false depuis le pan manuel.
+        val positionCourante = traceViewModel.locationTracker.position.value
+            ?.let { GeoPoint(it.latitude, it.longitude) }
+        binding.map.controller.setCenter(positionCourante ?: savedMapCenter ?: GeoPoint(46.5, 2.5))
+        suivrePosition = true
+        binding.btnCentrer.setImageResource(R.drawable.ic_location_on)
 
         locationOverlay = MyLocationNewOverlay(GpsMyLocationProvider(requireContext()), binding.map).apply {
             setPersonIcon(ContextCompat.getDrawable(requireContext(), R.drawable.ic_gps_blue_dot)?.toBitmap())
@@ -531,6 +539,7 @@ class TraceFragment : Fragment() {
         binding.btnRetour.applyStatusBarMargin()
         binding.compass.applyStatusBarMargin()
         binding.btnFondCarte.applyStatusBarMargin()
+        binding.btnCentrer.applyStatusBarMargin()
         binding.bandeauPositionnement.applyStatusBarMargin()
         binding.panneauControle.applyNavBarMargin()
         binding.panneauValidationPosition.applyNavBarMargin()

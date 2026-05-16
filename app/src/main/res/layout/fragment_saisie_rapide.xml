@@ -150,7 +150,7 @@
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btn_taxon_oiseau"
-                        style="@style/Widget.MaterialComponents.Button.TextButton"
+                        style="@style/Widget.Material3.Button.TextButton"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:insetTop="0dp"
@@ -166,7 +166,7 @@
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btn_taxon_mammifere"
-                        style="@style/Widget.MaterialComponents.Button.TextButton"
+                        style="@style/Widget.Material3.Button.TextButton"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:insetTop="0dp"
@@ -182,7 +182,7 @@
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btn_taxon_reptile"
-                        style="@style/Widget.MaterialComponents.Button.TextButton"
+                        style="@style/Widget.Material3.Button.TextButton"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:insetTop="0dp"
@@ -198,7 +198,7 @@
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btn_taxon_batracien"
-                        style="@style/Widget.MaterialComponents.Button.TextButton"
+                        style="@style/Widget.Material3.Button.TextButton"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:insetTop="0dp"
@@ -214,7 +214,7 @@
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btn_taxon_mollusque"
-                        style="@style/Widget.MaterialComponents.Button.TextButton"
+                        style="@style/Widget.Material3.Button.TextButton"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:insetTop="0dp"
@@ -230,7 +230,7 @@
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btn_taxon_poisson"
-                        style="@style/Widget.MaterialComponents.Button.TextButton"
+                        style="@style/Widget.Material3.Button.TextButton"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:insetTop="0dp"
@@ -246,7 +246,7 @@
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btn_taxon_insecte"
-                        style="@style/Widget.MaterialComponents.Button.TextButton"
+                        style="@style/Widget.Material3.Button.TextButton"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:insetTop="0dp"
@@ -262,7 +262,7 @@
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btn_taxon_invertebres"
-                        style="@style/Widget.MaterialComponents.Button.TextButton"
+                        style="@style/Widget.Material3.Button.TextButton"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:insetTop="0dp"
@@ -278,7 +278,7 @@
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btn_taxon_plante"
-                        style="@style/Widget.MaterialComponents.Button.TextButton"
+                        style="@style/Widget.Material3.Button.TextButton"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:insetTop="0dp"
@@ -294,7 +294,7 @@
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btn_taxon_fonge"
-                        style="@style/Widget.MaterialComponents.Button.TextButton"
+                        style="@style/Widget.Material3.Button.TextButton"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:insetTop="0dp"
@@ -311,7 +311,7 @@
             </HorizontalScrollView>
 
             <!-- Switch nom scientifique -->
-            <com.google.android.material.switchmaterial.SwitchMaterial
+            <com.google.android.material.materialswitch.MaterialSwitch
                 android:id="@+id/switch_nom_sci"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
@@ -361,7 +361,7 @@
 
                 <Button
                     android:id="@+id/btn_caracterisation_defaut"
-                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_marginEnd="4dp"
@@ -370,7 +370,7 @@
 
                 <Button
                     android:id="@+id/btn_denombrement_defaut"
-                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_marginStart="4dp"
@@ -396,7 +396,7 @@
 
                 <Button
                     android:id="@+id/btn_annuler_saisie"
-                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginEnd="8dp"
@@ -465,7 +465,7 @@
 
             <Button
                 android:id="@+id/btn_modifier_params"
-                style="@style/Widget.MaterialComponents.Button.TextButton"
+                style="@style/Widget.Material3.Button.TextButton"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Modifier" />
@@ -501,7 +501,7 @@
 
             <Button
                 android:id="@+id/btn_snack_modifier"
-                style="@style/Widget.MaterialComponents.Button.TextButton"
+                style="@style/Widget.Material3.Button.TextButton"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Modifier"

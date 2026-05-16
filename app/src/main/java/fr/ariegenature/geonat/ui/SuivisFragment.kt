@@ -5,6 +5,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
+import androidx.core.os.bundleOf
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
@@ -74,11 +75,10 @@ class SuivisFragment : Fragment() {
                 m.moduleDesc?.let { text = it; visibility = View.VISIBLE }
             }
             row.setOnClickListener {
-                android.widget.Toast.makeText(
-                    requireContext(),
-                    "Module ${m.moduleCode} — saisie à venir.",
-                    android.widget.Toast.LENGTH_SHORT
-                ).show()
+                findNavController().navigate(
+                    R.id.action_suivis_to_detail,
+                    bundleOf("moduleCode" to m.moduleCode)
+                )
             }
             binding.llModules.addView(row)
         }

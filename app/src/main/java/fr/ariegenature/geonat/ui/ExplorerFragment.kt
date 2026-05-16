@@ -174,7 +174,7 @@ class ExplorerFragment : Fragment() {
                 android.hardware.SensorManager.getRotationMatrixFromVector(rotMatrix, event.values)
                 android.hardware.SensorManager.getOrientation(rotMatrix, orientation)
                 val deg = Math.toDegrees(orientation[0].toDouble()).toFloat()
-                binding.compass.setAzimuth(-deg)
+                _binding?.compass?.setAzimuth(-deg)
             }
             override fun onAccuracyChanged(sensor: android.hardware.Sensor?, accuracy: Int) {}
         }
@@ -209,58 +209,65 @@ class ExplorerFragment : Fragment() {
     }
 
     private fun largeurZoneKm(): Double {
-        val bbox = binding.map.boundingBox
+        val b = _binding ?: return 0.0
+        val bbox = b.map.boundingBox
         val centerLat = (bbox.latNorth + bbox.latSouth) / 2
         val cosLat = Math.cos(Math.toRadians(centerLat))
         return (bbox.lonEast - bbox.lonWest) * 111.0 * cosLat
     }
 
     private fun chargerObservations() {
+        val b = _binding ?: return
         if (largeurZoneKm() > 100) {
             fetchJob?.cancel()
             observationsBrutes = emptyList()
             afficherMarkers(emptyList())
-            binding.tvCompteur.visibility = View.GONE
-            binding.tvNonConfigure.text = "Zoomez pour charger les observations (zone > 100 km)"
-            binding.tvNonConfigure.visibility = View.VISIBLE
-            binding.overlayChargement.visibility = View.GONE
+            b.tvCompteur.visibility = View.GONE
+            b.tvNonConfigure.text = "Zoomez pour charger les observations (zone > 100 km)"
+            b.tvNonConfigure.visibility = View.VISIBLE
+            b.overlayChargement.visibility = View.GONE
             return
         }
 
-        val bbox = binding.map.boundingBox
+        val bbox = b.map.boundingBox
         fetchJob?.cancel()
         fetchJob = viewLifecycleOwner.lifecycleScope.launch {
-            binding.overlayChargement.visibility = View.VISIBLE
+            _binding?.overlayChargement?.visibility = View.VISIBLE
             try {
                 val obs = GeoNatureBrowse.recupererObsExplorer(
                     gnConfig,
                     minLon = bbox.lonWest, minLat = bbox.latSouth,
                     maxLon = bbox.lonEast, maxLat = bbox.latNorth
                 )
-                observationsBrutes = obs
-                afficherMarkers(obs.filtrees())
-                binding.tvCompteur.text = "${obs.filtrees().size} obs. (12 mois)"
-                binding.tvCompteur.visibility = View.VISIBLE
-                binding.tvNonConfigure.visibility = View.GONE
+                _binding?.let { b2 ->
+                    observationsBrutes = obs
+                    afficherMarkers(obs.filtrees())
+                    b2.tvCompteur.text = "${obs.filtrees().size} obs. (12 mois)"
+                    b2.tvCompteur.visibility = View.VISIBLE
+                    b2.tvNonConfigure.visibility = View.GONE
+                }
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
-                binding.tvNonConfigure.text = "Erreur : ${e.message}"
-                binding.tvNonConfigure.visibility = View.VISIBLE
+                _binding?.let { b2 ->
+                    b2.tvNonConfigure.text = "Erreur : ${e.message}"
+                    b2.tvNonConfigure.visibility = View.VISIBLE
+                }
             } finally {
-                binding.overlayChargement.visibility = View.GONE
+                _binding?.overlayChargement?.visibility = View.GONE
             }
         }
     }
 
     private fun afficherMarkers(observations: List<ObsExplorer>) {
-        binding.map.overlays.removeAll(binding.map.overlays.filterIsInstance<Marker>().toSet())
+        val b = _binding ?: return
+        b.map.overlays.removeAll(b.map.overlays.filterIsInstance<Marker>().toSet())
 
         // Grouper par coordonnées arrondies à 3 décimales (≈ 110m) comme iOS cluster
         val groupes = observations.groupBy { "%.3f,%.3f".format(it.latitude, it.longitude) }
 
         for ((_, groupe) in groupes) {
             val rep = groupe.first()
-            val marker = Marker(binding.map).apply {
+            val marker = Marker(b.map).apply {
                 position = GeoPoint(rep.latitude, rep.longitude)
                 icon = creerIconeMarqueur(rep.taxon, groupe.size)
                 setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
@@ -270,9 +277,9 @@ class ExplorerFragment : Fragment() {
                     true
                 }
             }
-            binding.map.overlays.add(marker)
+            b.map.overlays.add(marker)
         }
-        binding.map.invalidate()
+        b.map.invalidate()
     }
 
     private fun creerIconeMarqueur(taxon: Taxon, count: Int): BitmapDrawable {

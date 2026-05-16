@@ -31,7 +31,20 @@
     <fragment
         android:id="@+id/suivisFragment"
         android:name="fr.ariegenature.geonat.ui.SuivisFragment"
-        android:label="Suivis" />
+        android:label="Suivis">
+        <action
+            android:id="@+id/action_suivis_to_detail"
+            app:destination="@id/suiviDetailFragment" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/suiviDetailFragment"
+        android:name="fr.ariegenature.geonat.ui.SuiviDetailFragment"
+        android:label="Détail protocole">
+        <argument
+            android:name="moduleCode"
+            app:argType="string" />
+    </fragment>
 
     <fragment
         android:id="@+id/traceFragment"

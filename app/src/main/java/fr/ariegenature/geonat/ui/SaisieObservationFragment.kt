@@ -369,9 +369,20 @@ class SaisieObservationFragment : Fragment() {
             val suggestions = withContext(Dispatchers.Default) {
                 TaxRefLocal.getSuggestionsAutocomplete(taxonSelector.taxon, rechercheNomSci)
             }
-            if (isAdded) binding.etEspece.setAdapter(
-                createSpeciesAutocompleteAdapter(requireContext(), suggestions)
-            )
+            if (!isAdded || _binding == null) return@launch
+            val adapter = createSpeciesAutocompleteAdapter(requireContext(), suggestions)
+            binding.etEspece.setAdapter(adapter)
+            // Race possible : si l'utilisateur a tapé avant la fin du scan asynchrone,
+            // AutoCompleteTextView a déclenché le filtre sur un adapter encore vide et
+            // ne le rejoue pas tout seul après setAdapter — on relance manuellement.
+            val current = binding.etEspece.text?.toString().orEmpty()
+            if (current.length >= binding.etEspece.threshold && binding.etEspece.hasFocus()) {
+                adapter.filter.filter(current) { count ->
+                    if (count > 0 && _binding != null && binding.etEspece.hasFocus()) {
+                        binding.etEspece.showDropDown()
+                    }
+                }
+            }
         }
     }
 

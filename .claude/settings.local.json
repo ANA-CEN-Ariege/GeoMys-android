@@ -11,7 +11,9 @@
       "Bash(git add *)",
       "Bash(git commit -m ' *)",
       "Bash(python3 -c ' *)",
-      "Bash(git -C /Users/claude/AndroidStudioProjects/BirdsTrace log --oneline -10)"
+      "Bash(git -C /Users/claude/AndroidStudioProjects/BirdsTrace log --oneline -10)",
+      "Bash(git push *)",
+      "Bash(git tag *)"
     ]
   }
 }

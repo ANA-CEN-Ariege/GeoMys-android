@@ -13,6 +13,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
@@ -155,6 +156,16 @@ class SaisieRapideFragment : Fragment() {
         applyWindowInsets()
 
         updateModeUI()
+
+        // Le bouton retour système doit traverser showConfirmTerminer() pour libérer
+        // le GPS comme la croix retour — sans ça, le foreground service reste actif
+        // après un navigateUp() implicite.
+        requireActivity().onBackPressedDispatcher.addCallback(
+            viewLifecycleOwner,
+            object : OnBackPressedCallback(true) {
+                override fun handleOnBackPressed() { showConfirmTerminer() }
+            }
+        )
     }
 
     // ─── Carte ────────────────────────────────────────────────────────────────
@@ -294,9 +305,20 @@ class SaisieRapideFragment : Fragment() {
             val suggestions = withContext(Dispatchers.Default) {
                 TaxRefLocal.getSuggestionsAutocomplete(taxon, rechercheNomSci)
             }
-            if (isAdded) binding.etEspece.setAdapter(
-                createSpeciesAutocompleteAdapter(requireContext(), suggestions)
-            )
+            if (!isAdded || _binding == null) return@launch
+            val adapter = createSpeciesAutocompleteAdapter(requireContext(), suggestions)
+            binding.etEspece.setAdapter(adapter)
+            // Race possible : si l'utilisateur a tapé avant la fin du scan asynchrone,
+            // AutoCompleteTextView a déclenché le filtre sur un adapter encore vide et
+            // ne le rejoue pas tout seul après setAdapter — on relance manuellement.
+            val current = binding.etEspece.text?.toString().orEmpty()
+            if (current.length >= binding.etEspece.threshold && binding.etEspece.hasFocus()) {
+                adapter.filter.filter(current) { count ->
+                    if (count > 0 && _binding != null && binding.etEspece.hasFocus()) {
+                        binding.etEspece.showDropDown()
+                    }
+                }
+            }
         }
     }
 
@@ -330,7 +352,12 @@ class SaisieRapideFragment : Fragment() {
         binding.btnDenombrementDefaut.setOnClickListener { ouvrirDenombrementDefaut() }
 
         binding.btnDemarrer.setOnClickListener { demarrer() }
-        binding.btnAnnulerSaisie.setOnClickListener { findNavController().navigateUp() }
+        binding.btnAnnulerSaisie.setOnClickListener {
+            // Annuler avant de démarrer = on n'a rien saisi, mais le GPS a été lancé à
+            // l'ouverture de l'écran : on le libère explicitement.
+            LocationForegroundService.stop(requireContext())
+            findNavController().navigateUp()
+        }
 
         binding.btnModifierParams.setOnClickListener {
             modeActif = false
@@ -755,6 +782,9 @@ class SaisieRapideFragment : Fragment() {
     private fun showConfirmTerminer() {
         val obs = traceViewModel.observations.value ?: emptyList()
         if (obs.isEmpty()) {
+            // Pas d'obs en cours = on quitte sans dialog, mais on libère quand même
+            // le foreground service GPS lancé à l'ouverture de l'écran.
+            LocationForegroundService.stop(requireContext())
             findNavController().navigateUp()
             return
         }

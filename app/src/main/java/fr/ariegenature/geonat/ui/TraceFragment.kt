@@ -11,6 +11,7 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.core.content.ContextCompat
@@ -130,6 +131,16 @@ class TraceFragment : Fragment() {
         applyWindowInsets()
 
         binding.btnParcours.visibility = if (enregistrerTrace) View.VISIBLE else View.GONE
+
+        // Le bouton retour système doit traverser le dialog « Terminer la sortie »
+        // pour libérer le GPS comme le clic sur la croix — sinon le foreground service
+        // continue de tourner après navigateUp().
+        requireActivity().onBackPressedDispatcher.addCallback(
+            viewLifecycleOwner,
+            object : OnBackPressedCallback(true) {
+                override fun handleOnBackPressed() { showConfirmTerminer() }
+            }
+        )
     }
 
     private fun setupMap() {
@@ -388,9 +399,13 @@ class TraceFragment : Fragment() {
     }
 
     private fun showConfirmTerminer() {
-        // Aucune observation = rien à enregistrer ; on quitte directement sans dialog.
+        // Aucune observation = rien à enregistrer ; on quitte directement sans dialog,
+        // mais on libère quand même le GPS pour ne pas laisser le foreground service
+        // tourner en arrière-plan.
         val obs = traceViewModel.observations.value ?: emptyList()
         if (obs.isEmpty()) {
+            traceViewModel.locationTracker.arreterParcours()
+            LocationForegroundService.stop(requireContext())
             findNavController().navigateUp()
             return
         }

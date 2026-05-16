@@ -74,12 +74,18 @@ class ConfigGeoNatureFragment : Fragment() {
             testerConnexion()
         }
 
-        binding.btnChargerParametres.setOnClickListener {
-            sauvegarderChamps()
-            chargerDatasets()
-            chargerListes()
-            chargerObservateurs()
-            chargerAdditionalFields()
+        // Clic sur Jeu de données / Observateur : on vide le texte affiché pour
+        // permettre à l'utilisateur de choisir une autre valeur sans devoir effacer
+        // manuellement. `setText("", false)` ne déclenche pas le filtrage, donc la
+        // dropdown affiche toute la liste. La valeur stockée dans gnConfig n'est
+        // remplacée que sur sélection effective dans la dropdown.
+        binding.acDatasets.setOnClickListener {
+            binding.acDatasets.setText("", false)
+            binding.acDatasets.showDropDown()
+        }
+        binding.acObservateurs.setOnClickListener {
+            binding.acObservateurs.setText("", false)
+            binding.acObservateurs.showDropDown()
         }
 
         binding.btnSyncTaxRef.setOnClickListener {
@@ -130,25 +136,31 @@ class ConfigGeoNatureFragment : Fragment() {
 
     private fun testerConnexion() {
         binding.btnTesterConnexion.isEnabled = false
-        binding.btnChargerParametres.isEnabled = false
         binding.progressTest.visibility = View.VISIBLE
         binding.tvResultatTest.visibility = View.GONE
         viewLifecycleOwner.lifecycleScope.launch {
             val (success, msg) = GeoNatureAuth.testerConnexion(gnConfig)
             binding.progressTest.visibility = View.GONE
             binding.btnTesterConnexion.isEnabled = true
-            binding.btnChargerParametres.isEnabled = success
             binding.tvResultatTest.visibility = View.VISIBLE
             binding.tvResultatTest.text = msg
             binding.tvResultatTest.setTextColor(
                 if (success) 0xFF2E7D32.toInt() else 0xFFC62828.toInt()
             )
             updateStatusIndicator()
+            // Connexion OK → chargement automatique des listes serveur. Les 4 chargers
+            // sont indépendants et gèrent leur propre visibilité d'erreur ; ils
+            // peuvent s'exécuter en parallèle.
+            if (success) {
+                chargerDatasets()
+                chargerListes()
+                chargerObservateurs()
+                chargerAdditionalFields()
+            }
         }
     }
 
     private fun chargerDatasets() {
-        binding.btnChargerParametres.isEnabled = false
         binding.progressDatasets.visibility = View.VISIBLE
         viewLifecycleOwner.lifecycleScope.launch {
             try {
@@ -164,7 +176,6 @@ class ConfigGeoNatureFragment : Fragment() {
                 binding.tvErreurDatasets.text = e.message
             } finally {
                 binding.progressDatasets.visibility = View.GONE
-                binding.btnChargerParametres.isEnabled = true
             }
         }
     }
@@ -193,7 +204,6 @@ class ConfigGeoNatureFragment : Fragment() {
     }
 
     private fun chargerListes() {
-        binding.btnChargerParametres.isEnabled = false
         binding.tvErreurListes.visibility = View.GONE
         viewLifecycleOwner.lifecycleScope.launch {
             try {
@@ -208,8 +218,6 @@ class ConfigGeoNatureFragment : Fragment() {
             } catch (e: Exception) {
                 binding.tvErreurListes.visibility = View.VISIBLE
                 binding.tvErreurListes.text = e.message
-            } finally {
-                binding.btnChargerParametres.isEnabled = true
             }
         }
     }
@@ -245,7 +253,6 @@ class ConfigGeoNatureFragment : Fragment() {
     }
 
     private fun chargerObservateurs() {
-        binding.btnChargerParametres.isEnabled = false
         binding.tvErreurObservateurs.visibility = View.GONE
         viewLifecycleOwner.lifecycleScope.launch {
             try {
@@ -260,8 +267,6 @@ class ConfigGeoNatureFragment : Fragment() {
             } catch (e: Exception) {
                 binding.tvErreurObservateurs.visibility = View.VISIBLE
                 binding.tvErreurObservateurs.text = e.message
-            } finally {
-                binding.btnChargerParametres.isEnabled = true
             }
         }
     }

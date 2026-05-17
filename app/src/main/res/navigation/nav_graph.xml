@@ -44,6 +44,27 @@
         <argument
             android:name="moduleCode"
             app:argType="string" />
+        <action
+            android:id="@+id/action_suivi_to_fiche"
+            app:destination="@id/ficheObjetFragment" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/ficheObjetFragment"
+        android:name="fr.ariegenature.geonat.ui.FicheObjetFragment"
+        android:label="Fiche">
+        <argument
+            android:name="moduleCode"
+            app:argType="string" />
+        <argument
+            android:name="objectType"
+            app:argType="string" />
+        <argument
+            android:name="id"
+            app:argType="integer" />
+        <action
+            android:id="@+id/action_fiche_to_fiche"
+            app:destination="@id/ficheObjetFragment" />
     </fragment>
 
     <fragment

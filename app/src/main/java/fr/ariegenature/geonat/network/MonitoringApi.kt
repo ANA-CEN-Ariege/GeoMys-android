@@ -88,12 +88,37 @@ object MonitoringApi {
             result.sortedBy { it.moduleLabel.lowercase() }.also { dernierChargement = it }
         }
 
-    /** Un enfant (site, sites_group, …) d'un module monitoring : id technique + nom lisible. */
-    data class MonitoringEnfant(val id: Int, val nom: String)
+    /** Un enfant (site, sites_group, …) d'un module monitoring : id technique + nom "best-effort"
+     *  extrait à la volée + map plate des propriétés strings (pour ré-extraire le nom côté UI
+     *  une fois le schéma chargé). */
+    data class MonitoringEnfant(
+        val id: Int,
+        val nom: String,
+        val proprietes: Map<String, String>,
+    )
+
+    /** Schéma d'un object_type déclaré par un protocole dans son `config/objects.json` serveur,
+     *  tel que renvoyé par /api/monitorings/config/<module_code>. Tous les champs sont nullables :
+     *  les vieux protocoles ou les protocoles minimalistes n'exposent pas forcément tout. */
+    data class MonitoringSchemaObjet(
+        val type: String,
+        val label: String?,
+        val labelList: String?,
+        /** Nom du champ de `properties` à utiliser comme libellé d'une instance (par ex.
+         *  `base_site_name` pour site, `sites_group_name` pour sites_group). Si présent, prime
+         *  sur l'extraction heuristique. */
+        val nameField: String?,
+        /** object_type parent dans la hiérarchie. "module" pour les types directement attachés
+         *  au protocole, ou null si non déclaré. */
+        val parentType: String?,
+        /** object_types enfants directs déclarés. Permet de savoir, pour `module`, quels types
+         *  sont au niveau "macro" (= ce que l'utilisateur appelle "site"). */
+        val childrenTypes: List<String>,
+    )
 
     /** GET /api/monitorings/object/<module_code>/module?depth=1 — récupère le module et la liste
-     *  de ses enfants directs avec leur nom lisible. Map `object_type → [enfants]`. Null sur
-     *  erreur réseau/auth, map vide si aucun enfant. */
+     *  de ses enfants directs avec leurs propriétés brutes. Map `object_type → [enfants]`. Null
+     *  sur erreur réseau/auth, map vide si aucun enfant. */
     suspend fun chargerEnfants(config: GeoNatureConfig, moduleCode: String): Map<String, List<MonitoringEnfant>>? =
         withContext(Dispatchers.IO) {
             val base = config.urlServeur.trim().trimEnd('/')
@@ -122,34 +147,148 @@ object MonitoringApi {
                     val item = arr.optJSONObject(i) ?: continue
                     val id = item.optInt("id", item.optInt("${type}_id", -1))
                     val props = item.optJSONObject("properties")
-                    val nom = extraireNom(props, type, id)
-                    liste.add(MonitoringEnfant(id, nom))
+                    val proprietesPlates = aplatirProprietes(props)
+                    val nom = extraireNomHeuristique(proprietesPlates, type, id)
+                    liste.add(MonitoringEnfant(id, nom, proprietesPlates))
                 }
-                result[type] = liste.sortedBy { it.nom.lowercase() }
+                result[type] = liste
             }
             result
         }
 
-    /** Cherche le champ "nom" d'un objet monitoring. gn_module_monitoring nomme typiquement
-     *  ses champs `base_<type>_name` ou `<type>_name` ; on essaie aussi `name`/`label` en dernier
-     *  recours. Fallback : "#<id>". */
-    private fun extraireNom(props: JSONObject?, type: String, id: Int): String {
-        if (props != null) {
-            val candidats = listOf("base_${type}_name", "${type}_name", "base_site_name", "name", "label")
-            for (c in candidats) {
-                val v = props.optString(c, "")
-                if (v.isNotEmpty() && v != "null") return v
+    /** Aplatit le bloc `properties` d'un objet monitoring en `Map<String, String>`. Filtre les
+     *  valeurs null/objets/tableaux : on garde uniquement les scalaires (string, number, bool)
+     *  utiles à l'affichage. */
+    private fun aplatirProprietes(props: JSONObject?): Map<String, String> {
+        if (props == null) return emptyMap()
+        val map = linkedMapOf<String, String>()
+        val it = props.keys()
+        while (it.hasNext()) {
+            val k = it.next()
+            val v = props.opt(k)
+            when (v) {
+                null, JSONObject.NULL -> { /* skip */ }
+                is String -> if (v.isNotEmpty()) map[k] = v
+                is Number, is Boolean -> map[k] = v.toString()
+                else -> { /* on ignore arrays/objects pour l'instant */ }
             }
         }
+        return map
+    }
+
+    /** Fallback heuristique pour le nom d'un enfant quand le schéma n'est pas disponible.
+     *  Essaie `base_<type>_name`, `<type>_name`, `base_site_name`, `name`, `label`. Sinon `#id`. */
+    internal fun extraireNomHeuristique(proprietes: Map<String, String>, type: String, id: Int): String {
+        val candidats = listOf("base_${type}_name", "${type}_name", "base_site_name", "name", "label")
+        for (c in candidats) proprietes[c]?.takeIf { it.isNotEmpty() }?.let { return it }
         return if (id > 0) "#$id" else "—"
     }
 
-    /** GET /api/monitorings/config/<module_code> — récupère les labels per-`object_type` déclarés
-     *  par le protocole dans son config/objects.json serveur. Pour STOM par exemple :
-     *    { "sites_group": { "label": "Site STOM", "label_list": "Sites STOM" },
-     *      "site":        { "label": "Point d'écoute", "label_list": "Points d'écoute" } }
-     *  Renvoie un map `object_type → label_list (sinon label)`. Null si l'endpoint échoue. */
-    suspend fun chargerLabelsObjets(config: GeoNatureConfig, moduleCode: String): Map<String, String>? =
+    /** Un objet monitoring complet : type + id + propriétés plates + enfants directs (1 niveau).
+     *  Sert pour les fiches site/visite/observation, toutes pilotées par le même renderer
+     *  générique côté UI. [geometrie] = libellé court formaté (ex. "44.123°N, 1.456°E" pour un
+     *  Point, "Polygone" pour des surfaces) ou null si pas de géométrie côté serveur. */
+    data class MonitoringObjet(
+        val type: String,
+        val id: Int,
+        val moduleCode: String,
+        val proprietes: Map<String, String>,
+        val enfants: Map<String, List<MonitoringEnfant>>,
+        val geometrie: String?,
+    )
+
+    /** GET /api/monitorings/object/<module_code>/<object_type>/<id>?depth=1 — fiche d'un objet
+     *  (site, visite, observation, …) avec ses propriétés et ses enfants directs. Null si
+     *  l'endpoint échoue. */
+    suspend fun chargerObjet(
+        config: GeoNatureConfig,
+        moduleCode: String,
+        objectType: String,
+        id: Int,
+    ): MonitoringObjet? =
+        withContext(Dispatchers.IO) {
+            val base = config.urlServeur.trim().trimEnd('/')
+            val (token, _, cookies) = GeoNatureAuth.loginAvecCookies(base, config.login, config.motDePasse)
+                ?: return@withContext null
+
+            val url = URL("$base/api/monitorings/object/$moduleCode/$objectType/$id?depth=1")
+            val conn = url.openConnection() as java.net.HttpURLConnection
+            conn.connectTimeout = 15000
+            conn.readTimeout = 15000
+            conn.setRequestProperty("Accept", "application/json")
+            if (token != null) conn.setRequestProperty("Authorization", "Bearer $token")
+            if (cookies.isNotEmpty()) conn.setRequestProperty("Cookie", cookies)
+            val code = conn.responseCode
+            if (code != 200) return@withContext null
+            val text = conn.inputStream.bufferedReader().readText()
+            val obj = try { JSONObject(text) } catch (_: Exception) { return@withContext null }
+            val proprietes = aplatirProprietes(obj.optJSONObject("properties"))
+            val enfants = linkedMapOf<String, List<MonitoringEnfant>>()
+            obj.optJSONObject("children")?.let { childrenObj ->
+                val it = childrenObj.keys()
+                while (it.hasNext()) {
+                    val ctype = it.next()
+                    val arr = childrenObj.optJSONArray(ctype) ?: continue
+                    val liste = mutableListOf<MonitoringEnfant>()
+                    for (i in 0 until arr.length()) {
+                        val item = arr.optJSONObject(i) ?: continue
+                        val cid = item.optInt("id", item.optInt("${ctype}_id", -1))
+                        val cprops = aplatirProprietes(item.optJSONObject("properties"))
+                        val cnom = extraireNomHeuristique(cprops, ctype, cid)
+                        liste.add(MonitoringEnfant(cid, cnom, cprops))
+                    }
+                    enfants[ctype] = liste
+                }
+            }
+            MonitoringObjet(
+                type = objectType,
+                id = id,
+                moduleCode = moduleCode,
+                proprietes = proprietes,
+                enfants = enfants,
+                geometrie = formatGeometrie(obj.optJSONObject("geometry")),
+            )
+        }
+
+    /** Convertit un objet GeoJSON en libellé court pour affichage. Point → "lat°N/S, lon°E/W",
+     *  Polygon/MultiPolygon → "Polygone (N sommets)", autres → le type GeoJSON brut. */
+    private fun formatGeometrie(geo: JSONObject?): String? {
+        if (geo == null) return null
+        val type = geo.optString("type", "").ifEmpty { return null }
+        val coords = geo.opt("coordinates")
+        return when (type) {
+            "Point" -> {
+                val arr = coords as? JSONArray ?: return type
+                if (arr.length() < 2) return type
+                val lon = arr.optDouble(0, Double.NaN)
+                val lat = arr.optDouble(1, Double.NaN)
+                if (lat.isNaN() || lon.isNaN()) return type
+                val ns = if (lat >= 0) "N" else "S"
+                val ew = if (lon >= 0) "E" else "W"
+                "%.5f° %s, %.5f° %s".format(Math.abs(lat), ns, Math.abs(lon), ew)
+            }
+            "Polygon" -> {
+                val nb = (coords as? JSONArray)?.optJSONArray(0)?.length() ?: 0
+                if (nb > 0) "Polygone ($nb sommets)" else "Polygone"
+            }
+            "MultiPolygon" -> "MultiPolygone"
+            "LineString" -> {
+                val nb = (coords as? JSONArray)?.length() ?: 0
+                if (nb > 0) "Ligne ($nb points)" else "Ligne"
+            }
+            "MultiPoint" -> {
+                val nb = (coords as? JSONArray)?.length() ?: 0
+                if (nb > 0) "$nb points" else "MultiPoint"
+            }
+            else -> type
+        }
+    }
+
+    /** GET /api/monitorings/config/<module_code> — récupère le schéma déclaratif du protocole
+     *  (fichier objects.json côté serveur). Pour chaque object_type expose le label, le
+     *  `name_field`, le `parent_type` et les `children`. Permet de driver l'affichage et la
+     *  navigation au lieu d'utiliser des heuristiques. Null si l'endpoint échoue. */
+    suspend fun chargerSchemaProtocole(config: GeoNatureConfig, moduleCode: String): Map<String, MonitoringSchemaObjet>? =
         withContext(Dispatchers.IO) {
             val base = config.urlServeur.trim().trimEnd('/')
             val (token, _, cookies) = GeoNatureAuth.loginAvecCookies(base, config.login, config.motDePasse)
@@ -166,14 +305,34 @@ object MonitoringApi {
             if (code != 200) return@withContext null
             val text = conn.inputStream.bufferedReader().readText()
             val obj = try { JSONObject(text) } catch (_: Exception) { return@withContext null }
-            val labels = linkedMapOf<String, String>()
+            val result = linkedMapOf<String, MonitoringSchemaObjet>()
             val it = obj.keys()
             while (it.hasNext()) {
-                val key = it.next()
-                val v = obj.optJSONObject(key) ?: continue
-                val label = v.optString("label_list", "").ifEmpty { v.optString("label", "") }
-                if (label.isNotEmpty()) labels[key] = label
+                val type = it.next()
+                val v = obj.optJSONObject(type) ?: continue
+                val childrenArr = v.optJSONArray("children")
+                val children = mutableListOf<String>()
+                if (childrenArr != null) {
+                    for (i in 0 until childrenArr.length()) {
+                        val s = childrenArr.optString(i, "")
+                        if (s.isNotEmpty()) children.add(s)
+                    }
+                }
+                // gn_module_monitoring varie d'une version à l'autre : on essaie plusieurs noms
+                // de clé pour le champ "nom".
+                val nameField = v.optString("description_field_name", "")
+                    .ifEmpty { v.optString("display_field_name", "") }
+                    .ifEmpty { v.optString("name_field", "") }
+                    .takeIf { it.isNotEmpty() }
+                result[type] = MonitoringSchemaObjet(
+                    type = type,
+                    label = v.optString("label", "").takeIf { it.isNotEmpty() },
+                    labelList = v.optString("label_list", "").takeIf { it.isNotEmpty() },
+                    nameField = nameField,
+                    parentType = v.optString("parent_type", "").takeIf { it.isNotEmpty() },
+                    childrenTypes = children,
+                )
             }
-            labels
+            result
         }
 }

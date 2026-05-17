@@ -4,6 +4,7 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.ImageButton
 import android.widget.TextView
 import androidx.core.os.bundleOf
 import androidx.fragment.app.Fragment
@@ -74,10 +75,21 @@ class SuivisFragment : Fragment() {
             row.findViewById<TextView>(R.id.tv_desc).apply {
                 m.moduleDesc?.let { text = it; visibility = View.VISIBLE }
             }
-            row.setOnClickListener {
+            row.findViewById<ImageButton>(R.id.btn_info).setOnClickListener {
                 findNavController().navigate(
                     R.id.action_suivis_to_detail,
                     bundleOf("moduleCode" to m.moduleCode)
+                )
+            }
+            row.findViewById<ImageButton>(R.id.btn_carte).setOnClickListener {
+                findNavController().navigate(
+                    R.id.action_suivis_to_carte,
+                    bundleOf(
+                        "moduleCode" to m.moduleCode,
+                        "objectType" to "module",
+                        "id" to m.idModule,
+                        "titre" to m.moduleLabel,
+                    )
                 )
             }
             binding.llModules.addView(row)

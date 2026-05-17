@@ -35,6 +35,9 @@
         <action
             android:id="@+id/action_suivis_to_detail"
             app:destination="@id/suiviDetailFragment" />
+        <action
+            android:id="@+id/action_suivis_to_carte"
+            app:destination="@id/carteGeometrieFragment" />
     </fragment>
 
     <fragment
@@ -47,6 +50,9 @@
         <action
             android:id="@+id/action_suivi_to_fiche"
             app:destination="@id/ficheObjetFragment" />
+        <action
+            android:id="@+id/action_suivi_to_carte"
+            app:destination="@id/carteGeometrieFragment" />
     </fragment>
 
     <fragment
@@ -65,6 +71,53 @@
         <action
             android:id="@+id/action_fiche_to_fiche"
             app:destination="@id/ficheObjetFragment" />
+        <action
+            android:id="@+id/action_fiche_to_carte"
+            app:destination="@id/carteGeometrieFragment" />
+        <action
+            android:id="@+id/action_fiche_to_nouvelle_visite"
+            app:destination="@id/nouvelleVisiteFragment" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/nouvelleVisiteFragment"
+        android:name="fr.ariegenature.geonat.ui.NouvelleVisiteFragment"
+        android:label="Nouvelle visite">
+        <argument
+            android:name="moduleCode"
+            app:argType="string"
+            android:defaultValue="" />
+        <argument
+            android:name="parentObjectType"
+            app:argType="string"
+            android:defaultValue="" />
+        <argument
+            android:name="parentId"
+            app:argType="integer"
+            android:defaultValue="-1" />
+        <argument
+            android:name="titreSite"
+            app:argType="string"
+            android:defaultValue="" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/carteGeometrieFragment"
+        android:name="fr.ariegenature.geonat.ui.CarteGeometrieFragment"
+        android:label="Carte">
+        <argument
+            android:name="moduleCode"
+            app:argType="string" />
+        <argument
+            android:name="objectType"
+            app:argType="string" />
+        <argument
+            android:name="id"
+            app:argType="integer" />
+        <argument
+            android:name="titre"
+            app:argType="string"
+            android:defaultValue="" />
     </fragment>
 
     <fragment

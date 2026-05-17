@@ -46,8 +46,32 @@ object GeoNatureAuth {
             }
         }
 
+    /** Cache de session du dernier login réussi : permet aux appels en rafale (par ex. 73
+     *  chargerObjet en parallèle pour la carte d'un protocole) de ne pas re-authentifier
+     *  chaque fois. Invalidé quand (base, login) change ou après [CACHE_TTL_MS]. */
+    private data class CacheAuth(
+        val base: String,
+        val login: String,
+        val token: String?,
+        val idRole: Int?,
+        val cookies: String,
+        val expireAt: Long,
+    )
+    @Volatile private var cache: CacheAuth? = null
+    private const val CACHE_TTL_MS = 5L * 60L * 1000L // 5 minutes
+
+    /** Vidage explicite du cache d'auth (à appeler depuis l'écran config quand l'utilisateur
+     *  modifie ses identifiants ou l'URL serveur). */
+    fun invaliderCache() { cache = null }
+
     // Retourne (token, idRole, cookies) — cookies à renvoyer avec les appels suivants
     internal fun loginAvecCookies(base: String, login: String, password: String): Triple<String?, Int?, String>? {
+        val now = System.currentTimeMillis()
+        cache?.let { c ->
+            if (c.base == base && c.login == login && c.expireAt > now) {
+                return Triple(c.token, c.idRole, c.cookies)
+            }
+        }
         return try {
             val url = URL("$base/api/auth/login")
             val conn = url.openConnection() as java.net.HttpURLConnection
@@ -75,6 +99,7 @@ object GeoNatureAuth {
             val idRole = userJson?.optInt("id_role", -1)?.takeIf { it > 0 }
                 ?: json.optInt("id_role", -1).takeIf { it > 0 }
 
+            cache = CacheAuth(base, login, token, idRole, cookies, now + CACHE_TTL_MS)
             Triple(token, idRole, cookies)
         } catch (e: Exception) { null }
     }

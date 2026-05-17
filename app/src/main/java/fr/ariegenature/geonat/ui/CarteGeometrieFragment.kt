@@ -1,0 +1,311 @@
+package fr.ariegenature.geonat.ui
+
+import android.graphics.Paint
+import android.os.Bundle
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
+import androidx.core.content.ContextCompat
+import androidx.fragment.app.Fragment
+import androidx.lifecycle.lifecycleScope
+import androidx.navigation.fragment.findNavController
+import fr.ariegenature.geonat.R
+import fr.ariegenature.geonat.databinding.FragmentCarteGeometrieBinding
+import fr.ariegenature.geonat.network.MonitoringApi
+import fr.ariegenature.geonat.store.GeoNatureConfig
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
+import org.json.JSONArray
+import org.json.JSONObject
+import org.osmdroid.config.Configuration
+import org.osmdroid.util.BoundingBox
+import org.osmdroid.util.GeoPoint
+import org.osmdroid.views.overlay.Marker
+import org.osmdroid.views.overlay.Polygon
+import org.osmdroid.views.overlay.Polyline
+
+/** Affiche la géométrie d'un objet monitoring (Point, LineString, Polygon, MultiPolygon)
+ *  sur une carte plein écran. Pas dépendant du type d'objet : on rend ce qui arrive. */
+class CarteGeometrieFragment : Fragment() {
+    private var _binding: FragmentCarteGeometrieBinding? = null
+    private val binding get() = _binding!!
+    private var fondCarte = FondCarte.TOPO
+
+    override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
+        Configuration.getInstance().userAgentValue = requireContext().packageName
+        _binding = FragmentCarteGeometrieBinding.inflate(inflater, container, false)
+        return binding.root
+    }
+
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+        binding.btnRetour.applyStatusBarMargin()
+        binding.btnFondCarte.applyStatusBarMargin()
+        binding.tvTitre.applyStatusBarMargin()
+
+        val moduleCode = arguments?.getString("moduleCode") ?: return navUp()
+        val objectType = arguments?.getString("objectType") ?: return navUp()
+        val id = arguments?.getInt("id", -1)?.takeIf { it > 0 } ?: return navUp()
+        val titre = arguments?.getString("titre").orEmpty()
+
+        binding.tvTitre.text = titre
+        binding.tvTitre.visibility = if (titre.isEmpty()) View.GONE else View.VISIBLE
+
+        binding.map.setTileSource(tileSourcePour(fondCarte))
+        binding.map.setMultiTouchControls(true)
+
+        binding.btnRetour.setOnClickListener { findNavController().navigateUp() }
+        binding.btnFondCarte.setOnClickListener {
+            fondCarte = fondCarte.suivant()
+            binding.map.setTileSource(tileSourcePour(fondCarte))
+            binding.map.invalidate()
+        }
+
+        chargerEtAfficher(moduleCode, objectType, id)
+    }
+
+    private fun navUp() { findNavController().navigateUp() }
+
+    private fun chargerEtAfficher(moduleCode: String, objectType: String, id: Int) {
+        binding.progressCarte.visibility = View.VISIBLE
+        binding.tvErreur.visibility = View.GONE
+        viewLifecycleOwner.lifecycleScope.launch {
+            val config = GeoNatureConfig(requireContext())
+            if (objectType == "module") chargerProtocole(config, moduleCode)
+            else chargerObjet(config, moduleCode, objectType, id)
+        }
+    }
+
+    /** Carte d'un objet (site, sites_group, visite, …) : sa géométrie + celle de ses enfants. */
+    private suspend fun chargerObjet(config: GeoNatureConfig, moduleCode: String, objectType: String, id: Int) {
+        val objet = MonitoringApi.chargerObjet(config, moduleCode, objectType, id)
+        if (!isAdded) return
+        val geoStr = objet?.geometrieGeoJson
+        if (objet == null || geoStr.isNullOrEmpty()) {
+            binding.progressCarte.visibility = View.GONE
+            binding.tvErreur.text = "Pas de géométrie pour cet objet."
+            binding.tvErreur.visibility = View.VISIBLE
+            return
+        }
+
+        // L'API ne renvoie pas la `geometry` des enfants à depth=1 — il faut fetcher chaque
+        // enfant individuellement. Auth est cachée 5min côté GeoNatureAuth → seul le 1er login
+        // déclenche la requête /auth/login, le reste réutilise le token.
+        val aFetch: List<Pair<String, MonitoringApi.MonitoringEnfant>> =
+            objet.enfants.flatMap { (ctype, items) -> items.map { ctype to it } }
+        val geoJsonsEnfants: List<String?> = if (aFetch.isEmpty()) emptyList() else coroutineScope {
+            aFetch.map { (ctype, e) ->
+                async {
+                    e.geometrieGeoJson?.takeIf { it.isNotEmpty() }
+                        ?: MonitoringApi.chargerObjet(config, moduleCode, ctype, e.id)?.geometrieGeoJson
+                }
+            }.awaitAll()
+        }
+
+        if (!isAdded) return
+        binding.progressCarte.visibility = View.GONE
+
+        try {
+            val tous = mutableListOf<GeoPoint>()
+            tous += rendre(JSONObject(geoStr), estEnfant = false)
+            geoJsonsEnfants.forEach { gj ->
+                if (gj.isNullOrEmpty()) return@forEach
+                try { tous += rendre(JSONObject(gj), estEnfant = true) }
+                catch (_: Exception) { /* enfant illisible, on l'ignore */ }
+            }
+            terminer(tous)
+        } catch (e: Exception) {
+            binding.tvErreur.text = "Géométrie illisible : ${e.message}"
+            binding.tvErreur.visibility = View.VISIBLE
+        }
+    }
+
+    /** Carte d'un protocole entier : tous les sites macro avec leur géométrie. Identifie les
+     *  types macro via le schéma (children de "module") ou heuristique sites_group/site. */
+    private suspend fun chargerProtocole(config: GeoNatureConfig, moduleCode: String) {
+        val enfantsParType = MonitoringApi.chargerEnfants(config, moduleCode) ?: emptyMap()
+        val schema = MonitoringApi.chargerSchemaProtocole(config, moduleCode)
+        if (!isAdded) return
+
+        val rootsSchema = schema?.get("module")?.childrenTypes.orEmpty()
+        val typesAfficher = when {
+            rootsSchema.isNotEmpty() -> rootsSchema.filter { it in enfantsParType.keys }
+            enfantsParType.containsKey("sites_group") -> enfantsParType.keys.filter { it != "site" }
+            else -> enfantsParType.keys.toList()
+        }
+
+        val aFetch: List<Pair<String, MonitoringApi.MonitoringEnfant>> =
+            typesAfficher.flatMap { ctype -> enfantsParType[ctype].orEmpty().map { ctype to it } }
+        if (aFetch.isEmpty()) {
+            binding.progressCarte.visibility = View.GONE
+            binding.tvErreur.text = "Aucun site avec géométrie pour ce protocole."
+            binding.tvErreur.visibility = View.VISIBLE
+            return
+        }
+
+        val geoJsons: List<String?> = coroutineScope {
+            aFetch.map { (ctype, e) ->
+                async {
+                    e.geometrieGeoJson?.takeIf { it.isNotEmpty() }
+                        ?: MonitoringApi.chargerObjet(config, moduleCode, ctype, e.id)?.geometrieGeoJson
+                }
+            }.awaitAll()
+        }
+
+        if (!isAdded) return
+        binding.progressCarte.visibility = View.GONE
+
+        val tous = mutableListOf<GeoPoint>()
+        geoJsons.forEach { gj ->
+            if (gj.isNullOrEmpty()) return@forEach
+            try { tous += rendre(JSONObject(gj), estEnfant = false) }
+            catch (_: Exception) { /* géo illisible, on l'ignore */ }
+        }
+        terminer(tous)
+    }
+
+    private fun terminer(tous: List<GeoPoint>) {
+        if (tous.isEmpty()) {
+            binding.tvErreur.text = "Aucune géométrie à afficher."
+            binding.tvErreur.visibility = View.VISIBLE
+        } else {
+            binding.map.post { recadrer(tous) }
+        }
+    }
+
+    /** Ajoute les overlays correspondant à une géométrie GeoJSON sur la carte et renvoie tous
+     *  les GeoPoint qu'elle couvre (pour le recadrage global). [estEnfant] = style plus discret
+     *  pour distinguer les enfants (points d'écoute, sous-sites) de la géométrie principale. */
+    private fun rendre(geo: JSONObject, estEnfant: Boolean): List<GeoPoint> {
+        val type = geo.optString("type", "")
+        val coords = geo.opt("coordinates")
+        val points = mutableListOf<GeoPoint>()
+        when (type) {
+            "Point" -> {
+                val arr = coords as? JSONArray ?: return points
+                val pt = lonLatToGeoPoint(arr) ?: return points
+                points += pt
+                ajouterMarker(pt, estEnfant)
+            }
+            "LineString" -> {
+                val arr = coords as? JSONArray ?: return points
+                val pts = extrairePoints(arr)
+                if (pts.isEmpty()) return points
+                points += pts
+                ajouterPolyline(pts, estEnfant)
+            }
+            "MultiPoint" -> {
+                val arr = coords as? JSONArray ?: return points
+                val pts = extrairePoints(arr)
+                points += pts
+                pts.forEach { ajouterMarker(it, estEnfant) }
+            }
+            "Polygon" -> {
+                val arr = coords as? JSONArray ?: return points
+                extraireAnneaux(arr).forEach { ring ->
+                    points += ring
+                    ajouterPolygone(ring, estEnfant)
+                }
+            }
+            "MultiPolygon" -> {
+                val arr = coords as? JSONArray ?: return points
+                for (i in 0 until arr.length()) {
+                    val poly = arr.optJSONArray(i) ?: continue
+                    extraireAnneaux(poly).forEach { ring ->
+                        points += ring
+                        ajouterPolygone(ring, estEnfant)
+                    }
+                }
+            }
+        }
+        return points
+    }
+
+    private fun lonLatToGeoPoint(arr: JSONArray): GeoPoint? {
+        if (arr.length() < 2) return null
+        val lon = arr.optDouble(0, Double.NaN)
+        val lat = arr.optDouble(1, Double.NaN)
+        if (lat.isNaN() || lon.isNaN()) return null
+        return GeoPoint(lat, lon)
+    }
+
+    private fun extrairePoints(arr: JSONArray): List<GeoPoint> {
+        val list = mutableListOf<GeoPoint>()
+        for (i in 0 until arr.length()) {
+            val coord = arr.optJSONArray(i) ?: continue
+            lonLatToGeoPoint(coord)?.let { list += it }
+        }
+        return list
+    }
+
+    private fun extraireAnneaux(polyArr: JSONArray): List<List<GeoPoint>> {
+        val anneaux = mutableListOf<List<GeoPoint>>()
+        for (i in 0 until polyArr.length()) {
+            val ring = polyArr.optJSONArray(i) ?: continue
+            val pts = extrairePoints(ring)
+            if (pts.isNotEmpty()) anneaux += pts
+        }
+        return anneaux
+    }
+
+    private fun ajouterMarker(pt: GeoPoint, estEnfant: Boolean) {
+        val drawableRes = if (estEnfant) R.drawable.ic_location_pin else R.drawable.ic_location_pin
+        val marker = Marker(binding.map).apply {
+            position = pt
+            icon = ContextCompat.getDrawable(requireContext(), drawableRes)?.also {
+                // Couleur orange pour les enfants (points d'écoute), rouge pour le parent.
+                it.setTint(if (estEnfant) 0xFFFF9800.toInt() else 0xFFD32F2F.toInt())
+            }
+            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+        }
+        binding.map.overlays.add(marker)
+    }
+
+    private fun ajouterPolyline(pts: List<GeoPoint>, estEnfant: Boolean) {
+        val pl = Polyline(binding.map).apply {
+            setPoints(pts)
+            outlinePaint.color = if (estEnfant) 0xCCFF9800.toInt() else 0xCC2196F3.toInt()
+            outlinePaint.strokeWidth = if (estEnfant) 3f else 5f
+            outlinePaint.strokeCap = Paint.Cap.ROUND
+        }
+        binding.map.overlays.add(pl)
+    }
+
+    private fun ajouterPolygone(ring: List<GeoPoint>, estEnfant: Boolean) {
+        val poly = Polygon(binding.map).apply {
+            points = ring
+            if (estEnfant) {
+                fillPaint.color = 0x44FF9800.toInt()
+                outlinePaint.color = 0xFFE65100.toInt()
+                outlinePaint.strokeWidth = 2f
+            } else {
+                fillPaint.color = 0x552196F3.toInt()
+                outlinePaint.color = 0xFF1976D2.toInt()
+                outlinePaint.strokeWidth = 3f
+            }
+        }
+        binding.map.overlays.add(poly)
+    }
+
+    private fun recadrer(points: List<GeoPoint>) {
+        if (points.size == 1) {
+            binding.map.controller.setCenter(points[0])
+            binding.map.controller.setZoom(16.0)
+            return
+        }
+        val box = BoundingBox.fromGeoPoints(points)
+        val degenere = (box.latNorth - box.latSouth) < 0.0001 && (box.lonEast - box.lonWest) < 0.0001
+        if (degenere) {
+            binding.map.controller.setCenter(points[0])
+            binding.map.controller.setZoom(16.0)
+        } else {
+            binding.map.zoomToBoundingBox(box.increaseByScale(1.3f), false)
+        }
+    }
+
+    override fun onResume() { super.onResume(); binding.map.onResume() }
+    override fun onPause() { super.onPause(); binding.map.onPause() }
+    override fun onDestroyView() { super.onDestroyView(); _binding = null }
+}

@@ -6,6 +6,8 @@ import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.Button
+import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.os.bundleOf
@@ -85,32 +87,44 @@ class FicheObjetFragment : Fragment() {
             ?: schemaCe?.labelList
             ?: labelTypeParDefaut(objet.type)
 
-        afficherGeometrie(objet)
+        // Position / Geometry retirée de la fiche : reste accessible via le bouton 👁 carte.
         afficherProprietes(objet, schemaCe)
+        afficherActions(objet, schema, nom)
         afficherEnfants(objet, schema)
     }
 
-    private fun afficherGeometrie(objet: MonitoringApi.MonitoringObjet) {
-        val geo = objet.geometrie ?: return
-        val ctx = requireContext()
+    /** Affiche un bouton "+ Nouvelle visite" quand le schéma déclare `visit` comme enfant du
+     *  type courant — ou par défaut sur les objets de type site/sites_group (heuristique
+     *  fallback). POC : ouvre [NouvelleVisiteFragment] avec un formulaire en dur. */
+    private fun afficherActions(
+        objet: MonitoringApi.MonitoringObjet,
+        schema: Map<String, MonitoringApi.MonitoringSchemaObjet>?,
+        nomObjet: String,
+    ) {
+        val supporteVisite = schema?.get(objet.type)?.childrenTypes
+            ?.any { it == "visit" || it == "visite" } == true
+            || objet.type in setOf("site", "sites_group")
+        if (!supporteVisite) return
         val density = resources.displayMetrics.density
-        val row = LinearLayout(ctx).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(0, (6 * density).toInt(), 0, (6 * density).toInt())
+        val btn = Button(requireContext()).apply {
+            text = "+ Nouvelle visite"
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = (16 * density).toInt() }
+            setOnClickListener {
+                findNavController().navigate(
+                    R.id.action_fiche_to_nouvelle_visite,
+                    androidx.core.os.bundleOf(
+                        "moduleCode" to objet.moduleCode,
+                        "parentObjectType" to objet.type,
+                        "parentId" to objet.id,
+                        "titreSite" to nomObjet,
+                    ),
+                )
+            }
         }
-        val label = TextView(ctx).apply {
-            text = "Position"
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-            setTextColor(android.graphics.Color.parseColor("#888888"))
-        }
-        val value = TextView(ctx).apply {
-            text = geo
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-            typeface = android.graphics.Typeface.MONOSPACE
-        }
-        row.addView(label)
-        row.addView(value)
-        binding.llProprietes.addView(row)
+        binding.llProprietes.addView(btn)
     }
 
     /** Liste les propriétés scalaires de l'objet sous forme "Label : valeur". Masque les
@@ -120,11 +134,20 @@ class FicheObjetFragment : Fragment() {
         schemaCe: MonitoringApi.MonitoringSchemaObjet?,
     ) {
         val nameField = schemaCe?.nameField
+        // Filtre les champs techniques ou redondants à la demande de l'utilisateur :
+        // id_*, uuid_*, meta_*, pk, altitude_min/max, *_code (déjà l'identifiant ailleurs),
+        // geom/geometry/geom_* (la géométrie est consultable via le bouton 👁 carte),
+        // additional_data_keys (clé technique), et le nameField (déjà en titre).
         val proprietesAffichables = objet.proprietes.filterKeys { k ->
             k != nameField &&
                 !k.startsWith("id_") &&
-                k != "uuid_base_site" &&
-                k != "additional_data_keys"
+                !k.startsWith("uuid_") &&
+                !k.startsWith("meta_") &&
+                k != "additional_data_keys" &&
+                k != "pk" &&
+                k != "altitude_min" && k != "altitude_max" &&
+                !k.endsWith("_code") &&
+                k != "geom" && k != "geometry" && !k.startsWith("geom_")
         }
         if (proprietesAffichables.isEmpty()) return
 
@@ -181,24 +204,30 @@ class FicheObjetFragment : Fragment() {
 
             // Re-extrait le nom des enfants via le schéma de leur type.
             val nf = schema?.get(type)?.nameField
+            val borderless = android.util.TypedValue().also {
+                ctx.theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, it, true)
+            }.resourceId
             items.forEach { e ->
                 val nom = nf?.let { e.proprietes[it] }?.takeIf { it.isNotEmpty() } ?: e.nom
-                val row = TextView(ctx).apply {
-                    text = nom
-                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+                val row = LinearLayout(ctx).apply {
+                    orientation = LinearLayout.HORIZONTAL
                     gravity = Gravity.CENTER_VERTICAL
-                    setPadding((8 * density).toInt(), (10 * density).toInt(), (8 * density).toInt(), (10 * density).toInt())
                     layoutParams = LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT,
                         LinearLayout.LayoutParams.WRAP_CONTENT
                     )
-                    setBackgroundResource(android.R.attr.selectableItemBackground.let {
-                        val tv = android.util.TypedValue()
-                        ctx.theme.resolveAttribute(android.R.attr.selectableItemBackground, tv, true)
-                        tv.resourceId
-                    })
-                    isClickable = true
-                    isFocusable = true
+                }
+                val nameTv = TextView(ctx).apply {
+                    text = nom
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+                    setPadding(0, (10 * density).toInt(), (8 * density).toInt(), (10 * density).toInt())
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                }
+                val btnInfo = ImageButton(ctx).apply {
+                    setImageResource(R.drawable.ic_info)
+                    setBackgroundResource(borderless)
+                    contentDescription = "Détails"
+                    layoutParams = LinearLayout.LayoutParams((40 * density).toInt(), (40 * density).toInt())
                     setOnClickListener {
                         if (e.id > 0) {
                             findNavController().navigate(
@@ -212,6 +241,28 @@ class FicheObjetFragment : Fragment() {
                         }
                     }
                 }
+                val btnCarte = ImageButton(ctx).apply {
+                    setImageResource(R.drawable.ic_eye)
+                    setBackgroundResource(borderless)
+                    contentDescription = "Voir sur carte"
+                    layoutParams = LinearLayout.LayoutParams((40 * density).toInt(), (40 * density).toInt())
+                    setOnClickListener {
+                        if (e.id > 0) {
+                            findNavController().navigate(
+                                R.id.action_fiche_to_carte,
+                                bundleOf(
+                                    "moduleCode" to objet.moduleCode,
+                                    "objectType" to type,
+                                    "id" to e.id,
+                                    "titre" to nom,
+                                )
+                            )
+                        }
+                    }
+                }
+                row.addView(nameTv)
+                row.addView(btnInfo)
+                row.addView(btnCarte)
                 binding.llEnfants.addView(row)
             }
         }

@@ -6,6 +6,7 @@ import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.os.bundleOf
@@ -99,30 +100,32 @@ class SuiviDetailFragment : Fragment() {
 
             val counts = enfantsAffines.mapValues { it.value.size }
 
-            // Le résumé en haut compte tous les types présents dans la réponse, dans l'ordre
-            // du schéma quand on l'a (parent avant enfant naturellement), sinon JSON.
-            val typesPourResume = ordonnerTypes(enfantsAffines.keys.toList(), schema)
-            binding.tvNbSites.text = typesPourResume.joinToString("  ·  ") { type ->
+            // Sur un protocole avec hiérarchie (sites_group → site type STOM), on n'affiche que
+            // le niveau macro — ni dans le résumé ni dans la liste. Les points d'écoute restent
+            // visibles dans la fiche d'un site individuel.
+            val typesAfficher: List<String> = typesAfficherEnListe(enfantsAffines.keys.toList(), schema)
+            binding.tvNbSites.text = typesAfficher.joinToString("  ·  ") { type ->
                 "${labelPour(type, schema, counts)} : ${counts[type] ?: 0}"
             }
-
-            // La LISTE n'affiche que les types "macro" déclarés enfants du module dans le schéma.
-            // Sans schéma, fallback heuristique : si sites_group existe, on cache site.
-            val typesAfficher: List<String> = typesAfficherEnListe(enfantsAffines.keys.toList(), schema)
             afficherListeSites(moduleCode, typesAfficher, enfantsAffines, counts, schema)
         }
     }
 
-    /** Sélectionne les object_types à afficher dans la liste principale.
-     *  - Si schéma dispo : on prend les enfants directs de `module` (= niveau macro)
-     *  - Sinon fallback heuristique : si sites_group existe, on l'utilise seul (sans site
-     *    leaf) ; sinon tous les types présents. */
+    /** Sélectionne les object_types à afficher dans la liste principale et dans le résumé.
+     *  Filtre robuste par `parent_type` : un type est macro s'il déclare le module comme parent.
+     *  Ça reste cohérent même si l'API renvoie en `children` à la fois sites_group ET site (cas
+     *  STOM observé) — seul sites_group est gardé car site a `parent_types: ["sites_group"]`.
+     *  Sans schéma, fallback heuristique. */
     private fun typesAfficherEnListe(
         typesPresents: List<String>,
         schema: Map<String, MonitoringApi.MonitoringSchemaObjet>?,
     ): List<String> {
-        val rootsSchema = schema?.get("module")?.childrenTypes.orEmpty()
-        if (rootsSchema.isNotEmpty()) return rootsSchema.filter { it in typesPresents }
+        if (schema != null) {
+            val typesMacro = typesPresents.filter { type ->
+                schema[type]?.parentType == "module"
+            }
+            if (typesMacro.isNotEmpty()) return typesMacro
+        }
         if ("sites_group" in typesPresents) return typesPresents.filter { it != "site" }
         return typesPresents
     }
@@ -184,8 +187,8 @@ class SuiviDetailFragment : Fragment() {
         val ctx = requireContext()
         val density = resources.displayMetrics.density
         val plusieursTypes = typesOrdonnes.size > 1
-        val tvBg = android.util.TypedValue().also {
-            ctx.theme.resolveAttribute(android.R.attr.selectableItemBackground, it, true)
+        val borderless = android.util.TypedValue().also {
+            ctx.theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, it, true)
         }.resourceId
         typesOrdonnes.forEach { type ->
             val items = enfants[type].orEmpty()
@@ -208,18 +211,25 @@ class SuiviDetailFragment : Fragment() {
                 binding.llSites.addView(header)
             }
             items.forEach { e ->
-                val row = TextView(ctx).apply {
-                    text = e.nom
-                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+                val row = LinearLayout(ctx).apply {
+                    orientation = LinearLayout.HORIZONTAL
                     gravity = Gravity.CENTER_VERTICAL
-                    setPadding(0, (10 * density).toInt(), 0, (10 * density).toInt())
                     layoutParams = LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT,
                         LinearLayout.LayoutParams.WRAP_CONTENT
                     )
-                    setBackgroundResource(tvBg)
-                    isClickable = true
-                    isFocusable = true
+                }
+                val nameTv = TextView(ctx).apply {
+                    text = e.nom
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+                    setPadding(0, (10 * density).toInt(), (8 * density).toInt(), (10 * density).toInt())
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                }
+                val btnInfo = ImageButton(ctx).apply {
+                    setImageResource(R.drawable.ic_info)
+                    setBackgroundResource(borderless)
+                    contentDescription = "Détails"
+                    layoutParams = LinearLayout.LayoutParams((40 * density).toInt(), (40 * density).toInt())
                     setOnClickListener {
                         if (e.id > 0) {
                             findNavController().navigate(
@@ -233,6 +243,28 @@ class SuiviDetailFragment : Fragment() {
                         }
                     }
                 }
+                val btnCarte = ImageButton(ctx).apply {
+                    setImageResource(R.drawable.ic_eye)
+                    setBackgroundResource(borderless)
+                    contentDescription = "Voir sur carte"
+                    layoutParams = LinearLayout.LayoutParams((40 * density).toInt(), (40 * density).toInt())
+                    setOnClickListener {
+                        if (e.id > 0) {
+                            findNavController().navigate(
+                                R.id.action_suivi_to_carte,
+                                bundleOf(
+                                    "moduleCode" to moduleCode,
+                                    "objectType" to type,
+                                    "id" to e.id,
+                                    "titre" to e.nom,
+                                )
+                            )
+                        }
+                    }
+                }
+                row.addView(nameTv)
+                row.addView(btnInfo)
+                row.addView(btnCarte)
                 binding.llSites.addView(row)
             }
         }

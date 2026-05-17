@@ -80,10 +80,18 @@ class CarteGeometrieFragment : Fragment() {
 
     /** Carte d'un objet (site, sites_group, visite, …) : sa géométrie + celle de ses enfants. */
     private suspend fun chargerObjet(config: GeoNatureConfig, moduleCode: String, objectType: String, id: Int) {
-        val objet = MonitoringApi.chargerObjet(config, moduleCode, objectType, id)
+        val objet = try {
+            MonitoringApi.chargerObjet(config, moduleCode, objectType, id)
+        } catch (e: Exception) {
+            if (!isAdded) return
+            binding.progressCarte.visibility = View.GONE
+            binding.tvErreur.text = fr.ariegenature.geonat.network.humaniserErreurReseau(e)
+            binding.tvErreur.visibility = View.VISIBLE
+            return
+        }
         if (!isAdded) return
-        val geoStr = objet?.geometrieGeoJson
-        if (objet == null || geoStr.isNullOrEmpty()) {
+        val geoStr = objet.geometrieGeoJson
+        if (geoStr.isNullOrEmpty()) {
             binding.progressCarte.visibility = View.GONE
             binding.tvErreur.text = "Pas de géométrie pour cet objet."
             binding.tvErreur.visibility = View.VISIBLE
@@ -92,14 +100,15 @@ class CarteGeometrieFragment : Fragment() {
 
         // L'API ne renvoie pas la `geometry` des enfants à depth=1 — il faut fetcher chaque
         // enfant individuellement. Auth est cachée 5min côté GeoNatureAuth → seul le 1er login
-        // déclenche la requête /auth/login, le reste réutilise le token.
+        // déclenche la requête /auth/login, le reste réutilise le token. Les échecs par enfant
+        // sont avalés (best-effort) pour ne pas planter la carte entière sur un 403 isolé.
         val aFetch: List<Pair<String, MonitoringApi.MonitoringEnfant>> =
             objet.enfants.flatMap { (ctype, items) -> items.map { ctype to it } }
         val geoJsonsEnfants: List<String?> = if (aFetch.isEmpty()) emptyList() else coroutineScope {
             aFetch.map { (ctype, e) ->
                 async {
                     e.geometrieGeoJson?.takeIf { it.isNotEmpty() }
-                        ?: MonitoringApi.chargerObjet(config, moduleCode, ctype, e.id)?.geometrieGeoJson
+                        ?: runCatching { MonitoringApi.chargerObjet(config, moduleCode, ctype, e.id).geometrieGeoJson }.getOrNull()
                 }
             }.awaitAll()
         }
@@ -125,7 +134,15 @@ class CarteGeometrieFragment : Fragment() {
     /** Carte d'un protocole entier : tous les sites macro avec leur géométrie. Identifie les
      *  types macro via le schéma (children de "module") ou heuristique sites_group/site. */
     private suspend fun chargerProtocole(config: GeoNatureConfig, moduleCode: String) {
-        val enfantsParType = MonitoringApi.chargerEnfants(config, moduleCode) ?: emptyMap()
+        val enfantsParType = try {
+            MonitoringApi.chargerEnfants(config, moduleCode)
+        } catch (e: Exception) {
+            if (!isAdded) return
+            binding.progressCarte.visibility = View.GONE
+            binding.tvErreur.text = fr.ariegenature.geonat.network.humaniserErreurReseau(e)
+            binding.tvErreur.visibility = View.VISIBLE
+            return
+        }
         val schema = MonitoringApi.chargerSchemaProtocole(config, moduleCode)
         if (!isAdded) return
 
@@ -149,7 +166,7 @@ class CarteGeometrieFragment : Fragment() {
             aFetch.map { (ctype, e) ->
                 async {
                     e.geometrieGeoJson?.takeIf { it.isNotEmpty() }
-                        ?: MonitoringApi.chargerObjet(config, moduleCode, ctype, e.id)?.geometrieGeoJson
+                        ?: runCatching { MonitoringApi.chargerObjet(config, moduleCode, ctype, e.id).geometrieGeoJson }.getOrNull()
                 }
             }.awaitAll()
         }

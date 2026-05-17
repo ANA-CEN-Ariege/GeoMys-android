@@ -5,7 +5,6 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
@@ -16,18 +15,42 @@ import androidx.recyclerview.widget.RecyclerView
 import fr.ariegenature.geonat.R
 import fr.ariegenature.geonat.databinding.FragmentObservationsBinding
 import fr.ariegenature.geonat.databinding.ItemObservationBinding
-import fr.ariegenature.geonat.gpx.genererGPX
 import fr.ariegenature.geonat.model.Observation
 import fr.ariegenature.geonat.model.Taxon
-import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
+
+/** Un relevé = un point + un instant + une session de saisie (mono-taxon ou multi-taxons).
+ *  Les obs sans releveId (saisie rapide, import GPX) deviennent chacune un relevé solo. */
+data class Releve(
+    /** Clé de groupage. Null pour les solos (saisie mono-taxon historique). */
+    val releveId: String?,
+    val observations: List<Observation>,
+) {
+    val premier: Observation get() = observations.first()
+    val date: Long get() = observations.minOf { it.date }
+    val totalIndividus: Int get() = observations.sumOf { it.nombre }
+}
+
+/** Regroupe une liste d'obs par releveId. Préserve l'ordre — les obs sans releveId restent
+ *  des relevés solos, celles avec le même releveId fusionnent en un seul. */
+fun List<Observation>.grouperEnReleves(): List<Releve> {
+    val groupes = LinkedHashMap<String, MutableList<Observation>>()
+    val solos = mutableListOf<Releve>()
+    forEach { obs ->
+        val rid = obs.releveId
+        if (rid.isNullOrEmpty()) solos.add(Releve(null, listOf(obs)))
+        else groupes.getOrPut(rid) { mutableListOf() }.add(obs)
+    }
+    val groupes2 = groupes.map { (rid, obs) -> Releve(rid, obs) }
+    return (groupes2 + solos).sortedByDescending { it.date }
+}
 
 class ObservationsFragment : Fragment() {
     private var _binding: FragmentObservationsBinding? = null
     private val binding get() = _binding!!
     private val traceViewModel: TraceViewModel by activityViewModels()
-    private lateinit var adapter: ObservationAdapter
+    private lateinit var adapter: ReleveAdapter
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         _binding = FragmentObservationsBinding.inflate(inflater, container, false)
@@ -38,26 +61,15 @@ class ObservationsFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
         binding.root.applySystemBarInsets()
 
-        adapter = ObservationAdapter(
-            onDelete = { obs ->
-                traceViewModel.supprimerObservation(obs.id)
-            },
-            onRepositionner = { obs ->
-                findNavController().navigateUp()
-            },
-            onEditer = { obs ->
-                val bundle = Bundle().apply { putString("obsId", obs.id) }
-                findNavController().navigate(R.id.action_observations_to_saisie, bundle)
-            }
+        adapter = ReleveAdapter(
+            onDelete = { releve -> demanderConfirmationSuppression(releve) },
+            onEditer = { releve -> ouvrirEdition(releve) },
         )
 
         binding.recyclerView.layoutManager = LinearLayoutManager(requireContext())
         binding.recyclerView.adapter = adapter
 
         binding.btnFermer.setOnClickListener { findNavController().navigateUp() }
-
-        binding.btnExporterGpx.setOnClickListener { exporterGpx() }
-
         binding.btnEffacerTout.setOnClickListener {
             AlertDialog.Builder(requireContext())
                 .setTitle(R.string.tout_reinitialiser)
@@ -71,32 +83,47 @@ class ObservationsFragment : Fragment() {
         }
 
         traceViewModel.observations.observe(viewLifecycleOwner) { obs ->
-            val sorted = obs.sortedByDescending { it.date }
-            adapter.submitList(sorted)
-            binding.tvTitle.text = getString(R.string.observations_count, obs.size)
+            val releves = obs.grouperEnReleves()
+            adapter.submitList(releves)
+            binding.tvTitle.text = if (releves.size == obs.size) {
+                getString(R.string.observations_count, obs.size)
+            } else {
+                "${releves.size} relevé${if (releves.size > 1) "s" else ""} · ${obs.size} obs."
+            }
             binding.emptyView.visibility = if (obs.isEmpty()) View.VISIBLE else View.GONE
             binding.recyclerView.visibility = if (obs.isEmpty()) View.GONE else View.VISIBLE
-            binding.btnExporterGpx.isEnabled = obs.isNotEmpty() || traceViewModel.locationTracker.parcours.value?.isNotEmpty() == true
-            binding.btnEffacerTout.isEnabled = obs.isNotEmpty() || traceViewModel.locationTracker.parcours.value?.isNotEmpty() == true
+            val nonVide = obs.isNotEmpty() || traceViewModel.locationTracker.parcours.value?.isNotEmpty() == true
+            binding.btnEffacerTout.isEnabled = nonVide
         }
     }
 
-    private fun exporterGpx() {
-        val obs = traceViewModel.observations.value ?: emptyList()
-        val parcours = traceViewModel.locationTracker.parcours.value ?: emptyList()
-        val gpxContent = genererGPX(obs, parcours)
-        val file = File(requireContext().cacheDir, "GeoNat_${System.currentTimeMillis()}.gpx")
-        file.writeText(gpxContent)
-
-        val uri = androidx.core.content.FileProvider.getUriForFile(
-            requireContext(), "${requireContext().packageName}.provider", file
-        )
-        val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-            type = "application/gpx+xml"
-            putExtra(android.content.Intent.EXTRA_STREAM, uri)
-            addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    private fun demanderConfirmationSuppression(releve: Releve) {
+        if (releve.observations.size == 1) {
+            // Comportement historique : suppression immédiate sans confirmation pour les solos.
+            val rid = releve.releveId
+            if (!rid.isNullOrEmpty()) traceViewModel.supprimerReleve(rid)
+            else traceViewModel.supprimerObservation(releve.premier.id)
+            return
         }
-        startActivity(android.content.Intent.createChooser(intent, getString(R.string.partager_gpx)))
+        val especes = releve.observations.joinToString("\n") { "• ${it.espece}" }
+        AlertDialog.Builder(requireContext())
+            .setTitle("Supprimer ce relevé ?")
+            .setMessage("${releve.observations.size} espèces seront supprimées :\n$especes")
+            .setPositiveButton("Supprimer") { _, _ ->
+                val rid = releve.releveId
+                if (!rid.isNullOrEmpty()) traceViewModel.supprimerReleve(rid)
+                else traceViewModel.supprimerObservations(releve.observations.map { it.id })
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun ouvrirEdition(releve: Releve) {
+        val bundle = Bundle()
+        val rid = releve.releveId
+        if (!rid.isNullOrEmpty()) bundle.putString("releveId", rid)
+        else bundle.putString("obsId", releve.premier.id)
+        findNavController().navigate(R.id.action_observations_to_saisie, bundle)
     }
 
     override fun onDestroyView() {
@@ -105,15 +132,14 @@ class ObservationsFragment : Fragment() {
     }
 }
 
-class ObservationAdapter(
-    private val onDelete: (Observation) -> Unit,
-    private val onRepositionner: (Observation) -> Unit,
-    private val onEditer: (Observation) -> Unit = {}
-) : RecyclerView.Adapter<ObservationAdapter.ViewHolder>() {
-    private var items: List<Observation> = emptyList()
+class ReleveAdapter(
+    private val onDelete: (Releve) -> Unit,
+    private val onEditer: (Releve) -> Unit,
+) : RecyclerView.Adapter<ReleveAdapter.ViewHolder>() {
+    private var items: List<Releve> = emptyList()
     private val fmt = SimpleDateFormat("dd/MM HH:mm", Locale.getDefault())
 
-    fun submitList(list: List<Observation>) {
+    fun submitList(list: List<Releve>) {
         items = list
         notifyDataSetChanged()
     }
@@ -126,61 +152,50 @@ class ObservationAdapter(
     }
 
     override fun onBindViewHolder(holder: ViewHolder, position: Int) {
-        val obs = items[position]
+        val r = items[position]
+        val rep = r.premier
         with(holder.binding) {
-            tvEspece.text = obs.espece
-            tvDate.text = fmt.format(Date(obs.date))
-            tvCoord.text = "%.4f, %.4f".format(obs.latitude, obs.longitude)
-            tvNombre.visibility = if (obs.nombre > 1) View.VISIBLE else View.GONE
-            tvNombre.text = "×${obs.nombre}"
-            tvNotes.visibility = if (obs.notes.isNotEmpty()) View.VISIBLE else View.GONE
-            tvNotes.text = obs.notes
-            btnModifier.setOnClickListener { onEditer(obs) }
-            btnSupprimer.setOnClickListener { onDelete(obs) }
-            val ctx = holder.itemView.context
-            when (obs.taxon ?: Taxon.OISEAU) {
-                Taxon.OISEAU -> {
-                    ivTaxonIcon.setImageResource(R.drawable.oiseaux)
-                    ivTaxonIcon.imageTintList = ColorStateList.valueOf(ContextCompat.getColor(ctx, R.color.orange))
-                }
-                Taxon.MAMMIFERE -> {
-                    ivTaxonIcon.setImageResource(R.drawable.mammiferes2)
-                    ivTaxonIcon.imageTintList = ColorStateList.valueOf(ContextCompat.getColor(ctx, R.color.brown))
-                }
-                Taxon.REPTILE -> {
-                    ivTaxonIcon.setImageResource(R.drawable.reptiles2)
-                    ivTaxonIcon.imageTintList = ColorStateList.valueOf(ContextCompat.getColor(ctx, R.color.colorSecondary))
-                }
-                Taxon.BATRACIEN -> {
-                    ivTaxonIcon.setImageResource(R.drawable.amphibiens)
-                    ivTaxonIcon.imageTintList = ColorStateList.valueOf(ContextCompat.getColor(ctx, R.color.blue_batracien))
-                }
-                Taxon.POISSON -> {
-                    ivTaxonIcon.setImageResource(R.drawable.poissons)
-                    ivTaxonIcon.imageTintList = ColorStateList.valueOf(ContextCompat.getColor(ctx, R.color.blue_poisson))
-                }
-                Taxon.INSECTE -> {
-                    ivTaxonIcon.setImageResource(R.drawable.insectes)
-                    ivTaxonIcon.imageTintList = ColorStateList.valueOf(ContextCompat.getColor(ctx, R.color.amber_insecte))
-                }
-                Taxon.FONGE -> {
-                    ivTaxonIcon.setImageResource(R.drawable.champignons2)
-                    ivTaxonIcon.imageTintList = ColorStateList.valueOf(ContextCompat.getColor(ctx, R.color.brown_fonge))
-                }
-                Taxon.MOLLUSQUE -> {
-                    ivTaxonIcon.setImageResource(R.drawable.mollusques)
-                    ivTaxonIcon.imageTintList = ColorStateList.valueOf(ContextCompat.getColor(ctx, R.color.purple_invertebres))
-                }
-                Taxon.INVERTEBRES -> {
-                    ivTaxonIcon.setImageResource(R.drawable.araignees)
-                    ivTaxonIcon.imageTintList = ColorStateList.valueOf(ContextCompat.getColor(ctx, R.color.purple_invertebres))
-                }
-                Taxon.PLANTE -> {
-                    ivTaxonIcon.setImageResource(R.drawable.fleurs)
-                    ivTaxonIcon.imageTintList = ColorStateList.valueOf(ContextCompat.getColor(ctx, R.color.teal))
-                }
+            // tv_espece : 1 nom si solo, "N espèces : a, b, c" si relevé multi
+            if (r.observations.size == 1) {
+                tvEspece.text = rep.espece
+                tvNotes.visibility = if (rep.notes.isNotEmpty()) View.VISIBLE else View.GONE
+                tvNotes.text = rep.notes
+            } else {
+                val especes = r.observations.joinToString(", ") { it.espece }
+                tvEspece.text = "${r.observations.size} espèces"
+                tvNotes.visibility = View.VISIBLE
+                tvNotes.text = especes
+                tvNotes.maxLines = 2
             }
+            tvDate.text = fmt.format(Date(r.date))
+            tvCoord.text = "%.4f, %.4f".format(rep.latitude, rep.longitude)
+            tvNombre.visibility = if (r.totalIndividus > 1) View.VISIBLE else View.GONE
+            tvNombre.text = "×${r.totalIndividus}"
+            btnModifier.setOnClickListener { onEditer(r) }
+            btnSupprimer.setOnClickListener { onDelete(r) }
+            iconePourTaxon(holder.binding, rep.taxon ?: Taxon.OISEAU)
         }
+    }
+
+    private fun iconePourTaxon(b: ItemObservationBinding, taxon: Taxon) {
+        val ctx = b.root.context
+        when (taxon) {
+            Taxon.OISEAU      -> setIcone(b, R.drawable.oiseaux,     R.color.orange, ctx)
+            Taxon.MAMMIFERE   -> setIcone(b, R.drawable.mammiferes2, R.color.brown, ctx)
+            Taxon.REPTILE     -> setIcone(b, R.drawable.reptiles2,   R.color.colorSecondary, ctx)
+            Taxon.BATRACIEN   -> setIcone(b, R.drawable.amphibiens,  R.color.blue_batracien, ctx)
+            Taxon.POISSON     -> setIcone(b, R.drawable.poissons,    R.color.blue_poisson, ctx)
+            Taxon.INSECTE     -> setIcone(b, R.drawable.insectes,    R.color.amber_insecte, ctx)
+            Taxon.FONGE       -> setIcone(b, R.drawable.champignons2,R.color.brown_fonge, ctx)
+            Taxon.MOLLUSQUE   -> setIcone(b, R.drawable.mollusques,  R.color.purple_invertebres, ctx)
+            Taxon.INVERTEBRES -> setIcone(b, R.drawable.araignees,   R.color.purple_invertebres, ctx)
+            Taxon.PLANTE      -> setIcone(b, R.drawable.fleurs,      R.color.teal, ctx)
+        }
+    }
+
+    private fun setIcone(b: ItemObservationBinding, drawable: Int, color: Int, ctx: android.content.Context) {
+        b.ivTaxonIcon.setImageResource(drawable)
+        b.ivTaxonIcon.imageTintList = ColorStateList.valueOf(ContextCompat.getColor(ctx, color))
     }
 
     override fun getItemCount() = items.size

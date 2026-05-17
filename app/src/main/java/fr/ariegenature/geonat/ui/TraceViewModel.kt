@@ -39,6 +39,24 @@ class TraceViewModel(application: Application) : AndroidViewModel(application) {
         _observations.value = list
     }
 
+    /** Supprime toutes les obs partageant un [releveId] donné (= un "relevé" GeoNature au sens
+     *  saisie multi-taxons : 1 point + N taxons en une session). */
+    fun supprimerReleve(releveId: String) {
+        val list = _observations.value ?: return
+        list.removeAll { it.releveId == releveId }
+        _observations.value = list
+    }
+
+    /** Suppression par liste d'IDs — utilisé par l'édition de relevé pour purger les obs
+     *  retirées du formulaire entre le chargement et l'enregistrement. */
+    fun supprimerObservations(ids: Collection<String>) {
+        if (ids.isEmpty()) return
+        val list = _observations.value ?: return
+        val set = ids.toHashSet()
+        list.removeAll { it.id in set }
+        _observations.value = list
+    }
+
     fun mettreAJourObservationPosition(id: String, lat: Double, lon: Double) {
         val list = _observations.value ?: return
         val idx = list.indexOfFirst { it.id == id }

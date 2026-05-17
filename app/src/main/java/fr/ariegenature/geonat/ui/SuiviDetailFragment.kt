@@ -79,10 +79,20 @@ class SuiviDetailFragment : Fragment() {
             val config = GeoNatureConfig(requireContext())
             val enfantsDeferred = async { MonitoringApi.chargerEnfants(config, moduleCode) }
             val schemaDeferred = async { MonitoringApi.chargerSchemaProtocole(config, moduleCode) }
-            val enfants = enfantsDeferred.await()
-            val schema = schemaDeferred.await()
+            val enfants: Map<String, List<MonitoringApi.MonitoringEnfant>>
+            val schema: Map<String, MonitoringApi.MonitoringSchemaObjet>?
+            try {
+                enfants = enfantsDeferred.await()
+                schema = schemaDeferred.await()
+            } catch (e: Exception) {
+                if (!isAdded) return@launch
+                binding.tvNbSites.visibility = View.GONE
+                binding.tvErreurDetail.visibility = View.VISIBLE
+                binding.tvErreurDetail.text = fr.ariegenature.geonat.network.humaniserErreurReseau(e)
+                return@launch
+            }
             if (!isAdded) return@launch
-            if (enfants.isNullOrEmpty()) {
+            if (enfants.isEmpty()) {
                 binding.tvNbSites.visibility = View.GONE
                 return@launch
             }

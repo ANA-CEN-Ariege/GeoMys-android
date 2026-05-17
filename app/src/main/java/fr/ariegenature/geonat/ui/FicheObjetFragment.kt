@@ -61,15 +61,20 @@ class FicheObjetFragment : Fragment() {
             val config = GeoNatureConfig(requireContext())
             val objetDeferred = async { MonitoringApi.chargerObjet(config, moduleCode, objectType, id) }
             val schemaDeferred = async { MonitoringApi.chargerSchemaProtocole(config, moduleCode) }
-            val objet = objetDeferred.await()
-            val schema = schemaDeferred.await()
-            if (!isAdded) return@launch
-            binding.progressFiche.visibility = View.GONE
-            if (objet == null) {
+            val objet: MonitoringApi.MonitoringObjet
+            val schema: Map<String, MonitoringApi.MonitoringSchemaObjet>?
+            try {
+                objet = objetDeferred.await()
+                schema = schemaDeferred.await()
+            } catch (e: Exception) {
+                if (!isAdded) return@launch
+                binding.progressFiche.visibility = View.GONE
                 binding.tvErreur.visibility = View.VISIBLE
-                binding.tvErreur.text = "Impossible de charger la fiche (HTTP ou parse erreur)."
+                binding.tvErreur.text = fr.ariegenature.geonat.network.humaniserErreurReseau(e)
                 return@launch
             }
+            if (!isAdded) return@launch
+            binding.progressFiche.visibility = View.GONE
             afficher(objet, schema)
         }
     }

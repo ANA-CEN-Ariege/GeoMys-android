@@ -151,13 +151,15 @@ object MonitoringApi {
     )
 
     /** GET /api/monitorings/object/<module_code>/module?depth=1 — récupère le module et la liste
-     *  de ses enfants directs avec leurs propriétés brutes. Map `object_type → [enfants]`. Null
-     *  sur erreur réseau/auth, map vide si aucun enfant. */
-    suspend fun chargerEnfants(config: GeoNatureConfig, moduleCode: String): Map<String, List<MonitoringEnfant>>? =
+     *  de ses enfants directs avec leurs propriétés brutes. Map `object_type → [enfants]`, map
+     *  vide si aucun enfant. **Throw** [GNErreur.AuthEchouee] si l'auth tombe, et
+     *  [GNErreur.EnvoiEchoue] avec le code HTTP sur 403/404/500 — l'appelant peut humaniser via
+     *  [humaniserErreurReseau]. */
+    suspend fun chargerEnfants(config: GeoNatureConfig, moduleCode: String): Map<String, List<MonitoringEnfant>> =
         withContext(Dispatchers.IO) {
             val base = config.urlServeur.trim().trimEnd('/')
             val (token, _, cookies) = GeoNatureAuth.loginAvecCookies(base, config.login, config.motDePasse)
-                ?: return@withContext null
+                ?: throw GNErreur.AuthEchouee(401)
 
             val url = URL("$base/api/monitorings/object/$moduleCode/module?depth=1")
             val conn = url.openConnection() as java.net.HttpURLConnection
@@ -167,10 +169,12 @@ object MonitoringApi {
             if (token != null) conn.setRequestProperty("Authorization", "Bearer $token")
             if (cookies.isNotEmpty()) conn.setRequestProperty("Cookie", cookies)
             val code = conn.responseCode
-            if (code != 200) return@withContext null
+            if (code != 200) throw GNErreur.EnvoiEchoue(code, "Enfants du module $moduleCode")
             val text = conn.inputStream.bufferedReader().readText()
-            val obj = try { JSONObject(text) } catch (_: Exception) { return@withContext null }
-            val children = obj.optJSONObject("children") ?: return@withContext emptyMap()
+            val obj = try { JSONObject(text) } catch (_: Exception) {
+                throw GNErreur.EnvoiEchoue(code, "Enfants $moduleCode : JSON illisible")
+            }
+            val children = obj.optJSONObject("children") ?: return@withContext emptyMap<String, List<MonitoringEnfant>>()
             val result = linkedMapOf<String, List<MonitoringEnfant>>()
             val it = children.keys()
             while (it.hasNext()) {
@@ -235,18 +239,19 @@ object MonitoringApi {
     )
 
     /** GET /api/monitorings/object/<module_code>/<object_type>/<id>?depth=1 — fiche d'un objet
-     *  (site, visite, observation, …) avec ses propriétés et ses enfants directs. Null si
-     *  l'endpoint échoue. */
+     *  (site, visite, observation, …) avec ses propriétés et ses enfants directs.
+     *  **Throw** [GNErreur.AuthEchouee] sur défaut d'auth, [GNErreur.EnvoiEchoue] sur HTTP != 200
+     *  ou parse cassé (le code est ainsi exploitable côté UI pour humaniser le message). */
     suspend fun chargerObjet(
         config: GeoNatureConfig,
         moduleCode: String,
         objectType: String,
         id: Int,
-    ): MonitoringObjet? =
+    ): MonitoringObjet =
         withContext(Dispatchers.IO) {
             val base = config.urlServeur.trim().trimEnd('/')
             val (token, _, cookies) = GeoNatureAuth.loginAvecCookies(base, config.login, config.motDePasse)
-                ?: return@withContext null
+                ?: throw GNErreur.AuthEchouee(401)
 
             val url = URL("$base/api/monitorings/object/$moduleCode/$objectType/$id?depth=1")
             val conn = url.openConnection() as java.net.HttpURLConnection
@@ -256,9 +261,11 @@ object MonitoringApi {
             if (token != null) conn.setRequestProperty("Authorization", "Bearer $token")
             if (cookies.isNotEmpty()) conn.setRequestProperty("Cookie", cookies)
             val code = conn.responseCode
-            if (code != 200) return@withContext null
+            if (code != 200) throw GNErreur.EnvoiEchoue(code, "$objectType #$id")
             val text = conn.inputStream.bufferedReader().readText()
-            val obj = try { JSONObject(text) } catch (_: Exception) { return@withContext null }
+            val obj = try { JSONObject(text) } catch (_: Exception) {
+                throw GNErreur.EnvoiEchoue(code, "$objectType #$id : JSON illisible")
+            }
             val proprietes = aplatirProprietes(obj.optJSONObject("properties"))
             val enfants = linkedMapOf<String, List<MonitoringEnfant>>()
             obj.optJSONObject("children")?.let { childrenObj ->

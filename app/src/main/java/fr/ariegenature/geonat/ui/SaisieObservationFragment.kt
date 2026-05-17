@@ -85,6 +85,21 @@ class SaisieObservationFragment : Fragment() {
     /** Index de la PendingObs dont on édite les détails via ObservationDetailsFragment. */
     private var editingDetailsIndex: Int? = null
 
+    /** Quand on édite un relevé existant (arg `releveId`), on garde l'UUID pour le réutiliser
+     *  lors de l'enregistrement (les nouvelles obs ajoutées en cours d'édition partagent ce
+     *  releveId au lieu d'en avoir un nouveau). Null en saisie initiale. */
+    private var releveIdEdite: String? = null
+
+    /** IDs des obs présentes au début de l'édition d'un relevé — sert à détecter celles que
+     *  l'utilisateur a retirées de la liste pendant l'édition pour les supprimer au save. */
+    private val obsInitialesIds = mutableSetOf<String>()
+
+    /** Vrai après le premier onViewCreated de cette instance de fragment. Quand la View est
+     *  recréée au retour d'un sous-écran (Caractérisation / Dénombrement / Détails), évite
+     *  de re-peupler `pendingObs` depuis le store — sinon chaque aller-retour duplique la
+     *  liste des espèces. */
+    private var donneesChargees = false
+
     private var latitude = 0.0
     private var longitude = 0.0
     private var rechercheNomSci = false
@@ -102,41 +117,70 @@ class SaisieObservationFragment : Fragment() {
         binding.root.applySystemBarInsets(includeIme = true)
         gnConfig = GeoNatureConfig(requireContext())
 
+        val releveIdArg = arguments?.getString("releveId")
         val obsId = arguments?.getString("obsId")
-        val obsExistante = obsId?.let { id ->
-            traceViewModel.observations.value?.find { it.id == id }
-        }
 
+        // On charge depuis le store UNIQUEMENT la première fois — au retour d'un sous-écran
+        // la View est recréée mais `pendingObs` survit (champ de fragment, pas de view) :
+        // ré-ajouter dupliquerait les espèces à chaque aller-retour.
         val taxonInitial: Taxon
-        if (obsExistante != null) {
-            latitude = obsExistante.latitude
-            longitude = obsExistante.longitude
-            taxonInitial = obsExistante.taxon ?: Taxon.OISEAU
-            pendingObs.add(PendingObs(
-                taxon = obsExistante.taxon ?: Taxon.OISEAU,
-                espece = obsExistante.espece,
-                cdNom = obsExistante.cdNom,
-                nombre = obsExistante.nombre,
-                sexe = obsExistante.sexe ?: "",
-                stadeVie = obsExistante.stadeVie ?: "",
-                techniqueObs = obsExistante.techniqueObs ?: "",
-                statutBio = obsExistante.statutBio ?: "",
-                etaBio = obsExistante.etaBio ?: "",
-                preuveExist = obsExistante.preuveExist ?: "",
-                objDenbr = obsExistante.objDenbr ?: "",
-                typDenbr = obsExistante.typDenbr ?: "",
-                comportement = obsExistante.comportement ?: "",
-                methDetermin = obsExistante.methDetermin ?: "",
-                determinateur = obsExistante.determinateur ?: "",
-                notes = obsExistante.notes,
-                cdNomManuel = obsExistante.cdNom?.toString() ?: "",
-                existingId = obsExistante.id
-            ))
-            requireActivity().title = "Modifier l'observation"
+        if (!donneesChargees) {
+            donneesChargees = true
+            val obsRelevExistants: List<Observation> = when {
+                !releveIdArg.isNullOrEmpty() ->
+                    traceViewModel.observations.value?.filter { it.releveId == releveIdArg } ?: emptyList()
+                obsId != null ->
+                    traceViewModel.observations.value?.find { it.id == obsId }?.let { listOf(it) } ?: emptyList()
+                else -> emptyList()
+            }
+            if (obsRelevExistants.isNotEmpty()) {
+                val premier = obsRelevExistants.first()
+                latitude = premier.latitude
+                longitude = premier.longitude
+                taxonInitial = premier.taxon ?: Taxon.OISEAU
+                releveIdEdite = premier.releveId
+                obsInitialesIds.clear()
+                obsInitialesIds.addAll(obsRelevExistants.map { it.id })
+                obsRelevExistants.forEach { obsExistante ->
+                    pendingObs.add(PendingObs(
+                        taxon = obsExistante.taxon ?: Taxon.OISEAU,
+                        espece = obsExistante.espece,
+                        cdNom = obsExistante.cdNom,
+                        nombre = obsExistante.nombre,
+                        nombreMax = obsExistante.nombreMax,
+                        sexe = obsExistante.sexe ?: "",
+                        stadeVie = obsExistante.stadeVie ?: "",
+                        objDenbr = obsExistante.objDenbr ?: "",
+                        typDenbr = obsExistante.typDenbr ?: "",
+                        denombrementsAdditionnels = obsExistante.denombrementsAdditionnels,
+                        statutObs = obsExistante.statutObs ?: "",
+                        techniqueObs = obsExistante.techniqueObs ?: "",
+                        statutBio = obsExistante.statutBio ?: "",
+                        etaBio = obsExistante.etaBio ?: "",
+                        preuveExist = obsExistante.preuveExist ?: "",
+                        comportement = obsExistante.comportement ?: "",
+                        methDetermin = obsExistante.methDetermin ?: "",
+                        determinateur = obsExistante.determinateur ?: "",
+                        notes = obsExistante.notes,
+                        cdNomManuel = obsExistante.cdNom?.toString() ?: "",
+                        mediaUrisCounting0 = obsExistante.mediaUrisCounting0,
+                        additionalFieldsReleve = obsExistante.additionalFieldsReleve,
+                        additionalFieldsOccurrence = obsExistante.additionalFieldsOccurrence,
+                        additionalFieldsCounting0 = obsExistante.additionalFieldsCounting0,
+                        existingId = obsExistante.id
+                    ))
+                }
+                requireActivity().title = if (obsRelevExistants.size > 1)
+                    "Modifier le relevé (${obsRelevExistants.size} esp.)"
+                else "Modifier l'observation"
+            } else {
+                latitude = arguments?.getDouble("latitude") ?: 0.0
+                longitude = arguments?.getDouble("longitude") ?: 0.0
+                taxonInitial = Taxon.OISEAU
+            }
         } else {
-            latitude = arguments?.getDouble("latitude") ?: 0.0
-            longitude = arguments?.getDouble("longitude") ?: 0.0
-            taxonInitial = Taxon.OISEAU
+            // View recréée — `pendingObs` est déjà à jour. Taxon = celui de la 1re espèce en cours.
+            taxonInitial = pendingObs.firstOrNull()?.taxon ?: Taxon.OISEAU
         }
 
         val boutonsTaxons = filtrerBoutonsGroupesNonVides(
@@ -281,78 +325,93 @@ class SaisieObservationFragment : Fragment() {
         findNavController().navigate(R.id.action_saisie_to_denombrement, bundle)
     }
 
+    override fun onResume() {
+        super.onResume()
+        // Consomme les valeurs renvoyées par les sous-écrans (Caractérisation / Dénombrement)
+        // via le SavedStateHandle. Approche eager (pas LiveData) pour éviter les surprises de
+        // timing autour de viewLifecycleOwner et des re-attachements multiples.
+        consommerResultatsSousEcrans()
+    }
+
     override fun onViewStateRestored(savedInstanceState: Bundle?) {
         super.onViewStateRestored(savedInstanceState)
-        findNavController().currentBackStackEntry?.savedStateHandle?.apply {
-            val handler: (String, (PendingObs, String) -> Unit) -> Unit = { key, setter ->
-                getLiveData<String>(key).observe(viewLifecycleOwner) { value ->
-                    val idx = editingDetailsIndex ?: return@observe
-                    if (idx in pendingObs.indices) {
-                        setter(pendingObs[idx], value)
-                        rafraichirListe()
-                    }
-                }
-            }
-            // Caractérisation (renvoyée par CaracterisationFragment)
-            handler("statutObs")          { o, v -> o.statutObs = v }
-            handler("techniqueObs")       { o, v -> o.techniqueObs = v }
-            handler("etaBio")             { o, v -> o.etaBio = v }
-            handler("comportement")       { o, v -> o.comportement = v }
-            handler("statutBio")          { o, v -> o.statutBio = v }
-            handler("methDetermin")       { o, v -> o.methDetermin = v }
-            handler("determinateur")      { o, v -> o.determinateur = v }
-            handler("preuveExist")        { o, v -> o.preuveExist = v }
-            handler("notes")              { o, v -> o.notes = v }
-            // Champs additionnels (relevé + occurrence) — JSON Map<field_name, value>.
-            val mapType = object : com.google.gson.reflect.TypeToken<Map<String, String>>() {}.type
-            handler("addReleveJson") { o, v ->
-                o.additionalFieldsReleve = try {
-                    com.google.gson.Gson().fromJson<Map<String, String>>(v, mapType) ?: emptyMap()
-                } catch (_: Exception) { emptyMap() }
-            }
-            handler("addOccJson") { o, v ->
-                o.additionalFieldsOccurrence = try {
-                    com.google.gson.Gson().fromJson<Map<String, String>>(v, mapType) ?: emptyMap()
-                } catch (_: Exception) { emptyMap() }
-            }
-            // Legacy : ObservationDetailsFragment (saisie rapide) renvoie aussi sexe/stade/etc.
-            // mais cet écran n'est plus déclenché depuis la saisie multi-taxons — on garde quand
-            // même les handlers au cas où.
-            handler("sexe")        { o, v -> o.sexe = v }
-            handler("stadeVie")    { o, v -> o.stadeVie = v }
-            handler("objDenbr")    { o, v -> o.objDenbr = v }
-            handler("typDenbr")    { o, v -> o.typDenbr = v }
-            handler("cdNomManuel") { o, v ->
-                o.cdNomManuel = v
-                v.trim().toIntOrNull()?.takeIf { it > 0 }?.let { o.cdNom = it }
-            }
-            // Dénombrements (renvoyés par DenombrementFragment) — JSON sérialisé d'une List<Denombrement>
-            getLiveData<String>("denombrementsJson").observe(viewLifecycleOwner) { json ->
-                val idx = editingDetailsIndex ?: return@observe
-                if (idx !in pendingObs.indices) return@observe
-                val type = object : com.google.gson.reflect.TypeToken<List<fr.ariegenature.geonat.model.Denombrement>>() {}.type
-                val liste: List<fr.ariegenature.geonat.model.Denombrement> = try {
-                    com.google.gson.Gson().fromJson(json, type) ?: emptyList()
-                } catch (_: Exception) { emptyList() }
-                if (liste.isEmpty()) return@observe
-                val obs = pendingObs[idx]
-                val c0 = liste[0]
-                obs.nombre = c0.nombreMin
-                obs.nombreMax = if (c0.nombreMax != c0.nombreMin) c0.nombreMax else null
-                obs.sexe = c0.sexe ?: ""
-                obs.stadeVie = c0.stadeVie ?: ""
-                obs.objDenbr = c0.objDenbr ?: ""
-                obs.typDenbr = c0.typDenbr ?: ""
-                // Gson peut laisser ces champs à null si le JSON n'avait pas la clé.
-                @Suppress("USELESS_ELVIS")
-                run {
-                    obs.mediaUrisCounting0 = (c0.mediaUris as List<String>?) ?: emptyList()
-                    obs.additionalFieldsCounting0 = (c0.additionalFields as Map<String, String>?) ?: emptyMap()
-                }
-                obs.denombrementsAdditionnels = if (liste.size > 1) liste.drop(1) else emptyList()
-                rafraichirListe()
-            }
+        // Filet de sécurité : on consomme aussi ici au cas où onResume serait trop tardif
+        // pour certains cas de figure du cycle de vie Navigation. consommerString supprime
+        // la clé après l'avoir appliquée, donc pas de double-application.
+        consommerResultatsSousEcrans()
+    }
+
+    private fun consommerResultatsSousEcrans() {
+        val sv = findNavController().currentBackStackEntry?.savedStateHandle ?: return
+        val idx = editingDetailsIndex ?: return
+        if (idx !in pendingObs.indices) return
+        val obs = pendingObs[idx]
+        var modifie = false
+
+        fun consommerString(key: String, setter: (String) -> Unit) {
+            if (!sv.contains(key)) return
+            val value: String = sv.remove<String>(key) ?: ""
+            setter(value)
+            modifie = true
         }
+
+        // Caractérisation (CaracterisationFragment)
+        consommerString("statutObs")     { obs.statutObs = it }
+        consommerString("techniqueObs")  { obs.techniqueObs = it }
+        consommerString("etaBio")        { obs.etaBio = it }
+        consommerString("comportement")  { obs.comportement = it }
+        consommerString("statutBio")     { obs.statutBio = it }
+        consommerString("methDetermin")  { obs.methDetermin = it }
+        consommerString("determinateur") { obs.determinateur = it }
+        consommerString("preuveExist")   { obs.preuveExist = it }
+        consommerString("notes")         { obs.notes = it }
+
+        val mapType = object : com.google.gson.reflect.TypeToken<Map<String, String>>() {}.type
+        consommerString("addReleveJson") { v ->
+            obs.additionalFieldsReleve = try {
+                com.google.gson.Gson().fromJson<Map<String, String>>(v, mapType) ?: emptyMap()
+            } catch (_: Exception) { emptyMap() }
+        }
+        consommerString("addOccJson") { v ->
+            obs.additionalFieldsOccurrence = try {
+                com.google.gson.Gson().fromJson<Map<String, String>>(v, mapType) ?: emptyMap()
+            } catch (_: Exception) { emptyMap() }
+        }
+
+        // Legacy ObservationDetailsFragment (saisie rapide) — non utilisé en multi-taxons
+        // mais on consomme par sécurité.
+        consommerString("sexe")        { obs.sexe = it }
+        consommerString("stadeVie")    { obs.stadeVie = it }
+        consommerString("objDenbr")    { obs.objDenbr = it }
+        consommerString("typDenbr")    { obs.typDenbr = it }
+        consommerString("cdNomManuel") { v ->
+            obs.cdNomManuel = v
+            v.trim().toIntOrNull()?.takeIf { it > 0 }?.let { obs.cdNom = it }
+        }
+
+        // Dénombrements (DenombrementFragment) — JSON sérialisé d'une List<Denombrement>.
+        consommerString("denombrementsJson") { json ->
+            val type = object : com.google.gson.reflect.TypeToken<List<fr.ariegenature.geonat.model.Denombrement>>() {}.type
+            val liste: List<fr.ariegenature.geonat.model.Denombrement> = try {
+                com.google.gson.Gson().fromJson(json, type) ?: emptyList()
+            } catch (_: Exception) { emptyList() }
+            if (liste.isEmpty()) return@consommerString
+            val c0 = liste[0]
+            obs.nombre = c0.nombreMin
+            obs.nombreMax = if (c0.nombreMax != c0.nombreMin) c0.nombreMax else null
+            obs.sexe = c0.sexe ?: ""
+            obs.stadeVie = c0.stadeVie ?: ""
+            obs.objDenbr = c0.objDenbr ?: ""
+            obs.typDenbr = c0.typDenbr ?: ""
+            @Suppress("USELESS_ELVIS")
+            run {
+                obs.mediaUrisCounting0 = (c0.mediaUris as List<String>?) ?: emptyList()
+                obs.additionalFieldsCounting0 = (c0.additionalFields as Map<String, String>?) ?: emptyMap()
+            }
+            obs.denombrementsAdditionnels = if (liste.size > 1) liste.drop(1) else emptyList()
+        }
+
+        if (modifie) rafraichirListe()
     }
 
     // ─── Espèce / autocomplete ────────────────────────────────────────────────
@@ -525,12 +584,21 @@ class SaisieObservationFragment : Fragment() {
 
     private fun enregistrer() {
         if (pendingObs.isEmpty()) {
+            // L'utilisateur a vidé un relevé existant en édition → on supprime toutes ses obs.
+            if (obsInitialesIds.isNotEmpty()) {
+                traceViewModel.supprimerObservations(obsInitialesIds)
+            }
             findNavController().navigateUp()
             return
         }
-        // Toutes les obs créées dans cette session de saisie multi-taxons partagent un
-        // même releveId : à l'envoi, GeoNatureUpload les fusionnera en un seul relevé.
-        val releveIdBatch = java.util.UUID.randomUUID().toString()
+        // En édition d'un relevé : on réutilise son UUID pour que les obs ajoutées en cours
+        // d'édition rejoignent le même relevé GeoNature. En saisie initiale : nouvel UUID.
+        val releveIdBatch = releveIdEdite ?: java.util.UUID.randomUUID().toString()
+        // Repère les obs initialement présentes mais retirées de la liste pendant l'édition
+        // (= l'utilisateur les a supprimées avec la corbeille de l'item) — à purger côté store.
+        val idsRestants = pendingObs.mapNotNull { it.existingId }.toHashSet()
+        val idsSupprimes = obsInitialesIds - idsRestants
+        if (idsSupprimes.isNotEmpty()) traceViewModel.supprimerObservations(idsSupprimes)
         for (obs in pendingObs) {
             val nomFinal = obs.espece.ifEmpty { "Espèce inconnue" }
             val cdNomFinal = obs.cdNom ?: obs.cdNomManuel.trim().toIntOrNull()

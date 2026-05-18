@@ -49,7 +49,9 @@ class TraceFragment : Fragment() {
 
     private var suivrePosition = true
     private var modePositionnement = false
-    private var obsARepositionner: Observation? = null
+    /** IDs des obs à repositionner sur la carte. Vide = pas en mode reposition. Un seul ID pour
+     *  une obs solo, N IDs pour un relevé multi-taxons (toutes déplacées au même point). */
+    private var obsARepositionnerIds: List<String> = emptyList()
     private var fondCarte = FondCarte.OSM
     /** false (défaut) = carte figée nord en haut du téléphone.
      *  true = carte tournée par la boussole pour garder le nord en haut de l'écran. */
@@ -186,7 +188,7 @@ class TraceFragment : Fragment() {
 
         binding.map.setOnTouchListener { v, event ->
             if (event.action == android.view.MotionEvent.ACTION_MOVE
-                && !modePositionnement && obsARepositionner == null) {
+                && !modePositionnement && obsARepositionnerIds.isEmpty()) {
                 suivrePosition = false
                 binding.btnCentrer.setImageResource(R.drawable.ic_location_off)
             }
@@ -252,10 +254,11 @@ class TraceFragment : Fragment() {
 
         binding.btnValiderPosition.setOnClickListener {
             val center = binding.map.mapCenter
-            if (obsARepositionner != null) {
-                val obs = obsARepositionner!!
-                traceViewModel.mettreAJourObservationPosition(obs.id, center.latitude, center.longitude)
-                obsARepositionner = null
+            if (obsARepositionnerIds.isNotEmpty()) {
+                obsARepositionnerIds.forEach { id ->
+                    traceViewModel.mettreAJourObservationPosition(id, center.latitude, center.longitude)
+                }
+                obsARepositionnerIds = emptyList()
                 updateModePositionnement()
             } else {
                 val bundle = Bundle().apply {
@@ -270,7 +273,7 @@ class TraceFragment : Fragment() {
 
         binding.btnAnnulerPosition.setOnClickListener {
             modePositionnement = false
-            obsARepositionner = null
+            obsARepositionnerIds = emptyList()
             updateModePositionnement()
         }
     }
@@ -325,13 +328,13 @@ class TraceFragment : Fragment() {
     }
 
     private fun updateModePositionnement() {
-        val inMode = modePositionnement || obsARepositionner != null
+        val inMode = modePositionnement || obsARepositionnerIds.isNotEmpty()
         binding.reticule.visibility = if (inMode) View.VISIBLE else View.GONE
         binding.bandeauPositionnement.visibility = if (inMode) View.VISIBLE else View.GONE
         binding.panneauControle.visibility = if (inMode) View.GONE else View.VISIBLE
         binding.panneauValidationPosition.visibility = if (inMode) View.VISIBLE else View.GONE
         if (inMode) {
-            binding.tvBandeauPositionnement.text = if (obsARepositionner != null)
+            binding.tvBandeauPositionnement.text = if (obsARepositionnerIds.isNotEmpty())
                 getString(R.string.repositionner_observation)
             else
                 getString(R.string.positionner_observation)
@@ -360,7 +363,14 @@ class TraceFragment : Fragment() {
             observationMarkers.remove(id)
         }
         observations.forEach { obs ->
-            if (obs.id !in observationMarkers) {
+            val existant = observationMarkers[obs.id]
+            if (existant != null) {
+                // Mise à jour de la position si elle a changé (déplacement de relevé).
+                val pos = existant.position
+                if (pos.latitude != obs.latitude || pos.longitude != obs.longitude) {
+                    existant.position = GeoPoint(obs.latitude, obs.longitude)
+                }
+            } else {
                 val marker = createObservationMarker(obs)
                 observationMarkers[obs.id] = marker
                 binding.map.overlays.add(marker)
@@ -382,38 +392,48 @@ class TraceFragment : Fragment() {
         marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
         marker.setOnMarkerClickListener { _, _ ->
             val toutes = traceViewModel.observations.value ?: emptyList()
-            montrerListeEspeces(obsProches(obs, toutes).ifEmpty { listOf(obs) })
+            // Group par releveId (saisie multi-taxons) ; solo legacy = juste l'obs cliquée.
+            val obsDuReleve = if (!obs.releveId.isNullOrEmpty())
+                toutes.filter { it.releveId == obs.releveId }
+            else listOf(obs)
+            montrerOptionsReleve(obsDuReleve)
             true
         }
         return marker
     }
 
-    private fun obsProches(reference: Observation, toutes: List<Observation>): List<Observation> {
-        val out = FloatArray(1)
-        return toutes.filter {
-            android.location.Location.distanceBetween(
-                reference.latitude, reference.longitude, it.latitude, it.longitude, out
-            )
-            out[0] <= 30f
-        }
-    }
-
-    private fun montrerListeEspeces(observations: List<Observation>) {
-        val triees = observations.sortedByDescending { it.date }
+    /** Dialog d'options pour un relevé pointé sur la carte : liste lisible des espèces
+     *  + boutons Éditer (ouvre la saisie multi-taxons) et Déplacer (entre en mode reposition,
+     *  toutes les obs du relevé se déplaceront ensemble au point validé). */
+    private fun montrerOptionsReleve(observations: List<Observation>) {
+        if (observations.isEmpty()) return
+        val premiere = observations.first()
         val fmt = SimpleDateFormat("HH:mm", Locale.getDefault())
-        val items = triees.map { o ->
-            val heure = fmt.format(Date(o.date))
-            val n = if (o.nombre > 1) " · ${o.nombre} ind." else ""
-            val notes = if (o.notes.isNotEmpty()) "\n   ${o.notes}" else ""
-            "$heure  ${o.espece}$n$notes"
-        }.toTypedArray()
+        val especes = observations.joinToString("\n") { o ->
+            val n = if (o.nombre > 1) " × ${o.nombre}" else ""
+            val notes = if (o.notes.isNotEmpty()) " — ${o.notes}" else ""
+            "• ${o.espece}$n$notes"
+        }
+        val titre = if (observations.size == 1)
+            "${premiere.espece} · ${fmt.format(Date(premiere.date))}"
+        else
+            "${observations.size} espèces · ${fmt.format(Date(premiere.date))}"
         AlertDialog.Builder(requireContext())
-            .setTitle("${triees.size} obs. ici — appuyer pour modifier")
-            .setItems(items) { _, which ->
-                val bundle = Bundle().apply { putString("obsId", triees[which].id) }
+            .setTitle(titre)
+            .setMessage(especes)
+            .setPositiveButton("Éditer") { _, _ ->
+                val bundle = Bundle().apply {
+                    val rid = premiere.releveId
+                    if (!rid.isNullOrEmpty()) putString("releveId", rid)
+                    else putString("obsId", premiere.id)
+                }
                 findNavController().navigate(R.id.action_trace_to_saisie, bundle)
             }
-            .setPositiveButton("Fermer", null)
+            .setNegativeButton("Déplacer") { _, _ ->
+                obsARepositionnerIds = observations.map { it.id }
+                updateModePositionnement()
+            }
+            .setNeutralButton("Fermer", null)
             .show()
     }
 

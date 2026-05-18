@@ -97,7 +97,8 @@ class SuiviDetailFragment : Fragment() {
                 return@launch
             }
 
-            // Re-derive le nom de chaque enfant à partir du schéma quand il déclare un nameField.
+            // Re-derive le nom de chaque enfant via le nameField du schéma, puis applique le tri
+            // déclaré par le protocole (schema.sorts) ou tri alphabétique par défaut.
             val enfantsAffines: Map<String, List<MonitoringApi.MonitoringEnfant>> =
                 enfants.mapValues { (type, liste) ->
                     val nf = schema?.get(type)?.nameField
@@ -106,7 +107,9 @@ class SuiviDetailFragment : Fragment() {
                         val nomSchema = e.proprietes[nf]
                         if (!nomSchema.isNullOrEmpty()) e.copy(nom = nomSchema) else e
                     }
-                }.mapValues { (_, liste) -> liste.sortedBy { it.nom.lowercase() } }
+                }.mapValues { (type, liste) ->
+                    MonitoringApi.trierEnfants(liste, schema?.get(type)?.sorts.orEmpty())
+                }
 
             val counts = enfantsAffines.mapValues { it.value.size }
 
@@ -175,6 +178,32 @@ class SuiviDetailFragment : Fragment() {
         return labelTypeParDefaut(type)
     }
 
+    /** Construit le sous-titre d'un row enfant depuis `schema.display_list` (sans le nameField,
+     *  déjà en titre). Formate les dates ISO, ignore les valeurs vides ou null. */
+    private fun sousTitrePourEnfant(
+        e: MonitoringApi.MonitoringEnfant,
+        schemaType: MonitoringApi.MonitoringSchemaObjet?,
+    ): String {
+        val displayList = schemaType?.displayList.orEmpty()
+        if (displayList.isEmpty()) return ""
+        val nameField = schemaType?.nameField
+        return displayList
+            .filter { it != nameField }
+            .mapNotNull { k ->
+                val v = e.proprietes[k]?.takeIf { it.isNotEmpty() && it != "null" } ?: return@mapNotNull null
+                formatValeurAffichee(v)
+            }
+            .joinToString(" · ")
+    }
+
+    /** Date ISO YYYY-MM-DD → JJ/MM/AAAA pour affichage. Autres valeurs : telles quelles. */
+    private fun formatValeurAffichee(v: String): String {
+        if (v.length >= 10 && v[4] == '-' && v[7] == '-') {
+            return "${v.substring(8, 10)}/${v.substring(5, 7)}/${v.substring(0, 4)}"
+        }
+        return v
+    }
+
     private fun labelTypeParDefaut(type: String): String = when (type) {
         "site" -> "Sites"
         "sites_group" -> "Groupes de sites"
@@ -220,6 +249,7 @@ class SuiviDetailFragment : Fragment() {
                 }
                 binding.llSites.addView(header)
             }
+            val schemaType = schema?.get(type)
             items.forEach { e ->
                 val row = LinearLayout(ctx).apply {
                     orientation = LinearLayout.HORIZONTAL
@@ -229,11 +259,27 @@ class SuiviDetailFragment : Fragment() {
                         LinearLayout.LayoutParams.WRAP_CONTENT
                     )
                 }
+                val bloc = LinearLayout(ctx).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(0, (8 * density).toInt(), (8 * density).toInt(), (8 * density).toInt())
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                }
                 val nameTv = TextView(ctx).apply {
                     text = e.nom
                     setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-                    setPadding(0, (10 * density).toInt(), (8 * density).toInt(), (10 * density).toInt())
-                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                }
+                bloc.addView(nameTv)
+                // Sous-titre depuis schema.display_list (sans le nameField, déjà en titre).
+                val sousTitre = sousTitrePourEnfant(e, schemaType)
+                if (sousTitre.isNotEmpty()) {
+                    val sub = TextView(ctx).apply {
+                        text = sousTitre
+                        setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+                        setTextColor(android.graphics.Color.parseColor("#666666"))
+                        maxLines = 1
+                        ellipsize = android.text.TextUtils.TruncateAt.END
+                    }
+                    bloc.addView(sub)
                 }
                 val btnInfo = ImageButton(ctx).apply {
                     setImageResource(R.drawable.ic_info)
@@ -272,7 +318,7 @@ class SuiviDetailFragment : Fragment() {
                         }
                     }
                 }
-                row.addView(nameTv)
+                row.addView(bloc)
                 row.addView(btnInfo)
                 row.addView(btnCarte)
                 binding.llSites.addView(row)

@@ -113,16 +113,22 @@ object MonitoringApi {
         /** Valeurs prédéfinies pour `select`/`radio` (value → label). Vide pour les datalists
          *  qui sont alimentés dynamiquement par appel API. */
         val valeurs: List<Pair<String, String>> = emptyList(),
-        /** Pour widget=`datalist` : champs nécessaires au fetch des options.
-         *  ex chronoventaire visite observers :
-         *    api="users/menu/1", application="GeoNature", keyLabel="nom_complet",
-         *    keyValue="id_role", dataPath=null, multiple=true */
+        /** Pour widget=`datalist` : champs nécessaires au fetch des options. */
         val apiUrl: String? = null,
         val application: String? = null,
         val keyLabel: String? = null,
         val keyValue: String? = null,
         val dataPath: String? = null,
         val multiple: Boolean = false,
+        /** Valeur par défaut scalaire (text/number/date) — `value` ou `default` simple. */
+        val defaultValue: String? = null,
+        /** Valeur par défaut sous forme objet pour nomenclature : `{cd_nomenclature: "18"}` ou
+         *  `{label_default: "Imago"}`. Résolu en `id_nomenclature` côté UI via les options. */
+        val defaultObjet: Map<String, String> = emptyMap(),
+        /** Filtres déclarés pour restreindre les options renvoyées (datalist/nomenclature).
+         *  Format : Map<champ_filtre → liste de valeurs acceptables>. Ex chronoventaire stade :
+         *  `{"label_default": ["Inconnu", "Chrysalide", "Imago", "Chenille", "Œuf"]}`. */
+        val filtres: Map<String, List<String>> = emptyMap(),
     )
 
     /** Schéma d'un object_type déclaré par un protocole dans son `config/objects.json` serveur,
@@ -148,6 +154,12 @@ object MonitoringApi {
         /** Ordre d'affichage des propriétés dans une fiche ou un formulaire. Si vide, on affiche
          *  selon l'ordre d'insertion JSON de `properties`. */
         val displayProperties: List<String> = emptyList(),
+        /** Liste ordonnée des propriétés à afficher dans la vue LISTE de ce type (sous le nom).
+         *  Ex chronoventaire site : `["base_site_name", "first_use_date", "last_visit", "nb_visits"]`.
+         *  Séparé de `displayProperties` (qui est pour la fiche). */
+        val displayList: List<String> = emptyList(),
+        /** Critères de tri par défaut pour la liste de ce type. List<(prop, "asc"|"desc")>. */
+        val sorts: List<Pair<String, String>> = emptyList(),
         /** Nom du champ qui sert d'identifiant technique pour ce type (ex: `id_base_site`,
          *  `id_dalle`, `id_sites_group`). Utilisé côté UI pour masquer le champ de sélection
          *  du parent dans le formulaire de création d'un enfant (le parent est connu par
@@ -383,6 +395,23 @@ object MonitoringApi {
                         displayPropsArr.optString(i, "").takeIf { it.isNotEmpty() }?.let { displayProps.add(it) }
                     }
                 }
+                val displayListArr = v.optJSONArray("display_list")
+                val displayListNoms = mutableListOf<String>()
+                if (displayListArr != null) {
+                    for (i in 0 until displayListArr.length()) {
+                        displayListArr.optString(i, "").takeIf { it.isNotEmpty() }?.let { displayListNoms.add(it) }
+                    }
+                }
+                val sortsArr = v.optJSONArray("sorts")
+                val sortsList = mutableListOf<Pair<String, String>>()
+                if (sortsArr != null) {
+                    for (i in 0 until sortsArr.length()) {
+                        val s = sortsArr.optJSONObject(i) ?: continue
+                        val prop = s.optString("prop", "").takeIf { it.isNotEmpty() } ?: continue
+                        val dir = s.optString("dir", "asc").lowercase()
+                        sortsList.add(prop to dir)
+                    }
+                }
                 // gn_module_monitoring expose les propriétés saisissables dans DEUX blocs côte à
                 // côte : `generic` (champs hérités du modèle de base — id, dates système, etc.)
                 // et `specific` (champs custom du protocole). Le merge fait que specific peut
@@ -403,6 +432,8 @@ object MonitoringApi {
                     childrenTypes = children.ifEmpty { childrenFromTypesArr },
                     properties = parserPropertiesFusionnees(v),
                     displayProperties = displayProps,
+                    displayList = displayListNoms,
+                    sorts = sortsList,
                     idFieldName = v.optString("id_field_name", "").takeIf { it.isNotEmpty() },
                 )
             }
@@ -501,6 +532,37 @@ object MonitoringApi {
             val keyValue = v.optString("keyValue", "").takeIf { it.isNotEmpty() }
             val dataPath = v.optString("data_path", "").takeIf { it.isNotEmpty() }
             val multiple = v.optBoolean("multiple", false) || v.optBoolean("multi_select", false)
+            // Default value : peut être sous `default` (objet ou scalaire) ou directement
+            // sous `value` (scalaire ou objet).
+            val defaultBrut = v.opt("default") ?: v.opt("value")
+            var defaultValue: String? = null
+            val defaultObjet = mutableMapOf<String, String>()
+            when (defaultBrut) {
+                is String -> defaultValue = defaultBrut.takeIf { it.isNotEmpty() }
+                is Number, is Boolean -> defaultValue = defaultBrut.toString()
+                is JSONObject -> {
+                    val dIt = defaultBrut.keys()
+                    while (dIt.hasNext()) {
+                        val dk = dIt.next()
+                        defaultBrut.opt(dk)?.toString()?.takeIf { it.isNotEmpty() && it != "null" }
+                            ?.let { defaultObjet[dk] = it }
+                    }
+                }
+                else -> { /* null ou type non géré */ }
+            }
+            // Filtres : Map<champ, liste-de-valeurs-acceptables>
+            val filtresMap = mutableMapOf<String, List<String>>()
+            v.optJSONObject("filters")?.let { fObj ->
+                val fIt = fObj.keys()
+                while (fIt.hasNext()) {
+                    val fKey = fIt.next()
+                    val fArr = fObj.optJSONArray(fKey) ?: continue
+                    val fVals = (0 until fArr.length()).mapNotNull { i ->
+                        fArr.optString(i, "").takeIf { it.isNotEmpty() }
+                    }
+                    if (fVals.isNotEmpty()) filtresMap[fKey] = fVals
+                }
+            }
             into[nom] = MonitoringPropertySchema(
                 nom = nom,
                 typeWidget = typeWidget,
@@ -514,8 +576,42 @@ object MonitoringApi {
                 keyValue = keyValue,
                 dataPath = dataPath,
                 multiple = multiple,
+                defaultValue = defaultValue,
+                defaultObjet = defaultObjet.toMap(),
+                filtres = filtresMap.toMap(),
             )
         }
+    }
+
+    /** Une option de datalist fetchée depuis l'API serveur. `cdNomenclature`/`labelDefaut`
+     *  permettent de résoudre les valeurs par défaut déclarées dans le schéma
+     *  (`default: {cd_nomenclature: "18"}` ou `default: {label_default: "Imago"}`). */
+    data class OptionDatalist(
+        val value: String,
+        val label: String,
+        val cdNomenclature: String? = null,
+        val labelDefaut: String? = null,
+    )
+
+    /** Trie une liste d'enfants selon les critères déclarés par le schéma (champ `sorts`).
+     *  Tente une comparaison numérique d'abord, fallback comparaison de strings (les dates ISO
+     *  YYYY-MM-DD se trient correctement en string). Sans critères : tri alpha par nom. */
+    fun trierEnfants(enfants: List<MonitoringEnfant>, sorts: List<Pair<String, String>>): List<MonitoringEnfant> {
+        if (sorts.isEmpty()) return enfants.sortedBy { it.nom.lowercase() }
+        val comp = Comparator<MonitoringEnfant> { a, b ->
+            var r = 0
+            for ((prop, dir) in sorts) {
+                val va = a.proprietes[prop] ?: ""
+                val vb = b.proprietes[prop] ?: ""
+                val da = va.toDoubleOrNull()
+                val db = vb.toDoubleOrNull()
+                r = if (da != null && db != null) da.compareTo(db) else va.compareTo(vb)
+                if (dir == "desc") r = -r
+                if (r != 0) break
+            }
+            r
+        }
+        return enfants.sortedWith(comp)
     }
 
     /** Fetch dynamiquement les options d'un widget `datalist` ou `nomenclature` (forme ancienne).
@@ -525,7 +621,7 @@ object MonitoringApi {
     suspend fun chargerOptionsDatalist(
         config: GeoNatureConfig,
         prop: MonitoringPropertySchema,
-    ): List<Pair<String, String>>? = withContext(Dispatchers.IO) {
+    ): List<OptionDatalist>? = withContext(Dispatchers.IO) {
         val apiPath = prop.apiUrl ?: return@withContext null
         val keyLabel = prop.keyLabel ?: return@withContext null
         val keyValue = prop.keyValue ?: "id"
@@ -551,13 +647,29 @@ object MonitoringApi {
                 .firstOrNull { obj.has(it) } ?: return@withContext null
             obj.optJSONArray(cle) ?: return@withContext null
         }
-        val opts = mutableListOf<Pair<String, String>>()
+        val opts = mutableListOf<OptionDatalist>()
         for (i in 0 until array.length()) {
             val item = array.optJSONObject(i) ?: continue
             val v = item.opt(keyValue)?.toString().orEmpty()
             val l = item.opt(keyLabel)?.toString().orEmpty()
-            if (v.isNotEmpty() && l.isNotEmpty()) opts.add(v to l)
+            if (v.isEmpty() || l.isEmpty()) continue
+            val cdNom = item.opt("cd_nomenclature")?.toString()?.takeIf { it.isNotEmpty() }
+            val lblDef = item.opt("label_default")?.toString()?.takeIf { it.isNotEmpty() }
+            opts.add(OptionDatalist(v, l, cdNom, lblDef))
         }
-        opts.sortedBy { it.second.lowercase() }
+        // Filtres déclarés (ex: stade biologique filtré à ["Inconnu", "Chrysalide", …]) — restreint
+        // la liste fetchée selon les critères du schéma.
+        val filtres = prop.filtres
+        val filtrees = if (filtres.isEmpty()) opts else opts.filter { o ->
+            filtres.all { (champ, valeursAcceptables) ->
+                val v = when (champ) {
+                    "label_default" -> o.labelDefaut
+                    "cd_nomenclature" -> o.cdNomenclature
+                    else -> null
+                }
+                v == null || v in valeursAcceptables
+            }
+        }
+        filtrees.sortedBy { it.label.lowercase() }
     }
 }

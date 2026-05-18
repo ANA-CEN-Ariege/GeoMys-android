@@ -146,16 +146,46 @@ class NouvelleVisiteFragment : Fragment() {
         val resultats = deferreds.awaitAll().toMap()
         val notesEchecs = mutableListOf<String>()
         val nouveaux = fields.toMutableList()
+        // Stocke les options brutes par index pour la résolution des défauts (cd_nomenclature
+        // / label_default → id_nomenclature). Le PropertyValue UI ne porte pas ces métadonnées.
+        val optionsParIdx = mutableMapOf<Int, List<MonitoringApi.OptionDatalist>>()
         for ((idx, opts) in resultats) {
             val f = nouveaux[idx]
             if (opts == null) {
                 notesEchecs.add("${f.code} (fetch options échoué)")
                 continue
             }
-            nouveaux[idx] = f.copy(values = opts.map { (v, l) -> PropertyValue(v, l) })
+            optionsParIdx[idx] = opts
+            nouveaux[idx] = f.copy(values = opts.map { o -> PropertyValue(o.value, o.label) })
         }
         if (notesEchecs.isNotEmpty()) {
             ajouterDebug("⚠ Datalists non chargées : ${notesEchecs.joinToString(", ")}")
+        }
+        // Application des valeurs par défaut déclarées dans le schéma : pour les widgets
+        // nomenclature, on résout `default.cd_nomenclature` ou `default.label_default` en
+        // matchant dans les options chargées. Pour les widgets scalaires, on prend directement.
+        nouveaux.forEachIndexed { idx, f ->
+            val prop = visitSchema.properties[f.code] ?: return@forEachIndexed
+            if (f.value != null) return@forEachIndexed // déjà rempli (ex: par pré-sélection user)
+            // Cas 1 : default scalaire (text/number/date) ou widget non-datalist
+            if (prop.defaultValue != null && prop.defaultObjet.isEmpty()) {
+                nouveaux[idx] = f.copy(value = prop.defaultValue)
+                return@forEachIndexed
+            }
+            // Cas 2 : default objet pour datalist/nomenclature → match dans les options
+            if (prop.defaultObjet.isNotEmpty()) {
+                val opts = optionsParIdx[idx] ?: return@forEachIndexed
+                val cdRecherche = prop.defaultObjet["cd_nomenclature"]
+                val lblRecherche = prop.defaultObjet["label_default"]
+                val match = when {
+                    cdRecherche != null -> opts.firstOrNull { it.cdNomenclature == cdRecherche }
+                    lblRecherche != null -> opts.firstOrNull { it.labelDefaut == lblRecherche }
+                    else -> null
+                } ?: return@forEachIndexed
+                nouveaux[idx] = f.copy(
+                    value = if (f.viewType == ViewType.SELECT_MULTIPLE) listOf(match.value) else match.value,
+                )
+            }
         }
         // Pré-sélection de l'utilisateur connecté dans les champs observers (typeWidget ∈
         // {observers, datalist} avec type_util=user, OU nom de propriété "observers" / "observer").

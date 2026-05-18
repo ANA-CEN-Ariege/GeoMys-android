@@ -195,8 +195,16 @@ class FicheObjetFragment : Fragment() {
         if (objet.enfants.isEmpty()) return
         val ctx = requireContext()
         val density = resources.displayMetrics.density
-        objet.enfants.forEach { (type, items) ->
-            if (items.isEmpty()) return@forEach
+        objet.enfants.forEach { (type, itemsBruts) ->
+            if (itemsBruts.isEmpty()) return@forEach
+            val schemaType = schema?.get(type)
+            // Re-derive nom via schema.nameField puis trie selon schema.sorts.
+            val nf = schemaType?.nameField
+            val itemsAffines = if (nf != null) itemsBruts.map { e ->
+                val nomSchema = e.proprietes[nf]
+                if (!nomSchema.isNullOrEmpty()) e.copy(nom = nomSchema) else e
+            } else itemsBruts
+            val items = MonitoringApi.trierEnfants(itemsAffines, schemaType?.sorts.orEmpty())
             val typeLabel = schema?.get(type)?.let { it.labelList ?: it.label }
                 ?: labelTypeParDefaut(type)
             val header = TextView(ctx).apply {
@@ -215,13 +223,11 @@ class FicheObjetFragment : Fragment() {
             }
             binding.llEnfants.addView(header)
 
-            // Re-extrait le nom des enfants via le schéma de leur type.
-            val nf = schema?.get(type)?.nameField
             val borderless = android.util.TypedValue().also {
                 ctx.theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, it, true)
             }.resourceId
             items.forEach { e ->
-                val nom = nf?.let { e.proprietes[it] }?.takeIf { it.isNotEmpty() } ?: e.nom
+                val nom = e.nom
                 val row = LinearLayout(ctx).apply {
                     orientation = LinearLayout.HORIZONTAL
                     gravity = Gravity.CENTER_VERTICAL
@@ -230,11 +236,26 @@ class FicheObjetFragment : Fragment() {
                         LinearLayout.LayoutParams.WRAP_CONTENT
                     )
                 }
+                val bloc = LinearLayout(ctx).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(0, (8 * density).toInt(), (8 * density).toInt(), (8 * density).toInt())
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                }
                 val nameTv = TextView(ctx).apply {
                     text = nom
                     setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-                    setPadding(0, (10 * density).toInt(), (8 * density).toInt(), (10 * density).toInt())
-                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                }
+                bloc.addView(nameTv)
+                val sousTitre = sousTitrePourEnfant(e, schemaType)
+                if (sousTitre.isNotEmpty()) {
+                    val sub = TextView(ctx).apply {
+                        text = sousTitre
+                        setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+                        setTextColor(android.graphics.Color.parseColor("#666666"))
+                        maxLines = 1
+                        ellipsize = android.text.TextUtils.TruncateAt.END
+                    }
+                    bloc.addView(sub)
                 }
                 val btnInfo = ImageButton(ctx).apply {
                     setImageResource(R.drawable.ic_info)
@@ -273,7 +294,7 @@ class FicheObjetFragment : Fragment() {
                         }
                     }
                 }
-                row.addView(nameTv)
+                row.addView(bloc)
                 row.addView(btnInfo)
                 row.addView(btnCarte)
                 binding.llEnfants.addView(row)
@@ -307,6 +328,26 @@ class FicheObjetFragment : Fragment() {
         // Date ISO "YYYY-MM-DD..." → "YYYY-MM-DD" simple
         if (v.length >= 10 && v[4] == '-' && v[7] == '-') return v.substring(0, 10)
         return v
+    }
+
+    /** Sous-titre d'un row enfant : valeurs des champs de `schema.display_list` séparées par
+     *  " · ", date ISO formatées, sans le nameField (déjà en titre). */
+    private fun sousTitrePourEnfant(
+        e: MonitoringApi.MonitoringEnfant,
+        schemaType: MonitoringApi.MonitoringSchemaObjet?,
+    ): String {
+        val displayList = schemaType?.displayList.orEmpty()
+        if (displayList.isEmpty()) return ""
+        val nameField = schemaType?.nameField
+        return displayList
+            .filter { it != nameField }
+            .mapNotNull { k ->
+                val v = e.proprietes[k]?.takeIf { it.isNotEmpty() && it != "null" } ?: return@mapNotNull null
+                if (v.length >= 10 && v[4] == '-' && v[7] == '-')
+                    "${v.substring(8, 10)}/${v.substring(5, 7)}/${v.substring(0, 4)}"
+                else v
+            }
+            .joinToString(" · ")
     }
 
     private fun labelTypeParDefaut(type: String): String = when (type) {

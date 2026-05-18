@@ -96,6 +96,11 @@ class SuiviDetailFragment : Fragment() {
                 binding.tvNbSites.visibility = View.GONE
                 return@launch
             }
+            // Resolver des labels (id_role/id_nomenclature/id_dataset → nom lisible).
+            val resolver = if (schema != null) {
+                runCatching { MonitoringApi.chargerResolveurLabels(config, moduleCode, schema) }
+                    .getOrNull() ?: MonitoringApi.LabelResolver()
+            } else MonitoringApi.LabelResolver()
 
             // Re-derive le nom de chaque enfant via le nameField du schéma, puis applique le tri
             // déclaré par le protocole (schema.sorts) ou tri alphabétique par défaut.
@@ -120,7 +125,7 @@ class SuiviDetailFragment : Fragment() {
             binding.tvNbSites.text = typesAfficher.joinToString("  ·  ") { type ->
                 "${labelPour(type, schema, counts)} : ${counts[type] ?: 0}"
             }
-            afficherListeSites(moduleCode, typesAfficher, enfantsAffines, counts, schema)
+            afficherListeSites(moduleCode, typesAfficher, enfantsAffines, counts, schema, resolver)
         }
     }
 
@@ -179,10 +184,12 @@ class SuiviDetailFragment : Fragment() {
     }
 
     /** Construit le sous-titre d'un row enfant depuis `schema.display_list` (sans le nameField,
-     *  déjà en titre). Formate les dates ISO, ignore les valeurs vides ou null. */
+     *  déjà en titre). Formate les dates ISO, résout les IDs en labels via le resolver,
+     *  ignore les valeurs vides ou null. */
     private fun sousTitrePourEnfant(
         e: MonitoringApi.MonitoringEnfant,
         schemaType: MonitoringApi.MonitoringSchemaObjet?,
+        resolver: MonitoringApi.LabelResolver,
     ): String {
         val displayList = schemaType?.displayList.orEmpty()
         if (displayList.isEmpty()) return ""
@@ -191,6 +198,9 @@ class SuiviDetailFragment : Fragment() {
             .filter { it != nameField }
             .mapNotNull { k ->
                 val v = e.proprietes[k]?.takeIf { it.isNotEmpty() && it != "null" } ?: return@mapNotNull null
+                // Résolution ID → label si la propriété a un type_util géré.
+                val prop = schemaType?.properties?.get(k)
+                if (prop != null) resolver.resoudre(prop, v)?.let { return@mapNotNull it }
                 formatValeurAffichee(v)
             }
             .joinToString(" · ")
@@ -222,6 +232,7 @@ class SuiviDetailFragment : Fragment() {
         enfants: Map<String, List<MonitoringApi.MonitoringEnfant>>,
         counts: Map<String, Int>,
         schema: Map<String, MonitoringApi.MonitoringSchemaObjet>?,
+        resolver: MonitoringApi.LabelResolver,
     ) {
         val ctx = requireContext()
         val density = resources.displayMetrics.density
@@ -270,7 +281,7 @@ class SuiviDetailFragment : Fragment() {
                 }
                 bloc.addView(nameTv)
                 // Sous-titre depuis schema.display_list (sans le nameField, déjà en titre).
-                val sousTitre = sousTitrePourEnfant(e, schemaType)
+                val sousTitre = sousTitrePourEnfant(e, schemaType, resolver)
                 if (sousTitre.isNotEmpty()) {
                     val sub = TextView(ctx).apply {
                         text = sousTitre

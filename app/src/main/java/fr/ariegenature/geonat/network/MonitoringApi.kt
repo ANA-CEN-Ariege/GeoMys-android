@@ -2,6 +2,8 @@ package fr.ariegenature.geonat.network
 
 import fr.ariegenature.geonat.store.GeoNatureConfig
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -108,6 +110,9 @@ object MonitoringApi {
         val typeWidget: String,
         val label: String,
         val obligatoire: Boolean,
+        /** Discriminateur sémantique : `user`, `nomenclature`, `dataset`, `taxonomy`, `types_site`.
+         *  Utilisé pour résoudre les IDs en labels via [LabelResolver]. */
+        val typeUtil: String? = null,
         /** Pour widget=`nomenclature` (forme ancienne) : code mnémonique du type de nomenclature. */
         val nomenclatureType: String? = null,
         /** Valeurs prédéfinies pour `select`/`radio` (value → label). Vide pour les datalists
@@ -165,7 +170,35 @@ object MonitoringApi {
          *  du parent dans le formulaire de création d'un enfant (le parent est connu par
          *  contexte de navigation). */
         val idFieldName: String? = null,
+        /** Pour le type "module" uniquement : id de la liste d'observateurs déclarée. Sert à
+         *  fetcher /api/users/menu/<id> pour résoudre les `id_role` en noms. */
+        val idListObserver: Int? = null,
+        /** Pour le type "module" uniquement : id de la liste taxonomique. */
+        val idListTaxonomy: Int? = null,
     )
+
+    /** Cache des labels résolus depuis le serveur — permet de remplacer les IDs (id_role,
+     *  id_nomenclature, id_dataset) par leurs labels au moment de l'affichage. */
+    data class LabelResolver(
+        /** code_nomenclature_type → (id_nomenclature → label_fr). */
+        val nomenclatures: Map<String, Map<String, String>> = emptyMap(),
+        /** id_role → nom_complet. */
+        val users: Map<String, String> = emptyMap(),
+        /** id_dataset → dataset_name. */
+        val datasets: Map<String, String> = emptyMap(),
+    ) {
+        /** Résout l'ID d'une propriété en label si une correspondance existe. Retourne null si
+         *  le type_util n'est pas géré ou si l'ID n'est pas trouvé. */
+        fun resoudre(prop: MonitoringPropertySchema, valeur: String): String? {
+            if (valeur.isEmpty() || valeur == "null") return null
+            return when (prop.typeUtil) {
+                "user" -> users[valeur]
+                "nomenclature" -> prop.nomenclatureType?.let { nomenclatures[it]?.get(valeur) }
+                "dataset" -> datasets[valeur]
+                else -> null
+            }
+        }
+    }
 
     /** GET /api/monitorings/object/<module_code>/module?depth=1 — récupère le module et la liste
      *  de ses enfants directs avec leurs propriétés brutes. Map `object_type → [enfants]`, map
@@ -435,6 +468,8 @@ object MonitoringApi {
                     displayList = displayListNoms,
                     sorts = sortsList,
                     idFieldName = v.optString("id_field_name", "").takeIf { it.isNotEmpty() },
+                    idListObserver = v.optInt("id_list_observer", -1).takeIf { it > 0 },
+                    idListTaxonomy = v.optInt("id_list_taxonomy", -1).takeIf { it > 0 },
                 )
             }
             // Post-processing : dérive l'URL des widgets `observers`/`dataset`/`taxonomy_list`
@@ -532,6 +567,7 @@ object MonitoringApi {
             val keyValue = v.optString("keyValue", "").takeIf { it.isNotEmpty() }
             val dataPath = v.optString("data_path", "").takeIf { it.isNotEmpty() }
             val multiple = v.optBoolean("multiple", false) || v.optBoolean("multi_select", false)
+            val typeUtil = v.optString("type_util", "").takeIf { it.isNotEmpty() }
             // Default value : peut être sous `default` (objet ou scalaire) ou directement
             // sous `value` (scalaire ou objet).
             val defaultBrut = v.opt("default") ?: v.opt("value")
@@ -568,6 +604,7 @@ object MonitoringApi {
                 typeWidget = typeWidget,
                 label = label,
                 obligatoire = obligatoire,
+                typeUtil = typeUtil,
                 nomenclatureType = nomenclatureType,
                 valeurs = valeurs,
                 apiUrl = apiUrl,
@@ -592,6 +629,91 @@ object MonitoringApi {
         val cdNomenclature: String? = null,
         val labelDefaut: String? = null,
     )
+
+    /** Cache du LabelResolver par moduleCode. Évite de re-fetcher les nomenclatures / users /
+     *  datasets entre fiches d'un même protocole. Invalidé en même temps que [dernierSchema]
+     *  ne le serait — ici on garde indéfiniment dans la session (les nomenclatures changent
+     *  rarement). */
+    @Volatile private var cacheResolvers: MutableMap<String, LabelResolver> = mutableMapOf()
+
+    /** Construit le LabelResolver pour un protocole : scan du schéma pour identifier les types
+     *  d'IDs à résoudre (`type_util` ∈ user/nomenclature/dataset), fetch parallèle des listes
+     *  correspondantes, retourne un resolver utilisable côté UI. Met en cache par moduleCode.
+     *  Renvoie un resolver vide (mais non-null) en cas d'échec partiel/total — chaque ID non
+     *  résolu reste alors affiché tel quel. */
+    suspend fun chargerResolveurLabels(
+        config: GeoNatureConfig,
+        moduleCode: String,
+        schema: Map<String, MonitoringSchemaObjet>,
+    ): LabelResolver = withContext(Dispatchers.IO) {
+        cacheResolvers[moduleCode]?.let { return@withContext it }
+        // Inventaire des ressources à fetcher.
+        val codesNomenclature = mutableSetOf<String>()
+        var besoinUsers = false
+        var besoinDatasets = false
+        schema.values.forEach { obj ->
+            obj.properties.values.forEach { prop ->
+                when (prop.typeUtil) {
+                    "nomenclature" -> prop.nomenclatureType?.let { codesNomenclature.add(it) }
+                    "user" -> besoinUsers = true
+                    "dataset" -> besoinDatasets = true
+                }
+            }
+        }
+        val idListObserver = schema["module"]?.idListObserver
+        val base = config.urlServeur.trim().trimEnd('/')
+        val (token, _, cookies) = GeoNatureAuth.loginAvecCookies(base, config.login, config.motDePasse)
+            ?: return@withContext LabelResolver()
+
+        suspend fun fetchListe(path: String, keyId: String, keyLabel: String, dataPath: String?): Map<String, String> {
+            val url = URL("$base/api/$path")
+            val conn = url.openConnection() as java.net.HttpURLConnection
+            conn.connectTimeout = 15000
+            conn.readTimeout = 15000
+            conn.setRequestProperty("Accept", "application/json")
+            if (token != null) conn.setRequestProperty("Authorization", "Bearer $token")
+            if (cookies.isNotEmpty()) conn.setRequestProperty("Cookie", cookies)
+            if (conn.responseCode != 200) return emptyMap()
+            val text = conn.inputStream.bufferedReader().readText()
+            val array: JSONArray = try { JSONArray(text) } catch (_: Exception) {
+                val obj = try { JSONObject(text) } catch (_: Exception) { return emptyMap() }
+                val cle = dataPath ?: listOf("values", "data", "items", "results")
+                    .firstOrNull { obj.has(it) } ?: return emptyMap()
+                obj.optJSONArray(cle) ?: return emptyMap()
+            }
+            val map = mutableMapOf<String, String>()
+            for (i in 0 until array.length()) {
+                val item = array.optJSONObject(i) ?: continue
+                val id = item.opt(keyId)?.toString() ?: continue
+                val lbl = item.opt(keyLabel)?.toString() ?: continue
+                if (id.isNotEmpty() && lbl.isNotEmpty()) map[id] = lbl
+            }
+            return map
+        }
+
+        coroutineScope {
+            val nomenclaturesDeferred = codesNomenclature.map { code ->
+                async { code to fetchListe("nomenclatures/nomenclature/$code", "id_nomenclature", "label_fr", "values") }
+            }
+            val usersDeferred = if (besoinUsers && idListObserver != null) async {
+                fetchListe("users/menu/$idListObserver", "id_role", "nom_complet", null)
+            } else null
+            val datasetsDeferred = if (besoinDatasets) async {
+                fetchListe("meta/datasets", "id_dataset", "dataset_name", null)
+            } else null
+
+            val nomenclaturesMap = nomenclaturesDeferred.associate { it.await() }
+            val usersMap = usersDeferred?.await() ?: emptyMap()
+            val datasetsMap = datasetsDeferred?.await() ?: emptyMap()
+            val resolver = LabelResolver(
+                nomenclatures = nomenclaturesMap,
+                users = usersMap,
+                datasets = datasetsMap,
+            )
+            cacheResolvers[moduleCode] = resolver
+            resolver
+        }
+    }
 
     /** Trie une liste d'enfants selon les critères déclarés par le schéma (champ `sorts`).
      *  Tente une comparaison numérique d'abord, fallback comparaison de strings (les dates ISO

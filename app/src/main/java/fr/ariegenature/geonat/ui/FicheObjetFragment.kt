@@ -74,14 +74,20 @@ class FicheObjetFragment : Fragment() {
                 return@launch
             }
             if (!isAdded) return@launch
+            val resolver = if (schema != null) {
+                runCatching { MonitoringApi.chargerResolveurLabels(config, moduleCode, schema) }
+                    .getOrNull() ?: MonitoringApi.LabelResolver()
+            } else MonitoringApi.LabelResolver()
+            if (!isAdded) return@launch
             binding.progressFiche.visibility = View.GONE
-            afficher(objet, schema)
+            afficher(objet, schema, resolver)
         }
     }
 
     private fun afficher(
         objet: MonitoringApi.MonitoringObjet,
         schema: Map<String, MonitoringApi.MonitoringSchemaObjet>?,
+        resolver: MonitoringApi.LabelResolver,
     ) {
         val schemaCe = schema?.get(objet.type)
         // Titre = valeur du nameField déclaré par le schéma, sinon heuristique.
@@ -93,9 +99,9 @@ class FicheObjetFragment : Fragment() {
             ?: labelTypeParDefaut(objet.type)
 
         // Position / Geometry retirée de la fiche : reste accessible via le bouton 👁 carte.
-        afficherProprietes(objet, schemaCe)
+        afficherProprietes(objet, schemaCe, resolver)
         afficherActions(objet, schema, nom)
-        afficherEnfants(objet, schema)
+        afficherEnfants(objet, schema, resolver)
     }
 
     /** Affiche un bouton "+ Nouvelle visite" quand le schéma déclare `visit` comme enfant du
@@ -139,6 +145,7 @@ class FicheObjetFragment : Fragment() {
     private fun afficherProprietes(
         objet: MonitoringApi.MonitoringObjet,
         schemaCe: MonitoringApi.MonitoringSchemaObjet?,
+        resolver: MonitoringApi.LabelResolver,
     ) {
         val nameField = schemaCe?.nameField
         val displayList = schemaCe?.displayProperties.orEmpty()
@@ -177,7 +184,10 @@ class FicheObjetFragment : Fragment() {
                 setTextColor(android.graphics.Color.parseColor("#888888"))
             }
             val value = TextView(ctx).apply {
-                text = formatValeur(k, v)
+                // Résolution ID → label via le resolver si type_util est géré, sinon formatage.
+                val prop = schemaCe?.properties?.get(k)
+                val resolu = if (prop != null) resolver.resoudre(prop, v) else null
+                text = resolu ?: formatValeur(k, v)
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
             }
             row.addView(label)
@@ -191,6 +201,7 @@ class FicheObjetFragment : Fragment() {
     private fun afficherEnfants(
         objet: MonitoringApi.MonitoringObjet,
         schema: Map<String, MonitoringApi.MonitoringSchemaObjet>?,
+        resolver: MonitoringApi.LabelResolver,
     ) {
         if (objet.enfants.isEmpty()) return
         val ctx = requireContext()
@@ -246,7 +257,7 @@ class FicheObjetFragment : Fragment() {
                     setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
                 }
                 bloc.addView(nameTv)
-                val sousTitre = sousTitrePourEnfant(e, schemaType)
+                val sousTitre = sousTitrePourEnfant(e, schemaType, resolver)
                 if (sousTitre.isNotEmpty()) {
                     val sub = TextView(ctx).apply {
                         text = sousTitre
@@ -331,10 +342,11 @@ class FicheObjetFragment : Fragment() {
     }
 
     /** Sous-titre d'un row enfant : valeurs des champs de `schema.display_list` séparées par
-     *  " · ", date ISO formatées, sans le nameField (déjà en titre). */
+     *  " · ", dates ISO formatées, IDs résolus en labels via le resolver, sans le nameField. */
     private fun sousTitrePourEnfant(
         e: MonitoringApi.MonitoringEnfant,
         schemaType: MonitoringApi.MonitoringSchemaObjet?,
+        resolver: MonitoringApi.LabelResolver,
     ): String {
         val displayList = schemaType?.displayList.orEmpty()
         if (displayList.isEmpty()) return ""
@@ -343,6 +355,8 @@ class FicheObjetFragment : Fragment() {
             .filter { it != nameField }
             .mapNotNull { k ->
                 val v = e.proprietes[k]?.takeIf { it.isNotEmpty() && it != "null" } ?: return@mapNotNull null
+                val prop = schemaType?.properties?.get(k)
+                if (prop != null) resolver.resoudre(prop, v)?.let { return@mapNotNull it }
                 if (v.length >= 10 && v[4] == '-' && v[7] == '-')
                     "${v.substring(8, 10)}/${v.substring(5, 7)}/${v.substring(0, 4)}"
                 else v

@@ -132,39 +132,47 @@ class FicheObjetFragment : Fragment() {
         binding.llProprietes.addView(btn)
     }
 
-    /** Liste les propriétés scalaires de l'objet sous forme "Label : valeur". Masque les
-     *  champs techniques (id_*, additional_data_keys, …) et le nameField (déjà en titre). */
+    /** Affiche les propriétés de l'objet sous forme "Label : valeur".
+     *  Priorité au schéma serveur : `display_properties` dicte l'ORDRE et le SOUS-ENSEMBLE
+     *  des champs à afficher (= ce que montre l'interface web), `attribut_label` dicte le
+     *  libellé. Sans schéma exploitable, fallback sur l'ancien filtre par blacklist. */
     private fun afficherProprietes(
         objet: MonitoringApi.MonitoringObjet,
         schemaCe: MonitoringApi.MonitoringSchemaObjet?,
     ) {
         val nameField = schemaCe?.nameField
-        // Filtre les champs techniques ou redondants à la demande de l'utilisateur :
-        // id_*, uuid_*, meta_*, pk, altitude_min/max, *_code (déjà l'identifiant ailleurs),
-        // geom/geometry/geom_* (la géométrie est consultable via le bouton 👁 carte),
-        // additional_data_keys (clé technique), et le nameField (déjà en titre).
-        val proprietesAffichables = objet.proprietes.filterKeys { k ->
-            k != nameField &&
-                !k.startsWith("id_") &&
-                !k.startsWith("uuid_") &&
-                !k.startsWith("meta_") &&
-                k != "additional_data_keys" &&
-                k != "pk" &&
-                k != "altitude_min" && k != "altitude_max" &&
-                !k.endsWith("_code") &&
-                k != "geom" && k != "geometry" && !k.startsWith("geom_")
+        val displayList = schemaCe?.displayProperties.orEmpty()
+
+        val cles: List<String> = if (displayList.isNotEmpty()) {
+            displayList.filter { it != nameField && objet.proprietes.containsKey(it) }
+        } else {
+            // Fallback (vieux schéma sans display_properties) : tous les scalaires moins
+            // une blacklist de champs techniques.
+            objet.proprietes.keys.filter { k ->
+                k != nameField &&
+                    !k.startsWith("id_") &&
+                    !k.startsWith("uuid_") &&
+                    !k.startsWith("meta_") &&
+                    k != "additional_data_keys" &&
+                    k != "pk" &&
+                    k != "altitude_min" && k != "altitude_max" &&
+                    !k.endsWith("_code") &&
+                    k != "geom" && k != "geometry" && !k.startsWith("geom_")
+            }
         }
-        if (proprietesAffichables.isEmpty()) return
+        if (cles.isEmpty()) return
 
         val ctx = requireContext()
         val density = resources.displayMetrics.density
-        proprietesAffichables.forEach { (k, v) ->
+        cles.forEach { k ->
+            val v = objet.proprietes[k] ?: return@forEach
             val row = LinearLayout(ctx).apply {
                 orientation = LinearLayout.VERTICAL
                 setPadding(0, (6 * density).toInt(), 0, (6 * density).toInt())
             }
             val label = TextView(ctx).apply {
-                text = labelChamp(k)
+                // Schéma serveur en priorité (attribut_label), sinon mapping FR par défaut.
+                text = schemaCe?.properties?.get(k)?.label ?: labelChamp(k)
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
                 setTextColor(android.graphics.Color.parseColor("#888888"))
             }

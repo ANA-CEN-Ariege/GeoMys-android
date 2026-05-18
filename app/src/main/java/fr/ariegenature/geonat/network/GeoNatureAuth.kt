@@ -33,8 +33,10 @@ object GeoNatureAuth {
                         val json = JSONObject(conn.inputStream.bufferedReader().readText())
                         val token = extractToken(json)
                         // Sauvegarde du nom complet de l'utilisateur (utilisé comme déterminateur
-                        // par défaut dans la saisie multi-taxons). Best-effort.
+                        // par défaut dans la saisie multi-taxons) et de son id_role (pour la
+                        // pré-sélection dans les champs observers de saisie monitoring). Best-effort.
                         extraireNomComplet(json)?.let { config.nomUtilisateur = it }
+                        extraireIdRole(json)?.let { config.idRoleUtilisateur = it }
                         if (token != null) Pair(true, "Connexion réussie")
                         else Pair(false, "Token absent de la réponse")
                     }
@@ -114,6 +116,13 @@ object GeoNatureAuth {
         val nom = userJson.optString("nom_role", "").trim()
         val complet = listOf(prenom, nom).filter { it.isNotEmpty() }.joinToString(" ")
         return complet.takeIf { it.isNotEmpty() }
+    }
+
+    /** Extrait l'id_role de l'utilisateur connecté du payload de login. Renvoie null si absent. */
+    private fun extraireIdRole(json: JSONObject): Int? {
+        val userJson = json.optJSONObject("user")
+        return userJson?.optInt("id_role", -1)?.takeIf { it > 0 }
+            ?: json.optInt("id_role", -1).takeIf { it > 0 }
     }
 
     private fun extractToken(json: JSONObject): String? {

@@ -148,6 +148,11 @@ object MonitoringApi {
         /** Ordre d'affichage des propriétés dans une fiche ou un formulaire. Si vide, on affiche
          *  selon l'ordre d'insertion JSON de `properties`. */
         val displayProperties: List<String> = emptyList(),
+        /** Nom du champ qui sert d'identifiant technique pour ce type (ex: `id_base_site`,
+         *  `id_dalle`, `id_sites_group`). Utilisé côté UI pour masquer le champ de sélection
+         *  du parent dans le formulaire de création d'un enfant (le parent est connu par
+         *  contexte de navigation). */
+        val idFieldName: String? = null,
     )
 
     /** GET /api/monitorings/object/<module_code>/module?depth=1 — récupère le module et la liste
@@ -398,10 +403,50 @@ object MonitoringApi {
                     childrenTypes = children.ifEmpty { childrenFromTypesArr },
                     properties = parserPropertiesFusionnees(v),
                     displayProperties = displayProps,
+                    idFieldName = v.optString("id_field_name", "").takeIf { it.isNotEmpty() },
                 )
             }
-            result
+            // Post-processing : dérive l'URL des widgets `observers`/`dataset`/`taxonomy_list`
+            // qui n'ont pas d'`api` explicite dans le schéma (raccourci natif gn_module_monitoring
+            // — le client est censé connaître l'URL standard). Utilise les ID de listes déclarés
+            // au niveau du module.
+            val moduleBloc = obj.optJSONObject("module")
+            val idListObserver = moduleBloc?.optInt("id_list_observer", -1)?.takeIf { it > 0 }
+            val idListTaxonomy = moduleBloc?.optInt("id_list_taxonomy", -1)?.takeIf { it > 0 }
+            result.mapValues { (_, schemaObjet) ->
+                schemaObjet.copy(properties = schemaObjet.properties.mapValues { (_, prop) ->
+                    derirverApiSiManquant(prop, idListObserver, idListTaxonomy)
+                })
+            }
         }
+
+    /** Pour les widgets `observers`/`dataset`/`taxonomy_list` déclarés sans `api`/`keyLabel`/
+     *  `keyValue`, applique les conventions standard gn_module_monitoring (URL fixe + champs
+     *  par défaut). Si le widget a déjà un api, on ne touche à rien. */
+    private fun derirverApiSiManquant(
+        prop: MonitoringPropertySchema,
+        idListObserver: Int?,
+        idListTaxonomy: Int?,
+    ): MonitoringPropertySchema {
+        if (prop.apiUrl != null) return prop
+        val (api, kLabel, kValue) = when (prop.typeWidget.lowercase()) {
+            "observers" -> Triple(
+                idListObserver?.let { "users/menu/$it" } ?: return prop,
+                "nom_complet", "id_role",
+            )
+            "dataset" -> Triple("meta/datasets", "dataset_name", "id_dataset")
+            "taxonomy_list" -> Triple(
+                idListTaxonomy?.let { "biblistes/$it" } ?: return prop,
+                "nom_liste", "id_liste",
+            )
+            else -> return prop
+        }
+        return prop.copy(
+            apiUrl = api,
+            keyLabel = prop.keyLabel ?: kLabel,
+            keyValue = prop.keyValue ?: kValue,
+        )
+    }
 
     /** Fusionne les blocs `generic` (héritage du modèle de base) et `specific` (custom protocole)
      *  d'un object_type gn_module_monitoring. Specific surcharge generic en cas de collision.

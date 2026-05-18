@@ -56,6 +56,13 @@ class GeoNatureConfig(context: Context) {
         get() = prefs.getString("gn_nom_utilisateur", "") ?: ""
         set(v) = prefs.edit().putString("gn_nom_utilisateur", v).apply()
 
+    /** id_role de l'utilisateur actuellement connecté (renvoyé par GeoNature au login).
+     *  Sert à pré-sélectionner cet utilisateur dans les champs observers/datalist de saisie.
+     *  -1 si pas encore connecté ou non détecté. */
+    var idRoleUtilisateur: Int
+        get() = prefs.getInt("gn_id_role_utilisateur", -1)
+        set(v) = prefs.edit().putInt("gn_id_role_utilisateur", v).apply()
+
     /** Nom complet de l'observateur sélectionné comme déterminateur par défaut. */
     var observateurDefautNom: String
         get() = prefs.getString("gn_obs_defaut_nom", "") ?: ""

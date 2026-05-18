@@ -3,23 +3,28 @@ package fr.ariegenature.geonat.monitoring.form
 import fr.ariegenature.geonat.network.MonitoringApi
 
 /** Convertit un schéma de propriété gn_module_monitoring vers le [ViewType] du renderer.
- *  Le `multiple` est lu depuis le schéma — `datalist` peut être single (Spinner) ou multi
- *  (dialog cases à cocher). Renvoie null pour les widgets pas encore portés. */
+ *  Le `multiple` est lu depuis le schéma — datalist/observers/dataset peuvent être single
+ *  (Spinner) ou multi (dialog cases à cocher). Renvoie null pour les widgets pas encore portés. */
 fun mapperViewType(prop: fr.ariegenature.geonat.network.MonitoringApi.MonitoringPropertySchema): ViewType? =
     when (prop.typeWidget.lowercase()) {
         "text", "string" -> ViewType.TEXT
-        "textarea" -> ViewType.TEXTAREA
+        "textarea", "observers-text" -> ViewType.TEXTAREA
         "number", "integer", "float", "decimal" -> ViewType.NUMBER
         "date" -> ViewType.DATE
         "datetime" -> ViewType.DATE // POC : on ignore la composante heure
         "time" -> ViewType.TEXT // POC : "08:00" en libre — un ViewType.TIME dédié reste à porter
         "select", "radio" -> ViewType.SELECT
-        // datalist / nomenclature (forme ancienne) : on les unifie sur SELECT(_MULTIPLE) car le
-        // pré-fetch (cf [chargerOptionsDatalist]) leur donne déjà des `values` toutes prêtes.
-        "datalist", "nomenclature" -> if (prop.multiple) ViewType.SELECT_MULTIPLE else ViewType.SELECT
+        // Widgets de type "liste alimentée par API" : tous unifiés sur SELECT(_MULTIPLE).
+        // Le pré-fetch (cf [chargerOptionsDatalist]) leur donne des `values` toutes prêtes
+        // depuis l'endpoint déclaré dans le schéma (api, keyLabel, keyValue, data_path).
+        "datalist", "nomenclature", "observers", "dataset" ->
+            if (prop.multiple) ViewType.SELECT_MULTIPLE else ViewType.SELECT
         // Encore à porter :
-        //   observers (single non-datalist) → idem datalist
-        //   medias, taxonomy, geometry, dataset, observers-text, bool_checkbox, min_max
+        //   medias       → composant galerie + upload de fichiers
+        //   taxonomy     → autocomplete TaxRef (besoin d'un picker dédié)
+        //   geometry     → picker sur carte
+        //   bool_checkbox → besoin d'un ViewType.CHECKBOX dédié
+        //   min_max       → besoin d'un ViewType.MIN_MAX (deux NumberPicker côte à côte)
         else -> null
     }
 

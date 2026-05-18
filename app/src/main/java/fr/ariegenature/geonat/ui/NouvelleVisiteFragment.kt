@@ -98,7 +98,15 @@ class NouvelleVisiteFragment : Fragment() {
                 renderer.rendre(creerChampsDemo())
                 return@launch
             }
-            val construction: FormulaireConstruction = construireFormulaire(visitSchema)
+            val constructionBrute: FormulaireConstruction = construireFormulaire(visitSchema)
+            // Cache le champ de sélection du parent (id_base_site / id_dalle / id_circuit…) :
+            // l'utilisateur a déjà choisi son parent via le drill-down qui amène ici, l'interface
+            // web le cache pareillement. Le nom du champ vient de schema[parentType].id_field_name.
+            val parentObjectType = arguments?.getString("parentObjectType").orEmpty()
+            val parentIdField = schema[parentObjectType]?.idFieldName
+            val construction = if (parentIdField != null)
+                constructionBrute.copy(fields = constructionBrute.fields.filter { it.code != parentIdField })
+            else constructionBrute
             if (construction.fields.isEmpty()) {
                 val widgets = visitSchema.properties.values.joinToString(", ") { "${it.nom}=${it.typeWidget}" }
                 ajouterDebug("⚠ Aucun widget supporté.\nWidgets reçus : $widgets")
@@ -148,6 +156,23 @@ class NouvelleVisiteFragment : Fragment() {
         }
         if (notesEchecs.isNotEmpty()) {
             ajouterDebug("⚠ Datalists non chargées : ${notesEchecs.joinToString(", ")}")
+        }
+        // Pré-sélection de l'utilisateur connecté dans les champs observers (typeWidget ∈
+        // {observers, datalist} avec type_util=user, OU nom de propriété "observers" / "observer").
+        val idRole = config.idRoleUtilisateur.takeIf { it > 0 }
+        if (idRole != null) {
+            val idStr = idRole.toString()
+            nouveaux.forEachIndexed { idx, f ->
+                val prop = visitSchema.properties[f.code] ?: return@forEachIndexed
+                val estObservateur = prop.typeWidget.lowercase() == "observers" ||
+                    (prop.typeWidget.lowercase() == "datalist" && f.code.contains("observ"))
+                if (!estObservateur) return@forEachIndexed
+                // Ne pré-sélectionne que si l'id_role est dans les options chargées.
+                if (f.values.none { it.value == idStr }) return@forEachIndexed
+                nouveaux[idx] = f.copy(
+                    value = if (f.viewType == ViewType.SELECT_MULTIPLE) listOf(idStr) else idStr,
+                )
+            }
         }
         nouveaux
     }

@@ -164,15 +164,18 @@ class FormulaireRenderer(
 
     /** Champ multi-sélection : TextView cliquable qui ouvre un dialog cases à cocher.
      *  Stocke la List<String> des `value` sélectionnées dans `tag`. Affiche les `label`s joints
-     *  par virgule, ou "Choisir…" si rien sélectionné. */
+     *  par virgule, ou "Choisir…" si rien sélectionné. Pré-coche les valeurs de [field.value]
+     *  si fournies (List<String> ou String unique). */
     private fun creerChampMultiSelect(field: EditableField): TextView {
+        @Suppress("UNCHECKED_CAST")
+        val defaut: List<String> = (field.value as? List<String>)
+            ?: (field.value as? String)?.takeIf { it.isNotEmpty() }?.let { listOf(it) }
+            ?: emptyList()
         val tv = TextView(ctx).apply {
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
             setPadding((8 * density).toInt(), (12 * density).toInt(), (8 * density).toInt(), (12 * density).toInt())
             setBackgroundResource(android.R.drawable.editbox_background_normal)
-            text = "Choisir…"
-            setTextColor(0xFF888888.toInt())
-            tag = emptyList<String>()
+            tag = defaut
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -182,6 +185,15 @@ class FormulaireRenderer(
             tv.text = "(aucune option disponible)"
             tv.isEnabled = false
             return tv
+        }
+        // Affichage initial des labels des valeurs pré-sélectionnées.
+        val initLabels = field.values.filter { it.value in defaut }.map { it.label }
+        if (initLabels.isNotEmpty()) {
+            tv.text = initLabels.joinToString(", ")
+            tv.setTextColor(0xFF000000.toInt())
+        } else {
+            tv.text = "Choisir…"
+            tv.setTextColor(0xFF888888.toInt())
         }
         tv.setOnClickListener {
             @Suppress("UNCHECKED_CAST")

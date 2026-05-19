@@ -56,6 +56,16 @@ class ConfigGeoNatureFragment : Fragment() {
         // si déjà chargés lors d'une session précédente.
         restaurerCaches()
 
+        // État initial des sections selon la présence de données en cache.
+        // - Cache TaxRef non vide → l'utilisateur a déjà chargé : on montre tout
+        //   (section "Charger" affiche "Recharger…", section "Données" visible).
+        // - Sinon → seul le bloc connexion est visible, l'utilisateur doit se connecter
+        //   puis cliquer sur "Charger les données".
+        val donneesPresentes = TaxRefCache.count > 0
+        binding.llSectionCharger.visibility = if (donneesPresentes) View.VISIBLE else View.GONE
+        binding.llSectionDonnees.visibility = if (donneesPresentes) View.VISIBLE else View.GONE
+        binding.btnChargerDonnees.text = if (donneesPresentes) "Recharger les données" else "Charger les données"
+
         updateStatusIndicator()
         updateCacheInfo()
         updateAvertissementListe()
@@ -66,6 +76,9 @@ class ConfigGeoNatureFragment : Fragment() {
             override fun afterTextChanged(s: Editable?) {
                 gnConfig.taxaListeId = s?.toString() ?: ""
                 updateAvertissementListe()
+                // Re-render les compteurs par groupe : intersection avec la nouvelle liste.
+                updateCacheInfo()
+                updateStatusIndicator()
             }
         })
 
@@ -88,15 +101,19 @@ class ConfigGeoNatureFragment : Fragment() {
             binding.acObservateurs.showDropDown()
         }
 
-        binding.btnSyncTaxRef.setOnClickListener {
+        binding.btnChargerDonnees.setOnClickListener {
             sauvegarderChamps()
-            syncTaxRef()
+            chargerToutesLesDonnees()
         }
 
         binding.btnViderCache.setOnClickListener {
             TaxRefCache.vider()
             updateCacheInfo()
             updateAvertissementListe()
+            // Sans cache, on repasse en état "Charger les données" — le bouton change
+            // de libellé mais la section reste visible si la connexion est OK.
+            binding.btnChargerDonnees.text = "Charger les données"
+            binding.llSectionDonnees.visibility = View.GONE
         }
 
         binding.btnFermer.setOnClickListener {
@@ -148,14 +165,11 @@ class ConfigGeoNatureFragment : Fragment() {
                 if (success) 0xFF2E7D32.toInt() else 0xFFC62828.toInt()
             )
             updateStatusIndicator()
-            // Connexion OK → chargement automatique des listes serveur. Les 4 chargers
-            // sont indépendants et gèrent leur propre visibilité d'erreur ; ils
-            // peuvent s'exécuter en parallèle.
+            // Connexion OK → on révèle uniquement le bouton "Charger les données".
+            // Aucun chargement automatique : l'utilisateur déclenche explicitement
+            // (le sync exhaustif peut être long, on ne le lance pas par surprise).
             if (success) {
-                chargerDatasets()
-                chargerListes()
-                chargerObservateurs()
-                chargerAdditionalFields()
+                binding.llSectionCharger.visibility = View.VISIBLE
             }
         }
     }
@@ -195,6 +209,7 @@ class ConfigGeoNatureFragment : Fragment() {
             if (idx >= 0) {
                 gnConfig.idDataset = datasets[idx].id.toString()
                 gnConfig.nomDataset = datasets[idx].nom
+                updateStatusIndicator()
             }
         }
         // Affiche la sélection courante si elle existe (sinon vide).
@@ -238,6 +253,7 @@ class ConfigGeoNatureFragment : Fragment() {
                 gnConfig.taxaListeId = listes[idx].id.toString()
                 binding.etTaxaListe.setText(gnConfig.taxaListeId)
                 updateAvertissementListe()
+                updateStatusIndicator()
             }
         }
         
@@ -285,11 +301,25 @@ class ConfigGeoNatureFragment : Fragment() {
             if (idx >= 0) {
                 gnConfig.observateurDefautId = observateurs[idx].idRole.toString()
                 gnConfig.observateurDefautNom = observateurs[idx].nomComplet
+                updateStatusIndicator()
             }
         }
-        // Affiche la sélection courante si elle existe (sinon vide).
+        // Affiche la sélection courante si elle existe. Sinon, on présélectionne
+        // automatiquement l'utilisateur connecté (id_role récupéré lors du login) —
+        // pratique pour le cas par défaut où l'observateur = celui qui saisit.
         val currentId = gnConfig.observateurDefautId.toIntOrNull()
-        val idx = observateurs.indexOfFirst { it.idRole == currentId }
+        var idx = observateurs.indexOfFirst { it.idRole == currentId }
+        if (idx < 0) {
+            val idRoleConnecte = gnConfig.idRoleUtilisateur.takeIf { it > 0 }
+            if (idRoleConnecte != null) {
+                idx = observateurs.indexOfFirst { it.idRole == idRoleConnecte }
+                if (idx >= 0) {
+                    gnConfig.observateurDefautId = observateurs[idx].idRole.toString()
+                    gnConfig.observateurDefautNom = observateurs[idx].nomComplet
+                    updateStatusIndicator()
+                }
+            }
+        }
         binding.acObservateurs.setText(if (idx >= 0) noms[idx] else "", false)
     }
 
@@ -336,22 +366,40 @@ class ConfigGeoNatureFragment : Fragment() {
         }
     }
 
-    private fun syncTaxRef() {
-        binding.btnSyncTaxRef.isEnabled = false
+    /** Charge tout depuis le serveur en une action unique :
+     *  - datasets, listes, observateurs, additional_fields (fire-and-forget, gèrent leur UI)
+     *  - sync TaxRef exhaustif (toutes les biblistes)
+     *  - sync nomenclatures
+     *  À la fin, la section "Données" devient visible et le bouton passe en "Recharger…". */
+    private fun chargerToutesLesDonnees() {
+        binding.btnChargerDonnees.isEnabled = false
+        binding.btnTesterConnexion.isEnabled = false
         binding.progressSync.visibility = View.VISIBLE
         binding.tvSyncResultat.visibility = View.GONE
+
+        // Les 4 chargements ci-dessous lancent chacun leur lifecycleScope.launch. Ils sont
+        // indépendants entre eux et plus rapides que le sync TaxRef → l'attente du sync
+        // sert de synchronisation implicite (à son terme, les 4 spinners sont peuplés).
+        chargerDatasets()
+        chargerListes()
+        chargerObservateurs()
+        chargerAdditionalFields()
+
         viewLifecycleOwner.lifecycleScope.launch {
-            val (nbTaxons, msgTaxRef) = GeoNatureSync.synchroniserTaxRef(gnConfig) { fait, _ ->
+            val (nbTaxons, msgTaxRef) = GeoNatureSync.synchroniserTaxRef(gnConfig) { fait, listeIdx, listesTotales ->
                 activity?.runOnUiThread {
                     binding.tvSyncResultat.visibility = View.VISIBLE
-                    binding.tvSyncResultat.text = "$fait taxons reçus…"
+                    binding.tvSyncResultat.text = when {
+                        listesTotales == 0 -> "Récupération des listes de taxons…"
+                        else -> "Liste $listeIdx/$listesTotales — $fait taxons cumulés…"
+                    }
                 }
             }
-            // Sync des nomenclatures (METH_OBS, STADE_VIE, …) : on remonte le message d'erreur
-            // s'il y en a un (count = 0 indique un échec côté serveur).
             val (nbNom, msgNom) = GeoNatureSync.synchroniserNomenclatures(gnConfig)
+
             binding.progressSync.visibility = View.GONE
-            binding.btnSyncTaxRef.isEnabled = true
+            binding.btnChargerDonnees.isEnabled = true
+            binding.btnTesterConnexion.isEnabled = true
             binding.tvSyncResultat.visibility = View.VISIBLE
             binding.tvSyncResultat.text = buildString {
                 append(msgTaxRef)
@@ -359,26 +407,40 @@ class ConfigGeoNatureFragment : Fragment() {
             }
             updateCacheInfo()
             updateAvertissementListe()
+
+            // Chargement effectif → on bascule en état "Données". Idempotent si on est
+            // déjà dans cet état (rechargement utilisateur).
+            if (nbTaxons > 0) {
+                binding.llSectionDonnees.visibility = View.VISIBLE
+                binding.btnChargerDonnees.text = "Recharger les données"
+            }
         }
     }
 
-    /** Affiche un avertissement quand la liste sélectionnée diffère de celle qui a été
-     *  utilisée lors de la dernière synchro — le cache TaxRef est alors obsolète et
-     *  les filtres par groupe (saisie) ne reflètent pas la liste actuelle. */
+    /** Depuis le sync exhaustif, le cache contient toutes les listes serveur — l'utilisateur
+     *  peut donc switcher de liste hors-réseau sans re-sync. On affiche tout de même un
+     *  avertissement si la liste actuellement sélectionnée n'est pas couverte par le cache
+     *  (cas où le serveur a ajouté une liste depuis la dernière synchro). */
     private fun updateAvertissementListe() {
-        val configuree = binding.etTaxaListe.text?.toString()?.trim().orEmpty()
-        val synchronisee = TaxRefCache.listeSynchroniseeId?.trim().orEmpty()
+        val configuree = binding.etTaxaListe.text?.toString()?.trim()?.toIntOrNull()
+        val listesCache = TaxRefCache.listesSynchronisees
         val cacheNonVide = TaxRefCache.count > 0
-        val differe = configuree.isNotEmpty() && cacheNonVide && configuree != synchronisee
-        binding.tvAvertissementListe.visibility = if (differe) View.VISIBLE else View.GONE
-        if (differe) {
+        val absente = configuree != null && cacheNonVide && listesCache.isNotEmpty() && configuree !in listesCache
+        binding.tvAvertissementListe.visibility = if (absente) View.VISIBLE else View.GONE
+        if (absente) {
             binding.tvAvertissementListe.text =
-                "⚠ Liste de taxons modifiée (cache : liste $synchronisee) — synchroniser pour mettre à jour les taxons."
+                "⚠ La liste $configuree n'est pas dans le cache (${listesCache.size} listes synchronisées). Resynchroniser pour l'ajouter."
         }
     }
 
     private fun updateStatusIndicator() {
-        val configured = gnConfig.estConfiguree
+        // Pour cet écran on exige les 3 sélections (jeu de données, liste, observateur).
+        // `estConfiguree` côté store reste plus permissif car il est consommé par les
+        // écrans d'envoi (où seul idDataset est requis côté payload OCCTAX).
+        val configured = gnConfig.connexionConfiguree
+            && gnConfig.idDataset.trim().isNotEmpty()
+            && gnConfig.taxaListeId.trim().isNotEmpty()
+            && gnConfig.observateurDefautId.trim().isNotEmpty()
         binding.tvStatutConfig.text = if (configured)
             getString(R.string.configuration_complete)
         else
@@ -390,40 +452,31 @@ class ConfigGeoNatureFragment : Fragment() {
 
     private fun updateCacheInfo() {
         val count = TaxRefCache.count
-        val comptes = TaxRefCache.comptesGroupes
 
         binding.llGroupesDetails.removeAllViews()
 
-        val taxrefText = when {
-            count == 0 -> "Cache vide"
-            comptes.isNotEmpty() -> {
-                ajouterLigneGroupe("Oiseaux", Taxon.OISEAU, comptes["Oiseaux"] ?: 0)
-                ajouterLigneGroupe("Mammifères", Taxon.MAMMIFERE, comptes["Mammifères"] ?: 0)
-                ajouterLigneGroupe("Reptiles", Taxon.REPTILE, comptes["Reptiles"] ?: 0)
-                ajouterLigneGroupe("Amphibiens", Taxon.BATRACIEN, comptes["Amphibiens"] ?: 0)
-                ajouterLigneGroupe("Poissons", Taxon.POISSON, comptes["Poissons"] ?: 0)
-                ajouterLigneGroupe("Insectes", Taxon.INSECTE, comptes["Insectes"] ?: 0)
+        // Les comptes par groupe affichés reflètent la liste sélectionnée — cohérent
+        // avec ce que la saisie propose. Sur cache exhaustif, basé sur l'intersection
+        // index_taxon ∩ listesParCdNom[idListeFiltre] via indexParTaxon(taxon, filtre).
+        val idListeFiltre = gnConfig.taxaListeId.trim().toIntOrNull()
+        fun nbPour(t: Taxon): Int = TaxRefCache.indexParTaxon(t, idListeFiltre)?.size ?: 0
 
-                val regnes = TaxRefCache.tousLesRegnes()
-                val nbFonge = regnes.values.count { it == "Fungi" }
-                if (nbFonge > 0) ajouterLigneGroupe("Fonge", Taxon.FONGE, nbFonge)
-
-                val groupes1 = TaxRefCache.tousLesGroupes1()
-                val nbMol = groupes1.values.count { it == "Mollusques" }
-                if (nbMol > 0) ajouterLigneGroupe("Mollusques", Taxon.MOLLUSQUE, nbMol)
-
-                val nbInv = maxOf(0, regnes.values.count { it == "Animalia" } -
-                        (comptes["Oiseaux"] ?: 0) - (comptes["Mammifères"] ?: 0) -
-                        (comptes["Reptiles"] ?: 0) - (comptes["Amphibiens"] ?: 0) -
-                        (comptes["Poissons"] ?: 0) - (comptes["Insectes"] ?: 0) - nbMol)
-                if (nbInv > 0) ajouterLigneGroupe("Invertébrés", Taxon.INVERTEBRES, nbInv)
-
-                val nbPlantes = NomenclatureCache.GROUPES_BOTANIQUES.sumOf { comptes[it] ?: 0 }
-                if (nbPlantes > 0) ajouterLigneGroupe("Plantes", Taxon.PLANTE, nbPlantes)
-
-                "$count taxons en cache"
+        val taxrefText = when (count) {
+            0 -> "Cache vide"
+            else -> {
+                ajouterLigneGroupe("Oiseaux", Taxon.OISEAU, nbPour(Taxon.OISEAU))
+                ajouterLigneGroupe("Mammifères", Taxon.MAMMIFERE, nbPour(Taxon.MAMMIFERE))
+                ajouterLigneGroupe("Reptiles", Taxon.REPTILE, nbPour(Taxon.REPTILE))
+                ajouterLigneGroupe("Amphibiens", Taxon.BATRACIEN, nbPour(Taxon.BATRACIEN))
+                ajouterLigneGroupe("Poissons", Taxon.POISSON, nbPour(Taxon.POISSON))
+                ajouterLigneGroupe("Insectes", Taxon.INSECTE, nbPour(Taxon.INSECTE))
+                ajouterLigneGroupe("Fonge", Taxon.FONGE, nbPour(Taxon.FONGE))
+                ajouterLigneGroupe("Mollusques", Taxon.MOLLUSQUE, nbPour(Taxon.MOLLUSQUE))
+                ajouterLigneGroupe("Invertébrés", Taxon.INVERTEBRES, nbPour(Taxon.INVERTEBRES))
+                ajouterLigneGroupe("Plantes", Taxon.PLANTE, nbPour(Taxon.PLANTE))
+                if (idListeFiltre != null) "$count taxons en cache (filtré liste $idListeFiltre)"
+                else "$count taxons en cache"
             }
-            else -> "$count taxons en cache"
         }
         binding.tvCacheInfo.text = taxrefText
         binding.btnViderCache.isEnabled = count > 0

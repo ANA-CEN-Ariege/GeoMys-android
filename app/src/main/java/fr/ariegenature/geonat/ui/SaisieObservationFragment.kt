@@ -195,7 +195,8 @@ class SaisieObservationFragment : Fragment() {
                 Taxon.MOLLUSQUE   to binding.btnTaxonMollusque,
                 Taxon.INVERTEBRES to binding.btnTaxonInvertebres,
                 Taxon.PLANTE      to binding.btnTaxonPlante,
-            )
+            ),
+            idListeFiltre = gnConfig.taxaListeId.trim().toIntOrNull(),
         )
         // Si le taxon initial n'a aucun cd_nom chargé (groupe masqué), on bascule sur
         // le premier groupe disponible pour éviter une sélection sur un bouton GONE.
@@ -426,7 +427,11 @@ class SaisieObservationFragment : Fragment() {
     private fun refreshAutocompleteAdapter() {
         viewLifecycleOwner.lifecycleScope.launch {
             val suggestions = withContext(Dispatchers.Default) {
-                TaxRefLocal.getSuggestionsAutocomplete(taxonSelector.taxon, rechercheNomSci)
+                TaxRefLocal.getSuggestionsAutocomplete(
+                    taxonSelector.taxon,
+                    rechercheNomSci,
+                    idListeFiltre = gnConfig.taxaListeId.trim().toIntOrNull(),
+                )
             }
             if (!isAdded || _binding == null) return@launch
             val adapter = createSpeciesAutocompleteAdapter(requireContext(), suggestions)
@@ -528,6 +533,15 @@ class SaisieObservationFragment : Fragment() {
             val nomAffiche = entry.nomFrOriginal ?: nom
             Pair(entry.cdNom, nomAffiche)
         } else {
+            // Log diagnostique : si l'autocomplete propose un nom mais TaxRefCache.get
+            // retourne null, c'est un cas à investiguer (TaxRef partiel, données embarquées,
+            // caractères invisibles, etc.). Le code-points de chaque char aide à repérer un
+            // espace insécable ou autre caractère parasite. À filtrer via `adb logcat | grep
+            // TaxRef-miss`.
+            val codepoints = nom.map { "%04X".format(it.code) }.joinToString(" ")
+            android.util.Log.w("TaxRef-miss",
+                "Suggestion sans cd_nom : '$nom' (codepoints: $codepoints, normalisé: '${fr.ariegenature.geonat.store.TaxRefCache.normaliser(nom)}')"
+            )
             Pair(null, nom)
         }
         pendingObs.add(PendingObs(

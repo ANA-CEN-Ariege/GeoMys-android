@@ -39,13 +39,17 @@ fun taxonIcon(taxon: Taxon): Int = when (taxon) {
 
 /** Masque les boutons des groupes vides (aucun cd_nom chargé pour ce taxon) et
  *  retourne la sous-map des boutons restants — utilisée par les écrans de saisie
- *  pour ne proposer que les groupes effectivement présents dans la liste chargée. */
+ *  pour ne proposer que les groupes effectivement présents dans la liste chargée.
+ *  Si [idListeFiltre] est fourni, l'évaluation porte sur l'intersection avec cette
+ *  liste UsersHub — utile quand le cache TaxRef est exhaustif mais que l'utilisateur
+ *  ne saisit qu'une liste précise. */
 fun filtrerBoutonsGroupesNonVides(
-    buttons: Map<Taxon, MaterialButton>
+    buttons: Map<Taxon, MaterialButton>,
+    idListeFiltre: Int? = null,
 ): Map<Taxon, MaterialButton> {
     val res = LinkedHashMap<Taxon, MaterialButton>()
     for ((t, btn) in buttons) {
-        if (!TaxRefCache.indexParTaxon(t).isNullOrEmpty()) {
+        if (!TaxRefCache.indexParTaxon(t, idListeFiltre).isNullOrEmpty()) {
             btn.visibility = View.VISIBLE
             res[t] = btn
         } else {

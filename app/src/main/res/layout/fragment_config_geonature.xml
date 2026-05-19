@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:clipToPadding="false">
@@ -34,7 +35,7 @@
                 android:text="Fermer" />
         </LinearLayout>
 
-        <!-- Serveur -->
+        <!-- URL serveur -->
         <com.google.android.material.textfield.TextInputLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -69,8 +70,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
             android:hint="Mot de passe"
-            app:passwordToggleEnabled="true"
-            xmlns:app="http://schemas.android.com/apk/res-auto">
+            app:passwordToggleEnabled="true">
 
             <com.google.android.material.textfield.TextInputEditText
                 android:id="@+id/et_mot_de_passe"
@@ -79,27 +79,20 @@
                 android:inputType="textPassword" />
         </com.google.android.material.textfield.TextInputLayout>
 
-        <!-- Action connexion : sur succès, charge automatiquement datasets/listes/observateurs. -->
+        <!-- Action connexion -->
         <Button
             android:id="@+id/btn_tester_connexion"
             style="@style/Widget.Material3.Button.OutlinedButton"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
-            android:text="Tester la connexion" />
+            android:text="Connexion" />
 
         <ProgressBar
             android:id="@+id/progress_test"
             android:layout_width="wrap_content"
             android:layout_height="24dp"
             android:layout_marginTop="8dp"
-            android:visibility="gone" />
-
-        <ProgressBar
-            android:id="@+id/progress_datasets"
-            android:layout_width="wrap_content"
-            android:layout_height="24dp"
-            android:layout_marginTop="4dp"
             android:visibility="gone" />
 
         <TextView
@@ -110,206 +103,227 @@
             android:textSize="13sp"
             android:visibility="gone" />
 
-        <!-- Jeu de données -->
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="20dp"
-            android:layout_marginBottom="4dp"
-            android:text="Jeu de données"
-            android:textSize="14sp"
-            android:textStyle="bold" />
-
-        <com.google.android.material.textfield.TextInputLayout
-            android:id="@+id/til_datasets"
-            style="@style/Widget.Material3.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:hint="Rechercher un jeu de données"
-            android:visibility="gone">
-
-            <com.google.android.material.textfield.MaterialAutoCompleteTextView
-                android:id="@+id/ac_datasets"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:inputType="text" />
-        </com.google.android.material.textfield.TextInputLayout>
-
-        <TextView
-            android:id="@+id/tv_erreur_datasets"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:textColor="@android:color/holo_red_dark"
-            android:textSize="12sp"
-            android:visibility="gone" />
-
-        <!-- Liste de taxons -->
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="20dp"
-            android:layout_marginBottom="4dp"
-            android:text="Listes"
-            android:textSize="14sp"
-            android:textStyle="bold" />
-
-        <com.google.android.material.textfield.TextInputLayout
-            android:id="@+id/til_listes"
-            style="@style/Widget.Material3.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:hint="Rechercher une liste"
-            android:visibility="gone">
-
-            <com.google.android.material.textfield.MaterialAutoCompleteTextView
-                android:id="@+id/ac_listes"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:inputType="text" />
-        </com.google.android.material.textfield.TextInputLayout>
-
-        <com.google.android.material.textfield.TextInputLayout
-            android:id="@+id/til_taxa_liste"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:hint="id_liste (saisie manuelle)">
-
-            <com.google.android.material.textfield.TextInputEditText
-                android:id="@+id/et_taxa_liste"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:inputType="number" />
-        </com.google.android.material.textfield.TextInputLayout>
-
-        <TextView
-            android:id="@+id/tv_erreur_listes"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:textColor="@android:color/holo_red_dark"
-            android:textSize="12sp"
-            android:visibility="gone" />
-
-        <!-- Observateur par défaut -->
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="20dp"
-            android:layout_marginBottom="4dp"
-            android:text="Observateur par défaut"
-            android:textSize="14sp"
-            android:textStyle="bold" />
-
-        <com.google.android.material.textfield.TextInputLayout
-            android:id="@+id/til_observateurs"
-            style="@style/Widget.Material3.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:hint="Rechercher un observateur"
-            android:visibility="gone">
-
-            <com.google.android.material.textfield.MaterialAutoCompleteTextView
-                android:id="@+id/ac_observateurs"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:inputType="text" />
-        </com.google.android.material.textfield.TextInputLayout>
-
-        <TextView
-            android:id="@+id/tv_erreur_observateurs"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:textColor="@android:color/holo_red_dark"
-            android:textSize="12sp"
-            android:visibility="gone" />
-
-        <!-- TaxRef Cache -->
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
-            android:layout_marginBottom="4dp"
-            android:text="Cache TaxRef"
-            android:textSize="16sp"
-            android:textStyle="bold" />
-
-        <TextView
-            android:id="@+id/tv_avertissement_liste"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="6dp"
-            android:textColor="@android:color/holo_orange_dark"
-            android:textSize="13sp"
-            android:textStyle="bold"
-            android:visibility="gone" />
-
+        <!-- Section "Charger les données" : visible une fois connecté.
+             Lance les 5 chargements (datasets, listes, observateurs, additional_fields,
+             TaxRef exhaustif, nomenclatures) — change de libellé en "Recharger…" ensuite. -->
         <LinearLayout
+            android:id="@+id/ll_section_charger"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:gravity="center_vertical"
-            android:orientation="horizontal">
+            android:layout_marginTop="16dp"
+            android:orientation="vertical"
+            android:visibility="gone">
 
             <Button
-                android:id="@+id/btn_sync_tax_ref"
-                style="@style/Widget.Material3.Button.OutlinedButton"
-                android:layout_width="0dp"
+                android:id="@+id/btn_charger_donnees"
+                style="@style/Widget.Material3.Button"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginEnd="8dp"
-                android:layout_weight="1"
-                android:text="Synchroniser depuis GeoNature" />
+                android:text="Charger les données" />
+
+            <ProgressBar
+                android:id="@+id/progress_sync"
+                android:layout_width="wrap_content"
+                android:layout_height="24dp"
+                android:layout_marginTop="4dp"
+                android:visibility="gone" />
+
+            <ProgressBar
+                android:id="@+id/progress_datasets"
+                android:layout_width="wrap_content"
+                android:layout_height="24dp"
+                android:layout_marginTop="4dp"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/tv_sync_resultat"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:textSize="13sp"
+                android:visibility="gone" />
+        </LinearLayout>
+
+        <!-- Section "Données" : spinners + cache, visible après chargement réussi. -->
+        <LinearLayout
+            android:id="@+id/ll_section_donnees"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <!-- Jeu de données -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:layout_marginBottom="4dp"
+                android:text="Jeu de données"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+
+            <com.google.android.material.textfield.TextInputLayout
+                android:id="@+id/til_datasets"
+                style="@style/Widget.Material3.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:hint="Rechercher un jeu de données"
+                android:visibility="gone">
+
+                <com.google.android.material.textfield.MaterialAutoCompleteTextView
+                    android:id="@+id/ac_datasets"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:inputType="text" />
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <TextView
+                android:id="@+id/tv_erreur_datasets"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:textColor="@android:color/holo_red_dark"
+                android:textSize="12sp"
+                android:visibility="gone" />
+
+            <!-- Liste de taxons -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:layout_marginBottom="4dp"
+                android:text="Listes"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+
+            <com.google.android.material.textfield.TextInputLayout
+                android:id="@+id/til_listes"
+                style="@style/Widget.Material3.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:hint="Rechercher une liste"
+                android:visibility="gone">
+
+                <com.google.android.material.textfield.MaterialAutoCompleteTextView
+                    android:id="@+id/ac_listes"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:inputType="text" />
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <com.google.android.material.textfield.TextInputLayout
+                android:id="@+id/til_taxa_liste"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:hint="id_liste (saisie manuelle)"
+                android:visibility="gone">
+
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/et_taxa_liste"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:inputType="number" />
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <TextView
+                android:id="@+id/tv_erreur_listes"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:textColor="@android:color/holo_red_dark"
+                android:textSize="12sp"
+                android:visibility="gone" />
+
+            <!-- Observateur par défaut -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:layout_marginBottom="4dp"
+                android:text="Observateur par défaut"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+
+            <com.google.android.material.textfield.TextInputLayout
+                android:id="@+id/til_observateurs"
+                style="@style/Widget.Material3.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:hint="Rechercher un observateur"
+                android:visibility="gone">
+
+                <com.google.android.material.textfield.MaterialAutoCompleteTextView
+                    android:id="@+id/ac_observateurs"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:inputType="text" />
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <TextView
+                android:id="@+id/tv_erreur_observateurs"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:textColor="@android:color/holo_red_dark"
+                android:textSize="12sp"
+                android:visibility="gone" />
+
+            <!-- Cache TaxRef -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="24dp"
+                android:layout_marginBottom="4dp"
+                android:text="Cache TaxRef"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/tv_avertissement_liste"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="6dp"
+                android:textColor="@android:color/holo_orange_dark"
+                android:textSize="13sp"
+                android:textStyle="bold"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/tv_cache_info"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:textColor="?attr/colorControlNormal"
+                android:textSize="13sp" />
+
+            <LinearLayout
+                android:id="@+id/ll_groupes_details"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:orientation="vertical" />
+
+            <TextView
+                android:id="@+id/tv_tax_ref_version"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:textSize="12sp"
+                android:visibility="gone" />
 
             <Button
                 android:id="@+id/btn_vider_cache"
                 style="@style/Widget.Material3.Button.TextButton"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Vider"
+                android:layout_marginTop="8dp"
+                android:text="Vider le cache"
                 android:textColor="@android:color/holo_red_dark" />
         </LinearLayout>
-
-        <ProgressBar
-            android:id="@+id/progress_sync"
-            android:layout_width="wrap_content"
-            android:layout_height="24dp"
-            android:layout_marginTop="4dp"
-            android:visibility="gone" />
-
-        <TextView
-            android:id="@+id/tv_sync_resultat"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:textSize="13sp"
-            android:visibility="gone" />
-
-        <TextView
-            android:id="@+id/tv_cache_info"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:textColor="?attr/colorControlNormal"
-            android:textSize="13sp" />
-
-        <LinearLayout
-            android:id="@+id/ll_groupes_details"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:orientation="vertical" />
-
-        <TextView
-            android:id="@+id/tv_tax_ref_version"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:textSize="12sp"
-            android:visibility="gone" />
 
         <!-- Statut configuration -->
         <View

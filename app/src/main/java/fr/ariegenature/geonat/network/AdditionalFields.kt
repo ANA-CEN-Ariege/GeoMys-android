@@ -2,6 +2,9 @@ package fr.ariegenature.geonat.network
 
 import fr.ariegenature.geonat.store.GeoNatureConfig
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -16,7 +19,7 @@ object AdditionalFieldsObject {
 
 /** Types de widgets supportés (couvrent ~95% des configs Occtax réelles).
  *  Les autres widgets serveur sont rendus en texte libre (best-effort) avec un hint. */
-enum class WidgetType { TEXT, TEXTAREA, NUMBER, SELECT, CHECKBOX, INCONNU }
+enum class WidgetType { TEXT, TEXTAREA, NUMBER, SELECT, CHECKBOX, NOMENCLATURE, INCONNU }
 
 /** Définition d'un champ additionnel récupérée du serveur GeoNature.
  *  Sérialisable (Gson) pour cache en SharedPreferences. */
@@ -38,6 +41,11 @@ data class AdditionalFieldDef(
     val idList: Int? = null,
     /** Nom du widget tel que renvoyé par le serveur (utile pour debug si type non supporté). */
     val widgetServeur: String = "",
+    /** Pour widget=`nomenclature` : code mnémonique du type de nomenclature serveur
+     *  (ex. `STATUT_OBS`, `METH_DETERMIN`). Sert à fetcher /api/nomenclatures/nomenclature/<code>. */
+    val codeNomenclatureType: String? = null,
+    /** Options résolues pour widget=`nomenclature` : (id_nomenclature, label_fr). */
+    val nomenclatureOptions: List<Pair<String, String>> = emptyList(),
 ) {
     fun appliqueA(codeObjet: String): Boolean = objectsCode.contains(codeObjet)
 
@@ -93,16 +101,37 @@ object AdditionalFieldsApi {
                     val idField = item.optInt("id_field", -1).takeIf { it > 0 } ?: continue
                     val fieldName = item.optString("field_name", "").ifEmpty { continue }
                     val fieldLabel = item.optString("field_label", fieldName)
-                    val typeWidgetObj = item.optJSONObject("type_widget")
-                    val widgetName = typeWidgetObj?.optString("widget_name", "") ?: ""
+                    // type_widget peut être renvoyé sous plusieurs formes selon la version GN :
+                    //   - JSONObject {widget_name: "select", ...}
+                    //   - String "select"
+                    //   - Absent (rare, on a alors WidgetType.INCONNU)
+                    val typeWidgetBrut = item.opt("type_widget")
+                    val widgetName = when (typeWidgetBrut) {
+                        is JSONObject -> typeWidgetBrut.optString("widget_name", "")
+                            .ifEmpty { typeWidgetBrut.optString("name", "") }
+                            .ifEmpty { typeWidgetBrut.optString("code_widget", "") }
+                        is String -> typeWidgetBrut
+                        else -> ""
+                    }
                     val widget = when (widgetName.lowercase()) {
                         "text" -> WidgetType.TEXT
                         "textarea" -> WidgetType.TEXTAREA
-                        "number" -> WidgetType.NUMBER
-                        "select" -> WidgetType.SELECT
-                        "checkbox", "bool_checkbox" -> WidgetType.CHECKBOX
+                        "number", "integer", "float" -> WidgetType.NUMBER
+                        "select", "radio", "datalist" -> WidgetType.SELECT
+                        "checkbox", "bool_checkbox", "bool" -> WidgetType.CHECKBOX
+                        "nomenclature" -> WidgetType.NOMENCLATURE
                         else -> WidgetType.INCONNU
                     }
+                    // Pour widget=nomenclature : essaie d'extraire le code_nomenclature_type
+                    // depuis plusieurs emplacements possibles (varie selon les versions GN).
+                    val codeNomType: String? = if (widget == WidgetType.NOMENCLATURE) {
+                        item.optString("code_nomenclature_type", "")
+                            .ifEmpty { item.optJSONObject("additional_attributes")?.optString("code_nomenclature_type", "") ?: "" }
+                            .ifEmpty {
+                                (typeWidgetBrut as? JSONObject)?.optString("code_nomenclature_type", "") ?: ""
+                            }
+                            .takeIf { it.isNotEmpty() }
+                    } else null
                     val fieldValues = mutableListOf<String>()
                     item.optJSONArray("field_values")?.let { arr ->
                         for (j in 0 until arr.length()) {
@@ -143,15 +172,67 @@ object AdditionalFieldsApi {
                         widget = widget,
                         fieldValues = fieldValues,
                         required = item.optBoolean("required", false),
-                        description = item.optString("description", "").takeIf { it.isNotEmpty() },
-                        defaultValue = item.optString("default_value", "").takeIf { it.isNotEmpty() },
+                        description = item.optString("description", "")
+                            .takeIf { it.isNotEmpty() && it != "null" },
+                        // `optString("default_value", "")` retourne la chaîne "null" quand le JSON
+                        // a `"default_value": null`. On filtre pour ne pas pré-remplir avec "null".
+                        defaultValue = item.optString("default_value", "")
+                            .takeIf { it.isNotEmpty() && it != "null" },
                         objectsCode = objectsCode,
                         datasetsIds = datasetsIds,
                         idList = idList,
                         widgetServeur = widgetName,
+                        codeNomenclatureType = codeNomType,
                     ))
                 }
+            // Pour les widgets `nomenclature` : fetch parallèle des listes serveur
+            // (/api/nomenclatures/nomenclature/<CODE>) pour résoudre id_nomenclature → label_fr.
+            val codesNom = result.mapNotNull { it.codeNomenclatureType }.toSet()
+            val nomenclaturesResolues: Map<String, List<Pair<String, String>>> =
+                if (codesNom.isEmpty()) emptyMap() else coroutineScope {
+                    codesNom.map { code ->
+                        async { code to fetchValeursNomenclature(base, token, cookies, code) }
+                    }.awaitAll().toMap()
+                }
+            val resultEnrichi = result.map { def ->
+                def.codeNomenclatureType?.let { code ->
+                    def.copy(nomenclatureOptions = nomenclaturesResolues[code].orEmpty())
+                } ?: def
+            }
             // Tri par field_order si disponible, sinon par label.
-            result.sortedBy { it.fieldLabel.lowercase() }
+            resultEnrichi.sortedBy { it.fieldLabel.lowercase() }
         }
+
+    /** Fetch des valeurs d'une nomenclature (`/api/nomenclatures/nomenclature/<code>`).
+     *  Retourne la liste (id_nomenclature, label_fr) ou vide en cas d'erreur (best-effort). */
+    private fun fetchValeursNomenclature(
+        base: String,
+        token: String?,
+        cookies: String,
+        code: String,
+    ): List<Pair<String, String>> {
+        return try {
+            val url = URL("$base/api/nomenclatures/nomenclature/$code")
+            val conn = url.openConnection() as java.net.HttpURLConnection
+            conn.connectTimeout = 10000
+            conn.readTimeout = 10000
+            conn.setRequestProperty("Accept", "application/json")
+            if (token != null) conn.setRequestProperty("Authorization", "Bearer $token")
+            if (cookies.isNotEmpty()) conn.setRequestProperty("Cookie", cookies)
+            if (conn.responseCode != 200) return emptyList()
+            val text = conn.inputStream.bufferedReader().readText()
+            val obj = JSONObject(text)
+            val arr = obj.optJSONArray("values") ?: obj.optJSONArray("data") ?: return emptyList()
+            val out = mutableListOf<Pair<String, String>>()
+            for (i in 0 until arr.length()) {
+                val item = arr.optJSONObject(i) ?: continue
+                val id = item.opt("id_nomenclature")?.toString() ?: continue
+                val lbl = item.optString("label_fr", "")
+                    .ifEmpty { item.optString("label_default", "") }
+                    .takeIf { it.isNotEmpty() } ?: continue
+                out.add(id to lbl)
+            }
+            out.sortedBy { it.second.lowercase() }
+        } catch (_: Exception) { emptyList() }
+    }
 }

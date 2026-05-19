@@ -47,6 +47,7 @@ object TaxRefCache {
     private const val KEY_VERSION = "gn_taxref_version_cache"
     private const val KEY_COMPTES = "gn_taxref_comptes_v1"
     private const val KEY_LISTE_SYNC = "gn_taxref_liste_sync"
+    private const val KEY_LISTES_SYNC = "gn_taxref_listes_sync_v1"
 
     // Gros fichiers stockés sur disque dans filesDir/taxref/.
     // SharedPreferences (XML lu/écrit en bloc) tronque ou échoue silencieusement
@@ -80,6 +81,9 @@ object TaxRefCache {
     @Volatile private var memListes: Map<String, List<Int>>? = null
     @Volatile private var memEntreesParCdNom: Map<Int, TaxRefEntry>? = null
     @Volatile private var memVernsParCdNom: Map<Int, List<String>>? = null
+    // Memoization du dernier filtre par id_liste demandé — la saisie reste sur la même
+    // liste pendant toute une session, recalculer à chaque suggestion serait gâché.
+    @Volatile private var memCdNomsDansListe: Pair<Int, Set<Int>>? = null
 
     fun init(context: Context) {
         prefs = context.getSharedPreferences("taxref_cache", Context.MODE_PRIVATE)
@@ -226,10 +230,23 @@ object TaxRefCache {
         listes.forEach { (cd, l) -> if (l.isNotEmpty()) existing[cd.toString()] = l }
         ecrireFichier(FILE_LISTES, gson.toJson(existing))
         memListes = existing
+        memCdNomsDansListe = null
     }
 
     /** Retourne les id_liste UsersHub auxquelles le cd_nom appartient (vide si inconnu). */
     fun listesPourCdNom(cdNom: Int): List<Int> = chargerListesParCdNom()[cdNom.toString()] ?: emptyList()
+
+    /** Tous les cd_nom appartenant à [idListe]. Renvoie un Set vide si la liste n'a pas
+     *  été synchronisée. Memoizé pour la dernière liste demandée (recalcul en O(n) sur
+     *  l'ensemble du cache `listesParCdNom`). */
+    fun cdNomsDansListe(idListe: Int): Set<Int> {
+        memCdNomsDansListe?.let { (id, set) -> if (id == idListe) return set }
+        val result = HashSet<Int>()
+        for ((cdStr, listes) in chargerListesParCdNom()) {
+            if (idListe in listes) cdStr.toIntOrNull()?.let(result::add)
+        }
+        return result.also { memCdNomsDansListe = idListe to it }
+    }
 
     private fun chargerListesParCdNom(): Map<String, List<Int>> {
         memListes?.let { return it }
@@ -267,6 +284,16 @@ object TaxRefCache {
 
     fun indexParTaxon(taxon: Taxon): List<Int>? = chargerIndexTaxon()[taxon.name]
 
+    /** Index par taxon optionnellement filtré par appartenance à [idListeFiltre].
+     *  [idListeFiltre]=null → comportement identique à [indexParTaxon]. */
+    fun indexParTaxon(taxon: Taxon, idListeFiltre: Int?): List<Int>? {
+        val full = chargerIndexTaxon()[taxon.name] ?: return null
+        if (idListeFiltre == null) return full
+        val dansListe = cdNomsDansListe(idListeFiltre)
+        if (dansListe.isEmpty()) return emptyList()
+        return full.filter { it in dansListe }
+    }
+
     private fun chargerIndexTaxon(): Map<String, List<Int>> {
         memIndexTaxon?.let { return it }
         val json = lireFichier(FILE_INDEX_TAXON) ?: return emptyMap()
@@ -277,16 +304,23 @@ object TaxRefCache {
     }
 
     fun vider() {
-        listOf(FILE_CACHE, FILE_GROUPES, FILE_GROUPES1, FILE_REGNES, FILE_INDEX_TAXON)
+        listOf(FILE_CACHE, FILE_GROUPES, FILE_GROUPES1, FILE_REGNES, FILE_INDEX_TAXON, FILE_LISTES)
             .forEach { runCatching { fichier(it).delete() } }
-        prefs.edit().remove(KEY_VERSION).remove(KEY_COMPTES).remove(KEY_LISTE_SYNC).apply()
+        prefs.edit()
+            .remove(KEY_VERSION)
+            .remove(KEY_COMPTES)
+            .remove(KEY_LISTE_SYNC)
+            .remove(KEY_LISTES_SYNC)
+            .apply()
         mem = null
         memGroupes = null
         memGroupes1 = null
         memRegnes = null
         memIndexTaxon = null
+        memListes = null
         memEntreesParCdNom = null
         memVernsParCdNom = null
+        memCdNomsDansListe = null
     }
 
     var versionSauvegardee: String?
@@ -294,10 +328,22 @@ object TaxRefCache {
         set(v) = prefs.edit().putString(KEY_VERSION, v).apply()
 
     /** id_liste UsersHub utilisé lors de la dernière synchro réussie — sert à détecter
-     *  un changement de liste dans la config sans re-sync (cache obsolète). */
+     *  un changement de liste dans la config sans re-sync (cache obsolète).
+     *  Conservé pour compatibilité ascendante ; depuis le sync exhaustif, préférer
+     *  [listesSynchronisees] qui porte l'ensemble des listes chargées. */
     var listeSynchroniseeId: String?
         get() = prefs.getString(KEY_LISTE_SYNC, null)
         set(v) = prefs.edit().putString(KEY_LISTE_SYNC, v).apply()
+
+    /** Ensemble des id_liste UsersHub couvertes par le dernier sync exhaustif.
+     *  Vide quand seul l'ancien sync mono-liste a été exécuté ou que rien n'est en cache.
+     *  Stocké en CSV dans SharedPreferences (petit volume — ~quelques dizaines d'ids max). */
+    var listesSynchronisees: List<Int>
+        get() = prefs.getString(KEY_LISTES_SYNC, "")
+            ?.split(",")
+            ?.mapNotNull { it.trim().toIntOrNull() }
+            ?: emptyList()
+        set(v) = prefs.edit().putString(KEY_LISTES_SYNC, v.joinToString(",")).apply()
 
     fun normaliser(nom: String): String =
         nom.trim().lowercase()

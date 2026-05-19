@@ -299,7 +299,8 @@ class SaisieRapideFragment : Fragment() {
                 Taxon.MOLLUSQUE   to binding.btnTaxonMollusque,
                 Taxon.INVERTEBRES to binding.btnTaxonInvertebres,
                 Taxon.PLANTE      to binding.btnTaxonPlante,
-            )
+            ),
+            idListeFiltre = gnConfig.taxaListeId.trim().toIntOrNull(),
         )
         if (taxon !in boutons.keys) taxon = boutons.keys.firstOrNull() ?: taxon
         taxonSelector = TaxonSelector(
@@ -367,7 +368,11 @@ class SaisieRapideFragment : Fragment() {
     private fun refreshAutocompleteAdapter() {
         viewLifecycleOwner.lifecycleScope.launch {
             val suggestions = withContext(Dispatchers.Default) {
-                TaxRefLocal.getSuggestionsAutocomplete(taxon, rechercheNomSci)
+                TaxRefLocal.getSuggestionsAutocomplete(
+                    taxon,
+                    rechercheNomSci,
+                    idListeFiltre = gnConfig.taxaListeId.trim().toIntOrNull(),
+                )
             }
             if (!isAdded || _binding == null) return@launch
             val adapter = createSpeciesAutocompleteAdapter(requireContext(), suggestions)

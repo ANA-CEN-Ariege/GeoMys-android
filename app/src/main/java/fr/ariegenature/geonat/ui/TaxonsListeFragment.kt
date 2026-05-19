@@ -12,6 +12,7 @@ import androidx.recyclerview.widget.RecyclerView
 import fr.ariegenature.geonat.databinding.FragmentTaxonsListeBinding
 import fr.ariegenature.geonat.databinding.ItemTaxonListBinding
 import fr.ariegenature.geonat.model.Taxon
+import fr.ariegenature.geonat.store.GeoNatureConfig
 import fr.ariegenature.geonat.store.TaxRefCache
 import fr.ariegenature.geonat.store.TaxRefEntry
 
@@ -29,8 +30,10 @@ class TaxonsListeFragment : Fragment() {
         
         val taxonName = arguments?.getString("taxonName") ?: return
         val taxon = try { Taxon.valueOf(taxonName) } catch (_: Exception) { null }
-        
-        val cdNoms = taxon?.let { TaxRefCache.indexParTaxon(it) } ?: emptyList()
+
+        // Filtre par la liste sélectionnée pour rester cohérent avec ce que la saisie propose.
+        val idListeFiltre = GeoNatureConfig(requireContext()).taxaListeId.trim().toIntOrNull()
+        val cdNoms = taxon?.let { TaxRefCache.indexParTaxon(it, idListeFiltre) } ?: emptyList()
         val allEntries = TaxRefCache.entreesParCdNom()
         val entries = cdNoms.mapNotNull { allEntries[it] }.sortedBy { it.nomFrOriginal ?: it.sciNom }
 

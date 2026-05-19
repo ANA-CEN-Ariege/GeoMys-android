@@ -523,7 +523,11 @@ object TaxRefLocal {
         else            -> suggestions
     }
 
-    fun getSuggestionsAutocomplete(taxon: Taxon?, scientifique: Boolean): List<String> {
+    fun getSuggestionsAutocomplete(
+        taxon: Taxon?,
+        scientifique: Boolean,
+        idListeFiltre: Int? = null,
+    ): List<String> {
         val groupes2 = TaxRefCache.tousLesGroupes()
         val groupes1 = TaxRefCache.tousLesGroupes1()
         val regnes   = TaxRefCache.tousLesRegnes()
@@ -533,8 +537,14 @@ object TaxRefLocal {
         // (sciNom, listeNomsFr) pour reconstruire les suggestions sans dupliquer le scan.
         val parCdNom = TaxRefCache.entreesParCdNom()
         val vernsParCdNom = TaxRefCache.vernsParCdNom()
+        // Cache du set d'appartenance à la liste configurée (vide si pas de filtre).
+        // Tous les `suggestionsPour` filtreront via cet ensemble — c'est ce qui rend
+        // l'autocomplete fidèle à la liste sélectionnée même avec un cache exhaustif.
+        val cdNomsDansListe: Set<Int>? = idListeFiltre?.let { TaxRefCache.cdNomsDansListe(it) }
 
-        fun suggestionsPour(cdNoms: Collection<Int>): List<String> {
+        fun suggestionsPour(cdNomsBrut: Collection<Int>): List<String> {
+            val cdNoms = if (cdNomsDansListe == null) cdNomsBrut
+                         else cdNomsBrut.filter { it in cdNomsDansListe }
             if (scientifique) {
                 return cdNoms.asSequence()
                     .mapNotNull { parCdNom[it]?.sciNom?.takeIf { s -> s.isNotEmpty() } }

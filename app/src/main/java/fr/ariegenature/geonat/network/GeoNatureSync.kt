@@ -32,158 +32,169 @@ object GeoNatureSync {
             } catch (e: Exception) { null }
         }
 
+    /** Sync exhaustif : itère sur **toutes** les biblistes du serveur pour permettre à
+     *  l'utilisateur de changer la liste/dataset sélectionnés hors-réseau sans perdre les
+     *  taxons associés. Le cache `listesParCdNom` se construit naturellement par agrégation
+     *  (chaque cd_nom porte son tableau d'appartenance via `fields=listes`).
+     *
+     *  Callback `progression(taxonsAccumules, listeIdx, listesTotales)` — listeIdx==0 avant
+     *  le démarrage (pendant le fetch des biblistes), 1..N pendant l'itération. */
     suspend fun synchroniserTaxRef(
         config: GeoNatureConfig,
-        progression: (Int, Int) -> Unit
+        progression: (Int, Int, Int) -> Unit
     ): Pair<Int, String> = withContext(Dispatchers.IO) {
-        val listeId = config.taxaListeId.trim().toIntOrNull()?.takeIf { it > 0 }
-            ?: return@withContext Pair(0, "Aucune liste de taxons configurée — saisissez un id_liste dans les paramètres GeoNature.")
-
         val base = config.urlServeur.trim().trimEnd('/')
         val pageSize = 1000
+
+        progression(0, 0, 0)
+
+        // 1) Récupère la liste de toutes les biblistes — délégué à GeoNatureBrowse.
+        val biblistes: List<GeoNatureListe> = try {
+            GeoNatureBrowse.chargerListesTaxons(config)
+        } catch (e: Exception) {
+            return@withContext Pair(0, "Impossible de récupérer les listes de taxons : ${e.message}")
+        }
+        if (biblistes.isEmpty()) {
+            return@withContext Pair(0, "Aucune liste de taxons trouvée sur le serveur (/api/taxhub/api/biblistes).")
+        }
+
+        // Accumulateurs globaux — on fusionne au fil des listes. Map<key, entry> garantit
+        // qu'un cd_nom présent dans plusieurs listes n'apparaît qu'une fois dans le cache.
         val entrees = mutableMapOf<String, TaxRefEntry>()
         val groupeMap = mutableMapOf<Int, String>()
         val groupe1Map = mutableMapOf<Int, String>()
         val regneMap = mutableMapOf<Int, String>()
-        val listesParCdNom = mutableMapOf<Int, List<Int>>()
-        val cdNomsOiseaux    = mutableSetOf<Int>()
-        val cdNomsMammiferes = mutableSetOf<Int>()
-        val cdNomsReptiles   = mutableSetOf<Int>()
-        val cdNomsBatraciens = mutableSetOf<Int>()
-        val cdNomsPoissons   = mutableSetOf<Int>()
-        val cdNomsInsectes   = mutableSetOf<Int>()
+        // Set<Int> pour fusionner les appartenances de listes (un cd_nom peut être dans
+        // plusieurs listes → union via Set, sérialisé en List à la fin).
+        val listesParCdNom = mutableMapOf<Int, MutableSet<Int>>()
         val comptesTousGroupes = mutableMapOf<String, Int>()
-        var totalRecu = 0
-        var pagesRecues = 0
+        val cdNomsDejaComptes = mutableSetOf<Int>()
+        val listesSynchronisees = mutableListOf<Int>()
+        val listesEnEchec = mutableListOf<Int>()
 
-        progression(0, 1)
-
-        var page = 1
-        while (true) {
-            try {
-                val url = URL("$base/api/taxhub/api/taxref?orderby=cd_nom&fields=listes&id_liste=$listeId&limit=$pageSize&page=$page")
-                val conn = url.openConnection() as java.net.HttpURLConnection
-                conn.connectTimeout = 60000
-                conn.readTimeout = 60000
-                conn.setRequestProperty("Accept", "application/json")
-                val code = conn.responseCode
-                if (code != 200) {
-                    if (pagesRecues == 0) {
-                        val preview = try { conn.errorStream?.bufferedReader()?.readText()?.take(200) } catch (_: Exception) { null } ?: ""
-                        return@withContext Pair(0, "Erreur HTTP $code — $preview")
-                    }
-                    break
-                }
-                val text = conn.inputStream.bufferedReader().readText()
-                val array: JSONArray = try {
-                    val obj = JSONObject(text)
-                    obj.optJSONArray("items") ?: obj.optJSONArray("data") ?: obj.optJSONArray("results") ?: JSONArray(text)
-                } catch (_: Exception) {
-                    try { JSONArray(text) } catch (_: Exception) {
-                        if (pagesRecues == 0) return@withContext Pair(0, "Réponse non-JSON : ${text.take(200)}")
+        for ((listeIdx, liste) in biblistes.withIndex()) {
+            progression(entrees.size, listeIdx + 1, biblistes.size)
+            var pagesRecues = 0
+            var page = 1
+            while (true) {
+                try {
+                    val url = URL("$base/api/taxhub/api/taxref?orderby=cd_nom&fields=listes&id_liste=${liste.id}&limit=$pageSize&page=$page")
+                    val conn = url.openConnection() as java.net.HttpURLConnection
+                    conn.connectTimeout = 60000
+                    conn.readTimeout = 60000
+                    conn.setRequestProperty("Accept", "application/json")
+                    val code = conn.responseCode
+                    if (code != 200) {
+                        if (pagesRecues == 0) listesEnEchec.add(liste.id)
                         break
                     }
-                }
-
-                if (array.length() == 0) break
-                pagesRecues++
-                totalRecu += array.length()
-                progression(entrees.size, 0)
-
-                for (i in 0 until array.length()) {
-                    val item = array.getJSONObject(i)
-                    val cdNom = item.optInt("cd_nom", -1).takeIf { it > 0 } ?: continue
-                    val lbNom = item.optString("lb_nom", "").takeIf { it.isNotEmpty() } ?: continue
-                    // JSONObject.optString retourne la chaîne littérale "null" quand la valeur
-                    // JSON est null — il faut tester isNull() au préalable, sinon ça pollue
-                    // les compteurs (un cd_nom avec group1=null finirait dans le groupe "null").
-                    val nomVernRaw = if (item.isNull("nom_vern")) "" else item.optString("nom_vern", "")
-                    val groupe  = if (item.isNull("group2_inpn")) "" else item.optString("group2_inpn", "")
-                    val groupe1 = if (item.isNull("group1_inpn")) "" else item.optString("group1_inpn", "")
-                    val regne   = if (item.isNull("regne"))       "" else item.optString("regne", "")
-
-                    // Une entrée par clé — alignement iOS. La clé pour un nom vernaculaire
-                    // pointe sur une entrée avec nomFrOriginal = ce nom français spécifique ;
-                    // la clé pour le nom scientifique pointe sur une entrée avec nomFrOriginal = null.
-                    // Évite la duplication massive (liste partagée sérialisée N fois en JSON).
-                    for (partie in nomVernRaw.split(",")) {
-                        val vernNettoye = TaxRefCache.nettoyerSuffixeArticle(partie.trim())
-                        if (vernNettoye.isEmpty()) continue
-                        val cle = TaxRefCache.normaliser(vernNettoye)
-                        if (cle.isNotEmpty()) entrees[cle] = TaxRefEntry(cdNom, lbNom, vernNettoye)
+                    val text = conn.inputStream.bufferedReader().readText()
+                    val array: JSONArray = try {
+                        val obj = JSONObject(text)
+                        obj.optJSONArray("items") ?: obj.optJSONArray("data") ?: obj.optJSONArray("results") ?: JSONArray(text)
+                    } catch (_: Exception) {
+                        try { JSONArray(text) } catch (_: Exception) { break }
                     }
-                    val cleSci = TaxRefCache.normaliser(lbNom)
-                    if (cleSci.isNotEmpty()) entrees[cleSci] = TaxRefEntry(cdNom, lbNom, null)
 
-                    if (groupe.isNotEmpty()) {
-                        groupeMap[cdNom] = groupe
-                        comptesTousGroupes[groupe] = (comptesTousGroupes[groupe] ?: 0) + 1
-                    }
-                    if (groupe1.isNotEmpty()) groupe1Map[cdNom] = groupe1
-                    if (regne.isNotEmpty()) regneMap[cdNom] = regne
-                    // Stockage des listes UsersHub auxquelles ce cd_nom appartient.
-                    // Sert au filtrage des additional_fields restreints à un id_list.
-                    item.optJSONArray("listes")?.let { arr ->
-                        val ids = mutableListOf<Int>()
-                        for (j in 0 until arr.length()) {
-                            arr.optJSONObject(j)?.optInt("id_liste", -1)?.takeIf { it > 0 }?.let(ids::add)
+                    if (array.length() == 0) break
+                    pagesRecues++
+
+                    for (i in 0 until array.length()) {
+                        val item = array.getJSONObject(i)
+                        val cdNom = item.optInt("cd_nom", -1).takeIf { it > 0 } ?: continue
+                        val lbNom = item.optString("lb_nom", "").takeIf { it.isNotEmpty() } ?: continue
+                        // JSONObject.optString retourne la chaîne littérale "null" quand la valeur
+                        // JSON est null — il faut tester isNull() au préalable, sinon ça pollue
+                        // les compteurs (un cd_nom avec group1=null finirait dans le groupe "null").
+                        val nomVernRaw = if (item.isNull("nom_vern")) "" else item.optString("nom_vern", "")
+                        val groupe  = if (item.isNull("group2_inpn")) "" else item.optString("group2_inpn", "")
+                        val groupe1 = if (item.isNull("group1_inpn")) "" else item.optString("group1_inpn", "")
+                        val regne   = if (item.isNull("regne"))       "" else item.optString("regne", "")
+
+                        // Une entrée par clé — alignement iOS. La clé pour un nom vernaculaire
+                        // pointe sur une entrée avec nomFrOriginal = ce nom français spécifique ;
+                        // la clé pour le nom scientifique pointe sur une entrée avec nomFrOriginal = null.
+                        for (partie in nomVernRaw.split(",")) {
+                            val vernNettoye = TaxRefCache.nettoyerSuffixeArticle(partie.trim())
+                            if (vernNettoye.isEmpty()) continue
+                            val cle = TaxRefCache.normaliser(vernNettoye)
+                            if (cle.isNotEmpty()) entrees[cle] = TaxRefEntry(cdNom, lbNom, vernNettoye)
                         }
-                        if (ids.isNotEmpty()) listesParCdNom[cdNom] = ids
-                    }
-                    when (groupe) {
-                        "Oiseaux"    -> cdNomsOiseaux.add(cdNom)
-                        "Mammifères" -> cdNomsMammiferes.add(cdNom)
-                        "Reptiles"   -> cdNomsReptiles.add(cdNom)
-                        "Amphibiens" -> cdNomsBatraciens.add(cdNom)
-                        "Poissons"   -> cdNomsPoissons.add(cdNom)
-                        "Insectes"   -> cdNomsInsectes.add(cdNom)
-                        else         -> Unit
-                    }
-                }
+                        val cleSci = TaxRefCache.normaliser(lbNom)
+                        if (cleSci.isNotEmpty()) entrees[cleSci] = TaxRefEntry(cdNom, lbNom, null)
 
-                if (array.length() < pageSize) break
-                page++
-            } catch (e: Exception) {
-                if (pagesRecues == 0) return@withContext Pair(0, "Erreur réseau : ${e.message}")
-                break
+                        if (groupe.isNotEmpty()) {
+                            groupeMap[cdNom] = groupe
+                            // Évite de compter un cd_nom deux fois s'il apparaît dans plusieurs listes.
+                            if (cdNomsDejaComptes.add(cdNom)) {
+                                comptesTousGroupes[groupe] = (comptesTousGroupes[groupe] ?: 0) + 1
+                            }
+                        }
+                        if (groupe1.isNotEmpty()) groupe1Map[cdNom] = groupe1
+                        if (regne.isNotEmpty()) regneMap[cdNom] = regne
+                        // Appartenance aux listes UsersHub. Le champ `listes` retourné est
+                        // censé contenir TOUTES les listes du cd_nom (pas seulement celle filtrée),
+                        // mais on a observé des incohérences serveur → on ajoute systématiquement
+                        // l'id de la liste courante en filet de sécurité.
+                        val setListes = listesParCdNom.getOrPut(cdNom) { mutableSetOf() }
+                        setListes.add(liste.id)
+                        item.optJSONArray("listes")?.let { arr ->
+                            for (j in 0 until arr.length()) {
+                                arr.optJSONObject(j)?.optInt("id_liste", -1)
+                                    ?.takeIf { it > 0 }?.let(setListes::add)
+                            }
+                        }
+                    }
+
+                    if (array.length() < pageSize) break
+                    page++
+                } catch (e: Exception) {
+                    if (pagesRecues == 0) listesEnEchec.add(liste.id)
+                    break
+                }
             }
+            if (pagesRecues > 0) listesSynchronisees.add(liste.id)
         }
 
-        if (pagesRecues == 0) return@withContext Pair(0, "Aucun résultat — la liste $listeId est peut-être vide ou inexistante.")
-        if (entrees.isNotEmpty()) TaxRefCache.ajouter(entrees)
+        if (entrees.isEmpty()) {
+            return@withContext Pair(0, "Aucun taxon récupéré sur ${biblistes.size} liste(s).")
+        }
+
+        TaxRefCache.ajouter(entrees)
         if (groupeMap.isNotEmpty()) TaxRefCache.ajouterGroupes(groupeMap)
         if (groupe1Map.isNotEmpty() || regneMap.isNotEmpty()) TaxRefCache.ajouterGroupes1etRegnes(groupe1Map, regneMap)
-        if (listesParCdNom.isNotEmpty()) TaxRefCache.ajouterListesParCdNom(listesParCdNom)
+        // Sérialise Set<Int> → List<Int> pour stockage. L'ordre n'est pas signifiant.
+        if (listesParCdNom.isNotEmpty()) {
+            TaxRefCache.ajouterListesParCdNom(listesParCdNom.mapValues { (_, v) -> v.toList() })
+        }
 
         // Index pré-calculé Taxon → cdNoms : permet à l'autocomplétion de servir
         // les suggestions sans rescanner l'ensemble du cache à chaque switch de taxon.
         val indexTaxon = construireIndexTaxon(groupeMap, groupe1Map, regneMap)
         TaxRefCache.setIndexParTaxon(indexTaxon)
-        // Mémorise l'id_liste qui vient d'être synchronisé — utilisé par l'écran de config
-        // pour avertir l'utilisateur si la liste sélectionnée diffère du cache courant.
-        TaxRefCache.listeSynchroniseeId = listeId.toString()
-        val nbO = cdNomsOiseaux.size
-        val nbM = cdNomsMammiferes.size
-        val nbR = cdNomsReptiles.size
-        val nbB = cdNomsBatraciens.size
-        val nbPo = cdNomsPoissons.size
-        val nbI  = cdNomsInsectes.size
+        // Marque le cache comme exhaustif (toutes les listes serveur ont été tentées).
+        TaxRefCache.listesSynchronisees = listesSynchronisees
+        // Champ legacy conservé pour compatibilité ascendante du SharedPreferences.
+        TaxRefCache.listeSynchroniseeId = config.taxaListeId.trim().ifEmpty { listesSynchronisees.firstOrNull()?.toString() ?: "" }
+
         // Stocker les comptes par groupe — clé = group2_inpn exact
         val comptes = TaxRefCache.comptesGroupes.toMutableMap()
         for ((k, v) in comptesTousGroupes) if (v > 0) comptes[k] = v
         TaxRefCache.comptesGroupes = comptes
         verifierVersionTaxRef(config)?.let { TaxRefCache.versionSauvegardee = it }
-        // Fonge : règne = 'Fungi'. Mollusques : group1_inpn = 'Mollusques'.
-        // Invertébrés "autres" : Animalia hors vertébrés + insectes + poissons + mollusques.
+
+        val nbO  = comptesTousGroupes["Oiseaux"] ?: 0
+        val nbM  = comptesTousGroupes["Mammifères"] ?: 0
+        val nbR  = comptesTousGroupes["Reptiles"] ?: 0
+        val nbB  = comptesTousGroupes["Amphibiens"] ?: 0
+        val nbPo = comptesTousGroupes["Poissons"] ?: 0
+        val nbI  = comptesTousGroupes["Insectes"] ?: 0
         val nbCh  = regneMap.values.count { it == "Fungi" }
         val nbMol = groupe1Map.values.count { it == "Mollusques" }
         val nbInv = maxOf(0, regneMap.values.count { it == "Animalia" } - nbO - nbM - nbR - nbB - nbPo - nbI - nbMol)
-        // Flore : group2_inpn dans la liste des groupes botaniques INPN — même critère qu'iOS.
-        // group1_inpn (Phanérogames/Ptéridophytes/Bryophytes) est souvent NULL sur GeoNature,
-        // alors que group2_inpn (Angiospermes, Trachéophytes, Mousses, Lichens…) est mieux peuplé.
         val nbP = NomenclatureCache.GROUPES_BOTANIQUES.sumOf { comptesTousGroupes[it] ?: 0 }
         val msg = buildString {
-            append("${entrees.size} taxons indexés — $nbO oiseaux")
+            append("${entrees.size} taxons indexés sur ${listesSynchronisees.size}/${biblistes.size} listes — $nbO oiseaux")
             if (nbM > 0) append(", $nbM mammifères")
             if (nbR > 0) append(", $nbR reptiles")
             if (nbB > 0) append(", $nbB batraciens")
@@ -193,6 +204,7 @@ object GeoNatureSync {
             if (nbMol > 0) append(", $nbMol mollusques")
             if (nbInv > 0) append(", $nbInv autres invertébrés")
             if (nbP > 0) append(", $nbP plantes")
+            if (listesEnEchec.isNotEmpty()) append("\n⚠ ${listesEnEchec.size} liste(s) non chargée(s) : ${listesEnEchec.joinToString(",")}")
         }
         Pair(entrees.size, msg)
     }

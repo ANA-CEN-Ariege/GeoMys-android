@@ -24,12 +24,16 @@ object GeoNatureAuth {
                 OutputStreamWriter(conn.outputStream).use { it.write(body) }
 
                 val code = conn.responseCode
-                val ct = conn.getHeaderField("Content-Type") ?: ""
-                if (!ct.contains("json")) {
-                    return@withContext Pair(false, "Mauvaise URL : réponse HTML reçue. Essayez d'ajouter ou retirer /GeoNature à l'URL.")
-                }
+                // On évalue le code HTTP en premier : un 401/403 avec un Content-Type
+                // text/html (page d'erreur serveur) doit dire "Identifiants incorrects"
+                // et non "Mauvaise URL" — la vérification du Content-Type ne concerne
+                // que le cas 200 (où on attend du JSON parsable).
                 when (code) {
                     200 -> {
+                        val ct = conn.getHeaderField("Content-Type") ?: ""
+                        if (!ct.contains("json")) {
+                            return@withContext Pair(false, "Mauvaise URL : réponse HTML reçue. Essayez d'ajouter ou retirer /GeoNature à l'URL.")
+                        }
                         val json = JSONObject(conn.inputStream.bufferedReader().readText())
                         val token = extractToken(json)
                         // Sauvegarde du nom complet de l'utilisateur (utilisé comme déterminateur
@@ -40,7 +44,8 @@ object GeoNatureAuth {
                         if (token != null) Pair(true, "Connexion réussie")
                         else Pair(false, "Token absent de la réponse")
                     }
-                    401, 403 -> Pair(false, "Identifiants incorrects (HTTP $code)")
+                    401, 403 -> Pair(false, "Identifiant ou mot de passe incorrect")
+                    404 -> Pair(false, "URL serveur introuvable (HTTP 404) — vérifiez l'adresse")
                     else -> Pair(false, "Erreur serveur HTTP $code")
                 }
             } catch (e: Exception) {

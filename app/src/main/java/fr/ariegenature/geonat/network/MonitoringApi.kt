@@ -595,7 +595,7 @@ object MonitoringApi {
             var defaultValue: String? = null
             val defaultObjet = mutableMapOf<String, String>()
             when (defaultBrut) {
-                is String -> defaultValue = defaultBrut.takeIf { it.isNotEmpty() }
+                is String -> defaultValue = defaultBrut.takeIf { it.isNotEmpty() && it != "null" }
                 is Number, is Boolean -> defaultValue = defaultBrut.toString()
                 is JSONObject -> {
                     val dIt = defaultBrut.keys()
@@ -605,7 +605,7 @@ object MonitoringApi {
                             ?.let { defaultObjet[dk] = it }
                     }
                 }
-                else -> { /* null ou type non géré */ }
+                else -> { /* null, JSONObject.NULL, ou type non géré */ }
             }
             // Filtres : Map<champ, liste-de-valeurs-acceptables>
             val filtresMap = mutableMapOf<String, List<String>>()

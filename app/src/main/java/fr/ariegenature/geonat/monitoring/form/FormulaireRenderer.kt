@@ -126,7 +126,7 @@ class FormulaireRenderer(
                 setLines(minLines)
                 gravity = android.view.Gravity.TOP or android.view.Gravity.START
             }
-            field.value?.toString()?.takeIf { it.isNotEmpty() }?.let { setText(it) }
+            field.value?.toString()?.takeIf { it.isNotEmpty() && it != "null" }?.let { setText(it) }
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,

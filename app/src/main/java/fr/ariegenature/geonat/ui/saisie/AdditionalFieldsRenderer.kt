@@ -43,7 +43,11 @@ object AdditionalFieldsRenderer {
         if (defs.isEmpty()) return
         val ctx = container.context
         defs.forEach { def ->
-            container.addView(buildWidget(ctx, def, valeurs?.get(def.fieldName) ?: def.defaultValue ?: ""))
+            // Filet : si la valeur saisie ou le défaut serveur est la chaîne "null", on traite
+            // comme absent (sinon le champ s'affiche pré-rempli avec "null", déroutant).
+            val brut = valeurs?.get(def.fieldName) ?: def.defaultValue ?: ""
+            val valeur = if (brut == "null") "" else brut
+            container.addView(buildWidget(ctx, def, valeur))
         }
     }
 
@@ -56,7 +60,7 @@ object AdditionalFieldsRenderer {
             val value: String = when (tag.widget) {
                 WidgetType.TEXT, WidgetType.TEXTAREA, WidgetType.NUMBER, WidgetType.INCONNU ->
                     (view.findViewWithTag<EditText>("input"))?.text?.toString() ?: ""
-                WidgetType.SELECT -> {
+                WidgetType.SELECT, WidgetType.NOMENCLATURE -> {
                     val spinner = view.findViewWithTag<Spinner>("input") ?: continue
                     val codes = spinner.tag as? List<*>
                     codes?.getOrNull(spinner.selectedItemPosition) as? String ?: ""
@@ -105,6 +109,23 @@ object AdditionalFieldsRenderer {
                 spinner.tag = codes
                 val idx = codes.indexOf(current).coerceAtLeast(0)
                 spinner.setSelection(idx)
+                wrapper.addView(spinner)
+            }
+            WidgetType.NOMENCLATURE -> {
+                val spinner = Spinner(ctx).apply {
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
+                    )
+                    tag = "input"
+                }
+                val labels = listOf("(non renseigné)") + def.nomenclatureOptions.map { it.second }
+                val codes = listOf("") + def.nomenclatureOptions.map { it.first }
+                val adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_item, labels)
+                adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+                spinner.adapter = adapter
+                spinner.tag = codes
+                spinner.setSelection(codes.indexOf(current).coerceAtLeast(0))
                 wrapper.addView(spinner)
             }
             WidgetType.CHECKBOX -> {

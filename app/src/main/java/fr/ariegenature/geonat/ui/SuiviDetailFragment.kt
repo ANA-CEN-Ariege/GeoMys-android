@@ -310,7 +310,10 @@ class SuiviDetailFragment : Fragment() {
                         }
                     }
                 }
-                val btnCarte = ImageButton(ctx).apply {
+                // Bouton "voir sur carte" : affiché uniquement si l'object_type a une géométrie
+                // déclarée dans le schéma (sinon le tap mène à "Pas de géométrie pour cet objet").
+                val aGeometrie = schemaType?.geometryType != null
+                val btnCarte = if (aGeometrie) ImageButton(ctx).apply {
                     setImageResource(R.drawable.ic_eye)
                     setBackgroundResource(borderless)
                     contentDescription = "Voir sur carte"
@@ -328,10 +331,10 @@ class SuiviDetailFragment : Fragment() {
                             )
                         }
                     }
-                }
+                } else null
                 row.addView(bloc)
                 row.addView(btnInfo)
-                row.addView(btnCarte)
+                if (btnCarte != null) row.addView(btnCarte)
                 binding.llSites.addView(row)
             }
         }

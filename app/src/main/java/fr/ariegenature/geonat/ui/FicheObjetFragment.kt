@@ -285,7 +285,8 @@ class FicheObjetFragment : Fragment() {
                         }
                     }
                 }
-                val btnCarte = ImageButton(ctx).apply {
+                val aGeometrie = schemaType?.geometryType != null
+                val btnCarte = if (aGeometrie) ImageButton(ctx).apply {
                     setImageResource(R.drawable.ic_eye)
                     setBackgroundResource(borderless)
                     contentDescription = "Voir sur carte"
@@ -303,10 +304,10 @@ class FicheObjetFragment : Fragment() {
                             )
                         }
                     }
-                }
+                } else null
                 row.addView(bloc)
                 row.addView(btnInfo)
-                row.addView(btnCarte)
+                if (btnCarte != null) row.addView(btnCarte)
                 binding.llEnfants.addView(row)
             }
         }

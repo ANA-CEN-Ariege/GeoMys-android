@@ -104,11 +104,12 @@ class CarteGeometrieFragment : Fragment() {
         // sont avalés (best-effort) pour ne pas planter la carte entière sur un 403 isolé.
         val aFetch: List<Pair<String, MonitoringApi.MonitoringEnfant>> =
             objet.enfants.flatMap { (ctype, items) -> items.map { ctype to it } }
-        val geoJsonsEnfants: List<String?> = if (aFetch.isEmpty()) emptyList() else coroutineScope {
+        val enfantsAvecGeo: List<Pair<String, String?>> = if (aFetch.isEmpty()) emptyList() else coroutineScope {
             aFetch.map { (ctype, e) ->
                 async {
-                    e.geometrieGeoJson?.takeIf { it.isNotEmpty() }
+                    val geo = e.geometrieGeoJson?.takeIf { it.isNotEmpty() }
                         ?: runCatching { MonitoringApi.chargerObjet(config, moduleCode, ctype, e.id).geometrieGeoJson }.getOrNull()
+                    e.nom to geo
                 }
             }.awaitAll()
         }
@@ -118,10 +119,12 @@ class CarteGeometrieFragment : Fragment() {
 
         try {
             val tous = mutableListOf<GeoPoint>()
-            tous += rendre(JSONObject(geoStr), estEnfant = false)
-            geoJsonsEnfants.forEach { gj ->
+            // Géométrie principale : label = titre passé via Bundle (le nom de l'objet ouvert).
+            val titrePrincipal = arguments?.getString("titre")?.takeIf { it.isNotEmpty() }
+            tous += rendre(JSONObject(geoStr), estEnfant = false, label = titrePrincipal)
+            enfantsAvecGeo.forEach { (nom, gj) ->
                 if (gj.isNullOrEmpty()) return@forEach
-                try { tous += rendre(JSONObject(gj), estEnfant = true) }
+                try { tous += rendre(JSONObject(gj), estEnfant = true, label = nom) }
                 catch (_: Exception) { /* enfant illisible, on l'ignore */ }
             }
             terminer(tous)
@@ -162,11 +165,12 @@ class CarteGeometrieFragment : Fragment() {
             return
         }
 
-        val geoJsons: List<String?> = coroutineScope {
+        val enfantsAvecGeo: List<Pair<String, String?>> = coroutineScope {
             aFetch.map { (ctype, e) ->
                 async {
-                    e.geometrieGeoJson?.takeIf { it.isNotEmpty() }
+                    val geo = e.geometrieGeoJson?.takeIf { it.isNotEmpty() }
                         ?: runCatching { MonitoringApi.chargerObjet(config, moduleCode, ctype, e.id).geometrieGeoJson }.getOrNull()
+                    e.nom to geo
                 }
             }.awaitAll()
         }
@@ -175,9 +179,9 @@ class CarteGeometrieFragment : Fragment() {
         binding.progressCarte.visibility = View.GONE
 
         val tous = mutableListOf<GeoPoint>()
-        geoJsons.forEach { gj ->
+        enfantsAvecGeo.forEach { (nom, gj) ->
             if (gj.isNullOrEmpty()) return@forEach
-            try { tous += rendre(JSONObject(gj), estEnfant = false) }
+            try { tous += rendre(JSONObject(gj), estEnfant = false, label = nom) }
             catch (_: Exception) { /* géo illisible, on l'ignore */ }
         }
         terminer(tous)
@@ -193,9 +197,9 @@ class CarteGeometrieFragment : Fragment() {
     }
 
     /** Ajoute les overlays correspondant à une géométrie GeoJSON sur la carte et renvoie tous
-     *  les GeoPoint qu'elle couvre (pour le recadrage global). [estEnfant] = style plus discret
-     *  pour distinguer les enfants (points d'écoute, sous-sites) de la géométrie principale. */
-    private fun rendre(geo: JSONObject, estEnfant: Boolean): List<GeoPoint> {
+     *  les GeoPoint qu'elle couvre (pour le recadrage global). [estEnfant] = style plus discret.
+     *  [label] = nom à afficher au tap sur le marker/polygone (titre InfoWindow / Toast). */
+    private fun rendre(geo: JSONObject, estEnfant: Boolean, label: String?): List<GeoPoint> {
         val type = geo.optString("type", "")
         val coords = geo.opt("coordinates")
         val points = mutableListOf<GeoPoint>()
@@ -204,26 +208,26 @@ class CarteGeometrieFragment : Fragment() {
                 val arr = coords as? JSONArray ?: return points
                 val pt = lonLatToGeoPoint(arr) ?: return points
                 points += pt
-                ajouterMarker(pt, estEnfant)
+                ajouterMarker(pt, estEnfant, label)
             }
             "LineString" -> {
                 val arr = coords as? JSONArray ?: return points
                 val pts = extrairePoints(arr)
                 if (pts.isEmpty()) return points
                 points += pts
-                ajouterPolyline(pts, estEnfant)
+                ajouterPolyline(pts, estEnfant, label)
             }
             "MultiPoint" -> {
                 val arr = coords as? JSONArray ?: return points
                 val pts = extrairePoints(arr)
                 points += pts
-                pts.forEach { ajouterMarker(it, estEnfant) }
+                pts.forEach { ajouterMarker(it, estEnfant, label) }
             }
             "Polygon" -> {
                 val arr = coords as? JSONArray ?: return points
                 extraireAnneaux(arr).forEach { ring ->
                     points += ring
-                    ajouterPolygone(ring, estEnfant)
+                    ajouterPolygone(ring, estEnfant, label)
                 }
             }
             "MultiPolygon" -> {
@@ -232,7 +236,7 @@ class CarteGeometrieFragment : Fragment() {
                     val poly = arr.optJSONArray(i) ?: continue
                     extraireAnneaux(poly).forEach { ring ->
                         points += ring
-                        ajouterPolygone(ring, estEnfant)
+                        ajouterPolygone(ring, estEnfant, label)
                     }
                 }
             }
@@ -267,7 +271,7 @@ class CarteGeometrieFragment : Fragment() {
         return anneaux
     }
 
-    private fun ajouterMarker(pt: GeoPoint, estEnfant: Boolean) {
+    private fun ajouterMarker(pt: GeoPoint, estEnfant: Boolean, label: String?) {
         val drawableRes = if (estEnfant) R.drawable.ic_location_pin else R.drawable.ic_location_pin
         val marker = Marker(binding.map).apply {
             position = pt
@@ -276,21 +280,32 @@ class CarteGeometrieFragment : Fragment() {
                 it.setTint(if (estEnfant) 0xFFFF9800.toInt() else 0xFFD32F2F.toInt())
             }
             setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+            if (!label.isNullOrEmpty()) {
+                title = label
+                // osmdroid affiche un InfoWindow par défaut au tap sur le marker, avec title/snippet.
+            }
         }
         binding.map.overlays.add(marker)
     }
 
-    private fun ajouterPolyline(pts: List<GeoPoint>, estEnfant: Boolean) {
+    private fun ajouterPolyline(pts: List<GeoPoint>, estEnfant: Boolean, label: String?) {
         val pl = Polyline(binding.map).apply {
             setPoints(pts)
             outlinePaint.color = if (estEnfant) 0xCCFF9800.toInt() else 0xCC2196F3.toInt()
             outlinePaint.strokeWidth = if (estEnfant) 3f else 5f
             outlinePaint.strokeCap = Paint.Cap.ROUND
+            if (!label.isNullOrEmpty()) {
+                title = label
+                setOnClickListener { _, _, _ ->
+                    android.widget.Toast.makeText(requireContext(), label, android.widget.Toast.LENGTH_SHORT).show()
+                    true
+                }
+            }
         }
         binding.map.overlays.add(pl)
     }
 
-    private fun ajouterPolygone(ring: List<GeoPoint>, estEnfant: Boolean) {
+    private fun ajouterPolygone(ring: List<GeoPoint>, estEnfant: Boolean, label: String?) {
         val poly = Polygon(binding.map).apply {
             points = ring
             if (estEnfant) {
@@ -301,6 +316,13 @@ class CarteGeometrieFragment : Fragment() {
                 fillPaint.color = 0x552196F3.toInt()
                 outlinePaint.color = 0xFF1976D2.toInt()
                 outlinePaint.strokeWidth = 3f
+            }
+            if (!label.isNullOrEmpty()) {
+                title = label
+                setOnClickListener { _, _, _ ->
+                    android.widget.Toast.makeText(requireContext(), label, android.widget.Toast.LENGTH_SHORT).show()
+                    true
+                }
             }
         }
         binding.map.overlays.add(poly)

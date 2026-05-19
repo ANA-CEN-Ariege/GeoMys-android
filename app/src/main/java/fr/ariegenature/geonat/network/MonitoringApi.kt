@@ -185,6 +185,10 @@ object MonitoringApi {
         val idListObserver: Int? = null,
         /** Pour le type "module" uniquement : id de la liste taxonomique. */
         val idListTaxonomy: Int? = null,
+        /** Type de géométrie déclaré par le schéma (`Point`, `Polygon`, `LineString`,
+         *  `MultiPolygon`, …). Null si le type n'a pas de géométrie associée — dans ce cas
+         *  le bouton "voir sur carte" est inutile et masqué. */
+        val geometryType: String? = null,
     )
 
     /** Cache des labels résolus depuis le serveur — permet de remplacer les IDs (id_role,
@@ -480,6 +484,7 @@ object MonitoringApi {
                     idFieldName = v.optString("id_field_name", "").takeIf { it.isNotEmpty() },
                     idListObserver = v.optInt("id_list_observer", -1).takeIf { it > 0 },
                     idListTaxonomy = v.optInt("id_list_taxonomy", -1).takeIf { it > 0 },
+                    geometryType = v.optString("geometry_type", "").takeIf { it.isNotEmpty() && it != "null" },
                 )
             }
             // Post-processing : dérive l'URL des widgets `observers`/`dataset`/`taxonomy_list`

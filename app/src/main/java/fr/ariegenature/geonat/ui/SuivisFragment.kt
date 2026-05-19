@@ -75,6 +75,10 @@ class SuivisFragment : Fragment() {
             row.findViewById<TextView>(R.id.tv_desc).apply {
                 m.moduleDesc?.let { text = it; visibility = View.VISIBLE }
             }
+            row.findViewById<TextView>(R.id.tv_picto).apply {
+                val emoji = m.modulePicto?.let { pictoFaEnEmoji(it) }
+                if (emoji != null) { text = emoji; visibility = View.VISIBLE }
+            }
             row.findViewById<ImageButton>(R.id.btn_info).setOnClickListener {
                 findNavController().navigate(
                     R.id.action_suivis_to_detail,
@@ -93,6 +97,49 @@ class SuivisFragment : Fragment() {
                 )
             }
             binding.llModules.addView(row)
+        }
+    }
+
+    /** Mappe un code FontAwesome déclaré dans `module_picto` vers un emoji unicode équivalent.
+     *  Couvre les codes les plus utilisés en gn_module_monitoring (faune/flore/géo). Fallback :
+     *  emoji "presse-papier" générique pour les codes non listés. Retourne null si pas de code. */
+    private fun pictoFaEnEmoji(picto: String): String? {
+        if (picto.isEmpty()) return null
+        return when (picto.lowercase().removePrefix("fa-").removePrefix("fas-").removePrefix("far-")) {
+            "puzzle-piece", "puzzle" -> "🧩"
+            "bird", "dove", "crow", "feather" -> "🐦"
+            "leaf", "seedling" -> "🌿"
+            "tree" -> "🌳"
+            "fish" -> "🐟"
+            "bug" -> "🐛"
+            "spider" -> "🕷️"
+            "paw" -> "🐾"
+            "frog" -> "🐸"
+            "snake" -> "🐍"
+            "horse" -> "🐎"
+            "cow" -> "🐄"
+            "dog" -> "🐕"
+            "cat" -> "🐈"
+            "deer" -> "🦌"
+            "rabbit" -> "🐇"
+            "mouse" -> "🐁"
+            "flower", "fan" -> "🌸"
+            "mountain" -> "⛰️"
+            "water", "tint", "droplet" -> "💧"
+            "map", "map-marker", "map-pin", "location-dot" -> "📍"
+            "binoculars" -> "🔭"
+            "camera" -> "📷"
+            "ear-listen", "headphones" -> "🎧"
+            "compass" -> "🧭"
+            "ruler", "ruler-combined" -> "📏"
+            "clipboard", "clipboard-list", "list", "list-ul" -> "📋"
+            "book" -> "📖"
+            "calendar", "calendar-days" -> "📅"
+            "globe", "earth", "globe-europe" -> "🌍"
+            "sun" -> "☀️"
+            "cloud" -> "☁️"
+            "user", "users" -> "👤"
+            else -> "📋"
         }
     }
 

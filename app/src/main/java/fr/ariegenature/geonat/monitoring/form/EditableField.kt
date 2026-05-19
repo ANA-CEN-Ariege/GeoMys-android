@@ -30,4 +30,6 @@ data class EditableField(
     var value: Any? = null,
     val values: List<PropertyValue> = emptyList(),
     val obligatoire: Boolean = false,
+    /** Texte d'aide affiché sous le champ (vient du `definition` du schéma serveur). */
+    val aide: String? = null,
 )

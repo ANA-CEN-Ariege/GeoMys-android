@@ -77,21 +77,21 @@ class SuiviDetailFragment : Fragment() {
         binding.llSites.removeAllViews()
         viewLifecycleOwner.lifecycleScope.launch {
             val config = GeoNatureConfig(requireContext())
-            val enfantsDeferred = async { MonitoringApi.chargerEnfants(config, moduleCode) }
-            val schemaDeferred = async { MonitoringApi.chargerSchemaProtocole(config, moduleCode) }
-            val enfants: Map<String, List<MonitoringApi.MonitoringEnfant>>
-            val schema: Map<String, MonitoringApi.MonitoringSchemaObjet>?
-            try {
-                enfants = enfantsDeferred.await()
-                schema = schemaDeferred.await()
-            } catch (e: Exception) {
-                if (!isAdded) return@launch
+            // runCatching à l'intérieur de chaque async : sinon une exception (ex. 403) propage
+            // au scope parent en structured concurrency et plante le launch avant le try/catch
+            // sur await(). Avec Result, on lit l'erreur tranquillement après l'await.
+            val enfantsDeferred = async { runCatching { MonitoringApi.chargerEnfants(config, moduleCode) } }
+            val schemaDeferred = async { runCatching { MonitoringApi.chargerSchemaProtocole(config, moduleCode) } }
+            val enfantsRes = enfantsDeferred.await()
+            val schemaRes = schemaDeferred.await()
+            if (!isAdded) return@launch
+            val enfants = enfantsRes.getOrElse { e ->
                 binding.tvNbSites.visibility = View.GONE
                 binding.tvErreurDetail.visibility = View.VISIBLE
                 binding.tvErreurDetail.text = fr.ariegenature.geonat.network.humaniserErreurReseau(e)
                 return@launch
             }
-            if (!isAdded) return@launch
+            val schema = schemaRes.getOrNull()
             if (enfants.isEmpty()) {
                 binding.tvNbSites.visibility = View.GONE
                 return@launch

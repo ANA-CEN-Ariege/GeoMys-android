@@ -103,6 +103,18 @@ class FormulaireRenderer(
             ViewType.SELECT_MULTIPLE -> creerChampMultiSelect(field)
         }
         container.addView(editable)
+        // Texte d'aide (definition du schéma serveur) sous le champ — utile pour expliquer
+        // ce qu'on attend, particulièrement sur les protocoles techniques.
+        field.aide?.takeIf { it.isNotEmpty() }?.let { aide ->
+            val tvAide = TextView(ctx).apply {
+                text = aide
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+                setTextColor(0xFF888888.toInt())
+                setPadding(0, (2 * density).toInt(), 0, 0)
+                typeface = android.graphics.Typeface.create(typeface, android.graphics.Typeface.ITALIC)
+            }
+            container.addView(tvAide)
+        }
         return container to editable
     }
 

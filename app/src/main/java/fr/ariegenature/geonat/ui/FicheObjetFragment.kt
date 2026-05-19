@@ -59,21 +59,20 @@ class FicheObjetFragment : Fragment() {
 
         viewLifecycleOwner.lifecycleScope.launch {
             val config = GeoNatureConfig(requireContext())
-            val objetDeferred = async { MonitoringApi.chargerObjet(config, moduleCode, objectType, id) }
-            val schemaDeferred = async { MonitoringApi.chargerSchemaProtocole(config, moduleCode) }
-            val objet: MonitoringApi.MonitoringObjet
-            val schema: Map<String, MonitoringApi.MonitoringSchemaObjet>?
-            try {
-                objet = objetDeferred.await()
-                schema = schemaDeferred.await()
-            } catch (e: Exception) {
-                if (!isAdded) return@launch
+            // runCatching dans chaque async : sinon une exception (ex. 403) propage au scope
+            // parent (structured concurrency) et plante le launch avant le catch sur await().
+            val objetDeferred = async { runCatching { MonitoringApi.chargerObjet(config, moduleCode, objectType, id) } }
+            val schemaDeferred = async { runCatching { MonitoringApi.chargerSchemaProtocole(config, moduleCode) } }
+            val objetRes = objetDeferred.await()
+            val schemaRes = schemaDeferred.await()
+            if (!isAdded) return@launch
+            val objet = objetRes.getOrElse { e ->
                 binding.progressFiche.visibility = View.GONE
                 binding.tvErreur.visibility = View.VISIBLE
                 binding.tvErreur.text = fr.ariegenature.geonat.network.humaniserErreurReseau(e)
                 return@launch
             }
-            if (!isAdded) return@launch
+            val schema = schemaRes.getOrNull()
             val resolver = if (schema != null) {
                 runCatching { MonitoringApi.chargerResolveurLabels(config, moduleCode, schema) }
                     .getOrNull() ?: MonitoringApi.LabelResolver()

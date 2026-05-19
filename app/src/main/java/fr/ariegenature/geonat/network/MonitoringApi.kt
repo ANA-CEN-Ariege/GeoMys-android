@@ -87,6 +87,9 @@ object MonitoringApi {
                     )
                 )
             }
+            // Note : `active_frontend: false` est fréquent sur les protocoles ariégeois — ça
+            // signifie "pas dans le menu web GeoNature" et non "désactivé". Ne pas filtrer
+            // dessus sinon on cache tous les protocoles légitimes.
             result.sortedBy { it.moduleLabel.lowercase() }.also { dernierChargement = it }
         }
 
@@ -134,6 +137,13 @@ object MonitoringApi {
          *  Format : Map<champ_filtre → liste de valeurs acceptables>. Ex chronoventaire stade :
          *  `{"label_default": ["Inconnu", "Chrysalide", "Imago", "Chenille", "Œuf"]}`. */
         val filtres: Map<String, List<String>> = emptyMap(),
+        /** Texte d'aide / tooltip déclaré dans le schéma (`definition`). Affiché sous le label
+         *  dans le formulaire de saisie pour expliquer ce qu'on attend. */
+        val definition: String? = null,
+        /** Sur les propriétés `dataset` : code du module pour filtrer les jeux de données
+         *  proposés au seul module pertinent. Sans ce filtre, on liste TOUS les datasets du
+         *  serveur. */
+        val moduleCodeFiltre: String? = null,
     )
 
     /** Schéma d'un object_type déclaré par un protocole dans son `config/objects.json` serveur,
@@ -500,7 +510,13 @@ object MonitoringApi {
                 idListObserver?.let { "users/menu/$it" } ?: return prop,
                 "nom_complet", "id_role",
             )
-            "dataset" -> Triple("meta/datasets", "dataset_name", "id_dataset")
+            "dataset" -> Triple(
+                // Filtre par module si la propriété l'indique (ex chronoventaire visit.id_dataset
+                // déclare `module_code: "chronoventaire_ana"`) — évite de proposer tous les
+                // datasets du serveur.
+                prop.moduleCodeFiltre?.let { "meta/datasets?module_code=$it" } ?: "meta/datasets",
+                "dataset_name", "id_dataset",
+            )
             "taxonomy_list" -> Triple(
                 idListTaxonomy?.let { "biblistes/$it" } ?: return prop,
                 "nom_liste", "id_liste",
@@ -616,6 +632,8 @@ object MonitoringApi {
                 defaultValue = defaultValue,
                 defaultObjet = defaultObjet.toMap(),
                 filtres = filtresMap.toMap(),
+                definition = v.optString("definition", "").takeIf { it.isNotEmpty() },
+                moduleCodeFiltre = v.optString("module_code", "").takeIf { it.isNotEmpty() },
             )
         }
     }

@@ -54,6 +54,7 @@ fun construireFormulaire(schemaObjet: MonitoringApi.MonitoringSchemaObjet): Form
                 label = prop.label,
                 values = prop.valeurs.map { (v, l) -> PropertyValue(v, l) },
                 obligatoire = prop.obligatoire,
+                aide = prop.definition,
             )
         )
     }

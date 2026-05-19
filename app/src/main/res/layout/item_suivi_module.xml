@@ -8,6 +8,14 @@
     android:orientation="horizontal"
     android:padding="4dp">
 
+    <TextView
+        android:id="@+id/tv_picto"
+        android:layout_width="36dp"
+        android:layout_height="36dp"
+        android:gravity="center"
+        android:textSize="22sp"
+        android:visibility="gone" />
+
     <LinearLayout
         android:layout_width="0dp"
         android:layout_height="wrap_content"

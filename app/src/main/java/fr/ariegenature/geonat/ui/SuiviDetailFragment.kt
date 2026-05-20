@@ -69,6 +69,26 @@ class SuiviDetailFragment : Fragment() {
             binding.tvDesc.text = it
             binding.tvDesc.visibility = View.VISIBLE
         }
+        afficherDatasetsAssocies(m.moduleCode)
+    }
+
+    /** Affiche le ou les jeux de données dont `moduleCodes` contient le code du protocole.
+     *  Lu depuis le cache local `gnConfig.datasetsCacheJson` (peuplé au sync) → fonctionne
+     *  hors-réseau. Masqué si aucun dataset cache ne correspond. */
+    private fun afficherDatasetsAssocies(moduleCode: String) {
+        val cache = fr.ariegenature.geonat.store.GeoNatureConfig(requireContext()).datasetsCacheJson
+        if (cache.isEmpty()) return
+        val datasets: List<fr.ariegenature.geonat.network.GeoNatureDataset> = try {
+            val t = object : com.google.gson.reflect.TypeToken<List<fr.ariegenature.geonat.network.GeoNatureDataset>>() {}.type
+            com.google.gson.Gson().fromJson(cache, t) ?: emptyList()
+        } catch (_: Exception) { emptyList() }
+        val associes = datasets.filter { moduleCode in it.moduleCodes }
+        if (associes.isEmpty()) return
+        binding.tvDatasets.visibility = View.VISIBLE
+        binding.tvDatasets.text = if (associes.size == 1)
+            "Jeu de données : ${associes[0].nom} (${associes[0].id})"
+        else
+            "Jeux de données : " + associes.joinToString(", ") { "${it.nom} (${it.id})" }
     }
 
     private fun chargerEtAfficher(moduleCode: String) {

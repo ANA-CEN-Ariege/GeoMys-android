@@ -41,6 +41,18 @@
                 android:textSize="14sp"
                 android:visibility="gone" />
 
+            <!-- Jeu(x) de données associé(s) au protocole. Affiché en italique sous la
+                 description. Masqué si aucun dataset cache ne correspond. -->
+            <TextView
+                android:id="@+id/tv_datasets"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:textColor="?attr/colorOnSurfaceVariant"
+                android:textSize="13sp"
+                android:textStyle="italic"
+                android:visibility="gone" />
+
             <TextView
                 android:id="@+id/tv_nb_sites"
                 android:layout_width="wrap_content"

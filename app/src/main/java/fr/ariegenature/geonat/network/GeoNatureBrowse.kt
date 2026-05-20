@@ -12,7 +12,10 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-data class GeoNatureDataset(val id: Int, val nom: String)
+/** Dataset GeoNature. `idTaxaList` (champ optionnel `id_taxa_list` côté `gn_meta.t_datasets`)
+ *  identifie une liste de taxons UsersHub associée — quand non null, la saisie OCCTAX est
+ *  restreinte à cette liste et l'écran de config force la sélection sur celle-ci. */
+data class GeoNatureDataset(val id: Int, val nom: String, val idTaxaList: Int? = null)
 data class GeoNatureListe(val id: Int, val nom: String)
 /** Observateur (utilisateur GeoNature) chargé via `/api/users/menu/<id_liste>`. */
 data class GeoNatureObservateur(val idRole: Int, val nomComplet: String)
@@ -63,7 +66,10 @@ object GeoNatureBrowse {
                 val nom = d.optString("dataset_name", "")
                 // active peut être absent (anciennes instances) — dans ce cas on garde.
                 val actif = if (d.has("active") && !d.isNull("active")) d.optBoolean("active", true) else true
-                if (id > 0 && nom.isNotEmpty() && actif) result.add(GeoNatureDataset(id, nom))
+                // Liste de taxons associée au dataset (optionnelle, GeoNature ≥ 2.13).
+                val idTaxaList = if (d.has("id_taxa_list") && !d.isNull("id_taxa_list"))
+                    d.optInt("id_taxa_list", -1).takeIf { it > 0 } else null
+                if (id > 0 && nom.isNotEmpty() && actif) result.add(GeoNatureDataset(id, nom, idTaxaList))
             }
             // Tri alphabétique insensible à la casse + diacritiques pour un classement
             // intuitif quel que soit l'ordre serveur.

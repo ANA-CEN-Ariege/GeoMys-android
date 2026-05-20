@@ -28,6 +28,7 @@ import fr.ariegenature.geonat.store.NomenclatureCache
 import fr.ariegenature.geonat.store.TaxRefCache
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 
 class ConfigGeoNatureFragment : Fragment() {
@@ -177,23 +178,28 @@ class ConfigGeoNatureFragment : Fragment() {
         }
     }
 
-    private fun chargerDatasets() {
+    /** Retourne null si OK, sinon un message d'erreur — exploité par chargerToutesLesDonnees
+     *  pour agréger les étapes en échec dans l'avertissement final. */
+    private suspend fun chargerDatasets(): String? {
         binding.progressDatasets.visibility = View.VISIBLE
-        viewLifecycleOwner.lifecycleScope.launch {
-            try {
-                val result = GeoNatureBrowse.chargerDatasets(gnConfig)
-                if (result.isNotEmpty()) {
-                    peuplerSpinnerDatasets(result)
-                    gnConfig.datasetsCacheJson = gson.toJson(result)
-                }
-                binding.tvErreurDatasets.visibility = if (result.isEmpty()) View.VISIBLE else View.GONE
-                binding.tvErreurDatasets.text = if (result.isEmpty()) "Aucun jeu de données accessible" else ""
-            } catch (e: Exception) {
+        return try {
+            val result = GeoNatureBrowse.chargerDatasets(gnConfig)
+            if (result.isNotEmpty()) {
+                peuplerSpinnerDatasets(result)
+                gnConfig.datasetsCacheJson = gson.toJson(result)
+                binding.tvErreurDatasets.visibility = View.GONE
+                null
+            } else {
                 binding.tvErreurDatasets.visibility = View.VISIBLE
-                binding.tvErreurDatasets.text = e.message
-            } finally {
-                binding.progressDatasets.visibility = View.GONE
+                binding.tvErreurDatasets.text = "Aucun jeu de données accessible"
+                "Aucun jeu de données"
             }
+        } catch (e: Exception) {
+            binding.tvErreurDatasets.visibility = View.VISIBLE
+            binding.tvErreurDatasets.text = e.message
+            e.message ?: "Erreur datasets"
+        } finally {
+            binding.progressDatasets.visibility = View.GONE
         }
     }
 
@@ -212,6 +218,7 @@ class ConfigGeoNatureFragment : Fragment() {
             if (idx >= 0) {
                 gnConfig.idDataset = datasets[idx].id.toString()
                 gnConfig.nomDataset = datasets[idx].nom
+                appliquerRestrictionListeDataset(datasets[idx])
                 updateStatusIndicator()
             }
         }
@@ -219,24 +226,67 @@ class ConfigGeoNatureFragment : Fragment() {
         val currentId = gnConfig.idDataset.toIntOrNull()
         val idx = datasets.indexOfFirst { it.id == currentId }
         binding.acDatasets.setText(if (idx >= 0) noms[idx] else "", false)
+        // Restaure la restriction au démarrage si le dataset courant a une liste imposée.
+        if (idx >= 0) appliquerRestrictionListeDataset(datasets[idx])
     }
 
-    private fun chargerListes() {
-        binding.tvErreurListes.visibility = View.GONE
-        viewLifecycleOwner.lifecycleScope.launch {
-            try {
-                val result = GeoNatureBrowse.chargerListesTaxons(gnConfig)
-                if (result.isNotEmpty()) {
-                    peuplerSpinnerListes(result)
-                    gnConfig.listesCacheJson = gson.toJson(result)
-                } else {
-                    binding.tvErreurListes.visibility = View.VISIBLE
-                    binding.tvErreurListes.text = "Aucune liste de taxons trouvée sur ce serveur"
-                }
-            } catch (e: Exception) {
-                binding.tvErreurListes.visibility = View.VISIBLE
-                binding.tvErreurListes.text = e.message
+    /** Si le dataset porte un `id_taxa_list`, restreint la dropdown des listes à cette
+     *  seule liste et force la sélection — l'utilisateur ne peut plus choisir une autre
+     *  liste pour ce dataset. Sinon, restaure la liste complète des biblistes serveur. */
+    private fun appliquerRestrictionListeDataset(dataset: GeoNatureDataset) {
+        val idImpose = dataset.idTaxaList
+        if (idImpose != null) {
+            // Cherche la liste imposée dans le cache existant ; fallback à un GeoNatureListe
+            // synthétique avec juste son id (label dégradé) si le serveur n'a pas exposé
+            // cette liste via /biblistes.
+            val toutes = listes.toList()
+            val liste = toutes.firstOrNull { it.id == idImpose }
+                ?: GeoNatureListe(idImpose, "Liste $idImpose")
+            peuplerSpinnerListes(listOf(liste))
+            // Force la sélection sur l'unique entrée — déclenche aussi le rafraîchissement
+            // des compteurs par groupe (via le TextWatcher de etTaxaListe).
+            gnConfig.taxaListeId = idImpose.toString()
+            binding.etTaxaListe.setText(idImpose.toString())
+            binding.acListes.setText("${liste.nom} (${liste.id})", false)
+            // L'utilisateur ne peut pas dévier — désactive l'AutoCompleteTextView et le
+            // champ manuel ; un sous-titre explique pourquoi.
+            binding.acListes.isEnabled = false
+            binding.tilTaxaListe.visibility = View.GONE
+            binding.tvErreurListes.visibility = View.VISIBLE
+            binding.tvErreurListes.text = "Liste imposée par le jeu de données"
+            binding.tvErreurListes.setTextColor(0xFF555555.toInt())
+        } else {
+            // Dataset sans contrainte : restaure la liste complète + réactive le contrôle.
+            binding.acListes.isEnabled = true
+            binding.tvErreurListes.visibility = View.GONE
+            // Repeuple avec la liste complète depuis le cache JSON local.
+            gnConfig.listesCacheJson.takeIf { it.isNotEmpty() }?.let { json ->
+                try {
+                    val t = object : TypeToken<List<GeoNatureListe>>() {}.type
+                    val l: List<GeoNatureListe>? = gson.fromJson(json, t)
+                    if (!l.isNullOrEmpty()) peuplerSpinnerListes(l)
+                } catch (_: Exception) {}
             }
+        }
+    }
+
+    private suspend fun chargerListes(): String? {
+        binding.tvErreurListes.visibility = View.GONE
+        return try {
+            val result = GeoNatureBrowse.chargerListesTaxons(gnConfig)
+            if (result.isNotEmpty()) {
+                peuplerSpinnerListes(result)
+                gnConfig.listesCacheJson = gson.toJson(result)
+                null
+            } else {
+                binding.tvErreurListes.visibility = View.VISIBLE
+                binding.tvErreurListes.text = "Aucune liste de taxons trouvée sur ce serveur"
+                "Aucune liste de taxons"
+            }
+        } catch (e: Exception) {
+            binding.tvErreurListes.visibility = View.VISIBLE
+            binding.tvErreurListes.text = e.message
+            e.message ?: "Erreur listes"
         }
     }
 
@@ -271,22 +321,23 @@ class ConfigGeoNatureFragment : Fragment() {
         }
     }
 
-    private fun chargerObservateurs() {
+    private suspend fun chargerObservateurs(): String? {
         binding.tvErreurObservateurs.visibility = View.GONE
-        viewLifecycleOwner.lifecycleScope.launch {
-            try {
-                val result = GeoNatureBrowse.chargerObservateurs(gnConfig)
-                if (result.isNotEmpty()) {
-                    peuplerSpinnerObservateurs(result)
-                    gnConfig.observateursCacheJson = gson.toJson(result)
-                } else {
-                    binding.tvErreurObservateurs.visibility = View.VISIBLE
-                    binding.tvErreurObservateurs.text = "Aucun observateur retourné par /api/users/roles"
-                }
-            } catch (e: Exception) {
+        return try {
+            val result = GeoNatureBrowse.chargerObservateurs(gnConfig)
+            if (result.isNotEmpty()) {
+                peuplerSpinnerObservateurs(result)
+                gnConfig.observateursCacheJson = gson.toJson(result)
+                null
+            } else {
                 binding.tvErreurObservateurs.visibility = View.VISIBLE
-                binding.tvErreurObservateurs.text = e.message
+                binding.tvErreurObservateurs.text = "Aucun observateur retourné par /api/users/roles"
+                "Aucun observateur"
             }
+        } catch (e: Exception) {
+            binding.tvErreurObservateurs.visibility = View.VISIBLE
+            binding.tvErreurObservateurs.text = e.message
+            e.message ?: "Erreur observateurs"
         }
     }
 
@@ -351,44 +402,55 @@ class ConfigGeoNatureFragment : Fragment() {
         }
     }
 
-    private fun chargerAdditionalFields() {
-        viewLifecycleOwner.lifecycleScope.launch {
-            try {
-                val result = AdditionalFieldsApi.charger(gnConfig, "OCCTAX")
-                if (result.isNotEmpty()) gnConfig.additionalFieldsOcctaxJson = gson.toJson(result)
-                else if (gnConfig.additionalFieldsOcctaxJson.isEmpty()) {
-                    gnConfig.additionalFieldsOcctaxJson = "[]"
-                }
-            } catch (e: Exception) {
-                android.widget.Toast.makeText(
-                    requireContext(),
-                    "Champs additionnels : ${e.message}",
-                    android.widget.Toast.LENGTH_LONG
-                ).show()
+    private suspend fun chargerAdditionalFields(): String? {
+        return try {
+            val result = AdditionalFieldsApi.charger(gnConfig, "OCCTAX")
+            if (result.isNotEmpty()) {
+                gnConfig.additionalFieldsOcctaxJson = gson.toJson(result)
+            } else if (gnConfig.additionalFieldsOcctaxJson.isEmpty()) {
+                gnConfig.additionalFieldsOcctaxJson = "[]"
             }
+            null
+        } catch (e: Exception) {
+            e.message ?: "Erreur champs additionnels"
         }
     }
 
     /** Charge tout depuis le serveur en une action unique :
-     *  - datasets, listes, observateurs, additional_fields (fire-and-forget, gèrent leur UI)
+     *  - datasets, listes, observateurs, additional_fields (parallèle, sucès/échec tracké)
      *  - sync TaxRef exhaustif (toutes les biblistes)
-     *  - sync nomenclatures
-     *  À la fin, la section "Données" devient visible et le bouton passe en "Recharger…". */
+     *  - sync nomenclatures (+ defaults par module)
+     *  - sync Suivis (modules + schémas + arborescence structurelle)
+     *
+     *  Si une ou plusieurs étapes échouent (même partiellement), un bandeau d'avertissement
+     *  liste les étapes en échec à la fin pour que l'utilisateur sache que le chargement
+     *  n'a pas été complet et qu'il peut relancer. */
     private fun chargerToutesLesDonnees() {
         binding.btnChargerDonnees.isEnabled = false
         binding.btnTesterConnexion.isEnabled = false
         binding.progressSync.visibility = View.VISIBLE
         binding.tvSyncResultat.visibility = View.GONE
 
-        // Les 4 chargements ci-dessous lancent chacun leur lifecycleScope.launch. Ils sont
-        // indépendants entre eux et plus rapides que le sync TaxRef → l'attente du sync
-        // sert de synchronisation implicite (à son terme, les 4 spinners sont peuplés).
-        chargerDatasets()
-        chargerListes()
-        chargerObservateurs()
-        chargerAdditionalFields()
-
         viewLifecycleOwner.lifecycleScope.launch {
+            // Étapes 1-4 en parallèle (indépendantes, rapides). Chacune retourne null si OK,
+            // sinon un message d'erreur synthétique. On agrège les échecs pour l'avertissement.
+            val etapesEnEchec = mutableListOf<String>()
+            kotlinx.coroutines.coroutineScope {
+                val ds = async { chargerDatasets() }
+                val li = async { chargerListes() }
+                val obs = async { chargerObservateurs() }
+                val add = async { chargerAdditionalFields() }
+                listOf(
+                    "Jeux de données" to ds.await(),
+                    "Listes de taxons" to li.await(),
+                    "Observateurs" to obs.await(),
+                    "Champs additionnels" to add.await(),
+                ).forEach { (nom, err) ->
+                    if (err != null) etapesEnEchec += "$nom ($err)"
+                }
+            }
+
+            // Étape 5 : TaxRef exhaustif.
             val (nbTaxons, msgTaxRef) = GeoNatureSync.synchroniserTaxRef(gnConfig) { fait, listeIdx, listesTotales ->
                 activity?.runOnUiThread {
                     binding.tvSyncResultat.visibility = View.VISIBLE
@@ -398,11 +460,13 @@ class ConfigGeoNatureFragment : Fragment() {
                     }
                 }
             }
-            val (nbNom, msgNom) = GeoNatureSync.synchroniserNomenclatures(gnConfig)
+            if (nbTaxons == 0) etapesEnEchec += "TaxRef (${msgTaxRef.take(80)})"
 
-            // Pré-chargement du module Suivis : modules + schémas + enfants directs +
-            // fiche de chaque enfant (niveau 2). Cache JSON brut côté MonitoringCache.
-            // Best-effort : un module qui échoue n'arrête pas le sync global.
+            // Étape 6 : nomenclatures + defaults par module.
+            val (nbNom, msgNom) = GeoNatureSync.synchroniserNomenclatures(gnConfig)
+            if (nbNom == 0) etapesEnEchec += "Nomenclatures ($msgNom)"
+
+            // Étape 7 : pré-chargement module Suivis (best-effort, ne plante pas l'app).
             val (nbModulesOk, msgSuivis) = MonitoringSync.synchroniserSuivis(gnConfig) { moduleIdx, modulesTotaux, objets ->
                 activity?.runOnUiThread {
                     binding.tvSyncResultat.text = when {
@@ -411,16 +475,29 @@ class ConfigGeoNatureFragment : Fragment() {
                     }
                 }
             }
+            // Le sync Suivis renvoie "Aucun module monitoring exposé" si l'instance n'a pas
+            // gn_module_monitoring — ce n'est pas une erreur, on ne le compte pas en échec.
+            if (nbModulesOk == 0 && !msgSuivis.startsWith("Aucun")) {
+                etapesEnEchec += "Suivis (${msgSuivis.take(80)})"
+            }
 
             binding.progressSync.visibility = View.GONE
             binding.btnChargerDonnees.isEnabled = true
             binding.btnTesterConnexion.isEnabled = true
             binding.tvSyncResultat.visibility = View.VISIBLE
             binding.tvSyncResultat.text = buildString {
+                if (etapesEnEchec.isNotEmpty()) {
+                    append("⚠ Chargement incomplet — étape(s) en échec :\n")
+                    etapesEnEchec.forEach { append("  • $it\n") }
+                    append("Vous pouvez relancer « Recharger les données ».\n\n")
+                }
                 append(msgTaxRef)
                 if (nbTaxons > 0 && nbNom == 0) append("\n⚠ Nomenclatures : $msgNom")
                 if (nbModulesOk > 0 || msgSuivis.startsWith("Aucun")) append("\nSuivis : $msgSuivis")
             }
+            binding.tvSyncResultat.setTextColor(
+                if (etapesEnEchec.isNotEmpty()) 0xFFE65100.toInt() else 0xFF333333.toInt()
+            )
             updateCacheInfo()
             updateAvertissementListe()
 

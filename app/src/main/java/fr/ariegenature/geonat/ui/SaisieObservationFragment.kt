@@ -24,6 +24,7 @@ import fr.ariegenature.geonat.model.Taxon
 import fr.ariegenature.geonat.network.TaxRefStatut
 import fr.ariegenature.geonat.store.GeoNatureConfig
 import fr.ariegenature.geonat.store.TaxRefCache
+import fr.ariegenature.geonat.ui.saisie.AdditionalFieldsRenderer
 import fr.ariegenature.geonat.ui.saisie.SpeechToTextHelper
 import fr.ariegenature.geonat.ui.saisie.TaxRefLookupController
 import fr.ariegenature.geonat.ui.saisie.TaxonSelector
@@ -85,6 +86,12 @@ class SaisieObservationFragment : Fragment() {
     /** Index de la PendingObs dont on édite les détails via ObservationDetailsFragment. */
     private var editingDetailsIndex: Int? = null
 
+    /** Champs additionnels niveau OCCTAX_RELEVE — partagés par toutes les espèces du
+     *  relevé en cours. Le serveur déclare ces champs au niveau du relevé (la session
+     *  de saisie globale), pas par-espèce. Édités via le bouton "Détails du relevé"
+     *  et propagés sur chaque PendingObs au moment de l'enregistrement. */
+    private var additionalFieldsReleveSession: Map<String, String> = emptyMap()
+
     /** Quand on édite un relevé existant (arg `releveId`), on garde l'UUID pour le réutiliser
      *  lors de l'enregistrement (les nouvelles obs ajoutées en cours d'édition partagent ce
      *  releveId au lieu d'en avoir un nouveau). Null en saisie initiale. */
@@ -141,6 +148,9 @@ class SaisieObservationFragment : Fragment() {
                 releveIdEdite = premier.releveId
                 obsInitialesIds.clear()
                 obsInitialesIds.addAll(obsRelevExistants.map { it.id })
+                // Toutes les obs d'un même relevé partagent les mêmes champs additionnels
+                // niveau RELEVE — on prend la première comme source de vérité.
+                additionalFieldsReleveSession = premier.additionalFieldsReleve
                 obsRelevExistants.forEach { obsExistante ->
                     pendingObs.add(PendingObs(
                         taxon = obsExistante.taxon ?: Taxon.OISEAU,
@@ -177,6 +187,14 @@ class SaisieObservationFragment : Fragment() {
                 latitude = arguments?.getDouble("latitude") ?: 0.0
                 longitude = arguments?.getDouble("longitude") ?: 0.0
                 taxonInitial = Taxon.OISEAU
+                // Nouveau relevé venant de DetailsReleveFragment : on reçoit les valeurs
+                // OCCTAX_RELEVE déjà validées (required vérifiés en amont).
+                arguments?.getString("addReleveJson")?.takeIf { it.isNotEmpty() }?.let { json ->
+                    additionalFieldsReleveSession = try {
+                        val mapType = object : com.google.gson.reflect.TypeToken<Map<String, String>>() {}.type
+                        com.google.gson.Gson().fromJson<Map<String, String>>(json, mapType) ?: emptyMap()
+                    } catch (_: Exception) { emptyMap() }
+                }
             }
         } else {
             // View recréée — `pendingObs` est déjà à jour. Taxon = celui de la 1re espèce en cours.
@@ -227,6 +245,17 @@ class SaisieObservationFragment : Fragment() {
 
         binding.btnAnnuler.setOnClickListener { findNavController().navigateUp() }
         binding.btnEnregistrer.setOnClickListener { enregistrer() }
+        // Bouton "Détails du relevé" : visible uniquement si le serveur déclare au moins
+        // un champ OCCTAX_RELEVE pour le dataset courant.
+        val defsReleveSession = AdditionalFieldsRenderer.fromJson(gnConfig.additionalFieldsOcctaxJson)
+            .filter { it.appliqueA(fr.ariegenature.geonat.network.AdditionalFieldsObject.RELEVE) }
+            .filter { it.visiblePour(gnConfig.idDataset.toIntOrNull(), emptyList()) }
+        if (defsReleveSession.isNotEmpty()) {
+            binding.btnDetailsReleve.visibility = View.VISIBLE
+            binding.btnDetailsReleve.setOnClickListener { ouvrirDetailsReleve(defsReleveSession) }
+        } else {
+            binding.btnDetailsReleve.visibility = View.GONE
+        }
         updateBtnEnregistrerState()
     }
 
@@ -273,6 +302,30 @@ class SaisieObservationFragment : Fragment() {
                 else              -> "Oiseaux"
             }
 
+    /** Ouvre un dialog Material listant les champs additionnels OCCTAX_RELEVE. Édition
+     *  partagée par toutes les espèces — les valeurs sont stockées dans
+     *  [additionalFieldsReleveSession] et appliquées à chaque obs au save. */
+    private fun ouvrirDetailsReleve(
+        defs: List<fr.ariegenature.geonat.network.AdditionalFieldDef>,
+    ) {
+        val ctx = requireContext()
+        val container = android.widget.LinearLayout(ctx).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            val pad = (16 * resources.displayMetrics.density).toInt()
+            setPadding(pad, pad / 2, pad, pad / 2)
+        }
+        AdditionalFieldsRenderer.rendre(container, defs, additionalFieldsReleveSession)
+        val scroll = android.widget.ScrollView(ctx).apply { addView(container) }
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(ctx)
+            .setTitle("Détails du relevé")
+            .setView(scroll)
+            .setPositiveButton("Valider") { _, _ ->
+                additionalFieldsReleveSession = AdditionalFieldsRenderer.collecter(container)
+            }
+            .setNegativeButton("Annuler", null)
+            .show()
+    }
+
     private fun ouvrirCaracterisation(index: Int) {
         if (index !in pendingObs.indices) return
         val obs = pendingObs[index]
@@ -292,8 +345,8 @@ class SaisieObservationFragment : Fragment() {
             putString("determinateurDefaut", determinateurParDefaut())
             putString("preuveExist",         obs.preuveExist)
             putString("notes",               obs.notes)
-            // Champs additionnels (sérialisés JSON Map<field_name, value>).
-            putString("addReleveJson", com.google.gson.Gson().toJson(obs.additionalFieldsReleve))
+            // Niveau OCCURRENCE uniquement — les champs niveau RELEVE sont édités au
+            // niveau de la session via le bouton "Détails du relevé" du présent écran.
             putString("addOccJson", com.google.gson.Gson().toJson(obs.additionalFieldsOccurrence))
         }
         findNavController().navigate(R.id.action_saisie_to_caracterisation, bundle)
@@ -368,11 +421,6 @@ class SaisieObservationFragment : Fragment() {
         consommerString("notes")         { obs.notes = it }
 
         val mapType = object : com.google.gson.reflect.TypeToken<Map<String, String>>() {}.type
-        consommerString("addReleveJson") { v ->
-            obs.additionalFieldsReleve = try {
-                com.google.gson.Gson().fromJson<Map<String, String>>(v, mapType) ?: emptyMap()
-            } catch (_: Exception) { emptyMap() }
-        }
         consommerString("addOccJson") { v ->
             obs.additionalFieldsOccurrence = try {
                 com.google.gson.Gson().fromJson<Map<String, String>>(v, mapType) ?: emptyMap()
@@ -639,7 +687,7 @@ class SaisieObservationFragment : Fragment() {
                     methDetermin              = obs.methDetermin.ifEmpty { null },
                     determinateur             = obs.determinateur.ifEmpty { null },
                     mediaUrisCounting0        = obs.mediaUrisCounting0,
-                    additionalFieldsReleve    = obs.additionalFieldsReleve,
+                    additionalFieldsReleve    = additionalFieldsReleveSession,
                     additionalFieldsOccurrence = obs.additionalFieldsOccurrence,
                     additionalFieldsCounting0 = obs.additionalFieldsCounting0,
                 ))
@@ -667,7 +715,7 @@ class SaisieObservationFragment : Fragment() {
                     methDetermin              = obs.methDetermin.ifEmpty { null },
                     determinateur             = obs.determinateur.ifEmpty { null },
                     mediaUrisCounting0        = obs.mediaUrisCounting0,
-                    additionalFieldsReleve    = obs.additionalFieldsReleve,
+                    additionalFieldsReleve    = additionalFieldsReleveSession,
                     additionalFieldsOccurrence = obs.additionalFieldsOccurrence,
                     additionalFieldsCounting0 = obs.additionalFieldsCounting0,
                     releveId                  = releveIdBatch,

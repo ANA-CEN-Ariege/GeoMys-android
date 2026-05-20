@@ -103,16 +103,18 @@ class TraceFragment : Fragment() {
                 else -> return
             }
             val compass = _binding?.compass ?: return
-            compass.post { compass.setAzimuth(-azimuth) }
-            // Mode boussole : la carte compense la rotation du téléphone pour garder le
-            // nord en haut de l'écran. setMapOrientation prend une rotation horaire en
-            // degrés ; on passe -azimuth comme pour l'aiguille de la boussole.
+            // Mode boussole actif → l'aiguille tourne avec le téléphone ET la carte
+            // compense pour garder le nord en haut. Mode figé → aiguille et carte
+            // alignées sur le téléphone : nord en haut = aiguille au repos (0°).
             if (carteSuitBoussole) {
+                compass.post { compass.setAzimuth(-azimuth) }
                 val map = _binding?.map ?: return
                 map.post {
                     map.setMapOrientation(-azimuth)
                     map.invalidate()
                 }
+            } else {
+                compass.post { compass.setAzimuth(0f) }
             }
         }
         override fun onAccuracyChanged(sensor: Sensor, accuracy: Int) {}
@@ -246,9 +248,12 @@ class TraceFragment : Fragment() {
             carteSuitBoussole = !carteSuitBoussole
             binding.compass.setActif(carteSuitBoussole)
             if (!carteSuitBoussole) {
-                // Retour au mode figé : on remet la carte nord en haut.
+                // Retour au mode figé : carte ET boussole reviennent à 0 (nord en haut
+                // du téléphone). Sans le reset compass, l'aiguille reste tournée jusqu'au
+                // prochain event sensor (effet visuel incorrect).
                 binding.map.setMapOrientation(0f)
                 binding.map.invalidate()
+                binding.compass.setAzimuth(0f)
             }
         }
 
@@ -267,7 +272,16 @@ class TraceFragment : Fragment() {
                 }
                 modePositionnement = false
                 updateModePositionnement()
-                findNavController().navigate(R.id.action_trace_to_saisie, bundle)
+                // Si le serveur déclare des champs additionnels OCCTAX_RELEVE pour le dataset
+                // courant, on intercale l'écran "Détails du relevé" : il valide les champs
+                // required avant de passer à la saisie des espèces.
+                val aDesChampsReleve = fr.ariegenature.geonat.ui.saisie.AdditionalFieldsRenderer
+                    .fromJson(gnConfig.additionalFieldsOcctaxJson)
+                    .filter { it.appliqueA(fr.ariegenature.geonat.network.AdditionalFieldsObject.RELEVE) }
+                    .any { it.visiblePour(gnConfig.idDataset.toIntOrNull(), emptyList()) }
+                val cible = if (aDesChampsReleve) R.id.action_trace_to_details_releve
+                            else R.id.action_trace_to_saisie
+                findNavController().navigate(cible, bundle)
             }
         }
 

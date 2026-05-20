@@ -319,7 +319,10 @@ class DenombrementFragment : Fragment() {
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         spinner.adapter = adapter
         spinner.tag = codes
-        spinner.setSelection(codes.indexOf(current).coerceAtLeast(0))
+        // Fallback sur le défaut serveur (defaultNomenclatures du module) si pas de
+        // valeur explicite côté dénombrement courant — alignement avec l'UI web.
+        val codeEffectif = current.ifEmpty { NomenclatureCache.defautPour(type) ?: "" }
+        spinner.setSelection(codes.indexOf(codeEffectif).coerceAtLeast(0))
     }
 
     private fun selectedCode(spinner: Spinner): String {

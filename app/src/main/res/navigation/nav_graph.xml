@@ -131,8 +131,20 @@
             android:id="@+id/action_trace_to_saisie"
             app:destination="@id/saisieObservationFragment" />
         <action
+            android:id="@+id/action_trace_to_details_releve"
+            app:destination="@id/detailsReleveFragment" />
+        <action
             android:id="@+id/action_trace_to_saisie_rapide"
             app:destination="@id/saisieRapideFragment" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/detailsReleveFragment"
+        android:name="fr.ariegenature.geonat.ui.DetailsReleveFragment"
+        android:label="Détails du relevé">
+        <action
+            android:id="@+id/action_details_releve_to_saisie"
+            app:destination="@id/saisieObservationFragment" />
     </fragment>
 
     <fragment

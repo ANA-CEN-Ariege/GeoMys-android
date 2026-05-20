@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Tag id pour stocker la liste des codes d'un Spinner d'additional field
+         sans écraser son tag principal "input" (utilisé pour la collecte). -->
+    <item name="tag_field_codes" type="id" />
+</resources>

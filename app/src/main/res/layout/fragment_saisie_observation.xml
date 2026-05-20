@@ -247,6 +247,17 @@
             android:layout_marginTop="16dp"
             android:orientation="vertical" />
 
+        <!-- Bouton "Détails" : ouvre un dialog avec les champs additionnels OCCTAX_RELEVE.
+             Reste masqué si le serveur ne déclare aucun champ pour ce niveau. -->
+        <Button
+            android:id="@+id/btn_details_releve"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="Détails du relevé"
+            android:visibility="gone" />
+
         <!-- Boutons action -->
         <LinearLayout
             android:layout_width="match_parent"

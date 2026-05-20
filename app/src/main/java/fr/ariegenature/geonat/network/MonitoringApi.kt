@@ -1,12 +1,14 @@
 package fr.ariegenature.geonat.network
 
 import fr.ariegenature.geonat.store.GeoNatureConfig
+import fr.ariegenature.geonat.store.MonitoringCache
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.IOException
 import java.net.URL
 
 /** Module de suivi (protocole) côté gn_module_monitoring. Chaque entrée correspond à un protocole
@@ -39,29 +41,39 @@ object MonitoringApi {
 
     /** GET /api/monitorings/modules — liste les modules de suivi disponibles sur l'instance.
      *  Renvoie [] silencieusement si HTTP 404 (gn_module_monitoring non installé).
-     *  Sur toute autre erreur (timeout, 5xx, parse), propage l'exception au caller. */
+     *  Sur toute autre erreur HTTP (5xx, parse), propage l'exception. Sur erreur **réseau**
+     *  (IOException), retombe sur le cache local s'il est présent. */
     suspend fun chargerModules(config: GeoNatureConfig): List<MonitoringModule> =
         withContext(Dispatchers.IO) {
             val base = config.urlServeur.trim().trimEnd('/')
-            val (token, _, cookies) = GeoNatureAuth.loginAvecCookies(base, config.login, config.motDePasse)
-                ?: throw GNErreur.AuthEchouee(401)
-
-            val url = URL("$base/api/monitorings/modules")
-            val conn = url.openConnection() as java.net.HttpURLConnection
-            conn.connectTimeout = 10000
-            conn.readTimeout = 10000
-            conn.setRequestProperty("Accept", "application/json")
-            if (token != null) conn.setRequestProperty("Authorization", "Bearer $token")
-            if (cookies.isNotEmpty()) conn.setRequestProperty("Cookie", cookies)
-            val code = conn.responseCode
-            if (code == 404) return@withContext emptyList() // gn_module_monitoring absent
-            if (code != 200) throw GNErreur.EnvoiEchoue(code, "Modules monitoring : HTTP $code")
-
-            val text = conn.inputStream.bufferedReader().readText()
+            val text = try {
+                val auth = GeoNatureAuth.loginAvecCookies(base, config.login, config.motDePasse)
+                if (auth == null) {
+                    // Auth en échec (offline ou serveur injoignable) → fallback cache si présent.
+                    MonitoringCache.getJson(MonitoringCache.keyModules()) ?: throw GNErreur.AuthEchouee(401)
+                } else {
+                    val (token, _, cookies) = auth
+                    val url = URL("$base/api/monitorings/modules")
+                    val conn = url.openConnection() as java.net.HttpURLConnection
+                    conn.connectTimeout = 10000
+                    conn.readTimeout = 10000
+                    conn.setRequestProperty("Accept", "application/json")
+                    if (token != null) conn.setRequestProperty("Authorization", "Bearer $token")
+                    if (cookies.isNotEmpty()) conn.setRequestProperty("Cookie", cookies)
+                    val code = conn.responseCode
+                    if (code == 404) return@withContext emptyList()
+                    if (code != 200) throw GNErreur.EnvoiEchoue(code, "Modules monitoring : HTTP $code")
+                    val brut = conn.inputStream.bufferedReader().readText()
+                    MonitoringCache.setJson(MonitoringCache.keyModules(), brut)
+                    brut
+                }
+            } catch (e: IOException) {
+                MonitoringCache.getJson(MonitoringCache.keyModules()) ?: throw e
+            }
             val array: JSONArray = try { JSONArray(text) } catch (_: Exception) {
                 val obj = JSONObject(text)
                 obj.optJSONArray("data") ?: obj.optJSONArray("items") ?: obj.optJSONArray("modules")
-                    ?: throw GNErreur.EnvoiEchoue(code, "Modules monitoring : format JSON inattendu")
+                    ?: throw GNErreur.EnvoiEchoue(0, "Modules monitoring : format JSON inattendu")
             }
             val result = mutableListOf<MonitoringModule>()
             for (i in 0 until array.length()) {
@@ -222,21 +234,30 @@ object MonitoringApi {
     suspend fun chargerEnfants(config: GeoNatureConfig, moduleCode: String): Map<String, List<MonitoringEnfant>> =
         withContext(Dispatchers.IO) {
             val base = config.urlServeur.trim().trimEnd('/')
-            val (token, _, cookies) = GeoNatureAuth.loginAvecCookies(base, config.login, config.motDePasse)
-                ?: throw GNErreur.AuthEchouee(401)
-
-            val url = URL("$base/api/monitorings/object/$moduleCode/module?depth=1")
-            val conn = url.openConnection() as java.net.HttpURLConnection
-            conn.connectTimeout = 15000
-            conn.readTimeout = 15000
-            conn.setRequestProperty("Accept", "application/json")
-            if (token != null) conn.setRequestProperty("Authorization", "Bearer $token")
-            if (cookies.isNotEmpty()) conn.setRequestProperty("Cookie", cookies)
-            val code = conn.responseCode
-            if (code != 200) throw GNErreur.EnvoiEchoue(code, "Enfants du module $moduleCode")
-            val text = conn.inputStream.bufferedReader().readText()
+            val text = try {
+                val auth = GeoNatureAuth.loginAvecCookies(base, config.login, config.motDePasse)
+                if (auth == null) {
+                    MonitoringCache.getJson(MonitoringCache.keyEnfants(moduleCode)) ?: throw GNErreur.AuthEchouee(401)
+                } else {
+                    val (token, _, cookies) = auth
+                    val url = URL("$base/api/monitorings/object/$moduleCode/module?depth=1")
+                    val conn = url.openConnection() as java.net.HttpURLConnection
+                    conn.connectTimeout = 15000
+                    conn.readTimeout = 15000
+                    conn.setRequestProperty("Accept", "application/json")
+                    if (token != null) conn.setRequestProperty("Authorization", "Bearer $token")
+                    if (cookies.isNotEmpty()) conn.setRequestProperty("Cookie", cookies)
+                    val code = conn.responseCode
+                    if (code != 200) throw GNErreur.EnvoiEchoue(code, "Enfants du module $moduleCode")
+                    val brut = conn.inputStream.bufferedReader().readText()
+                    MonitoringCache.setJson(MonitoringCache.keyEnfants(moduleCode), brut)
+                    brut
+                }
+            } catch (e: IOException) {
+                MonitoringCache.getJson(MonitoringCache.keyEnfants(moduleCode)) ?: throw e
+            }
             val obj = try { JSONObject(text) } catch (_: Exception) {
-                throw GNErreur.EnvoiEchoue(code, "Enfants $moduleCode : JSON illisible")
+                throw GNErreur.EnvoiEchoue(0, "Enfants $moduleCode : JSON illisible")
             }
             val children = obj.optJSONObject("children") ?: return@withContext emptyMap<String, List<MonitoringEnfant>>()
             val result = linkedMapOf<String, List<MonitoringEnfant>>()
@@ -314,21 +335,31 @@ object MonitoringApi {
     ): MonitoringObjet =
         withContext(Dispatchers.IO) {
             val base = config.urlServeur.trim().trimEnd('/')
-            val (token, _, cookies) = GeoNatureAuth.loginAvecCookies(base, config.login, config.motDePasse)
-                ?: throw GNErreur.AuthEchouee(401)
-
-            val url = URL("$base/api/monitorings/object/$moduleCode/$objectType/$id?depth=1")
-            val conn = url.openConnection() as java.net.HttpURLConnection
-            conn.connectTimeout = 15000
-            conn.readTimeout = 15000
-            conn.setRequestProperty("Accept", "application/json")
-            if (token != null) conn.setRequestProperty("Authorization", "Bearer $token")
-            if (cookies.isNotEmpty()) conn.setRequestProperty("Cookie", cookies)
-            val code = conn.responseCode
-            if (code != 200) throw GNErreur.EnvoiEchoue(code, "$objectType #$id")
-            val text = conn.inputStream.bufferedReader().readText()
+            val text = try {
+                val auth = GeoNatureAuth.loginAvecCookies(base, config.login, config.motDePasse)
+                if (auth == null) {
+                    MonitoringCache.getJson(MonitoringCache.keyObjet(moduleCode, objectType, id))
+                        ?: throw GNErreur.AuthEchouee(401)
+                } else {
+                    val (token, _, cookies) = auth
+                    val url = URL("$base/api/monitorings/object/$moduleCode/$objectType/$id?depth=1")
+                    val conn = url.openConnection() as java.net.HttpURLConnection
+                    conn.connectTimeout = 15000
+                    conn.readTimeout = 15000
+                    conn.setRequestProperty("Accept", "application/json")
+                    if (token != null) conn.setRequestProperty("Authorization", "Bearer $token")
+                    if (cookies.isNotEmpty()) conn.setRequestProperty("Cookie", cookies)
+                    val code = conn.responseCode
+                    if (code != 200) throw GNErreur.EnvoiEchoue(code, "$objectType #$id")
+                    val brut = conn.inputStream.bufferedReader().readText()
+                    MonitoringCache.setJson(MonitoringCache.keyObjet(moduleCode, objectType, id), brut)
+                    brut
+                }
+            } catch (e: IOException) {
+                MonitoringCache.getJson(MonitoringCache.keyObjet(moduleCode, objectType, id)) ?: throw e
+            }
             val obj = try { JSONObject(text) } catch (_: Exception) {
-                throw GNErreur.EnvoiEchoue(code, "$objectType #$id : JSON illisible")
+                throw GNErreur.EnvoiEchoue(0, "$objectType #$id : JSON illisible")
             }
             val proprietes = aplatirProprietes(obj.optJSONObject("properties"))
             val enfants = linkedMapOf<String, List<MonitoringEnfant>>()
@@ -402,19 +433,34 @@ object MonitoringApi {
     suspend fun chargerSchemaProtocole(config: GeoNatureConfig, moduleCode: String): Map<String, MonitoringSchemaObjet>? =
         withContext(Dispatchers.IO) {
             val base = config.urlServeur.trim().trimEnd('/')
-            val (token, _, cookies) = GeoNatureAuth.loginAvecCookies(base, config.login, config.motDePasse)
-                ?: return@withContext null
-
-            val url = URL("$base/api/monitorings/config/$moduleCode")
-            val conn = url.openConnection() as java.net.HttpURLConnection
-            conn.connectTimeout = 10000
-            conn.readTimeout = 10000
-            conn.setRequestProperty("Accept", "application/json")
-            if (token != null) conn.setRequestProperty("Authorization", "Bearer $token")
-            if (cookies.isNotEmpty()) conn.setRequestProperty("Cookie", cookies)
-            val code = conn.responseCode
-            if (code != 200) return@withContext null
-            val text = conn.inputStream.bufferedReader().readText()
+            val text: String? = try {
+                val auth = GeoNatureAuth.loginAvecCookies(base, config.login, config.motDePasse)
+                if (auth == null) {
+                    // Auth en échec (offline ou serveur down) → fallback cache si présent.
+                    MonitoringCache.getJson(MonitoringCache.keySchema(moduleCode))
+                } else {
+                    val (token, _, cookies) = auth
+                    val url = URL("$base/api/monitorings/config/$moduleCode")
+                    val conn = url.openConnection() as java.net.HttpURLConnection
+                    conn.connectTimeout = 10000
+                    conn.readTimeout = 10000
+                    conn.setRequestProperty("Accept", "application/json")
+                    if (token != null) conn.setRequestProperty("Authorization", "Bearer $token")
+                    if (cookies.isNotEmpty()) conn.setRequestProperty("Cookie", cookies)
+                    val code = conn.responseCode
+                    if (code != 200) {
+                        // Fallback cache pour les erreurs serveur transitoires.
+                        MonitoringCache.getJson(MonitoringCache.keySchema(moduleCode))
+                    } else {
+                        val brut = conn.inputStream.bufferedReader().readText()
+                        MonitoringCache.setJson(MonitoringCache.keySchema(moduleCode), brut)
+                        brut
+                    }
+                }
+            } catch (_: IOException) {
+                MonitoringCache.getJson(MonitoringCache.keySchema(moduleCode))
+            }
+            if (text.isNullOrEmpty()) return@withContext null
             val obj = try { JSONObject(text) } catch (_: Exception) { return@withContext null }
             val result = linkedMapOf<String, MonitoringSchemaObjet>()
             val it = obj.keys()

@@ -21,7 +21,9 @@ import fr.ariegenature.geonat.network.GeoNatureDataset
 import fr.ariegenature.geonat.network.GeoNatureListe
 import fr.ariegenature.geonat.network.GeoNatureObservateur
 import fr.ariegenature.geonat.network.GeoNatureSync
+import fr.ariegenature.geonat.network.MonitoringSync
 import fr.ariegenature.geonat.store.GeoNatureConfig
+import fr.ariegenature.geonat.store.MonitoringCache
 import fr.ariegenature.geonat.store.NomenclatureCache
 import fr.ariegenature.geonat.store.TaxRefCache
 import com.google.gson.Gson
@@ -108,6 +110,7 @@ class ConfigGeoNatureFragment : Fragment() {
 
         binding.btnViderCache.setOnClickListener {
             TaxRefCache.vider()
+            MonitoringCache.vider()
             updateCacheInfo()
             updateAvertissementListe()
             // Sans cache, on repasse en état "Charger les données" — le bouton change
@@ -116,7 +119,7 @@ class ConfigGeoNatureFragment : Fragment() {
             binding.llSectionDonnees.visibility = View.GONE
         }
 
-        binding.btnFermer.setOnClickListener {
+        binding.fabValider.setOnClickListener {
             sauvegarderChamps()
             findNavController().navigateUp()
         }
@@ -397,6 +400,18 @@ class ConfigGeoNatureFragment : Fragment() {
             }
             val (nbNom, msgNom) = GeoNatureSync.synchroniserNomenclatures(gnConfig)
 
+            // Pré-chargement du module Suivis : modules + schémas + enfants directs +
+            // fiche de chaque enfant (niveau 2). Cache JSON brut côté MonitoringCache.
+            // Best-effort : un module qui échoue n'arrête pas le sync global.
+            val (nbModulesOk, msgSuivis) = MonitoringSync.synchroniserSuivis(gnConfig) { moduleIdx, modulesTotaux, objets ->
+                activity?.runOnUiThread {
+                    binding.tvSyncResultat.text = when {
+                        modulesTotaux == 0 -> "Récupération des protocoles Suivis…"
+                        else -> "Suivis : protocole $moduleIdx/$modulesTotaux — $objets objets en cache…"
+                    }
+                }
+            }
+
             binding.progressSync.visibility = View.GONE
             binding.btnChargerDonnees.isEnabled = true
             binding.btnTesterConnexion.isEnabled = true
@@ -404,6 +419,7 @@ class ConfigGeoNatureFragment : Fragment() {
             binding.tvSyncResultat.text = buildString {
                 append(msgTaxRef)
                 if (nbTaxons > 0 && nbNom == 0) append("\n⚠ Nomenclatures : $msgNom")
+                if (nbModulesOk > 0 || msgSuivis.startsWith("Aucun")) append("\nSuivis : $msgSuivis")
             }
             updateCacheInfo()
             updateAvertissementListe()

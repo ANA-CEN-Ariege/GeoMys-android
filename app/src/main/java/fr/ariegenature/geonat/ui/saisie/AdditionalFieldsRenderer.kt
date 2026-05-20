@@ -14,6 +14,7 @@ import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
+import fr.ariegenature.geonat.R
 import fr.ariegenature.geonat.network.AdditionalFieldDef
 import fr.ariegenature.geonat.network.WidgetType
 
@@ -62,7 +63,7 @@ object AdditionalFieldsRenderer {
                     (view.findViewWithTag<EditText>("input"))?.text?.toString() ?: ""
                 WidgetType.SELECT, WidgetType.NOMENCLATURE -> {
                     val spinner = view.findViewWithTag<Spinner>("input") ?: continue
-                    val codes = spinner.tag as? List<*>
+                    val codes = spinner.getTag(R.id.tag_field_codes) as? List<*>
                     codes?.getOrNull(spinner.selectedItemPosition) as? String ?: ""
                 }
                 WidgetType.CHECKBOX ->
@@ -106,7 +107,9 @@ object AdditionalFieldsRenderer {
                 val adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_item, labels)
                 adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
                 spinner.adapter = adapter
-                spinner.tag = codes
+                // setTag(id, value) ne remplace PAS le tag principal ("input") utilisé pour
+                // la recherche par findViewWithTag dans collecter — bug historique fixé ici.
+                spinner.setTag(R.id.tag_field_codes, codes)
                 val idx = codes.indexOf(current).coerceAtLeast(0)
                 spinner.setSelection(idx)
                 wrapper.addView(spinner)
@@ -124,7 +127,7 @@ object AdditionalFieldsRenderer {
                 val adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_item, labels)
                 adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
                 spinner.adapter = adapter
-                spinner.tag = codes
+                spinner.setTag(R.id.tag_field_codes, codes)
                 spinner.setSelection(codes.indexOf(current).coerceAtLeast(0))
                 wrapper.addView(spinner)
             }

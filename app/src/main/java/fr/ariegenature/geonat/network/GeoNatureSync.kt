@@ -293,6 +293,14 @@ object GeoNatureSync {
                 }
 
                 if (result.isNotEmpty()) NomenclatureCache.setAll(result)
+
+                // Récupère aussi les valeurs par défaut des nomenclatures pour le module
+                // OCCTAX — endpoint /api/occtax/defaultNomenclatures (Map<mnemonique, id>).
+                // C'est ce que l'UI web utilise pour pré-remplir les spinners nomenclature
+                // (STATUT_OBS, SEXE…) au démarrage d'une nouvelle saisie.
+                val defauts = fetchDefaultsNomenclatures(base, token, cookies, "occtax")
+                NomenclatureCache.setDefauts(defauts)
+
                 val total = result.values.sumOf { it.size }
                 val resume = result.entries.joinToString(" | ") { (t, vals) ->
                     val nbTr = vals.count { it.taxref.isNotEmpty() }
@@ -303,6 +311,43 @@ object GeoNatureSync {
                 Pair(0, "Erreur : ${e.message}")
             }
         }
+
+    /** Fetch des défauts de nomenclatures pour un module (`/api/<module>/defaultNomenclatures`).
+     *  Retourne une Map<mnemonique, id_nomenclature_stringifié>. Tente plusieurs casses du
+     *  module (Flask est case-sensitive sur les routes). Best-effort, vide en cas d'échec. */
+    fun fetchDefaultsNomenclatures(base: String, token: String?, cookies: String, moduleCode: String): Map<String, String> {
+        val variantes = listOf(moduleCode, moduleCode.lowercase()).distinct()
+        for (variant in variantes) {
+            val urlStr = "$base/api/$variant/defaultNomenclatures"
+            try {
+                val conn = URL(urlStr).openConnection() as java.net.HttpURLConnection
+                conn.connectTimeout = 10000
+                conn.readTimeout = 10000
+                conn.setRequestProperty("Accept", "application/json")
+                if (token != null) conn.setRequestProperty("Authorization", "Bearer $token")
+                if (cookies.isNotEmpty()) conn.setRequestProperty("Cookie", cookies)
+                val code = conn.responseCode
+                if (code != 200) {
+                    android.util.Log.w("GeoNatureSync", "defaultNomenclatures HTTP $code pour $urlStr")
+                    continue
+                }
+                val text = conn.inputStream.bufferedReader().readText()
+                val obj = JSONObject(text)
+                val out = mutableMapOf<String, String>()
+                val it = obj.keys()
+                while (it.hasNext()) {
+                    val k = it.next()
+                    val v = obj.opt(k)?.toString()?.takeIf { s -> s.isNotEmpty() && s != "null" }
+                    if (v != null) out[k] = v
+                }
+                android.util.Log.i("GeoNatureSync", "defaultNomenclatures OK $urlStr → ${out.size} entrées : $out")
+                if (out.isNotEmpty()) return out
+            } catch (e: Exception) {
+                android.util.Log.w("GeoNatureSync", "defaultNomenclatures exception pour $urlStr : ${e.message}")
+            }
+        }
+        return emptyMap()
+    }
 
     private fun construireIndexTaxon(
         groupe2: Map<Int, String>,

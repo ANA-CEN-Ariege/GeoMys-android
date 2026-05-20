@@ -150,14 +150,17 @@ class SaisieRapideFragment : Fragment() {
                 else -> return
             }
             val compass = _binding?.compass ?: return
-            compass.post { compass.setAzimuth(-azimuth) }
-            // Mode boussole : la carte compense la rotation du téléphone — voir TraceFragment.
+            // Voir TraceFragment : aiguille tournante uniquement en mode boussole actif,
+            // sinon figée à 0 (carte et téléphone alignés nord en haut).
             if (carteSuitBoussole) {
+                compass.post { compass.setAzimuth(-azimuth) }
                 val map = _binding?.map ?: return
                 map.post {
                     map.setMapOrientation(-azimuth)
                     map.invalidate()
                 }
+            } else {
+                compass.post { compass.setAzimuth(0f) }
             }
         }
         override fun onAccuracyChanged(sensor: Sensor, accuracy: Int) {}
@@ -262,9 +265,10 @@ class SaisieRapideFragment : Fragment() {
             carteSuitBoussole = !carteSuitBoussole
             binding.compass.setActif(carteSuitBoussole)
             if (!carteSuitBoussole) {
-                // Retour au mode figé : on remet la carte nord en haut.
+                // Retour au mode figé : carte ET boussole reviennent à 0.
                 binding.map.setMapOrientation(0f)
                 binding.map.invalidate()
+                binding.compass.setAzimuth(0f)
             }
         }
     }

@@ -10,9 +10,11 @@ data class NomValeur(val id: Int, val label: String, val taxref: List<TaxrefRest
 
 object NomenclatureCache {
     private const val KEY = "nom_cache_v1"
+    private const val KEY_DEFAUTS = "nom_defauts_v1"
     private lateinit var prefs: SharedPreferences
     private val gson = Gson()
     private var mem: Map<String, List<NomValeur>>? = null
+    private var memDefauts: Map<String, String>? = null
 
     // Valeurs group2_inpn correspondant aux poissons dans TaxRef v16 et v17 (même liste iOS)
     val GROUP2_POISSONS: Set<String> = setOf(
@@ -97,6 +99,29 @@ object NomenclatureCache {
     }
 
     val count: Int get() = charger().values.sumOf { it.size }
+
+    /** Stocke la map des défauts par mnémonique pour un module donné (résultat de
+     *  `GET /api/<module>/defaultNomenclatures`). Clé = mnémonique du type (STATUT_OBS…),
+     *  valeur = id_nomenclature par défaut (String pour matcher les codes utilisés
+     *  partout dans l'UI). */
+    fun setDefauts(map: Map<String, String>) {
+        prefs.edit().putString(KEY_DEFAUTS, gson.toJson(map)).apply()
+        memDefauts = map
+    }
+
+    /** Id_nomenclature par défaut pour un mnémonique, ou null si non configuré côté serveur. */
+    fun defautPour(mnemonique: String): String? = chargerDefauts()[mnemonique]
+
+    fun tousLesDefauts(): Map<String, String> = chargerDefauts()
+
+    private fun chargerDefauts(): Map<String, String> {
+        memDefauts?.let { return it }
+        val json = prefs.getString(KEY_DEFAUTS, null) ?: return emptyMap()
+        return try {
+            val type = object : TypeToken<Map<String, String>>() {}.type
+            (gson.fromJson(json, type) ?: emptyMap<String, String>()).also { memDefauts = it }
+        } catch (_: Exception) { emptyMap() }
+    }
 
     fun vider() {
         prefs.edit().remove(KEY).apply()

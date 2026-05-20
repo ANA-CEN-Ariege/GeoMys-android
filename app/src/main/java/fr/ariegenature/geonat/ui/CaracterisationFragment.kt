@@ -51,26 +51,23 @@ class CaracterisationFragment : Fragment() {
         binding.etDeterminateur.setText(determinateurArg.ifEmpty { determinateurDefaut })
         binding.etNotes.setText(notes)
 
-        // ── Champs additionnels (relevé + occurrence) ──
+        // ── Champs additionnels niveau OCCURRENCE uniquement ──
+        // Les champs niveau RELEVE sont édités au niveau de la session via le bouton
+        // "Détails du relevé" de SaisieObservationFragment et partagés entre toutes les
+        // espèces du relevé — ils ne sont donc plus dupliqués dans cet écran par-espèce.
         val gnConfig = GeoNatureConfig(requireContext())
         val idDataset = gnConfig.idDataset.toIntOrNull()
         val cdNom = (a?.getInt("cdNom", -1) ?: -1).takeIf { it > 0 }
         val listesDuTaxon = cdNom?.let { TaxRefCache.listesPourCdNom(it) } ?: emptyList()
-        val allDefs = AdditionalFieldsRenderer.fromJson(gnConfig.additionalFieldsOcctaxJson)
+        val defsOcc = AdditionalFieldsRenderer.fromJson(gnConfig.additionalFieldsOcctaxJson)
             .filter { it.visiblePour(idDataset, listesDuTaxon) }
-        val defsReleve = allDefs.filter { it.appliqueA(AdditionalFieldsObject.RELEVE) }
-        val defsOcc = allDefs.filter { it.appliqueA(AdditionalFieldsObject.OCCURRENCE) }
+            .filter { it.appliqueA(AdditionalFieldsObject.OCCURRENCE) }
         val gson = Gson()
         val mapType = object : TypeToken<Map<String, String>>() {}.type
-        val valeursReleve: Map<String, String> = try {
-            gson.fromJson(a?.getString("addReleveJson") ?: "{}", mapType) ?: emptyMap()
-        } catch (_: Exception) { emptyMap() }
         val valeursOcc: Map<String, String> = try {
             gson.fromJson(a?.getString("addOccJson") ?: "{}", mapType) ?: emptyMap()
         } catch (_: Exception) { emptyMap() }
 
-        binding.tvLabelAddReleve.visibility = if (defsReleve.isNotEmpty()) View.VISIBLE else View.GONE
-        AdditionalFieldsRenderer.rendre(binding.llAddReleve, defsReleve, valeursReleve)
         binding.tvLabelAddOccurrence.visibility = if (defsOcc.isNotEmpty()) View.VISIBLE else View.GONE
         AdditionalFieldsRenderer.rendre(binding.llAddOccurrence, defsOcc, valeursOcc)
 
@@ -121,9 +118,9 @@ class CaracterisationFragment : Fragment() {
             sv.set("preuveExist",    selectedCode(binding.spinnerPreuveExist))
             sv.set("determinateur",  binding.etDeterminateur.text.toString())
             sv.set("notes",          binding.etNotes.text.toString())
-            // Champs additionnels sérialisés JSON pour retour vers SaisieObservationFragment.
+            // Seul le niveau OCCURRENCE est édité ici ; le niveau RELEVE est géré
+            // dans SaisieObservationFragment via le bouton "Détails du relevé".
             val gsonOut = Gson()
-            sv.set("addReleveJson", gsonOut.toJson(AdditionalFieldsRenderer.collecter(binding.llAddReleve)))
             sv.set("addOccJson", gsonOut.toJson(AdditionalFieldsRenderer.collecter(binding.llAddOccurrence)))
             findNavController().navigateUp()
         }
@@ -180,7 +177,11 @@ class CaracterisationFragment : Fragment() {
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         spinner.adapter = adapter
         spinner.tag = codes
-        spinner.setSelection(codes.indexOf(current).coerceAtLeast(0))
+        // Si la PendingObs ne porte pas de valeur explicite pour ce champ, on applique
+        // le défaut configuré côté serveur (table <module>.defaults_nomenclatures_value,
+        // exposée via /api/<module>/defaultNomenclatures et cachée dans NomenclatureCache).
+        val codeEffectif = current.ifEmpty { NomenclatureCache.defautPour(type) ?: "" }
+        spinner.setSelection(codes.indexOf(codeEffectif).coerceAtLeast(0))
     }
 
     private fun selectedCode(spinner: Spinner): String {

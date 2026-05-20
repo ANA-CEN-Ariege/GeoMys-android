@@ -13,7 +13,12 @@ fun mapperViewType(prop: fr.ariegenature.geonat.network.MonitoringApi.Monitoring
         "date" -> ViewType.DATE
         "datetime" -> ViewType.DATE // POC : on ignore la composante heure
         "time" -> ViewType.TEXT // POC : "08:00" en libre — un ViewType.TIME dédié reste à porter
-        "select", "radio" -> ViewType.SELECT
+        "select", "radio" ->
+            if (prop.multiple) ViewType.SELECT_MULTIPLE else ViewType.SELECT
+        // Widget explicitement multi-sélection côté serveur (variantes vues sur le terrain).
+        "multiselect", "multi_select", "select_multiple", "select-multiple" -> ViewType.SELECT_MULTIPLE
+        // Booléens : différentes conventions serveur — toutes vers CheckBox.
+        "bool_checkbox", "bool", "boolean", "checkbox" -> ViewType.CHECKBOX
         // Widgets de type "liste alimentée par API" : tous unifiés sur SELECT(_MULTIPLE).
         // Le pré-fetch (cf [chargerOptionsDatalist]) leur donne des `values` toutes prêtes
         // depuis l'endpoint déclaré dans le schéma (api, keyLabel, keyValue, data_path).
@@ -23,7 +28,6 @@ fun mapperViewType(prop: fr.ariegenature.geonat.network.MonitoringApi.Monitoring
         //   medias       → composant galerie + upload de fichiers
         //   taxonomy     → autocomplete TaxRef (besoin d'un picker dédié)
         //   geometry     → picker sur carte
-        //   bool_checkbox → besoin d'un ViewType.CHECKBOX dédié
         //   min_max       → besoin d'un ViewType.MIN_MAX (deux NumberPicker côte à côte)
         else -> null
     }
@@ -55,6 +59,7 @@ fun construireFormulaire(schemaObjet: MonitoringApi.MonitoringSchemaObjet): Form
                 values = prop.valeurs.map { (v, l) -> PropertyValue(v, l) },
                 obligatoire = prop.obligatoire,
                 aide = prop.definition,
+                hiddenExpr = prop.hiddenExpr,
             )
         )
     }

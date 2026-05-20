@@ -35,18 +35,71 @@ class FormulaireRenderer(
     private val vuesParCode = linkedMapOf<String, View>()
     /** code → champ d'origine (pour relire son viewType au moment de lire les valeurs). */
     private val fieldsParCode = linkedMapOf<String, EditableField>()
+    /** code → conteneur LinearLayout englobant le champ — pour piloter sa visibilité
+     *  via les expressions `hidden` du schéma serveur. */
+    private val wrappersParCode = linkedMapOf<String, View>()
 
     fun rendre(fields: List<EditableField>) {
         parent.removeAllViews()
         vuesParCode.clear()
         fieldsParCode.clear()
+        wrappersParCode.clear()
         fields.forEach { field ->
             fieldsParCode[field.code] = field
             val (rowView, editable) = creerLigne(field)
             vuesParCode[field.code] = editable
+            wrappersParCode[field.code] = rowView
             parent.addView(rowView)
         }
+        // Évaluation initiale + listeners sur tous les éditables pour ré-évaluer en live.
+        attacherListenersDynamiques()
+        appliquerVisibiliteConditionnelle()
     }
+
+    /** Attache un listener "valeur changée" sur chaque éditeur. Chaque modification
+     *  re-évalue les expressions `hidden` de tous les champs et met à jour leur visibilité. */
+    private fun attacherListenersDynamiques() {
+        vuesParCode.forEach { (_, v) ->
+            when (v) {
+                is android.widget.CheckBox -> v.setOnCheckedChangeListener { _, _ ->
+                    appliquerVisibiliteConditionnelle()
+                }
+                is Spinner -> v.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+                    override fun onItemSelected(p: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                        appliquerVisibiliteConditionnelle()
+                    }
+                    override fun onNothingSelected(p: AdapterView<*>?) {}
+                }
+                is EditText -> v.addTextChangedListener(object : android.text.TextWatcher {
+                    override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                    override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+                    override fun afterTextChanged(s: android.text.Editable?) {
+                        appliquerVisibiliteConditionnelle()
+                    }
+                })
+                // DATE et SELECT_MULTIPLE reposent sur des TextView dont la valeur change via
+                // un dialog/picker — on hooke leur invalidation via le ChangeListener du tag.
+                is TextView -> v.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+                    override fun onViewAttachedToWindow(v: View) {}
+                    override fun onViewDetachedFromWindow(v: View) {}
+                })
+            }
+        }
+    }
+
+    /** Évalue chaque expression `hidden` et met à jour la visibilité du wrapper. */
+    private fun appliquerVisibiliteConditionnelle() {
+        val valeurs = lireValeurs()
+        fieldsParCode.forEach { (code, field) ->
+            val expr = field.hiddenExpr ?: return@forEach
+            val masquer = HiddenExpr.masquer(expr, valeurs)
+            wrappersParCode[code]?.visibility = if (masquer) View.GONE else View.VISIBLE
+        }
+    }
+
+    /** Notification publique : à appeler après une modification "externe" d'un champ
+     *  (par ex. depuis le code appelant qui pré-remplit des valeurs avant rendu). */
+    fun reevaluerVisibilites() = appliquerVisibiliteConditionnelle()
 
     /** Lit la valeur courante de chaque champ. Renvoie une Map code → valeur typée :
      *  - TEXT / TEXTAREA → String (vide si non rempli)
@@ -68,6 +121,7 @@ class FormulaireRenderer(
                 @Suppress("UNCHECKED_CAST")
                 ((v as TextView).tag as? List<String>).orEmpty()
             }
+            ViewType.CHECKBOX -> (v as android.widget.CheckBox).isChecked
         }
     }
 
@@ -101,6 +155,7 @@ class FormulaireRenderer(
             ViewType.DATE -> creerChampDate(field)
             ViewType.SELECT -> creerSpinner(field)
             ViewType.SELECT_MULTIPLE -> creerChampMultiSelect(field)
+            ViewType.CHECKBOX -> creerCheckBox(field)
         }
         container.addView(editable)
         // Texte d'aide (definition du schéma serveur) sous le champ — utile pour expliquer
@@ -167,6 +222,7 @@ class FormulaireRenderer(
                     tv.tag = fmtIso.format(cal.time)
                     tv.text = fmtAffichage.format(cal.time)
                     tv.setTextColor(0xFF000000.toInt())
+                    appliquerVisibiliteConditionnelle()
                 },
                 cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH),
             ).show()
@@ -228,6 +284,7 @@ class FormulaireRenderer(
                         tv.text = liste.joinToString(", ") { it.label }
                         tv.setTextColor(0xFF000000.toInt())
                     }
+                    appliquerVisibiliteConditionnelle()
                 }
                 .setNegativeButton("Annuler", null)
                 .show()
@@ -255,5 +312,27 @@ class FormulaireRenderer(
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
         return sp
+    }
+
+    /** Booléen rendu comme CheckBox. Pré-cochée si field.value est `true` (Boolean), ou la
+     *  chaîne "true"/"1" (cas où le serveur envoie une string même pour un bool). */
+    private fun creerCheckBox(field: EditableField): android.widget.CheckBox {
+        val coche = when (val v = field.value) {
+            is Boolean -> v
+            is String -> v.equals("true", ignoreCase = true) || v == "1"
+            is Number -> v.toInt() != 0
+            else -> false
+        }
+        return android.widget.CheckBox(ctx).apply {
+            // On laisse la label principale au TextView au-dessus pour rester cohérent avec
+            // les autres champs (libellé + ' *' si obligatoire). La CheckBox elle-même n'a
+            // donc pas de texte à droite.
+            text = ""
+            isChecked = coche
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            )
+        }
     }
 }

@@ -12,8 +12,12 @@ enum class ViewType {
     DATE,
     SELECT,
     /** Multi-sélection : utilisé pour les datalists `multiple: true` (observers, dataset multi,
-     *  types de sites). Rendu via dialog cases à cocher, valeur retournée = List<String>. */
+     *  types de sites) ainsi que pour les widgets serveur `multiselect`. Rendu via dialog
+     *  cases à cocher, valeur retournée = List<String>. */
     SELECT_MULTIPLE,
+    /** Booléen : widgets serveur `bool_checkbox` / `bool` / `checkbox`. Rendu en CheckBox
+     *  Material, valeur retournée = Boolean. */
+    CHECKBOX,
 }
 
 /** Valeur d'une option pour un widget SELECT (et plus tard NOMENCLATURE_TYPE / RADIO).
@@ -32,4 +36,7 @@ data class EditableField(
     val obligatoire: Boolean = false,
     /** Texte d'aide affiché sous le champ (vient du `definition` du schéma serveur). */
     val aide: String? = null,
+    /** Expression `hidden` du schéma serveur (forme Angular `${champ}` etc.). Évaluée
+     *  par le renderer pour masquer/afficher dynamiquement selon les autres valeurs. */
+    val hiddenExpr: String? = null,
 )

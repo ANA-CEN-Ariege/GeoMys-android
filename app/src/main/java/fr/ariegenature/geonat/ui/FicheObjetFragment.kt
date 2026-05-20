@@ -99,42 +99,7 @@ class FicheObjetFragment : Fragment() {
 
         // Position / Geometry retirée de la fiche : reste accessible via le bouton 👁 carte.
         afficherProprietes(objet, schemaCe, resolver)
-        afficherActions(objet, schema, nom)
         afficherEnfants(objet, schema, resolver)
-    }
-
-    /** Affiche un bouton "+ Nouvelle visite" quand le schéma déclare `visit` comme enfant du
-     *  type courant — ou par défaut sur les objets de type site/sites_group (heuristique
-     *  fallback). POC : ouvre [NouvelleVisiteFragment] avec un formulaire en dur. */
-    private fun afficherActions(
-        objet: MonitoringApi.MonitoringObjet,
-        schema: Map<String, MonitoringApi.MonitoringSchemaObjet>?,
-        nomObjet: String,
-    ) {
-        val supporteVisite = schema?.get(objet.type)?.childrenTypes
-            ?.any { it == "visit" || it == "visite" } == true
-            || objet.type in setOf("site", "sites_group")
-        if (!supporteVisite) return
-        val density = resources.displayMetrics.density
-        val btn = Button(requireContext()).apply {
-            text = "+ Nouvelle visite"
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = (16 * density).toInt() }
-            setOnClickListener {
-                findNavController().navigate(
-                    R.id.action_fiche_to_nouvelle_visite,
-                    androidx.core.os.bundleOf(
-                        "moduleCode" to objet.moduleCode,
-                        "parentObjectType" to objet.type,
-                        "parentId" to objet.id,
-                        "titreSite" to nomObjet,
-                    ),
-                )
-            }
-        }
-        binding.llProprietes.addView(btn)
     }
 
     /** Affiche les propriétés de l'objet sous forme "Label : valeur".
@@ -217,6 +182,13 @@ class FicheObjetFragment : Fragment() {
             val items = MonitoringApi.trierEnfants(itemsAffines, schemaType?.sorts.orEmpty())
             val typeLabel = schema?.get(type)?.let { it.labelList ?: it.label }
                 ?: labelTypeParDefaut(type)
+            // Type d'enfant qui sera créé via le bouton "+" : on regarde si le type de
+            // l'enfant courant déclare lui-même un childrenType de saisie (visite, releve,
+            // observation…). Si oui, chaque ligne d'enfant porte un "+" qui crée cette
+            // saisie. Sinon, pas de bouton "+". (cf. respect strict du schéma serveur.)
+            val typeSaisieEnfant = schemaType?.childrenTypes?.firstOrNull {
+                fr.ariegenature.geonat.network.MonitoringSync.estTypeSaisie(it)
+            }
             val header = TextView(ctx).apply {
                 text = "$typeLabel (${items.size})"
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
@@ -305,9 +277,32 @@ class FicheObjetFragment : Fragment() {
                         }
                     }
                 } else null
+                // Bouton "+" : nouvelle saisie attachée à cet enfant, visible uniquement
+                // si le schéma de l'enfant déclare un type de saisie comme childrenType.
+                val btnPlus = if (typeSaisieEnfant != null) ImageButton(ctx).apply {
+                    setImageResource(R.drawable.ic_add)
+                    setBackgroundResource(borderless)
+                    contentDescription = "Nouvelle saisie"
+                    layoutParams = LinearLayout.LayoutParams((40 * density).toInt(), (40 * density).toInt())
+                    setOnClickListener {
+                        if (e.id > 0) {
+                            findNavController().navigate(
+                                R.id.action_fiche_to_nouvelle_visite,
+                                bundleOf(
+                                    "moduleCode" to objet.moduleCode,
+                                    "parentObjectType" to type,
+                                    "parentId" to e.id,
+                                    "titreSite" to nom,
+                                    "childObjectType" to typeSaisieEnfant,
+                                )
+                            )
+                        }
+                    }
+                } else null
                 row.addView(bloc)
                 row.addView(btnInfo)
                 if (btnCarte != null) row.addView(btnCarte)
+                if (btnPlus != null) row.addView(btnPlus)
                 binding.llEnfants.addView(row)
             }
         }

@@ -8,6 +8,17 @@
     android:orientation="horizontal"
     android:padding="4dp">
 
+    <!-- Affichage du picto du module : ImageView si module_picto est une URL d'image,
+         sinon TextView avec un emoji unicode (fallback FontAwesome). Les deux sont
+         à la même place dans le layout, l'un masque l'autre selon le type de picto. -->
+    <ImageView
+        android:id="@+id/iv_picto"
+        android:layout_width="36dp"
+        android:layout_height="36dp"
+        android:scaleType="centerInside"
+        android:contentDescription="Picto du module"
+        android:visibility="gone" />
+
     <TextView
         android:id="@+id/tv_picto"
         android:layout_width="36dp"

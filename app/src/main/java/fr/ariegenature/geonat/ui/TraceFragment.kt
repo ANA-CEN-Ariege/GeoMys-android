@@ -647,15 +647,33 @@ class TraceFragment : Fragment() {
         if (obs.notes.isNotEmpty()) sub += " — ${obs.notes}"
         marker.snippet = sub
         marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+        // Drag direct pour repositionner. Pour un relevé multi-taxons (toutes les obs au
+        // même point), on déplace TOUTES les obs du même releveId d'un coup — sinon on
+        // casserait la cohérence "1 relevé = 1 point" attendue côté OCCTAX.
+        marker.isDraggable = true
         marker.setOnMarkerClickListener { _, _ ->
             val toutes = traceViewModel.observations.value ?: emptyList()
-            // Group par releveId (saisie multi-taxons) ; solo legacy = juste l'obs cliquée.
             val obsDuReleve = if (!obs.releveId.isNullOrEmpty())
                 toutes.filter { it.releveId == obs.releveId }
             else listOf(obs)
             montrerOptionsReleve(obsDuReleve)
             true
         }
+        marker.setOnMarkerDragListener(object : Marker.OnMarkerDragListener {
+            override fun onMarkerDragStart(marker: Marker) {}
+            override fun onMarkerDrag(marker: Marker) {}
+            override fun onMarkerDragEnd(marker: Marker) {
+                val toutes = traceViewModel.observations.value ?: return
+                val idsADeplacer = if (!obs.releveId.isNullOrEmpty())
+                    toutes.filter { it.releveId == obs.releveId }.map { it.id }
+                else listOf(obs.id)
+                idsADeplacer.forEach { id ->
+                    traceViewModel.mettreAJourObservationPosition(
+                        id, marker.position.latitude, marker.position.longitude,
+                    )
+                }
+            }
+        })
         return marker
     }
 

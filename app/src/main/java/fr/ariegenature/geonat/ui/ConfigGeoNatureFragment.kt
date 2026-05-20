@@ -114,6 +114,7 @@ class ConfigGeoNatureFragment : Fragment() {
             MonitoringCache.vider()
             updateCacheInfo()
             updateAvertissementListe()
+            updateStatusIndicator()
             // Sans cache, on repasse en état "Charger les données" — le bouton change
             // de libellé mais la section reste visible si la connexion est OK.
             binding.btnChargerDonnees.text = "Charger les données"
@@ -204,30 +205,35 @@ class ConfigGeoNatureFragment : Fragment() {
     }
 
     private fun peuplerSpinnerDatasets(result: List<GeoNatureDataset>) {
+        // Mémorise TOUS les datasets (utilisés par les écrans monitoring pour résoudre
+        // un id_dataset précis selon le protocole). Mais ne propose à l'écran de config
+        // OCCTAX que ceux **actifs** ET **rattachés au module OCCTAX**.
         datasets.clear()
         datasets.addAll(result)
-        val noms = result.map { "${it.nom} (${it.id})" }
+        val proposes = result.filter { it.actif && (it.moduleCodes.isEmpty() || "OCCTAX" in it.moduleCodes) }
+        // Note : moduleCodes vide = on garde le dataset (fallback safe pour les instances qui
+        // n'exposent pas le tableau modules — sinon on n'aurait rien à proposer).
+        val noms = proposes.map { "${it.nom} (${it.id})" }
         val adapter = ArrayAdapter(requireContext(), android.R.layout.simple_dropdown_item_1line, noms)
         binding.acDatasets.setAdapter(adapter)
         binding.tilDatasets.visibility = View.VISIBLE
         binding.acDatasets.threshold = 1
         binding.acDatasets.setOnItemClickListener { _, _, position, _ ->
-            // Le position passé est l'index dans la liste filtrée — on retrouve l'objet par son label.
             val labelChoisi = adapter.getItem(position) ?: return@setOnItemClickListener
             val idx = noms.indexOf(labelChoisi)
             if (idx >= 0) {
-                gnConfig.idDataset = datasets[idx].id.toString()
-                gnConfig.nomDataset = datasets[idx].nom
-                appliquerRestrictionListeDataset(datasets[idx])
+                gnConfig.idDataset = proposes[idx].id.toString()
+                gnConfig.nomDataset = proposes[idx].nom
+                appliquerRestrictionListeDataset(proposes[idx])
                 updateStatusIndicator()
             }
         }
-        // Affiche la sélection courante si elle existe (sinon vide).
+        // Affiche la sélection courante si elle est dans les datasets proposés.
         val currentId = gnConfig.idDataset.toIntOrNull()
-        val idx = datasets.indexOfFirst { it.id == currentId }
+        val idx = proposes.indexOfFirst { it.id == currentId }
         binding.acDatasets.setText(if (idx >= 0) noms[idx] else "", false)
         // Restaure la restriction au démarrage si le dataset courant a une liste imposée.
-        if (idx >= 0) appliquerRestrictionListeDataset(datasets[idx])
+        if (idx >= 0) appliquerRestrictionListeDataset(proposes[idx])
     }
 
     /** Si le dataset porte un `id_taxa_list`, restreint la dropdown des listes à cette
@@ -500,6 +506,7 @@ class ConfigGeoNatureFragment : Fragment() {
             )
             updateCacheInfo()
             updateAvertissementListe()
+            updateStatusIndicator()
 
             // Chargement effectif → on bascule en état "Données". Idempotent si on est
             // déjà dans cet état (rechargement utilisateur).
@@ -527,13 +534,15 @@ class ConfigGeoNatureFragment : Fragment() {
     }
 
     private fun updateStatusIndicator() {
-        // Pour cet écran on exige les 3 sélections (jeu de données, liste, observateur).
+        // Pour cet écran on exige les 3 sélections (jeu de données, liste, observateur)
+        // ET que les données aient été effectivement chargées (= TaxRef en cache).
         // `estConfiguree` côté store reste plus permissif car il est consommé par les
         // écrans d'envoi (où seul idDataset est requis côté payload OCCTAX).
         val configured = gnConfig.connexionConfiguree
             && gnConfig.idDataset.trim().isNotEmpty()
             && gnConfig.taxaListeId.trim().isNotEmpty()
             && gnConfig.observateurDefautId.trim().isNotEmpty()
+            && TaxRefCache.count > 0
         binding.tvStatutConfig.text = if (configured)
             getString(R.string.configuration_complete)
         else

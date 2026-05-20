@@ -54,7 +54,9 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
 import androidx.core.graphics.drawable.toBitmap
 import org.osmdroid.config.Configuration
+import org.osmdroid.events.MapEventsReceiver
 import org.osmdroid.util.GeoPoint
+import org.osmdroid.views.overlay.MapEventsOverlay
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.mylocation.GpsMyLocationProvider
 import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
@@ -110,6 +112,12 @@ class SaisieRapideFragment : Fragment() {
     private var modeActif = false
     private var compteurSession = 0
     private var suivrePosition = true
+
+    /** Point manuellement posé par tap sur la carte. Null = utilise la position GPS du
+     *  téléphone. Reset à chaque enregistrement réussi. */
+    private var pointManuel: GeoPoint? = null
+    /** Marker draggable matérialisant le [pointManuel] courant — null si pas de point posé. */
+    private var markerPointManuel: Marker? = null
     private var derniereObsId: String? = null
     private var snackJob: Job? = null
     /** false (défaut) = carte figée nord en haut du téléphone.
@@ -246,6 +254,17 @@ class SaisieRapideFragment : Fragment() {
             setDrawAccuracyEnabled(true)
         }
         binding.map.overlays.add(locationOverlay)
+
+        // Tap = pose un point manuel sous le doigt. Le clic "+" l'utilisera comme
+        // coord d'enregistrement à la place de la position GPS. Drag du marker = ajuste.
+        binding.map.overlays.add(MapEventsOverlay(object : MapEventsReceiver {
+            override fun singleTapConfirmedHelper(p: GeoPoint): Boolean {
+                if (!modeActif) return false
+                poserPointManuel(p)
+                return true
+            }
+            override fun longPressHelper(p: GeoPoint): Boolean = false
+        }))
 
         binding.map.setOnTouchListener { _, event ->
             if (event.action == MotionEvent.ACTION_MOVE && suivrePosition) {
@@ -630,12 +649,63 @@ class SaisieRapideFragment : Fragment() {
         }
     }
 
+    /** Pose ou déplace le marker manuel à [p]. Le clic "+" prendra ces coords la prochaine
+     *  fois. Drag du marker = ajuste la position en live. */
+    private fun poserPointManuel(p: GeoPoint) {
+        pointManuel = p
+        val existant = markerPointManuel
+        if (existant != null) {
+            existant.position = p
+            binding.map.invalidate()
+            return
+        }
+        val nouveau = Marker(binding.map).apply {
+            position = p
+            icon = androidx.core.content.ContextCompat.getDrawable(
+                requireContext(), R.drawable.ic_pin_drop
+            )
+            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+            isDraggable = true
+            title = "Position de l'observation"
+            // Désactive l'InfoWindow par défaut — on n'a pas besoin de bulle, et certaines
+            // versions osmdroid l'ouvrent au tap court avant que le drag long-press démarre,
+            // ce qui interfère avec le geste.
+            setInfoWindow(null)
+            // Single tap = ne rien faire ET consume l'event, pour qu'il ne descende pas
+            // au MapEventsOverlay et ne pose pas un nouveau point sur place.
+            setOnMarkerClickListener { _, _ -> true }
+            setOnMarkerDragListener(object : Marker.OnMarkerDragListener {
+                override fun onMarkerDrag(marker: Marker) {
+                    pointManuel = marker.position
+                }
+                override fun onMarkerDragEnd(marker: Marker) { pointManuel = marker.position }
+                override fun onMarkerDragStart(marker: Marker) {}
+            })
+        }
+        binding.map.overlays.add(nouveau)
+        markerPointManuel = nouveau
+        binding.map.invalidate()
+    }
+
+    /** Retire le marker manuel et vide la coord stockée — prochaine saisie revient au GPS. */
+    private fun effacerPointManuel() {
+        markerPointManuel?.let { binding.map.overlays.remove(it) }
+        markerPointManuel = null
+        pointManuel = null
+        binding.map.invalidate()
+    }
+
     private fun enregistrerIci() {
         val loc = traceViewModel.locationTracker.position.value
         val lat: Double
         val lon: Double
 
-        if (suivrePosition && loc != null) {
+        val manuel = pointManuel
+        if (manuel != null) {
+            // Priorité au point tappé manuellement par l'utilisateur.
+            lat = manuel.latitude
+            lon = manuel.longitude
+        } else if (loc != null) {
             lat = loc.latitude
             lon = loc.longitude
         } else {
@@ -677,6 +747,9 @@ class SaisieRapideFragment : Fragment() {
         updateCompteur()
         montrerConfirmation(obs)
         vibrer()
+        // Reset du point manuel : la prochaine observation repart sur la position GPS,
+        // sauf si l'utilisateur retap explicitement sur la carte.
+        effacerPointManuel()
         // Re-locker sur le GPS pour l'observation suivante
         suivrePosition = true
         updateGpsLockIcon()
@@ -717,7 +790,10 @@ class SaisieRapideFragment : Fragment() {
     private fun updateModeUI() {
         binding.panneauConfig.visibility = if (modeActif) View.GONE else View.VISIBLE
         binding.panneauActif.visibility  = if (modeActif) View.VISIBLE else View.GONE
-        binding.reticule.visibility      = if (modeActif) View.VISIBLE else View.GONE
+        // Plus de réticule en saisie mono-taxons : le clic "+" prend la position GPS par
+        // défaut, et un tap sur la carte permet de poser un point manuel à un endroit
+        // précis (matérialisé par un marker "goutte").
+        binding.reticule.visibility      = View.GONE
         binding.tvCompteur.visibility    = if (modeActif) View.VISIBLE else View.GONE
         // Carte et bouton fond de carte cachés tant qu'on n'a pas démarré la saisie
         binding.map.visibility           = if (modeActif) View.VISIBLE else View.GONE
@@ -767,23 +843,42 @@ class SaisieRapideFragment : Fragment() {
             observationMarkers.remove(id)
         }
         observations.forEach { obs ->
-            if (obs.id !in observationMarkers) {
-                val marker = Marker(binding.map).apply {
-                    position = GeoPoint(obs.latitude, obs.longitude)
-                    icon = ContextCompat.getDrawable(requireContext(), R.drawable.ic_bird_marker)
-                    title = obs.espece
-                    val fmt = SimpleDateFormat("HH:mm", Locale.getDefault())
-                    snippet = fmt.format(Date(obs.date)) + if (obs.nombre > 1) " · ${obs.nombre} ind." else ""
-                    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                    setOnMarkerClickListener { _, _ ->
-                        val toutes = traceViewModel.observations.value ?: emptyList()
-                        montrerListeEspeces(obsProches(obs, toutes).ifEmpty { listOf(obs) })
-                        true
-                    }
+            val existant = observationMarkers[obs.id]
+            if (existant != null) {
+                // L'observation peut avoir été repositionnée par ailleurs (drag d'un autre
+                // écran, edition…) — on synchronise la position si elle a changé.
+                if (existant.position.latitude != obs.latitude || existant.position.longitude != obs.longitude) {
+                    existant.position = GeoPoint(obs.latitude, obs.longitude)
                 }
-                observationMarkers[obs.id] = marker
-                binding.map.overlays.add(marker)
+                return@forEach
             }
+            val marker = Marker(binding.map).apply {
+                position = GeoPoint(obs.latitude, obs.longitude)
+                icon = ContextCompat.getDrawable(requireContext(), R.drawable.ic_bird_marker)
+                title = obs.espece
+                val fmt = SimpleDateFormat("HH:mm", Locale.getDefault())
+                snippet = fmt.format(Date(obs.date)) + if (obs.nombre > 1) " · ${obs.nombre} ind." else ""
+                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                // Observations validées repositionnables : drag pour ajuster, la nouvelle
+                // position est persistée immédiatement dans le ViewModel.
+                isDraggable = true
+                setOnMarkerClickListener { _, _ ->
+                    val toutes = traceViewModel.observations.value ?: emptyList()
+                    montrerListeEspeces(obsProches(obs, toutes).ifEmpty { listOf(obs) })
+                    true
+                }
+                setOnMarkerDragListener(object : Marker.OnMarkerDragListener {
+                    override fun onMarkerDragStart(marker: Marker) {}
+                    override fun onMarkerDrag(marker: Marker) {}
+                    override fun onMarkerDragEnd(marker: Marker) {
+                        traceViewModel.mettreAJourObservationPosition(
+                            obs.id, marker.position.latitude, marker.position.longitude,
+                        )
+                    }
+                })
+            }
+            observationMarkers[obs.id] = marker
+            binding.map.overlays.add(marker)
         }
         binding.map.invalidate()
     }

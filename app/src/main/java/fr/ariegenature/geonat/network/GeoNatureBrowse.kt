@@ -12,10 +12,20 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/** Dataset GeoNature. `idTaxaList` (champ optionnel `id_taxa_list` côté `gn_meta.t_datasets`)
- *  identifie une liste de taxons UsersHub associée — quand non null, la saisie OCCTAX est
- *  restreinte à cette liste et l'écran de config force la sélection sur celle-ci. */
-data class GeoNatureDataset(val id: Int, val nom: String, val idTaxaList: Int? = null)
+/** Dataset GeoNature.
+ *  - [idTaxaList] (`id_taxa_list` côté `gn_meta.t_datasets`) : liste UsersHub imposée.
+ *  - [actif] : flag `active` côté serveur. On charge même les inactifs (un protocole de
+ *    monitoring peut référencer un dataset inactif côté OCCTAX) — le filtrage est fait
+ *    à l'affichage selon le contexte (config OCCTAX = actif seulement, monitoring = libre).
+ *  - [moduleCodes] : codes des modules auxquels le dataset est rattaché côté serveur
+ *    (tableau `modules` du payload). Vide si l'instance n'expose pas cette info. */
+data class GeoNatureDataset(
+    val id: Int,
+    val nom: String,
+    val idTaxaList: Int? = null,
+    val actif: Boolean = true,
+    val moduleCodes: List<String> = emptyList(),
+)
 data class GeoNatureListe(val id: Int, val nom: String)
 /** Observateur (utilisateur GeoNature) chargé via `/api/users/menu/<id_liste>`. */
 data class GeoNatureObservateur(val idRole: Int, val nomComplet: String)
@@ -39,10 +49,12 @@ object GeoNatureBrowse {
             val (token, _) = GeoNatureAuth.login(base, config.login, config.motDePasse)
                 ?: throw GNErreur.AuthEchouee(401)
 
-            // Filtre côté serveur : ne récupère que les datasets actifs (active=true côté
-            // GeoNature). On filtre aussi côté client en lisant le champ "active" au cas où
-            // l'instance serveur ignore le paramètre.
-            val url = URL("$base/api/meta/datasets?active=true")
+            // Filtre serveur : `active=true` + `module_code=OCCTAX`. Le filtre par module
+            // applique aussi le CRUVED côté backend GeoNature → on ne récupère que les
+            // datasets sur lesquels l'utilisateur connecté a effectivement les droits de
+            // saisie, c'est ce que fait le formulaire web. `fields=modules` ramène le
+            // tableau des modules rattachés (utile au tracking).
+            val url = URL("$base/api/meta/datasets?active=true&module_code=OCCTAX&fields=modules")
             val conn = url.openConnection() as java.net.HttpURLConnection
             conn.connectTimeout = 10000
             conn.readTimeout = 10000
@@ -64,12 +76,26 @@ object GeoNatureBrowse {
                 val d = parsed.getJSONObject(i)
                 val id = d.optInt("id_dataset", -1)
                 val nom = d.optString("dataset_name", "")
-                // active peut être absent (anciennes instances) — dans ce cas on garde.
                 val actif = if (d.has("active") && !d.isNull("active")) d.optBoolean("active", true) else true
-                // Liste de taxons associée au dataset (optionnelle, GeoNature ≥ 2.13).
                 val idTaxaList = if (d.has("id_taxa_list") && !d.isNull("id_taxa_list"))
                     d.optInt("id_taxa_list", -1).takeIf { it > 0 } else null
-                if (id > 0 && nom.isNotEmpty() && actif) result.add(GeoNatureDataset(id, nom, idTaxaList))
+                // Modules attachés : tableau `modules: [{module_code, ...}]` côté serveur.
+                // Peut aussi se présenter comme `[module_code, …]` (strings) ou être absent
+                // (instances anciennes / payload allégé). On parse défensivement.
+                val modules = mutableListOf<String>()
+                d.optJSONArray("modules")?.let { arr ->
+                    for (j in 0 until arr.length()) {
+                        val mc = when (val item = arr.opt(j)) {
+                            is String -> item
+                            is JSONObject -> item.optString("module_code", "")
+                            else -> ""
+                        }
+                        if (mc.isNotEmpty()) modules.add(mc)
+                    }
+                }
+                if (id > 0 && nom.isNotEmpty()) {
+                    result.add(GeoNatureDataset(id, nom, idTaxaList, actif, modules))
+                }
             }
             // Tri alphabétique insensible à la casse + diacritiques pour un classement
             // intuitif quel que soit l'ordre serveur.

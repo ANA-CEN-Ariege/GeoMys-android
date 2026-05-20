@@ -41,7 +41,10 @@ object MonitoringSync {
     private const val CHUNK_SIZE = 5
 
     /** Vrai si [type] est un type de saisie (ne pas pré-charger l'historique). */
-    private fun estTypeSaisie(type: String): Boolean = type.trim().lowercase() in TYPES_SAISIE
+    /** Vrai si [type] est un type de "saisie" (visite, observation, occurrence, …).
+     *  Exposé pour que les écrans qui décident d'afficher un bouton "+ Nouveau X" puissent
+     *  s'aligner sur la même heuristique de nommage. */
+    fun estTypeSaisie(type: String): Boolean = type.trim().lowercase() in TYPES_SAISIE
 
     /** Charge tout le module Suivis pour usage offline.
      *  Callback `progression(moduleIdx, modulesTotaux, objetsCharges)` — `moduleIdx==0` avant le

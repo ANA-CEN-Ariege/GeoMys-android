@@ -156,6 +156,11 @@ object MonitoringApi {
          *  proposés au seul module pertinent. Sans ce filtre, on liste TOUS les datasets du
          *  serveur. */
         val moduleCodeFiltre: String? = null,
+        /** Expression d'affichage conditionnel (clé `hidden` ou `display` du schéma serveur,
+         *  format string interpolée Angular type `${champ_x}` ou `${champ_x} === 'val'`).
+         *  Évaluée à la volée par le renderer pour masquer/afficher dynamiquement le champ
+         *  en fonction des autres valeurs. Null = toujours visible. */
+        val hiddenExpr: String? = null,
     )
 
     /** Schéma d'un object_type déclaré par un protocole dans son `config/objects.json` serveur,
@@ -542,18 +547,22 @@ object MonitoringApi {
             val idListTaxonomy = moduleBloc?.optInt("id_list_taxonomy", -1)?.takeIf { it > 0 }
             result.mapValues { (_, schemaObjet) ->
                 schemaObjet.copy(properties = schemaObjet.properties.mapValues { (_, prop) ->
-                    derirverApiSiManquant(prop, idListObserver, idListTaxonomy)
+                    derirverApiSiManquant(prop, idListObserver, idListTaxonomy, moduleCode)
                 })
             }
         }
 
     /** Pour les widgets `observers`/`dataset`/`taxonomy_list` déclarés sans `api`/`keyLabel`/
      *  `keyValue`, applique les conventions standard gn_module_monitoring (URL fixe + champs
-     *  par défaut). Si le widget a déjà un api, on ne touche à rien. */
+     *  par défaut). Si le widget a déjà un api, on ne touche à rien.
+     *  [moduleCodeProtocole] : code du protocole en cours, utilisé pour filtrer les datasets
+     *  d'un widget `dataset` quand le schéma n'a pas explicitement `module_code` — on prend
+     *  par défaut les datasets rattachés au protocole, ce qui est ce que veut le serveur. */
     private fun derirverApiSiManquant(
         prop: MonitoringPropertySchema,
         idListObserver: Int?,
         idListTaxonomy: Int?,
+        moduleCodeProtocole: String,
     ): MonitoringPropertySchema {
         if (prop.apiUrl != null) return prop
         val (api, kLabel, kValue) = when (prop.typeWidget.lowercase()) {
@@ -562,10 +571,11 @@ object MonitoringApi {
                 "nom_complet", "id_role",
             )
             "dataset" -> Triple(
-                // Filtre par module si la propriété l'indique (ex chronoventaire visit.id_dataset
-                // déclare `module_code: "chronoventaire_ana"`) — évite de proposer tous les
-                // datasets du serveur.
-                prop.moduleCodeFiltre?.let { "meta/datasets?module_code=$it" } ?: "meta/datasets",
+                // Filtre par module : priorité au `module_code` explicite du schéma, sinon
+                // on retombe sur le module du protocole en cours — c'est ce qui correspond
+                // à la pratique GeoNature (un protocole monitoring utilise les datasets
+                // rattachés à ce protocole, pas le dataset OCCTAX global).
+                "meta/datasets?module_code=${prop.moduleCodeFiltre ?: moduleCodeProtocole}",
                 "dataset_name", "id_dataset",
             )
             "taxonomy_list" -> Triple(
@@ -599,7 +609,14 @@ object MonitoringApi {
         while (it.hasNext()) {
             val nom = it.next()
             val v = propsObj.optJSONObject(nom) ?: continue
-            if (v.optBoolean("hidden", false)) continue
+            // `hidden` peut être :
+            //  - Boolean true  → champ totalement caché (id technique, FK), on skip.
+            //  - Boolean false → champ visible inconditionnellement.
+            //  - String        → expression d'affichage dynamique (à évaluer côté UI).
+            val hiddenBrut = v.opt("hidden")
+            if (hiddenBrut is Boolean && hiddenBrut) continue
+            val hiddenExpr = (hiddenBrut as? String)
+                ?: v.opt("display")?.takeIf { it is String } as? String
             val typeWidget = v.optString("type_widget", "")
                 .ifEmpty { v.optString("widget", "") }
                 .ifEmpty { v.optString("type", "") }
@@ -682,6 +699,7 @@ object MonitoringApi {
                 multiple = multiple,
                 defaultValue = defaultValue,
                 defaultObjet = defaultObjet.toMap(),
+                hiddenExpr = hiddenExpr,
                 filtres = filtresMap.toMap(),
                 definition = v.optString("definition", "").takeIf { it.isNotEmpty() },
                 moduleCodeFiltre = v.optString("module_code", "").takeIf { it.isNotEmpty() },

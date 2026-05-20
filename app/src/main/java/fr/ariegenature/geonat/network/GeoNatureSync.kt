@@ -54,7 +54,19 @@ object GeoNatureSync {
         } catch (e: Exception) {
             return@withContext Pair(0, "Impossible de récupérer les listes de taxons : ${e.message}")
         }
-        if (biblistes.isEmpty()) {
+        // Récupère aussi les `id_taxa_list` référencés par les datasets : certains serveurs
+        // les attachent à des listes "privées" non listées dans /biblistes. Sans cette
+        // fusion, la liste imposée par le dataset déclenche l'avertissement "non dans le
+        // cache" et l'utilisateur ne peut pas la débloquer en rechargeant.
+        val idsViaDatasets: Set<Int> = try {
+            GeoNatureBrowse.chargerDatasets(config).mapNotNull { it.idTaxaList }.toSet()
+        } catch (_: Exception) { emptySet() }
+        val idsBiblistes = biblistes.map { it.id }.toSet()
+        val listesAFetcher = biblistes.toMutableList()
+        idsViaDatasets.forEach { id ->
+            if (id !in idsBiblistes) listesAFetcher.add(GeoNatureListe(id, "Liste $id (via dataset)"))
+        }
+        if (listesAFetcher.isEmpty()) {
             return@withContext Pair(0, "Aucune liste de taxons trouvée sur le serveur (/api/taxhub/api/biblistes).")
         }
 
@@ -72,9 +84,13 @@ object GeoNatureSync {
         val listesSynchronisees = mutableListOf<Int>()
         val listesEnEchec = mutableListOf<Int>()
 
-        for ((listeIdx, liste) in biblistes.withIndex()) {
-            progression(entrees.size, listeIdx + 1, biblistes.size)
+        for ((listeIdx, liste) in listesAFetcher.withIndex()) {
+            progression(entrees.size, listeIdx + 1, listesAFetcher.size)
             var pagesRecues = 0
+            // Devient true dès qu'un appel HTTP 200 a réussi — même si la liste est vide
+            // côté serveur. Sans ça, une liste valide mais sans taxons ne serait pas
+            // marquée comme synchronisée et l'avertissement "pas dans le cache" persisterait.
+            var httpOkAuMoinsUneFois = false
             var page = 1
             while (true) {
                 try {
@@ -85,9 +101,10 @@ object GeoNatureSync {
                     conn.setRequestProperty("Accept", "application/json")
                     val code = conn.responseCode
                     if (code != 200) {
-                        if (pagesRecues == 0) listesEnEchec.add(liste.id)
+                        if (!httpOkAuMoinsUneFois) listesEnEchec.add(liste.id)
                         break
                     }
+                    httpOkAuMoinsUneFois = true
                     val text = conn.inputStream.bufferedReader().readText()
                     val array: JSONArray = try {
                         val obj = JSONObject(text)
@@ -149,15 +166,17 @@ object GeoNatureSync {
                     if (array.length() < pageSize) break
                     page++
                 } catch (e: Exception) {
-                    if (pagesRecues == 0) listesEnEchec.add(liste.id)
+                    if (!httpOkAuMoinsUneFois) listesEnEchec.add(liste.id)
                     break
                 }
             }
-            if (pagesRecues > 0) listesSynchronisees.add(liste.id)
+            // Liste considérée synchronisée si on a obtenu au moins un HTTP 200, peu importe
+            // le nombre de taxons ramenés (une liste vide est valide côté serveur).
+            if (httpOkAuMoinsUneFois) listesSynchronisees.add(liste.id)
         }
 
         if (entrees.isEmpty()) {
-            return@withContext Pair(0, "Aucun taxon récupéré sur ${biblistes.size} liste(s).")
+            return@withContext Pair(0, "Aucun taxon récupéré sur ${listesAFetcher.size} liste(s).")
         }
 
         TaxRefCache.ajouter(entrees)
@@ -194,7 +213,7 @@ object GeoNatureSync {
         val nbInv = maxOf(0, regneMap.values.count { it == "Animalia" } - nbO - nbM - nbR - nbB - nbPo - nbI - nbMol)
         val nbP = NomenclatureCache.GROUPES_BOTANIQUES.sumOf { comptesTousGroupes[it] ?: 0 }
         val msg = buildString {
-            append("${entrees.size} taxons indexés sur ${listesSynchronisees.size}/${biblistes.size} listes — $nbO oiseaux")
+            append("${entrees.size} taxons indexés sur ${listesSynchronisees.size}/${listesAFetcher.size} listes — $nbO oiseaux")
             if (nbM > 0) append(", $nbM mammifères")
             if (nbR > 0) append(", $nbR reptiles")
             if (nbB > 0) append(", $nbB batraciens")

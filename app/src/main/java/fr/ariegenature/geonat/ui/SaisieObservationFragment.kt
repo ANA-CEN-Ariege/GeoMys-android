@@ -92,6 +92,12 @@ class SaisieObservationFragment : Fragment() {
      *  et propagés sur chaque PendingObs au moment de l'enregistrement. */
     private var additionalFieldsReleveSession: Map<String, String> = emptyMap()
 
+    /** Géométrie du relevé courant : "Point" (défaut), "LineString", "Polygon". Null = Point.
+     *  Partagée par toutes les obs (un relevé = une géométrie + N occurrences). */
+    private var geometryTypeSession: String? = null
+    /** Coordonnées JSON de la géométrie (vide pour Point, sinon liste de [lon,lat]). */
+    private var geometryCoordsJsonSession: String? = null
+
     /** Quand on édite un relevé existant (arg `releveId`), on garde l'UUID pour le réutiliser
      *  lors de l'enregistrement (les nouvelles obs ajoutées en cours d'édition partagent ce
      *  releveId au lieu d'en avoir un nouveau). Null en saisie initiale. */
@@ -149,8 +155,10 @@ class SaisieObservationFragment : Fragment() {
                 obsInitialesIds.clear()
                 obsInitialesIds.addAll(obsRelevExistants.map { it.id })
                 // Toutes les obs d'un même relevé partagent les mêmes champs additionnels
-                // niveau RELEVE — on prend la première comme source de vérité.
+                // niveau RELEVE et la même géométrie — on prend la première comme source.
                 additionalFieldsReleveSession = premier.additionalFieldsReleve
+                geometryTypeSession = premier.geometryType
+                geometryCoordsJsonSession = premier.geometryCoordsJson
                 obsRelevExistants.forEach { obsExistante ->
                     pendingObs.add(PendingObs(
                         taxon = obsExistante.taxon ?: Taxon.OISEAU,
@@ -195,6 +203,9 @@ class SaisieObservationFragment : Fragment() {
                         com.google.gson.Gson().fromJson<Map<String, String>>(json, mapType) ?: emptyMap()
                     } catch (_: Exception) { emptyMap() }
                 }
+                // Géométrie reçue de TraceFragment (via DetailsReleveFragment ou direct).
+                geometryTypeSession = arguments?.getString("geometryType")
+                geometryCoordsJsonSession = arguments?.getString("geometryCoordsJson")
             }
         } else {
             // View recréée — `pendingObs` est déjà à jour. Taxon = celui de la 1re espèce en cours.
@@ -688,6 +699,8 @@ class SaisieObservationFragment : Fragment() {
                     determinateur             = obs.determinateur.ifEmpty { null },
                     mediaUrisCounting0        = obs.mediaUrisCounting0,
                     additionalFieldsReleve    = additionalFieldsReleveSession,
+                    geometryType              = geometryTypeSession,
+                    geometryCoordsJson        = geometryCoordsJsonSession,
                     additionalFieldsOccurrence = obs.additionalFieldsOccurrence,
                     additionalFieldsCounting0 = obs.additionalFieldsCounting0,
                 ))
@@ -716,6 +729,8 @@ class SaisieObservationFragment : Fragment() {
                     determinateur             = obs.determinateur.ifEmpty { null },
                     mediaUrisCounting0        = obs.mediaUrisCounting0,
                     additionalFieldsReleve    = additionalFieldsReleveSession,
+                    geometryType              = geometryTypeSession,
+                    geometryCoordsJson        = geometryCoordsJsonSession,
                     additionalFieldsOccurrence = obs.additionalFieldsOccurrence,
                     additionalFieldsCounting0 = obs.additionalFieldsCounting0,
                     releveId                  = releveIdBatch,

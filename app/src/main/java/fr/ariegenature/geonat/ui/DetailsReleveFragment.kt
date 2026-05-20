@@ -59,11 +59,13 @@ class DetailsReleveFragment : Fragment() {
                 binding.tvErreur.text = "Champ(s) obligatoire(s) manquant(s) : ${manquants.joinToString(", ")}"
                 return@setOnClickListener
             }
-            // Transmet les valeurs + GPS reçus à SaisieObservationFragment via le bundle.
+            // Transmet les valeurs + GPS + géométrie reçus à SaisieObservationFragment via le bundle.
             val bundleSuite = Bundle().apply {
                 putDouble("latitude",  args?.getDouble("latitude", 0.0) ?: 0.0)
                 putDouble("longitude", args?.getDouble("longitude", 0.0) ?: 0.0)
                 putString("addReleveJson", Gson().toJson(valeurs))
+                args?.getString("geometryType")?.let { putString("geometryType", it) }
+                args?.getString("geometryCoordsJson")?.let { putString("geometryCoordsJson", it) }
             }
             // popUpTo + inclusive : on retire cet écran de la backstack pour que le retour
             // depuis la saisie d'espèces ramène directement à la carte (et non aux détails).

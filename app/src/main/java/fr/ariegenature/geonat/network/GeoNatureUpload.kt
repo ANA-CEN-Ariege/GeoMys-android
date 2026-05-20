@@ -162,9 +162,18 @@ object GeoNatureUpload {
                     }
                 }
 
-                val geometry = JSONObject()
-                    .put("type", "Point")
-                    .put("coordinates", JSONArray().put(lon).put(lat))
+                // Construction de la géométrie selon le type stocké côté Observation.
+                // - Point : coordonnées [lon, lat] (rétrocompat — toutes les obs sans geometryType).
+                // - LineString : coordonnées [[lon,lat], …] depuis geometryCoordsJson.
+                // - Polygon : coordonnées [[[lon,lat], …, [lon,lat]]] (anneau extérieur ;
+                //   on ferme automatiquement si le dernier sommet ≠ premier).
+                val premiereObs = groupe.first()
+                val geometry = construireGeometrie(
+                    type = premiereObs.geometryType,
+                    coordsJson = premiereObs.geometryCoordsJson,
+                    lat = lat,
+                    lon = lon,
+                )
 
                 val body1 = JSONObject()
                     .put("geometry", geometry)
@@ -405,6 +414,49 @@ object GeoNatureUpload {
 
     /** Convertit une Map<field_name, valeur stringifiée> en JSONObject typé.
      *  "true"/"false" → bool, entiers/décimaux → number, sinon string. */
+    /** Construit le GeoJSON `geometry` à envoyer au serveur GeoNature pour un relevé.
+     *  - `type == "Point"` ou null → [lon, lat] depuis lat/lon (rétrocompat).
+     *  - `type == "LineString"` → coordsJson est `[[lon,lat], …]` (≥ 2 sommets).
+     *  - `type == "Polygon"` → coordsJson est `[[lon,lat], …]` (anneau extérieur) ; on
+     *    referme automatiquement si le dernier sommet diffère du premier et on wrappe
+     *    dans le tableau supplémentaire requis par le format GeoJSON Polygon
+     *    (`[[[lon,lat], …]]`). */
+    private fun construireGeometrie(
+        type: String?,
+        coordsJson: String?,
+        lat: Double,
+        lon: Double,
+    ): JSONObject {
+        if (type.isNullOrEmpty() || type == "Point" || coordsJson.isNullOrEmpty()) {
+            return JSONObject()
+                .put("type", "Point")
+                .put("coordinates", JSONArray().put(lon).put(lat))
+        }
+        val coords = JSONArray(coordsJson) // [[lon,lat], …]
+        return when (type) {
+            "LineString" -> JSONObject()
+                .put("type", "LineString")
+                .put("coordinates", coords)
+            "Polygon" -> {
+                // Fermeture automatique de l'anneau si nécessaire.
+                if (coords.length() >= 3) {
+                    val premier = coords.getJSONArray(0)
+                    val dernier = coords.getJSONArray(coords.length() - 1)
+                    if (premier.getDouble(0) != dernier.getDouble(0) ||
+                        premier.getDouble(1) != dernier.getDouble(1)) {
+                        coords.put(JSONArray().put(premier.getDouble(0)).put(premier.getDouble(1)))
+                    }
+                }
+                JSONObject()
+                    .put("type", "Polygon")
+                    .put("coordinates", JSONArray().put(coords))
+            }
+            else -> JSONObject()
+                .put("type", "Point")
+                .put("coordinates", JSONArray().put(lon).put(lat))
+        }
+    }
+
     private fun jsonDepuisMap(map: Map<String, String>): JSONObject = JSONObject().apply {
         for ((k, v) in map) {
             if (v.isEmpty()) continue

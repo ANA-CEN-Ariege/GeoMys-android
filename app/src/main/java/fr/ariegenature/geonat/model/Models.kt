@@ -34,6 +34,15 @@ data class Observation(
     var cdNom: Int? = null,
     var latitude: Double,
     var longitude: Double,
+    /** Type de la géométrie associée au relevé (partagée par toutes les obs d'un releveId).
+     *  Valeurs : `"Point"` (défaut historique, latitude/longitude suffisent), `"LineString"`,
+     *  `"Polygon"`. Null pour rétrocompatibilité JSON ancien (= Point). */
+    var geometryType: String? = null,
+    /** Coordonnées de la géométrie sérialisées en JSON (`List<DoubleArray>` au format
+     *  [lon, lat]). Renseigné uniquement pour LineString et Polygon. Pour Point,
+     *  null et latitude/longitude font foi. Toutes les obs d'un releveId partagent cette
+     *  valeur (OCCTAX : un relevé = une géométrie + N occurrences). */
+    var geometryCoordsJson: String? = null,
     var date: Long = System.currentTimeMillis(),
     var notes: String = "",
     // ── Champs du counting #0 (conservés en flat pour rétrocompat Gson + mono-taxon) ──

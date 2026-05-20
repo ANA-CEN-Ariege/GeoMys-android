@@ -32,6 +32,8 @@ import androidx.core.graphics.drawable.toBitmap
 import org.osmdroid.config.Configuration
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
+import org.osmdroid.events.MapEventsReceiver
+import org.osmdroid.views.overlay.MapEventsOverlay
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polyline
 import org.osmdroid.views.overlay.mylocation.GpsMyLocationProvider
@@ -56,6 +58,21 @@ class TraceFragment : Fragment() {
     /** false (défaut) = carte figée nord en haut du téléphone.
      *  true = carte tournée par la boussole pour garder le nord en haut de l'écran. */
     private var carteSuitBoussole = false
+
+    /** Mode de saisie de la géométrie d'un nouveau relevé. POINT par défaut. */
+    private enum class ModeGeom { POINT, LINE, POLYGON }
+    private var modeGeom: ModeGeom = ModeGeom.POINT
+
+    /** Sommets accumulés en mode LINE/POLYGON (latitude, longitude). En mode POINT,
+     *  reste vide et la position finale est lue depuis le centre de la carte. */
+    private val sommetsCourants = mutableListOf<org.osmdroid.util.GeoPoint>()
+
+    /** Overlay osmdroid affichant la géométrie en cours de tracé (polyline ou polygone). */
+    private var overlayGeomEnCours: org.osmdroid.views.overlay.Overlay? = null
+
+    /** Markers draggables marquant chaque sommet en cours de saisie. Indexés par leur
+     *  position dans [sommetsCourants] pour retrouver et mettre à jour la coord au drag. */
+    private val markersSommets = mutableListOf<Marker>()
 
     private var savedMapCenter: GeoPoint? = null
     private var savedMapZoom: Double = 18.0
@@ -188,6 +205,17 @@ class TraceFragment : Fragment() {
         }
         binding.map.overlays.add(locationOverlay)
 
+        // MapEvents : capture les taps utilisateur pour poser les sommets directement
+        // sous le doigt en mode saisie nouvelle géométrie (sans réticule).
+        binding.map.overlays.add(MapEventsOverlay(object : MapEventsReceiver {
+            override fun singleTapConfirmedHelper(p: GeoPoint): Boolean {
+                if (!modePositionnement || obsARepositionnerIds.isNotEmpty()) return false
+                ajouterOuRemplacerSommet(p)
+                return true
+            }
+            override fun longPressHelper(p: GeoPoint): Boolean = false
+        }))
+
         binding.map.setOnTouchListener { v, event ->
             if (event.action == android.view.MotionEvent.ACTION_MOVE
                 && !modePositionnement && obsARepositionnerIds.isEmpty()) {
@@ -197,6 +225,19 @@ class TraceFragment : Fragment() {
             if (event.action == android.view.MotionEvent.ACTION_UP) v.performClick()
             false
         }
+    }
+
+    /** Pose ou remplace un sommet selon le mode courant.
+     *  - POINT : remplace le sommet unique (chaque tap = nouvel emplacement).
+     *  - LINE / POLYGON : ajoute le sommet en fin de liste. */
+    private fun ajouterOuRemplacerSommet(p: GeoPoint) {
+        if (modeGeom == ModeGeom.POINT) {
+            sommetsCourants.clear()
+            sommetsCourants.add(p)
+        } else {
+            sommetsCourants.add(p)
+        }
+        rafraichirGeomEnCours()
     }
 
     private fun setupControls() {
@@ -266,11 +307,19 @@ class TraceFragment : Fragment() {
                 obsARepositionnerIds = emptyList()
                 updateModePositionnement()
             } else {
+                // Construit la géométrie selon le mode actuel. Pour POINT : juste le centre.
+                // Pour LINE/POLYGON : la liste des sommets accumulés (+ le dernier sommet
+                // au centre, équivalent à un clic implicite final sur Ajouter sommet).
+                val (geomType, coords, lat, lon) = construireGeometrieFinale(center)
+                if (geomType == null) return@setOnClickListener  // pas assez de sommets
                 val bundle = Bundle().apply {
-                    putDouble("latitude", center.latitude)
-                    putDouble("longitude", center.longitude)
+                    putDouble("latitude", lat)
+                    putDouble("longitude", lon)
+                    putString("geometryType", geomType)
+                    if (coords != null) putString("geometryCoordsJson", coords)
                 }
                 modePositionnement = false
+                resetSaisieGeom()
                 updateModePositionnement()
                 // Si le serveur déclare des champs additionnels OCCTAX_RELEVE pour le dataset
                 // courant, on intercale l'écran "Détails du relevé" : il valide les champs
@@ -285,9 +334,23 @@ class TraceFragment : Fragment() {
             }
         }
 
+        // Sélecteur de mode : un clic change le mode et réinitialise les sommets.
+        binding.btnModePoint.setOnClickListener { changerMode(ModeGeom.POINT) }
+        binding.btnModeLine.setOnClickListener { changerMode(ModeGeom.LINE) }
+        binding.btnModePolygon.setOnClickListener { changerMode(ModeGeom.POLYGON) }
+
+        binding.btnAjouterSommet.setOnClickListener {
+            val center = binding.map.mapCenter
+            sommetsCourants.add(org.osmdroid.util.GeoPoint(center.latitude, center.longitude))
+            rafraichirGeomEnCours()
+        }
+
         binding.btnAnnulerPosition.setOnClickListener {
             modePositionnement = false
             obsARepositionnerIds = emptyList()
+            // Efface tout sommet/marker/polyline en cours — sinon les sommets restent
+            // affichés sur la carte et seraient repris à la prochaine saisie.
+            resetSaisieGeom()
             updateModePositionnement()
         }
     }
@@ -343,17 +406,197 @@ class TraceFragment : Fragment() {
 
     private fun updateModePositionnement() {
         val inMode = modePositionnement || obsARepositionnerIds.isNotEmpty()
-        binding.reticule.visibility = if (inMode) View.VISIBLE else View.GONE
+        val saisieNouvelle = modePositionnement && obsARepositionnerIds.isEmpty()
+        // En saisie nouvelle on utilise le doigt directement (tap pour poser, drag pour
+        // ajuster) → on masque le réticule. Il reste utile en repositionnement d'une obs
+        // existante (cible plus précise sur le centre).
+        binding.reticule.visibility = if (inMode && !saisieNouvelle) View.VISIBLE else View.GONE
         binding.bandeauPositionnement.visibility = if (inMode) View.VISIBLE else View.GONE
         binding.panneauControle.visibility = if (inMode) View.GONE else View.VISIBLE
         binding.panneauValidationPosition.visibility = if (inMode) View.VISIBLE else View.GONE
+        binding.llModeGeom.visibility = if (saisieNouvelle) View.VISIBLE else View.GONE
+        // Le bouton "+ Sommet" est rendu inutile par la saisie au doigt — on le masque
+        // toujours (les sommets se posent en tappant la carte).
+        binding.btnAjouterSommet.visibility = View.GONE
         if (inMode) {
-            binding.tvBandeauPositionnement.text = if (obsARepositionnerIds.isNotEmpty())
-                getString(R.string.repositionner_observation)
-            else
-                getString(R.string.positionner_observation)
+            binding.tvBandeauPositionnement.text = when {
+                obsARepositionnerIds.isNotEmpty() -> getString(R.string.repositionner_observation)
+                modeGeom == ModeGeom.LINE -> "Tap sur la carte pour poser chaque sommet (drag pour ajuster)"
+                modeGeom == ModeGeom.POLYGON -> "Tap pour les sommets du polygone (drag pour ajuster)"
+                else -> "Tap sur la carte pour positionner (drag pour ajuster)"
+            }
+            // Libellé du bouton de validation dépend du mode (et du repositionnement).
+            binding.btnValiderPosition.text = when {
+                obsARepositionnerIds.isNotEmpty() -> getString(R.string.valider_position)
+                modeGeom == ModeGeom.LINE -> "Valider cette ligne"
+                modeGeom == ModeGeom.POLYGON -> "Valider ce polygone"
+                else -> "Valider ce point"
+            }
+            mettreEnEvidenceBoutonMode()
         }
     }
+
+    /** Change le mode courant + réinitialise les sommets accumulés + reset rendu live. */
+    private fun changerMode(nouveau: ModeGeom) {
+        if (modeGeom == nouveau) return
+        modeGeom = nouveau
+        resetSaisieGeom()
+        updateModePositionnement()
+    }
+
+    /** Met en surbrillance le bouton de mode actif (fond colorPrimary atténué). */
+    private fun mettreEnEvidenceBoutonMode() {
+        val actif = androidx.core.content.ContextCompat.getColor(requireContext(), R.color.colorPrimary)
+        val inactif = 0x80FFFFFF.toInt()
+        binding.btnModePoint.setBackgroundColor(if (modeGeom == ModeGeom.POINT) actif else inactif)
+        binding.btnModeLine.setBackgroundColor(if (modeGeom == ModeGeom.LINE) actif else inactif)
+        binding.btnModePolygon.setBackgroundColor(if (modeGeom == ModeGeom.POLYGON) actif else inactif)
+    }
+
+    /** Retire l'overlay et les markers de sommets, vide la liste. */
+    private fun resetSaisieGeom() {
+        overlayGeomEnCours?.let { binding.map.overlays.remove(it) }
+        overlayGeomEnCours = null
+        markersSommets.forEach { binding.map.overlays.remove(it) }
+        markersSommets.clear()
+        sommetsCourants.clear()
+        binding.map.invalidate()
+    }
+
+    /** Met à jour l'overlay (polyline/polygone) ET les markers draggables des sommets. */
+    private fun rafraichirGeomEnCours() {
+        // Purge ancien rendu (overlay polyline/polygone + tous les markers de sommets).
+        overlayGeomEnCours?.let { binding.map.overlays.remove(it) }
+        overlayGeomEnCours = null
+        markersSommets.forEach { binding.map.overlays.remove(it) }
+        markersSommets.clear()
+
+        // Polyline/Polygon visible dès 2 sommets pour la ligne, 2 pour le polygone aussi
+        // (polygon avec 2 points = juste un segment, pas grave visuellement).
+        if (sommetsCourants.size >= 2 && modeGeom != ModeGeom.POINT) {
+            val overlay: org.osmdroid.views.overlay.Overlay = if (modeGeom == ModeGeom.LINE) {
+                Polyline(binding.map).apply {
+                    setPoints(sommetsCourants.toList())
+                    outlinePaint.color = 0xCCFF3333.toInt()
+                    outlinePaint.strokeWidth = 6f
+                }
+            } else {
+                org.osmdroid.views.overlay.Polygon(binding.map).apply {
+                    points = sommetsCourants.toList()
+                    fillPaint.color = 0x55FF3333.toInt()
+                    outlinePaint.color = 0xCCFF3333.toInt()
+                    outlinePaint.strokeWidth = 4f
+                }
+            }
+            binding.map.overlays.add(overlay)
+            overlayGeomEnCours = overlay
+        }
+
+        // Markers draggables pour chaque sommet — un appui long démarre le drag,
+        // onMarkerDragEnd met à jour la liste et redessine.
+        sommetsCourants.forEachIndexed { idx, point ->
+            val marker = Marker(binding.map).apply {
+                position = point
+                // Icône épurée en goutte (drop pin) — pointe vers le bas, ancrage en bas
+                // au centre comme un pin classique.
+                icon = androidx.core.content.ContextCompat.getDrawable(
+                    requireContext(), R.drawable.ic_pin_drop
+                )
+                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                isDraggable = true
+                title = "Sommet ${idx + 1}"
+                setOnMarkerDragListener(object : Marker.OnMarkerDragListener {
+                    override fun onMarkerDrag(marker: Marker) {
+                        // Live update : la liste suit le doigt pour que la polyline/polygon
+                        // reste cohérente avec le marker pendant le drag.
+                        val i = markersSommets.indexOf(marker)
+                        if (i in sommetsCourants.indices) {
+                            sommetsCourants[i] = marker.position
+                            // Repeint juste l'overlay, sans recréer les markers (sinon
+                            // le drag en cours saute).
+                            redessinerOverlay()
+                        }
+                    }
+                    override fun onMarkerDragEnd(marker: Marker) { /* déjà à jour */ }
+                    override fun onMarkerDragStart(marker: Marker) {}
+                })
+            }
+            binding.map.overlays.add(marker)
+            markersSommets.add(marker)
+        }
+        binding.map.invalidate()
+    }
+
+    /** Redessine UNIQUEMENT l'overlay polyline/polygone (sans toucher aux markers).
+     *  Appelé pendant le drag d'un sommet pour ne pas interrompre l'événement de drag. */
+    private fun redessinerOverlay() {
+        overlayGeomEnCours?.let { binding.map.overlays.remove(it) }
+        overlayGeomEnCours = null
+        if (sommetsCourants.size < 2 || modeGeom == ModeGeom.POINT) {
+            binding.map.invalidate()
+            return
+        }
+        val overlay: org.osmdroid.views.overlay.Overlay = if (modeGeom == ModeGeom.LINE) {
+            Polyline(binding.map).apply {
+                setPoints(sommetsCourants.toList())
+                outlinePaint.color = 0xCCFF3333.toInt()
+                outlinePaint.strokeWidth = 6f
+            }
+        } else {
+            org.osmdroid.views.overlay.Polygon(binding.map).apply {
+                points = sommetsCourants.toList()
+                fillPaint.color = 0x55FF3333.toInt()
+                outlinePaint.color = 0xCCFF3333.toInt()
+                outlinePaint.strokeWidth = 4f
+            }
+        }
+        // Insère l'overlay sous les markers (sinon il passe par-dessus le marker en cours
+        // de drag et désaligne le rendu). overlays.add ajoute en fin → on l'insère avant
+        // le premier marker pour qu'il soit dessiné en-dessous.
+        val idx = binding.map.overlays.indexOfFirst { it in markersSommets }
+        if (idx >= 0) binding.map.overlays.add(idx, overlay)
+        else binding.map.overlays.add(overlay)
+        overlayGeomEnCours = overlay
+        binding.map.invalidate()
+    }
+
+    /** Construit la géométrie finale au moment de la validation. Lit la liste des sommets
+     *  effectivement posés par l'utilisateur (tap + drag). En cas de mode POINT sans
+     *  sommet, on tombe en fallback sur le centre de la carte (cas où l'utilisateur clique
+     *  Valider sans avoir tappé). Retourne (null,…) si invalide. */
+    private fun construireGeometrieFinale(
+        center: org.osmdroid.api.IGeoPoint,
+    ): GeomFinale {
+        return when (modeGeom) {
+            ModeGeom.POINT -> {
+                val p = sommetsCourants.firstOrNull()
+                    ?: org.osmdroid.util.GeoPoint(center.latitude, center.longitude)
+                GeomFinale("Point", null, p.latitude, p.longitude)
+            }
+            ModeGeom.LINE, ModeGeom.POLYGON -> {
+                val min = if (modeGeom == ModeGeom.LINE) 2 else 3
+                if (sommetsCourants.size < min) {
+                    android.widget.Toast.makeText(requireContext(),
+                        "Au moins $min sommets requis", android.widget.Toast.LENGTH_SHORT).show()
+                    return GeomFinale(null, null, 0.0, 0.0)
+                }
+                val type = if (modeGeom == ModeGeom.LINE) "LineString" else "Polygon"
+                val coordsJson = com.google.gson.Gson().toJson(sommetsCourants.map {
+                    doubleArrayOf(it.longitude, it.latitude)
+                })
+                val lat = sommetsCourants.map { it.latitude }.average()
+                val lon = sommetsCourants.map { it.longitude }.average()
+                GeomFinale(type, coordsJson, lat, lon)
+            }
+        }
+    }
+
+    private data class GeomFinale(
+        val geomType: String?,
+        val coordsJson: String?,
+        val lat: Double,
+        val lon: Double,
+    )
 
     private fun updatePolyline(pts: List<PointTrace>) {
         tracePolyline?.let { binding.map.overlays.remove(it) }

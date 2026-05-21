@@ -39,6 +39,13 @@ class NouvelleVisiteFragment : Fragment() {
     private var parentIdFieldChamp: String? = null
     private var nomsChampsVisit: List<String> = emptyList()
     private var enCoursEnvoi = false
+    /** Mode édition : uuid de la SaisieEnAttente à modifier. Quand non-null, le submit fait
+     *  un `mettreAJour` au lieu d'un `ajouter` ; et avant le rendu on précharge les
+     *  valeurs du JSON stocké dans chaque EditableField. */
+    private var editUuid: String? = null
+    /** Snapshot des valeurs à pré-remplir au prochain rendu (mode édition). Consommé une
+     *  seule fois par [chargerSchemaEtRendre] juste avant l'appel à `renderer.rendre`. */
+    private var valeursPreremplies: Map<String, Any?>? = null
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         _binding = FragmentNouvelleVisiteBinding.inflate(inflater, container, false)
@@ -49,10 +56,29 @@ class NouvelleVisiteFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
         binding.root.applySystemBarInsets(includeIme = true)
 
+        // Mode édition : si on a un editUuid, on récupère la saisie de l'outbox pour
+        // (a) restituer le contexte (moduleCode, parentObjectType, parentId, childObjectType)
+        // qui n'est pas forcément passé par l'écran appelant, (b) précharger les valeurs.
+        editUuid = arguments?.getString("editUuid")?.takeIf { it.isNotEmpty() }
+        val saisieEnEdition = editUuid?.let { uuid ->
+            fr.ariegenature.geonat.store.OutboxMonitoring.tout().firstOrNull { it.uuid == uuid }
+        }
+        if (saisieEnEdition != null) {
+            // On honore les meta stockées dans la saisie (= ce qui a été utilisé pour la
+            // créer). Évite que l'appelant ait à re-transmettre tout ce contexte.
+            arguments?.putString("moduleCode", saisieEnEdition.moduleCode)
+            arguments?.putString("childObjectType", saisieEnEdition.objectType)
+            saisieEnEdition.parentObjectType?.let { arguments?.putString("parentObjectType", it) }
+            saisieEnEdition.parentIdServeur?.let { arguments?.putInt("parentId", it) }
+            saisieEnEdition.parentUuidLocal?.let { arguments?.putString("parentUuidLocal", it) }
+            valeursPreremplies = chargerValeursPourEdition(saisieEnEdition)
+        }
+
         val titreSite = arguments?.getString("titreSite").orEmpty()
         val moduleCode = arguments?.getString("moduleCode").orEmpty()
+        val modeEdition = editUuid != null
 
-        binding.tvTitre.text = "Nouvelle visite"
+        binding.tvTitre.text = if (modeEdition) "Modifier la saisie" else "Nouvelle visite"
         binding.tvContexte.text = buildString {
             if (titreSite.isNotEmpty()) append("Sur : $titreSite")
             if (moduleCode.isNotEmpty()) {
@@ -62,15 +88,43 @@ class NouvelleVisiteFragment : Fragment() {
         }
 
         binding.btnRetour.setOnClickListener { findNavController().navigateUp() }
+        binding.btnTerminer.setOnClickListener { findNavController().navigateUp() }
+        // Mode "chaîne de saisies" : le parent est lui-même un type de saisie (visite) →
+        // on enchaîne plusieurs obs sur la même visite. Le bouton "Terminer" est visible
+        // dans ce cas pour permettre de sortir du flow. Désactivé en édition : on modifie
+        // une saisie unique, sans enchaînement.
+        val parentTypeArg = arguments?.getString("parentObjectType").orEmpty()
+        val modeChaine = !modeEdition && parentTypeArg.isNotEmpty() &&
+            fr.ariegenature.geonat.network.MonitoringSync.estTypeSaisie(parentTypeArg)
+        when {
+            modeEdition -> binding.btnSubmit.text = "Enregistrer les modifications"
+            modeChaine -> {
+                binding.btnTerminer.visibility = View.VISIBLE
+                binding.btnSubmit.text = "Enregistrer + suivante"
+            }
+        }
 
         renderer = FormulaireRenderer(requireContext(), binding.llFormulaire)
         binding.btnSubmit.setOnClickListener { envoyerVisite() }
+        // Le bouton de submit reste inactif tant que tous les champs obligatoires visibles
+        // ne sont pas remplis. Le renderer notifie via setOnChangement à chaque édition
+        // (saisie texte, sélection, picker, multi-select…) — on remet le bouton à jour.
+        renderer.setOnChangement { majEtatBoutonSubmit() }
 
         if (moduleCode.isEmpty()) {
             renderer.rendre(creerChampsDemo())
             return
         }
         chargerSchemaEtRendre(moduleCode)
+    }
+
+    /** Active/désactive le bouton de submit selon que des champs obligatoires sont vides.
+     *  Délègue le calcul au renderer (seul à connaître la visibilité courante imposée par
+     *  les expressions `hidden` du schéma). */
+    private fun majEtatBoutonSubmit() {
+        if (enCoursEnvoi) return
+        val manquants = renderer.champsObligatoiresManquants()
+        binding.btnSubmit.isEnabled = manquants.isEmpty()
     }
 
     private fun chargerSchemaEtRendre(moduleCode: String) {
@@ -91,12 +145,21 @@ class NouvelleVisiteFragment : Fragment() {
             }
             ajouterDebug("Schéma /config/$moduleCode reçu (${schema.size} type(s)) :\n$recap")
 
-            // Cherche tout type "saisissable" qui ressemble à une visite.
-            val candidatesVisite = setOf("visit", "visite", "passage", "releve", "relevé", "session")
-            val visitSchema = schema.values.firstOrNull { it.type in candidatesVisite && it.properties.isNotEmpty() }
-                ?: schema.values.firstOrNull { it.type in candidatesVisite }
+            // Type cible à créer : priorité au `childObjectType` reçu de l'écran appelant
+            // (le bouton + d'une ligne sait quel type d'enfant créer selon le schéma —
+            // visit pour un point, observation pour une visite, etc.). Fallback sur la
+            // recherche heuristique pour les anciennes routes qui ne passent pas l'arg.
+            val childTypeArg = arguments?.getString("childObjectType")
+            val candidatesVisite = setOf("visit", "visite", "passage", "releve", "relevé", "session",
+                "observation", "obs", "occurrence", "releve", "denombrement")
+            val visitSchema = if (!childTypeArg.isNullOrEmpty()) {
+                schema[childTypeArg]
+            } else {
+                schema.values.firstOrNull { it.type in candidatesVisite && it.properties.isNotEmpty() }
+                    ?: schema.values.firstOrNull { it.type in candidatesVisite }
+            }
             if (visitSchema == null) {
-                ajouterDebug("⚠ Pas de type visit/visite/passage/releve/session dans ce schéma.")
+                ajouterDebug("⚠ Type '${childTypeArg ?: "visit/visite/passage/…"}' absent du schéma.")
                 renderer.rendre(creerChampsDemo())
                 return@launch
             }
@@ -106,6 +169,9 @@ class NouvelleVisiteFragment : Fragment() {
                 renderer.rendre(creerChampsDemo())
                 return@launch
             }
+            // Titre adapté au type courant (visite / observation / …).
+            val labelType = visitSchema.label ?: visitSchema.type.replaceFirstChar { it.uppercase() }
+            binding.tvTitre.text = "Nouvelle $labelType"
             val constructionBrute: FormulaireConstruction = construireFormulaire(visitSchema)
             // Cache le champ de sélection du parent (id_base_site / id_dalle / id_circuit…) :
             // l'utilisateur a déjà choisi son parent via le drill-down qui amène ici, l'interface
@@ -124,7 +190,39 @@ class NouvelleVisiteFragment : Fragment() {
             // Pré-fetch des options pour les champs datalist en parallèle (observers, dataset,
             // nomenclatures…). Auth cachée 5min côté GeoNatureAuth → 1 login pour N fetches.
             val champsAvecOptions = enrichirAvecOptions(config, construction.fields, visitSchema)
-            renderer.rendre(champsAvecOptions)
+            // Patch des champs TAXON : on cherche l'id_list_taxonomy à appliquer en
+            // cascade — niveau object_type → un autre object_type (souvent porté par
+            // "module") → dataset rattaché au module monitoring (id_taxa_list).
+            val viaObjet = visitSchema.idListTaxonomy
+            val viaAutreObjet = schema.values.firstNotNullOfOrNull { it.idListTaxonomy }
+            val viaDatasetLocal = idListeViaDataset(schema, config, moduleCode)
+            val viaDatasetLive = if (viaObjet == null && viaAutreObjet == null && viaDatasetLocal == null)
+                idListeViaDatasetLive(config, moduleCode) else null
+            val idListePartage = viaObjet ?: viaAutreObjet ?: viaDatasetLocal ?: viaDatasetLive
+            ajouterDebug(
+                "idListTaxonomy : visit=$viaObjet, autres=$viaAutreObjet, " +
+                "datasetCache=$viaDatasetLocal, datasetLive=$viaDatasetLive → utilisé=$idListePartage"
+            )
+            val champsAvecTaxon = if (idListePartage != null) champsAvecOptions.map { f ->
+                if (f.viewType == ViewType.TAXON && f.idListeTaxonomieRestreinte == null)
+                    f.copy(idListeTaxonomieRestreinte = idListePartage)
+                else f
+            } else champsAvecOptions
+            // Mode édition : on injecte les valeurs déjà saisies AVANT le rendu, en
+            // typant chaque value selon le ViewType du champ (les pre-remplissages des
+            // creerChamp* attendent des types spécifiques — Int pour TAXON, String pour
+            // DATE/SELECT, List<String> pour SELECT_MULTIPLE, etc.).
+            val champsFinaux = valeursPreremplies?.let { valeurs ->
+                champsAvecTaxon.map { f ->
+                    if (!valeurs.containsKey(f.code)) f
+                    else f.copy(value = typerPourField(f, valeurs[f.code]))
+                }
+            } ?: champsAvecTaxon
+            renderer.rendre(champsFinaux)
+            // Une fois posées dans les champs, les valeurs préremplies n'ont plus à être
+            // ré-injectées (évite par ex. d'écraser une modification utilisateur si on
+            // re-rentre dans ce code via un re-rendu).
+            valeursPreremplies = null
             // Mémorise les métadonnées nécessaires à l'envoi serveur (cf. envoyerVisite).
             visitObjectType = visitSchema.type
             parentIdFieldChamp = parentIdField
@@ -221,55 +319,215 @@ class NouvelleVisiteFragment : Fragment() {
         nouveaux
     }
 
+    /** Cherche un id_taxa_list à partir du dataset rattaché au module monitoring courant.
+     *  Lit le cache local des datasets (peuplé au sync via /api/meta/datasets?fields=modules)
+     *  pour trouver le premier dataset dont `moduleCodes` contient le code du protocole et
+     *  qui porte un `id_taxa_list` non null. Utilisé comme fallback quand le schéma de
+     *  l'object_type ne déclare pas son propre id_list_taxonomy. */
+    private fun idListeViaDataset(
+        @Suppress("UNUSED_PARAMETER") schema: Map<String, MonitoringApi.MonitoringSchemaObjet>,
+        config: GeoNatureConfig,
+        moduleCode: String,
+    ): Int? {
+        val json = config.datasetsCacheJson.takeIf { it.isNotEmpty() } ?: return null
+        return try {
+            val t = object : com.google.gson.reflect.TypeToken<List<fr.ariegenature.geonat.network.GeoNatureDataset>>() {}.type
+            val datasets: List<fr.ariegenature.geonat.network.GeoNatureDataset>? =
+                com.google.gson.Gson().fromJson(json, t)
+            datasets?.firstOrNull { moduleCode in it.moduleCodes && it.idTaxaList != null }?.idTaxaList
+        } catch (_: Exception) { null }
+    }
+
+    /** Fetch live du dataset rattaché au protocole. Notre cache OCCTAX ne contient pas
+     *  les datasets monitoring (filtre `module_code=OCCTAX` au sync) — on doit interroger
+     *  directement le serveur avec `module_code=<protocole>` quand on cherche l'id_taxa_list
+     *  à appliquer aux champs TAXON. Appel synchrone à éviter sur l'UI thread : utilisé
+     *  uniquement comme dernier fallback. */
+    private suspend fun idListeViaDatasetLive(
+        config: GeoNatureConfig,
+        moduleCode: String,
+    ): Int? = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        try {
+            val base = config.urlServeur.trim().trimEnd('/')
+            val auth = fr.ariegenature.geonat.network.GeoNatureAuth.loginAvecCookies(
+                base, config.login, config.motDePasse
+            ) ?: return@withContext null
+            val (token, _, cookies) = auth
+            val variantes = listOf(moduleCode, moduleCode.lowercase()).distinct()
+            for (variant in variantes) {
+                val url = java.net.URL("$base/api/meta/datasets?module_code=$variant&active=true&fields=modules")
+                val conn = url.openConnection() as java.net.HttpURLConnection
+                conn.connectTimeout = 10000
+                conn.readTimeout = 10000
+                conn.setRequestProperty("Accept", "application/json")
+                if (token != null) conn.setRequestProperty("Authorization", "Bearer $token")
+                if (cookies.isNotEmpty()) conn.setRequestProperty("Cookie", cookies)
+                if (conn.responseCode != 200) continue
+                val text = conn.inputStream.bufferedReader().readText()
+                val arr = try { org.json.JSONArray(text) } catch (_: Exception) {
+                    org.json.JSONObject(text).optJSONArray("data") ?: org.json.JSONArray()
+                }
+                for (i in 0 until arr.length()) {
+                    val d = arr.optJSONObject(i) ?: continue
+                    if (!d.has("id_taxa_list") || d.isNull("id_taxa_list")) continue
+                    val id = d.optInt("id_taxa_list", -1)
+                    if (id > 0) return@withContext id
+                }
+            }
+            null
+        } catch (_: Exception) { null }
+    }
+
     private fun ajouterDebug(msg: String) {
         val current = binding.tvContexte.text.toString()
         binding.tvContexte.text = if (current.isEmpty()) msg else "$current\n\n$msg"
     }
 
-    /** Envoie la visite saisie au serveur via [MonitoringApi.envoyerVisite]. Si le schéma
-     *  n'a pas pu être chargé (mode démo), fallback sur l'ancien dialog POC qui affiche
-     *  juste les valeurs collectées. */
+    /** Sauvegarde la saisie localement dans [OutboxMonitoring] — l'envoi serveur est
+     *  exclusivement à la demande depuis l'écran "Saisies en attente". Si le schéma n'a
+     *  pas pu être chargé (mode démo), fallback sur l'ancien dialog POC. */
     private fun envoyerVisite() {
         val moduleCode = arguments?.getString("moduleCode")
         val visitType = visitObjectType
         if (moduleCode.isNullOrEmpty() || visitType.isNullOrEmpty()) {
-            // Mode démo (schéma serveur absent) → on n'a pas de cible serveur à POSTer.
             afficherValeursDemo()
             return
         }
-        if (enCoursEnvoi) return
-        enCoursEnvoi = true
-        binding.btnSubmit.isEnabled = false
         val valeurs = renderer.lireValeurs()
+        // Sérialise les valeurs via JSONObject pour éviter les pertes de type Gson lors
+        // de la déshydratation à l'envoi (Int → Double, etc.).
+        val valeursJson = org.json.JSONObject().apply {
+            for ((code, v) in valeurs) put(code, valeurToJson(v))
+        }.toString()
         val parentField = parentIdFieldChamp
-        val parentId = arguments?.getInt("parentId", -1)?.takeIf { it > 0 }
-        val config = GeoNatureConfig(requireContext())
-        viewLifecycleOwner.lifecycleScope.launch {
-            val res = MonitoringApi.envoyerVisite(
-                config = config,
-                moduleCode = moduleCode,
-                objectType = visitType,
-                parentIdField = parentField,
-                parentId = parentId,
-                valeurs = valeurs,
-                nomsChampsSchema = nomsChampsVisit,
-            )
-            if (!isAdded) return@launch
-            enCoursEnvoi = false
-            binding.btnSubmit.isEnabled = true
-            res.onSuccess { id ->
-                val msg = if (id > 0) "Visite enregistrée (id=$id)" else "Visite enregistrée"
-                android.widget.Toast.makeText(requireContext(), msg, android.widget.Toast.LENGTH_LONG).show()
-                findNavController().navigateUp()
-            }.onFailure { e ->
-                val msg = fr.ariegenature.geonat.network.humaniserErreurReseau(e)
-                AlertDialog.Builder(requireContext())
-                    .setTitle("Envoi échoué")
-                    .setMessage(msg)
-                    .setPositiveButton("OK", null)
-                    .show()
+        val parentIdInt = arguments?.getInt("parentId", -1)?.takeIf { it > 0 }
+        val parentTypeArg = arguments?.getString("parentObjectType")?.takeIf { it.isNotEmpty() }
+
+        // Mode édition : on remplace les valeurs ET on remet la saisie en PENDING (efface
+        // un éventuel ERROR précédent). Pas de reset/chaînage en édition — on remonte d'un
+        // écran pour revenir à la liste des saisies en attente.
+        val uuidEdition = editUuid
+        if (uuidEdition != null) {
+            fr.ariegenature.geonat.store.OutboxMonitoring.mettreAJour(uuidEdition) {
+                it.copy(
+                    valeursJson = valeursJson,
+                    etat = fr.ariegenature.geonat.store.SaisieEnAttente.Etat.PENDING,
+                    messageErreur = null,
+                )
             }
+            android.widget.Toast.makeText(
+                requireContext(), "Modifications enregistrées",
+                android.widget.Toast.LENGTH_SHORT,
+            ).show()
+            findNavController().navigateUp()
+            return
         }
+
+        val saisie = fr.ariegenature.geonat.store.SaisieEnAttente(
+            moduleCode = moduleCode,
+            objectType = visitType,
+            parentObjectType = parentTypeArg,
+            parentIdServeur = parentIdInt,
+            parentUuidLocal = arguments?.getString("parentUuidLocal")?.takeIf { it.isNotEmpty() },
+            parentIdField = parentField,
+            nomsChampsSchema = nomsChampsVisit,
+            valeursJson = valeursJson,
+        )
+        fr.ariegenature.geonat.store.OutboxMonitoring.ajouter(saisie)
+
+        val labelType = visitType.replaceFirstChar { it.uppercase() }
+        android.widget.Toast.makeText(
+            requireContext(),
+            "$labelType enregistré(e) localement — envoi à la demande depuis « Saisies en attente »",
+            android.widget.Toast.LENGTH_LONG,
+        ).show()
+
+        // Mode "chaîne de saisies" : reset du formulaire pour enchaîner une nouvelle obs
+        // sur le même parent. Sortie via "Terminer".
+        val modeChaine = !parentTypeArg.isNullOrEmpty() &&
+            fr.ariegenature.geonat.network.MonitoringSync.estTypeSaisie(parentTypeArg)
+        if (modeChaine) {
+            reinitialiserFormulaire()
+        } else {
+            findNavController().navigateUp()
+        }
+    }
+
+    /** Parse le `valeursJson` d'une SaisieEnAttente en Map<code, valeur> pour pré-remplir
+     *  le formulaire en édition. Les JSONArray sont aplaties en List<String>, JSONObject.NULL
+     *  devient null. Les types scalaires (Int, Boolean, String) sont conservés tels quels. */
+    private fun chargerValeursPourEdition(
+        saisie: fr.ariegenature.geonat.store.SaisieEnAttente,
+    ): Map<String, Any?> {
+        return try {
+            val obj = org.json.JSONObject(saisie.valeursJson)
+            val out = mutableMapOf<String, Any?>()
+            obj.keys().forEach { k ->
+                val v = obj.get(k)
+                out[k] = when (v) {
+                    org.json.JSONObject.NULL -> null
+                    is org.json.JSONArray -> (0 until v.length()).map { v.get(it).toString() }
+                    else -> v
+                }
+            }
+            out
+        } catch (e: Exception) {
+            android.util.Log.w("NouvelleVisiteFragment",
+                "chargerValeursPourEdition échoué pour uuid=${saisie.uuid}", e)
+            emptyMap()
+        }
+    }
+
+    /** Convertit une valeur brute (telle que parsée depuis le JSON outbox) en la forme
+     *  attendue par les `creerChamp*` du renderer pour le pré-remplissage initial. */
+    private fun typerPourField(f: EditableField, v: Any?): Any? {
+        if (v == null) return null
+        return when (f.viewType) {
+            ViewType.TEXT, ViewType.TEXTAREA, ViewType.DATE, ViewType.TIME, ViewType.SELECT ->
+                v.toString()
+            ViewType.NUMBER, ViewType.TAXON -> when (v) {
+                is Int -> v
+                is Long -> v.toInt()
+                is Number -> v.toInt()
+                is String -> v.toIntOrNull()
+                else -> v.toString().toIntOrNull()
+            }
+            ViewType.SELECT_MULTIPLE -> when (v) {
+                is List<*> -> v.map { it.toString() }
+                else -> listOf(v.toString())
+            }
+            ViewType.CHECKBOX -> v
+        }
+    }
+
+    /** Convertit une valeur typée du form renderer en valeur acceptable par JSONObject.put.
+     *  Préserve les types numériques/booléens, sérialise List en JSONArray. Les Strings
+     *  qui ressemblent à des Int (ex. id_nomenclature) sont laissées en String — la
+     *  conversion finale se fait au moment de l'envoi serveur, pas ici. */
+    private fun valeurToJson(v: Any?): Any {
+        return when (v) {
+            null -> org.json.JSONObject.NULL
+            is Boolean -> v
+            is Number -> v
+            is List<*> -> org.json.JSONArray().apply { v.forEach { put(valeurToJson(it)) } }
+            else -> v.toString()
+        }
+    }
+
+    /** Réinitialise le formulaire pour enchaîner une nouvelle saisie (cas observation N+1
+     *  après observation N sur la même visite). On recharge entièrement le schéma : c'est
+     *  un peu plus coûteux qu'un simple reset des inputs, mais ça garantit que les valeurs
+     *  par défaut, les datalists et les pré-sélections (utilisateur connecté, etc.) sont
+     *  reposées de zéro sans contamination de la saisie précédente. */
+    private fun reinitialiserFormulaire() {
+        val moduleCode = arguments?.getString("moduleCode")
+        if (moduleCode.isNullOrEmpty()) {
+            renderer.rendre(creerChampsDemo())
+            return
+        }
+        // Vide le bandeau debug pour ne pas accumuler les logs de l'envoi précédent.
+        binding.tvContexte.text = ""
+        chargerSchemaEtRendre(moduleCode)
     }
 
     /** Fallback démo quand le schéma serveur n'est pas exploitable — affiche les valeurs

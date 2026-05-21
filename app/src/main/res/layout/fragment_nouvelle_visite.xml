@@ -55,6 +55,19 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="24dp"
                 android:text="Enregistrer la visite" />
+
+            <!-- Bouton "Terminer" : visible UNIQUEMENT en mode "chaîne de saisies" (= quand
+                 le parent est lui-même un type de saisie type visite, donc on enchaîne
+                 plusieurs obs sur la même visite). Pour sortir du flow et revenir à la
+                 fiche du parent. -->
+            <Button
+                android:id="@+id/btn_terminer"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="Terminer"
+                android:visibility="gone" />
         </LinearLayout>
     </ScrollView>
 

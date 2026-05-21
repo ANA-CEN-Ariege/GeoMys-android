@@ -64,6 +64,10 @@ class AccueilFragment : Fragment() {
                             findNavController().navigate(R.id.action_accueil_to_sorties)
                             true
                         }
+                        R.id.menu_mes_visites -> {
+                            findNavController().navigate(R.id.action_accueil_to_attente)
+                            true
+                        }
                         R.id.menu_explorer -> {
                             findNavController().navigate(R.id.action_accueil_to_explorer)
                             true

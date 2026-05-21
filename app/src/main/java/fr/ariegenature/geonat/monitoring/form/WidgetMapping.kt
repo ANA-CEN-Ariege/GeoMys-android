@@ -24,9 +24,10 @@ fun mapperViewType(prop: fr.ariegenature.geonat.network.MonitoringApi.Monitoring
         // depuis l'endpoint déclaré dans le schéma (api, keyLabel, keyValue, data_path).
         "datalist", "nomenclature", "observers", "dataset" ->
             if (prop.multiple) ViewType.SELECT_MULTIPLE else ViewType.SELECT
+        // Taxonomie : autocomplete TaxRef sur le cache local (= ce qu'on synchronise au sync).
+        "taxonomy", "taxon", "taxon-input", "taxonomy-input" -> ViewType.TAXON
         // Encore à porter :
         //   medias       → composant galerie + upload de fichiers
-        //   taxonomy     → autocomplete TaxRef (besoin d'un picker dédié)
         //   geometry     → picker sur carte
         //   min_max       → besoin d'un ViewType.MIN_MAX (deux NumberPicker côte à côte)
         else -> null
@@ -64,6 +65,13 @@ fun construireFormulaire(schemaObjet: MonitoringApi.MonitoringSchemaObjet): Form
                 obligatoire = prop.obligatoire,
                 aide = prop.definition,
                 hiddenExpr = prop.hiddenExpr,
+                // Pour les widgets TAXON, on transmet l'id_list_taxonomy déclaré au niveau
+                // de l'object_type (ex. id_list_taxonomy d'une "observation" STOM). Le
+                // renderer filtrera l'autocomplete TaxRef à cette liste. Si l'objet
+                // n'a pas d'id_list_taxonomy, le caller (NouvelleVisiteFragment) peut
+                // patcher avec le idListTaxonomy du module ou le idTaxaList du dataset.
+                idListeTaxonomieRestreinte = if (viewType == ViewType.TAXON)
+                    schemaObjet.idListTaxonomy else null,
             )
         )
     }

@@ -12,6 +12,10 @@ enum class ViewType {
     DATE,
     /** Sélecteur d'heure (TimePickerDialog Material). Valeur retournée : "HH:MM". */
     TIME,
+    /** Autocomplete TaxRef pour saisir un cd_nom. AutoCompleteTextView branché sur le
+     *  cache local TaxRef ; la valeur retournée est le `cd_nom` (Int) résolu via
+     *  TaxRefCache, ou null si le texte ne matche aucun taxon. */
+    TAXON,
     SELECT,
     /** Multi-sélection : utilisé pour les datalists `multiple: true` (observers, dataset multi,
      *  types de sites) ainsi que pour les widgets serveur `multiselect`. Rendu via dialog
@@ -41,4 +45,8 @@ data class EditableField(
     /** Expression `hidden` du schéma serveur (forme Angular `${champ}` etc.). Évaluée
      *  par le renderer pour masquer/afficher dynamiquement selon les autres valeurs. */
     val hiddenExpr: String? = null,
+    /** Pour les champs TAXON : id_liste UsersHub qui restreint les taxons proposés à
+     *  l'autocomplete. Vient typiquement de `schema.idListTaxonomy` du protocole ou du
+     *  `dataset.idTaxaList` rattaché. Null = toutes les espèces du cache TaxRef proposées. */
+    val idListeTaxonomieRestreinte: Int? = null,
 )

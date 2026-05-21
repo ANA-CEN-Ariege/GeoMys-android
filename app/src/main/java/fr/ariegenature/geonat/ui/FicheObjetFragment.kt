@@ -47,6 +47,27 @@ class FicheObjetFragment : Fragment() {
         chargerEtAfficher(moduleCode, objectType, id)
     }
 
+    override fun onResume() {
+        super.onResume()
+        // Au retour d'une saisie locale, on re-render la liste des enfants pour
+        // intégrer la nouvelle entrée outbox. On ne re-fetch pas l'objet serveur si
+        // déjà chargé — juste un re-render léger.
+        val moduleCode = arguments?.getString("moduleCode") ?: return
+        val objectType = arguments?.getString("objectType") ?: return
+        val id = arguments?.getInt("id", -1)?.takeIf { it > 0 } ?: return
+        if (objetCharge != null) {
+            binding.llEnfants.removeAllViews()
+            afficherEnfants(objetCharge!!, schemaCharge, resolverCharge ?: MonitoringApi.LabelResolver())
+        }
+    }
+
+    /** Cache du dernier objet chargé + son schéma + son resolver, pour pouvoir
+     *  re-render la liste des enfants sans refaire les requêtes serveur (utile au
+     *  retour d'une saisie locale via onResume). */
+    private var objetCharge: MonitoringApi.MonitoringObjet? = null
+    private var schemaCharge: Map<String, MonitoringApi.MonitoringSchemaObjet>? = null
+    private var resolverCharge: MonitoringApi.LabelResolver? = null
+
     private fun navUp() { findNavController().navigateUp() }
 
     private fun chargerEtAfficher(moduleCode: String, objectType: String, id: Int) {
@@ -100,6 +121,10 @@ class FicheObjetFragment : Fragment() {
         // Position / Geometry retirée de la fiche : reste accessible via le bouton 👁 carte.
         afficherProprietes(objet, schemaCe, resolver)
         afficherEnfants(objet, schema, resolver)
+        // Mémorise pour le re-render par onResume au retour d'une saisie locale.
+        objetCharge = objet
+        schemaCharge = schema
+        resolverCharge = resolver
     }
 
     /** Affiche les propriétés de l'objet sous forme "Label : valeur".
@@ -167,11 +192,24 @@ class FicheObjetFragment : Fragment() {
         schema: Map<String, MonitoringApi.MonitoringSchemaObjet>?,
         resolver: MonitoringApi.LabelResolver,
     ) {
-        if (objet.enfants.isEmpty()) return
+        // Toujours clear la liste au début : afficherEnfants peut être appelé plusieurs
+        // fois sur la même vue (chargerEtAfficher async + onResume + …) — sans clear,
+        // on cumule les entrées (doublon).
+        binding.llEnfants.removeAllViews()
+        // On affiche la section même si pas d'enfants serveur : il peut y avoir des
+        // saisies locales (outbox) rattachées à cet objet à montrer.
+        val saisiesLocalesIci = saisiesLocalesAttacheesA(objet)
+        android.util.Log.i("FicheObjetFragment",
+            "afficherEnfants : objet=${objet.type}#${objet.id}, enfants serveur=${objet.enfants.keys}, " +
+                "saisies locales=${saisiesLocalesIci.size}")
+        if (objet.enfants.isEmpty() && saisiesLocalesIci.isEmpty()) return
         val ctx = requireContext()
         val density = resources.displayMetrics.density
         objet.enfants.forEach { (type, itemsBruts) ->
-            if (itemsBruts.isEmpty()) return@forEach
+            val saisiesLocalesCeType = saisiesLocalesIci.filter { it.objectType == type }
+            // Skip seulement si pas d'enfant serveur ET pas de saisie locale du même type —
+            // sinon on rend les saisies locales sous un header dédié.
+            if (itemsBruts.isEmpty() && saisiesLocalesCeType.isEmpty()) return@forEach
             val schemaType = schema?.get(type)
             // Re-derive nom via schema.nameField puis trie selon schema.sorts.
             val nf = schemaType?.nameField
@@ -190,7 +228,7 @@ class FicheObjetFragment : Fragment() {
                 fr.ariegenature.geonat.network.MonitoringSync.estTypeSaisie(it)
             }
             val header = TextView(ctx).apply {
-                text = "$typeLabel (${items.size})"
+                text = "$typeLabel (${items.size + saisiesLocalesCeType.size})"
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
                 setTextColor(android.graphics.Color.parseColor("#888888"))
@@ -305,7 +343,144 @@ class FicheObjetFragment : Fragment() {
                 if (btnPlus != null) row.addView(btnPlus)
                 binding.llEnfants.addView(row)
             }
+            // Saisies locales du même type d'enfant (= visites/obs créées hors-ligne et
+            // pas encore envoyées au serveur). On les affiche sous le header existant
+            // avec un look distinctif (fond ambre + icône ⏳) et un bouton + qui permet
+            // d'enchaîner les sous-saisies, en pointant vers le parent local via UUID.
+            // (saisiesLocalesCeType est déjà calculé en début de forEach.)
+            saisiesLocalesCeType.forEach { saisie ->
+                binding.llEnfants.addView(creerLigneSaisieLocale(objet, type, saisie, typeSaisieEnfant, density, borderless))
+            }
         }
+        // Types de saisies locales pas encore présents dans le schéma `objet.enfants`
+        // (cas typique : première visite jamais saisie sur le serveur pour ce parent →
+        // l'API ne déclare pas encore le type d'enfant dans la fiche, mais le schéma le
+        // permet et l'outbox en contient).
+        val typesDejaRendus = objet.enfants.keys.toSet()
+        val saisiesLocalesOrphelines = saisiesLocalesAttacheesA(objet).filterNot { it.objectType in typesDejaRendus }
+        saisiesLocalesOrphelines.groupBy { it.objectType }.forEach { (type, saisies) ->
+            val schemaType = schema?.get(type)
+            val typeLabel = schemaType?.let { it.labelList ?: it.label } ?: labelTypeParDefaut(type)
+            val typeSaisieEnfant = schemaType?.childrenTypes?.firstOrNull {
+                fr.ariegenature.geonat.network.MonitoringSync.estTypeSaisie(it)
+            }
+            val header = TextView(ctx).apply {
+                text = "$typeLabel (${saisies.size})"
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setTextColor(android.graphics.Color.parseColor("#888888"))
+                isAllCaps = true
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    topMargin = (12 * density).toInt()
+                    bottomMargin = (6 * density).toInt()
+                }
+            }
+            binding.llEnfants.addView(header)
+            val borderless = android.util.TypedValue().also {
+                ctx.theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, it, true)
+            }.resourceId
+            saisies.forEach { saisie ->
+                binding.llEnfants.addView(creerLigneSaisieLocale(objet, type, saisie, typeSaisieEnfant, density, borderless))
+            }
+        }
+    }
+
+    /** Retourne les saisies locales (outbox, non SENT) qui sont rattachées à [objet]
+     *  comme parent direct — soit par id serveur, soit par UUID si l'objet courant est
+     *  lui-même une saisie locale (cas peu fréquent, à étendre plus tard). */
+    private fun saisiesLocalesAttacheesA(
+        objet: MonitoringApi.MonitoringObjet,
+    ): List<fr.ariegenature.geonat.store.SaisieEnAttente> {
+        val toutes = fr.ariegenature.geonat.store.OutboxMonitoring.tout()
+        val result = toutes.filter {
+            it.etat != fr.ariegenature.geonat.store.SaisieEnAttente.Etat.SENT &&
+                it.moduleCode == objet.moduleCode &&
+                it.parentObjectType == objet.type &&
+                it.parentIdServeur == objet.id
+        }
+        if (toutes.isNotEmpty() && result.isEmpty()) {
+            // Log diag : si on a des saisies en outbox mais aucune ne matche cet objet,
+            // utile pour identifier les mismatch parentObjectType / parentIdServeur.
+            val recap = toutes.joinToString(", ") {
+                "{type=${it.objectType}, parent=${it.parentObjectType}#${it.parentIdServeur}, etat=${it.etat}}"
+            }
+            android.util.Log.i("FicheObjetFragment",
+                "saisiesLocalesAttacheesA(${objet.type}#${objet.id}, module=${objet.moduleCode}) = 0 / ${toutes.size}. " +
+                    "Saisies présentes : $recap")
+        }
+        return result
+    }
+
+    /** Rend une ligne pour une saisie locale (= dans l'outbox). Look distinctif :
+     *  fond ambre, icône ⏳, sous-titre "Saisie locale du <date>". Bouton + actif pour
+     *  enchaîner des sous-saisies attachées à cette saisie locale via parentUuidLocal. */
+    private fun creerLigneSaisieLocale(
+        objet: MonitoringApi.MonitoringObjet,
+        type: String,
+        saisie: fr.ariegenature.geonat.store.SaisieEnAttente,
+        typeSaisieEnfant: String?,
+        density: Float,
+        borderless: Int,
+    ): View {
+        val ctx = requireContext()
+        val row = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setBackgroundColor(0xFFFFF8E1.toInt())  // ambre très clair
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = (4 * density).toInt() }
+        }
+        val bloc = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding((8 * density).toInt(), (8 * density).toInt(), (8 * density).toInt(), (8 * density).toInt())
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        val icone = when (saisie.etat) {
+            fr.ariegenature.geonat.store.SaisieEnAttente.Etat.ERROR -> "⚠"
+            fr.ariegenature.geonat.store.SaisieEnAttente.Etat.SENDING -> "🚀"
+            else -> "⏳"
+        }
+        val fmt = java.text.SimpleDateFormat("dd/MM HH:mm", java.util.Locale.FRANCE)
+        bloc.addView(TextView(ctx).apply {
+            text = "$icone Saisie locale"
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+        })
+        bloc.addView(TextView(ctx).apply {
+            text = "${fmt.format(java.util.Date(saisie.dateLocale))} · à envoyer"
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            setTextColor(android.graphics.Color.parseColor("#8B6914"))
+        })
+        row.addView(bloc)
+        // Bouton + : pareil que pour les enfants serveur, mais pointe le parent via
+        // parentUuidLocal (l'envoi en cascade côté OutboxEnvoi résoudra l'UUID en id
+        // serveur quand le parent local sera SENT).
+        if (typeSaisieEnfant != null) {
+            val btnPlus = ImageButton(ctx).apply {
+                setImageResource(R.drawable.ic_add)
+                setBackgroundResource(borderless)
+                contentDescription = "Nouvelle saisie"
+                layoutParams = LinearLayout.LayoutParams((40 * density).toInt(), (40 * density).toInt())
+                setOnClickListener {
+                    findNavController().navigate(
+                        R.id.action_fiche_to_nouvelle_visite,
+                        bundleOf(
+                            "moduleCode" to objet.moduleCode,
+                            "parentObjectType" to type,
+                            "parentUuidLocal" to saisie.uuid,
+                            "titreSite" to "Saisie locale du ${fmt.format(java.util.Date(saisie.dateLocale))}",
+                            "childObjectType" to typeSaisieEnfant,
+                        )
+                    )
+                }
+            }
+            row.addView(btnPlus)
+        }
+        return row
     }
 
     /** Label FR pour un nom de champ de gn_module_monitoring (best-effort), sinon clé nettoyée. */

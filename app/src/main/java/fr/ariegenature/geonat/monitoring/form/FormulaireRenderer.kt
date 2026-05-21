@@ -38,6 +38,10 @@ class FormulaireRenderer(
     /** code → conteneur LinearLayout englobant le champ — pour piloter sa visibilité
      *  via les expressions `hidden` du schéma serveur. */
     private val wrappersParCode = linkedMapOf<String, View>()
+    /** Callback notifié à chaque modification d'un champ (saisie, sélection, picker…).
+     *  Utilisé par l'écran appelant pour piloter l'état du bouton de submit selon que
+     *  les champs obligatoires sont remplis ou non. */
+    private var onChangement: (() -> Unit)? = null
 
     fun rendre(fields: List<EditableField>) {
         parent.removeAllViews()
@@ -54,6 +58,41 @@ class FormulaireRenderer(
         // Évaluation initiale + listeners sur tous les éditables pour ré-évaluer en live.
         attacherListenersDynamiques()
         appliquerVisibiliteConditionnelle()
+        // Notifie aussi un état initial pour que le bouton démarre dans le bon mode
+        // dès le rendu (typiquement : disabled tant que les obligatoires sont vides).
+        onChangement?.invoke()
+    }
+
+    /** Enregistre un callback notifié à chaque modification de champ ET immédiatement
+     *  pour positionner l'état initial. Remplace tout callback précédent. */
+    fun setOnChangement(callback: () -> Unit) {
+        onChangement = callback
+        callback()
+    }
+
+    /** Helper interne : recalcule la visibilité conditionnelle ET prévient l'écran appelant.
+     *  À appeler depuis tous les listeners/dialogs/pickers où une valeur de champ change. */
+    private fun notifierChangement() {
+        appliquerVisibiliteConditionnelle()
+        onChangement?.invoke()
+    }
+
+    /** Retourne les codes des champs marqués `obligatoire=true` dont la valeur est vide
+     *  ET qui sont actuellement visibles à l'écran (un champ masqué par une expression
+     *  `hidden` ne doit pas bloquer le submit). Utilisé par l'écran appelant pour
+     *  désactiver le bouton de submit tant qu'il reste des champs requis non remplis. */
+    fun champsObligatoiresManquants(): List<String> {
+        val valeurs = lireValeurs()
+        return fieldsParCode.filter { (code, field) ->
+            if (!field.obligatoire) return@filter false
+            if (wrappersParCode[code]?.visibility == View.GONE) return@filter false
+            when (val v = valeurs[code]) {
+                null -> true
+                is String -> v.isBlank()
+                is List<*> -> v.isEmpty()
+                else -> false
+            }
+        }.keys.toList()
     }
 
     /** Attache un listener "valeur changée" sur chaque éditeur. Chaque modification
@@ -62,11 +101,11 @@ class FormulaireRenderer(
         vuesParCode.forEach { (_, v) ->
             when (v) {
                 is android.widget.CheckBox -> v.setOnCheckedChangeListener { _, _ ->
-                    appliquerVisibiliteConditionnelle()
+                    notifierChangement()
                 }
                 is Spinner -> v.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
                     override fun onItemSelected(p: AdapterView<*>?, view: View?, position: Int, id: Long) {
-                        appliquerVisibiliteConditionnelle()
+                        notifierChangement()
                     }
                     override fun onNothingSelected(p: AdapterView<*>?) {}
                 }
@@ -74,7 +113,7 @@ class FormulaireRenderer(
                     override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
                     override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
                     override fun afterTextChanged(s: android.text.Editable?) {
-                        appliquerVisibiliteConditionnelle()
+                        notifierChangement()
                     }
                 })
                 // DATE et SELECT_MULTIPLE reposent sur des TextView dont la valeur change via
@@ -113,6 +152,11 @@ class FormulaireRenderer(
             ViewType.NUMBER -> (v as EditText).text.toString().toIntOrNull()
             ViewType.DATE -> (v as TextView).tag as? String ?: ""
             ViewType.TIME -> (v as TextView).tag as? String ?: ""
+            ViewType.TAXON -> {
+                // `tag` porte le cd_nom Int résolu via TaxRefCache lors du choix d'une
+                // suggestion. Null si l'utilisateur a tapé un texte qui n'a pas matché.
+                (v as android.widget.AutoCompleteTextView).tag as? Int
+            }
             ViewType.SELECT -> {
                 val sp = v as Spinner
                 val idx = sp.selectedItemPosition
@@ -159,6 +203,7 @@ class FormulaireRenderer(
             )
             ViewType.DATE -> creerChampDate(field)
             ViewType.TIME -> creerChampTime(field)
+            ViewType.TAXON -> creerChampTaxon(field)
             ViewType.SELECT -> creerSpinner(field)
             ViewType.SELECT_MULTIPLE -> creerChampMultiSelect(field)
             ViewType.CHECKBOX -> creerCheckBox(field)
@@ -214,11 +259,18 @@ class FormulaireRenderer(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
             )
         }
-        // Pré-remplir si fourni dans le field.
-        (field.value as? String)?.takeIf { it.length >= 10 }?.let { iso ->
-            tv.tag = iso.substring(0, 10)
-            runCatching { tv.text = fmtAffichage.format(fmtIso.parse(iso.substring(0, 10))!!) }
-            tv.setTextColor(0xFF000000.toInt())
+        // Pré-remplir si fourni dans le field. Le format de stockage est "yyyy-M-d" (sans
+        // zero-padding) donc la longueur varie entre 8 et 10 — on ne peut pas s'appuyer
+        // sur substring(0, 10). On strippe une éventuelle partie heure ISO, puis on parse
+        // en mode lenient (par défaut) qui accepte aussi "yyyy-MM-dd".
+        (field.value as? String)?.takeIf { it.isNotBlank() }?.let { brut ->
+            val sansHeure = brut.substringBefore('T').substringBefore(' ')
+            val date = runCatching { fmtIso.parse(sansHeure) }.getOrNull()
+            if (date != null) {
+                tv.tag = fmtIso.format(date)
+                tv.text = fmtAffichage.format(date)
+                tv.setTextColor(0xFF000000.toInt())
+            }
         }
         tv.setOnClickListener {
             val cal = Calendar.getInstance()
@@ -232,7 +284,7 @@ class FormulaireRenderer(
                     tv.tag = fmtIso.format(cal.time)
                     tv.text = fmtAffichage.format(cal.time)
                     tv.setTextColor(0xFF000000.toInt())
-                    appliquerVisibiliteConditionnelle()
+                    notifierChangement()
                 },
                 cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH),
             ).show()
@@ -273,7 +325,7 @@ class FormulaireRenderer(
                 tv.tag = iso
                 tv.text = iso
                 tv.setTextColor(0xFF000000.toInt())
-                appliquerVisibiliteConditionnelle()
+                notifierChangement()
             }, hInit, mInit, true).show()
         }
         return tv
@@ -286,6 +338,76 @@ class FormulaireRenderer(
         val h = parts.getOrNull(0)?.toIntOrNull()?.takeIf { it in 0..23 } ?: return null
         val m = parts.getOrNull(1)?.toIntOrNull()?.takeIf { it in 0..59 } ?: 0
         return h to m
+    }
+
+    /** Champ TAXON : AutoCompleteTextView branché sur le cache TaxRef local. À la sélection
+     *  d'une suggestion, on résout le `cd_nom` via [fr.ariegenature.geonat.store.TaxRefCache.get]
+     *  et on le stocke dans le `tag` du champ pour la lecture côté envoi. */
+    private fun creerChampTaxon(field: EditableField): android.widget.AutoCompleteTextView {
+        val ac = android.widget.AutoCompleteTextView(ctx).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            )
+            threshold = 2
+            setHint("Tapez le nom du taxon…")
+            // Pré-remplissage si field.value est un cd_nom déjà connu (édition future).
+            (field.value as? Int)?.takeIf { it > 0 }?.let { cd ->
+                val entry = fr.ariegenature.geonat.store.TaxRefCache.entreesParCdNom()[cd]
+                if (entry != null) {
+                    setText(entry.nomFrOriginal ?: entry.sciNom, false)
+                    tag = cd
+                }
+            }
+            (field.value as? String)?.takeIf { it.isNotEmpty() }?.let { setText(it, false) }
+        }
+        // Adapter peuplé en arrière-plan via Thread brut (pas de scope dispo ici). La
+        // liste des taxons est grosse → on évite de bloquer le rendu du formulaire.
+        // Si le schéma déclare une id_list_taxonomy, on restreint l'autocomplete aux
+        // cd_nom qui appartiennent à cette liste (= taxons "autorisés" pour ce protocole).
+        val idListeRestreinte = field.idListeTaxonomieRestreinte
+        Thread {
+            val noms: List<String>
+            val diagDetails: String
+            if (idListeRestreinte != null) {
+                val cdNomsAutorises = fr.ariegenature.geonat.store.TaxRefCache.cdNomsDansListe(idListeRestreinte)
+                noms = fr.ariegenature.geonat.store.TaxRefCache.toutesLesEntrees()
+                    .filter { (_, entry) -> entry.cdNom in cdNomsAutorises }
+                    .keys
+                    .toList()
+                diagDetails = "liste=$idListeRestreinte, ${cdNomsAutorises.size} cd_nom autorisés, ${noms.size} suggestions"
+            } else {
+                noms = fr.ariegenature.geonat.store.TaxRefCache.toutesLesEntrees().keys.toList()
+                diagDetails = "liste=null (toutes), ${noms.size} suggestions"
+            }
+            android.util.Log.i("FormulaireRenderer",
+                "Champ TAXON '${field.code}' → $diagDetails")
+            ac.post {
+                if (ac.isAttachedToWindow) {
+                    val adapter = fr.ariegenature.geonat.ui.saisie.createSpeciesAutocompleteAdapter(ctx, noms)
+                    ac.setAdapter(adapter)
+                }
+            }
+        }.start()
+        // Sélection d'une suggestion : on résout le cd_nom via TaxRefCache et on le stocke.
+        ac.setOnItemClickListener { _, _, _, _ ->
+            val saisi = ac.text?.toString().orEmpty()
+            ac.tag = fr.ariegenature.geonat.store.TaxRefCache.get(saisi)?.cdNom
+            notifierChangement()
+        }
+        // Si l'utilisateur édite manuellement, on invalide le cd_nom (oblige re-sélection).
+        ac.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: android.text.Editable?) {
+                // Re-tente la résolution sur saisie complète (cas où l'utilisateur a tapé
+                // un nom exact sans cliquer une suggestion).
+                val saisi = s?.toString().orEmpty()
+                val resolu = fr.ariegenature.geonat.store.TaxRefCache.get(saisi)?.cdNom
+                if (resolu != ac.tag) ac.tag = resolu
+            }
+        })
+        return ac
     }
 
     /** Champ multi-sélection : TextView cliquable qui ouvre un dialog cases à cocher.
@@ -342,7 +464,7 @@ class FormulaireRenderer(
                         tv.text = liste.joinToString(", ") { it.label }
                         tv.setTextColor(0xFF000000.toInt())
                     }
-                    appliquerVisibiliteConditionnelle()
+                    notifierChangement()
                 }
                 .setNegativeButton("Annuler", null)
                 .show()

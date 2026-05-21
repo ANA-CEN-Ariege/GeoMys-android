@@ -35,8 +35,31 @@ class SuivisFragment : Fragment() {
         gnConfig = GeoNatureConfig(requireContext())
 
         binding.btnRetour.setOnClickListener { findNavController().navigateUp() }
+        binding.btnSaisiesAttente.setOnClickListener {
+            findNavController().navigate(fr.ariegenature.geonat.R.id.action_suivis_to_attente)
+        }
 
         chargerModules()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Rafraîchit le compteur "Saisies en attente" à chaque retour sur l'écran : il
+        // change après une saisie ajoutée, après un envoi réussi, ou une suppression.
+        majBandeauAttente()
+    }
+
+    private fun majBandeauAttente() {
+        val n = fr.ariegenature.geonat.store.OutboxMonitoring.countEnAttente()
+        val total = fr.ariegenature.geonat.store.OutboxMonitoring.tout().size
+        android.util.Log.i("SuivisFragment",
+            "majBandeauAttente : countEnAttente=$n, totalOutbox=$total")
+        if (n > 0) {
+            binding.btnSaisiesAttente.visibility = View.VISIBLE
+            binding.btnSaisiesAttente.text = "Saisies en attente d'envoi ($n)"
+        } else {
+            binding.btnSaisiesAttente.visibility = View.GONE
+        }
     }
 
     private fun chargerModules() {

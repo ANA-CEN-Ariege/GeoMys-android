@@ -39,6 +39,17 @@
             android:textColor="@android:color/darker_gray"
             android:textSize="13sp" />
 
+        <!-- Bandeau cliquable affichant le nombre de saisies en attente d'envoi.
+             Tap → écran SaisiesEnAttenteFragment. Visible uniquement si count > 0. -->
+        <Button
+            android:id="@+id/btn_saisies_attente"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
+            android:text="Saisies en attente d'envoi"
+            android:visibility="gone" />
+
         <ProgressBar
             android:id="@+id/progress_suivis"
             android:layout_width="32dp"

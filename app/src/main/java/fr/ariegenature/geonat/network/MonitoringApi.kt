@@ -317,6 +317,86 @@ object MonitoringApi {
         return if (id > 0) "#$id" else "—"
     }
 
+    /** Résout le label "humain" d'un objet serveur à partir de la fiche en cache local.
+     *  Utilisé par la liste des saisies en attente pour afficher le nom du parent au lieu
+     *  de "#id". Retourne null si la fiche n'a pas été mise en cache, ou si l'heuristique
+     *  ne trouve qu'un fallback "#id". Pas d'appel réseau. */
+    fun labelObjetEnCache(moduleCode: String, objectType: String, id: Int): String? {
+        if (id <= 0) return null
+        val json = MonitoringCache.getJson(MonitoringCache.keyObjet(moduleCode, objectType, id))
+            ?: return null
+        return try {
+            val obj = JSONObject(json)
+            val props = aplatirProprietes(obj.optJSONObject("properties"))
+            val nom = extraireNomHeuristique(props, objectType, id)
+            nom.takeIf { it != "#$id" && it != "—" }
+        } catch (_: Exception) { null }
+    }
+
+    /** Lit dans le schéma cache de [moduleCode] le `label` humain d'un type d'objet (par ex.
+     *  "Site", "Station", "Visite"). Retourne null si le schéma n'est pas en cache ou si le
+     *  type n'a pas de label déclaré. Pas d'appel réseau. */
+    fun labelTypeEnCache(moduleCode: String, type: String): String? {
+        val json = MonitoringCache.getJson(MonitoringCache.keySchema(moduleCode)) ?: return null
+        return try {
+            val v = JSONObject(json).optJSONObject(type) ?: return null
+            v.optString("label", "").takeIf { it.isNotEmpty() }
+                ?: v.optString("label_list", "").takeIf { it.isNotEmpty() }
+        } catch (_: Exception) { null }
+    }
+
+    /** Lit dans le schéma cache de [moduleCode] le couple (parent_type, id_field_name du
+     *  parent) pour un type donné. Retourne null si le schéma n'est pas dispo ou si l'objet
+     *  n'a pas de parent. L'idFieldName est porté par le SCHÉMA DU PARENT — c'est le nom de
+     *  la propriété qui contient l'id du parent dans la fiche enfant. */
+    private fun parentTypeEtIdField(moduleCode: String, type: String): Pair<String, String>? {
+        val json = MonitoringCache.getJson(MonitoringCache.keySchema(moduleCode)) ?: return null
+        return try {
+            val schema = JSONObject(json)
+            val v = schema.optJSONObject(type) ?: return null
+            val parentType = v.optString("parent_type", "")
+                .ifEmpty { v.optJSONArray("parent_types")?.optString(0, "").orEmpty() }
+                .takeIf { it.isNotEmpty() } ?: return null
+            val parentObj = schema.optJSONObject(parentType) ?: return null
+            val idField = parentObj.optString("id_field_name", "")
+                .takeIf { it.isNotEmpty() } ?: return null
+            parentType to idField
+        } catch (_: Exception) { null }
+    }
+
+    /** Remonte la chaîne des ancêtres serveur d'un objet en s'appuyant uniquement sur le
+     *  cache local (schéma + fiches). Retourne la liste des (type, label) du parent direct
+     *  vers le plus haut ancêtre. Liste vide si l'objet n'a pas de parent ou si le cache ne
+     *  permet pas de résoudre la chaîne. Safety net à 5 niveaux pour éviter une boucle. */
+    fun chaineParentsEnCache(
+        moduleCode: String,
+        objectType: String,
+        id: Int,
+    ): List<Pair<String, String>> {
+        val result = mutableListOf<Pair<String, String>>()
+        var typeCourant = objectType
+        var idCourant = id
+        val visites = mutableSetOf<Pair<String, Int>>()
+        var profondeur = 0
+        while (visites.add(typeCourant to idCourant) && profondeur++ < 5) {
+            val (parentType, idField) = parentTypeEtIdField(moduleCode, typeCourant) ?: break
+            val ficheJson = MonitoringCache.getJson(
+                MonitoringCache.keyObjet(moduleCode, typeCourant, idCourant),
+            ) ?: break
+            val parentIdStr = try {
+                val props = aplatirProprietes(JSONObject(ficheJson).optJSONObject("properties"))
+                props[idField]
+            } catch (_: Exception) { null } ?: break
+            val parentId = parentIdStr.toIntOrNull() ?: break
+            val label = labelObjetEnCache(moduleCode, parentType, parentId)
+                ?: "$parentType #$parentId"
+            result.add(parentType to label)
+            typeCourant = parentType
+            idCourant = parentId
+        }
+        return result
+    }
+
     /** Un objet monitoring complet : type + id + propriétés plates + enfants directs (1 niveau).
      *  Sert pour les fiches site/visite/observation, toutes pilotées par le même renderer
      *  générique côté UI.
@@ -1071,10 +1151,20 @@ object MonitoringApi {
     }
 
     private fun normaliserPourJson(v: Any?): Any {
+        if (v === JSONObject.NULL) return JSONObject.NULL
         return when (v) {
             null -> JSONObject.NULL
             is Boolean -> v
             is Number -> v
+            // JSONArray arrive quand on reparse un payload depuis l'outbox. On reconstruit
+            // un nouveau JSONArray en normalisant chaque item — sinon les "121" stockés
+            // en String dans observers restent en String alors que le serveur attend des Int.
+            is JSONArray -> {
+                val out = JSONArray()
+                for (i in 0 until v.length()) out.put(normaliserPourJson(v.opt(i)))
+                out
+            }
+            is JSONObject -> v
             is List<*> -> JSONArray().apply { v.forEach { put(normaliserPourJson(it)) } }
             is String -> {
                 val t = v.trim()

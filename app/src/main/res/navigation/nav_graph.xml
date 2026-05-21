@@ -26,6 +26,9 @@
         <action
             android:id="@+id/action_accueil_to_suivis"
             app:destination="@id/suivisFragment" />
+        <action
+            android:id="@+id/action_accueil_to_attente"
+            app:destination="@id/saisiesEnAttenteFragment" />
     </fragment>
 
     <fragment
@@ -38,6 +41,18 @@
         <action
             android:id="@+id/action_suivis_to_carte"
             app:destination="@id/carteGeometrieFragment" />
+        <action
+            android:id="@+id/action_suivis_to_attente"
+            app:destination="@id/saisiesEnAttenteFragment" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/saisiesEnAttenteFragment"
+        android:name="fr.ariegenature.geonat.ui.SaisiesEnAttenteFragment"
+        android:label="Saisies en attente">
+        <action
+            android:id="@+id/action_attente_to_edition"
+            app:destination="@id/nouvelleVisiteFragment" />
     </fragment>
 
     <fragment
@@ -97,6 +112,10 @@
             android:defaultValue="-1" />
         <argument
             android:name="titreSite"
+            app:argType="string"
+            android:defaultValue="" />
+        <argument
+            android:name="editUuid"
             app:argType="string"
             android:defaultValue="" />
     </fragment>

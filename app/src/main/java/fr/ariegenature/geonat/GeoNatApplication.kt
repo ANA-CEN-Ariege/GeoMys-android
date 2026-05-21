@@ -5,6 +5,7 @@ import fr.ariegenature.geonat.location.LocationTracker
 import fr.ariegenature.geonat.store.MapTileCache
 import fr.ariegenature.geonat.store.MonitoringCache
 import fr.ariegenature.geonat.store.NomenclatureCache
+import fr.ariegenature.geonat.store.OutboxMonitoring
 import fr.ariegenature.geonat.store.TaxRefCache
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -21,6 +22,7 @@ class GeoNatApplication : Application() {
         TaxRefCache.init(this)
         NomenclatureCache.init(this)
         MonitoringCache.init(this)
+        OutboxMonitoring.init(this)
         // OsmDroid doit être initialisé AVANT toute lecture/écriture du cache de tuiles
         // (sinon Configuration.getInstance().osmdroidTileCache déclenche une NPE asynchrone
         // qui crashe l'app via le UncaughtExceptionHandler).

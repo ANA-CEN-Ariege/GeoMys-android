@@ -202,9 +202,15 @@ class FicheObjetFragment : Fragment() {
         android.util.Log.i("FicheObjetFragment",
             "afficherEnfants : objet=${objet.type}#${objet.id}, enfants serveur=${objet.enfants.keys}, " +
                 "saisies locales=${saisiesLocalesIci.size}")
-        if (objet.enfants.isEmpty() && saisiesLocalesIci.isEmpty()) return
+        // Pas de return early si tout est vide : il peut encore y avoir un type d'enfant
+        // déclaré au schéma qui mérite un bouton "+" pour amorcer la première saisie
+        // (cf. 3e passe plus bas).
         val ctx = requireContext()
         val density = resources.displayMetrics.density
+        val borderlessAttr = android.util.TypedValue().also {
+            ctx.theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, it, true)
+        }.resourceId
+        val schemaObjet = schema?.get(objet.type)
         objet.enfants.forEach { (type, itemsBruts) ->
             val saisiesLocalesCeType = saisiesLocalesIci.filter { it.objectType == type }
             // Skip seulement si pas d'enfant serveur ET pas de saisie locale du même type —
@@ -228,25 +234,11 @@ class FicheObjetFragment : Fragment() {
             val typeSaisieEnfant = schemaType?.childrenTypes?.firstOrNull {
                 fr.ariegenature.geonat.network.MonitoringSync.estTypeSaisie(it)
             }
-            val header = TextView(ctx).apply {
-                text = "$typeLabel (${items.size + saisiesLocalesCeType.size})"
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
-                setTypeface(typeface, android.graphics.Typeface.BOLD)
-                setTextColor(android.graphics.Color.parseColor("#888888"))
-                isAllCaps = true
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply {
-                    topMargin = (12 * density).toInt()
-                    bottomMargin = (6 * density).toInt()
-                }
-            }
-            binding.llEnfants.addView(header)
-
-            val borderless = android.util.TypedValue().also {
-                ctx.theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, it, true)
-            }.resourceId
+            binding.llEnfants.addView(creerHeaderType(
+                type, typeLabel, items.size + saisiesLocalesCeType.size,
+                objet, schemaObjet, density, borderlessAttr,
+            ))
+            val borderless = borderlessAttr
             items.forEach { e ->
                 val nom = e.nom
                 val row = LinearLayout(ctx).apply {
@@ -365,28 +357,90 @@ class FicheObjetFragment : Fragment() {
             val typeSaisieEnfant = schemaType?.childrenTypes?.firstOrNull {
                 fr.ariegenature.geonat.network.MonitoringSync.estTypeSaisie(it)
             }
-            val header = TextView(ctx).apply {
-                text = "$typeLabel (${saisies.size})"
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
-                setTypeface(typeface, android.graphics.Typeface.BOLD)
-                setTextColor(android.graphics.Color.parseColor("#888888"))
-                isAllCaps = true
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply {
-                    topMargin = (12 * density).toInt()
-                    bottomMargin = (6 * density).toInt()
-                }
-            }
-            binding.llEnfants.addView(header)
-            val borderless = android.util.TypedValue().also {
-                ctx.theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, it, true)
-            }.resourceId
+            binding.llEnfants.addView(creerHeaderType(
+                type, typeLabel, saisies.size, objet, schemaObjet, density, borderlessAttr,
+            ))
             saisies.forEach { saisie ->
-                binding.llEnfants.addView(creerLigneSaisieLocale(objet, type, saisie, typeSaisieEnfant, density, borderless))
+                binding.llEnfants.addView(
+                    creerLigneSaisieLocale(objet, type, saisie, typeSaisieEnfant, density, borderlessAttr),
+                )
             }
         }
+
+        // 3e passe — types de saisie déclarés au schéma mais sans aucune occurrence (ni
+        // côté serveur, ni en outbox). Ex : un point d'écoute STOM sans visite encore.
+        // On rend juste un header "(0)" — le bouton "+" du header (cf. creerHeaderType)
+        // suffit pour amorcer la première saisie.
+        val typesDejaAffiches = objet.enfants.keys + saisiesLocalesOrphelines.map { it.objectType }.toSet()
+        val tousChildren = schemaObjet?.childrenTypes.orEmpty()
+        val typesSaisieAttendus = tousChildren.filter { ct ->
+            fr.ariegenature.geonat.network.MonitoringSync.estTypeSaisie(ct) && ct !in typesDejaAffiches
+        }
+        typesSaisieAttendus.forEach { type ->
+            val schemaType = schema?.get(type)
+            val typeLabel = schemaType?.let { it.labelList ?: it.label } ?: labelTypeParDefaut(type)
+            binding.llEnfants.addView(creerHeaderType(
+                type, typeLabel, 0, objet, schemaObjet, density, borderlessAttr,
+            ))
+        }
+    }
+
+    /** Header d'un type d'enfant ("Visites (3)") avec, à droite, un bouton "+ nouvelle
+     *  saisie" quand [type] est un type de saisie (visite/observation/relevé…). Le clic
+     *  ouvre la création avec le type courant comme parent — la nouvelle entrée sera
+     *  donc un sibling des items déjà listés sous ce header. */
+    private fun creerHeaderType(
+        type: String,
+        label: String,
+        count: Int,
+        objet: MonitoringApi.MonitoringObjet,
+        schemaObjetParent: MonitoringApi.MonitoringSchemaObjet?,
+        density: Float,
+        borderlessId: Int,
+    ): View {
+        val ctx = requireContext()
+        val row = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply {
+                topMargin = (12 * density).toInt()
+                bottomMargin = (6 * density).toInt()
+            }
+        }
+        row.addView(TextView(ctx).apply {
+            text = "$label ($count)"
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setTextColor(android.graphics.Color.parseColor("#888888"))
+            isAllCaps = true
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        })
+        if (fr.ariegenature.geonat.network.MonitoringSync.estTypeSaisie(type)) {
+            row.addView(ImageButton(ctx).apply {
+                setImageResource(R.drawable.ic_add)
+                setBackgroundResource(borderlessId)
+                contentDescription = "Nouvelle $label"
+                layoutParams = LinearLayout.LayoutParams(
+                    (40 * density).toInt(), (40 * density).toInt(),
+                )
+                setOnClickListener {
+                    findNavController().navigate(
+                        R.id.action_fiche_to_nouvelle_visite,
+                        bundleOf(
+                            "moduleCode" to objet.moduleCode,
+                            "parentObjectType" to objet.type,
+                            "parentId" to objet.id,
+                            "titreSite" to (schemaObjetParent?.nameField?.let { objet.proprietes[it] } ?: ""),
+                            "childObjectType" to type,
+                        ),
+                    )
+                }
+            })
+        }
+        return row
     }
 
     /** Retourne les saisies locales (outbox, non SENT) qui sont rattachées à [objet]
@@ -535,17 +589,12 @@ class FicheObjetFragment : Fragment() {
             .joinToString(" · ")
     }
 
-    private fun labelTypeParDefaut(type: String): String = when (type) {
-        "site" -> "Site"
-        "sites_group" -> "Site (groupe)"
-        "transect" -> "Transect"
-        "station" -> "Station"
-        "point_ecoute" -> "Point d'écoute"
-        "quadrat" -> "Quadrat"
-        "visit", "visite" -> "Visite"
-        "observation" -> "Observation"
-        else -> type.replaceFirstChar { it.uppercase() }
-    }
+    /** Fallback générique quand le schéma serveur ne fournit pas de `label`. On capitalise
+     *  le code technique et on remplace les `_` par des espaces — pas de mapping FR figé
+     *  qui dépendrait des conventions d'un protocole. C'est à l'admin GeoNature de poser
+     *  un label propre côté schéma si le rendu par défaut ne convient pas. */
+    private fun labelTypeParDefaut(type: String): String =
+        type.replace('_', ' ').replaceFirstChar { it.uppercase() }
 
     override fun onDestroyView() {
         super.onDestroyView()

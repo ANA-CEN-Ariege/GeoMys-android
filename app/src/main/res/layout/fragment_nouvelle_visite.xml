@@ -32,16 +32,6 @@
                 android:textColor="@android:color/darker_gray"
                 android:textSize="13sp" />
 
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="16dp"
-                android:background="#FFFF9800"
-                android:padding="8dp"
-                android:text="POC démo — champs en dur, pas de POST. Submit affiche les valeurs."
-                android:textColor="#FFFFFFFF"
-                android:textSize="12sp" />
-
             <LinearLayout
                 android:id="@+id/ll_formulaire"
                 android:layout_width="match_parent"

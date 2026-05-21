@@ -76,6 +76,9 @@
         <action
             android:id="@+id/action_suivi_to_carte"
             app:destination="@id/carteGeometrieFragment" />
+        <action
+            android:id="@+id/action_suivi_to_nouvelle_visite"
+            app:destination="@id/nouvelleVisiteFragment" />
     </fragment>
 
     <fragment

@@ -135,7 +135,8 @@ class CarteGeometrieFragment : Fragment() {
     }
 
     /** Carte d'un protocole entier : tous les sites macro avec leur géométrie. Identifie les
-     *  types macro via le schéma (children de "module") ou heuristique sites_group/site. */
+     *  types macro via le schéma (children de "module"), avec fallback purement structurel
+     *  qui masque les types dont le parent est lui-même dans la liste. */
     private suspend fun chargerProtocole(config: GeoNatureConfig, moduleCode: String) {
         val enfantsParType = try {
             MonitoringApi.chargerEnfants(config, moduleCode)
@@ -152,7 +153,15 @@ class CarteGeometrieFragment : Fragment() {
         val rootsSchema = schema?.get("module")?.childrenTypes.orEmpty()
         val typesAfficher = when {
             rootsSchema.isNotEmpty() -> rootsSchema.filter { it in enfantsParType.keys }
-            enfantsParType.containsKey("sites_group") -> enfantsParType.keys.filter { it != "site" }
+            schema != null -> {
+                // Retire les types dont le parent est lui-même présent (les enfants
+                // ressortiront via drill-down sur leur parent macro).
+                val enfants = enfantsParType.keys.filter { type ->
+                    val pt = schema[type]?.parentType
+                    pt != null && pt != "module" && pt in enfantsParType.keys
+                }.toSet()
+                enfantsParType.keys.filter { it !in enfants }
+            }
             else -> enfantsParType.keys.toList()
         }
 

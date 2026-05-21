@@ -152,55 +152,48 @@ class SuiviDetailFragment : Fragment() {
     }
 
     /** Sélectionne les object_types à afficher dans la liste principale et dans le résumé.
-     *  Filtre robuste par `parent_type` : un type est macro s'il déclare le module comme parent.
-     *  Ça reste cohérent même si l'API renvoie en `children` à la fois sites_group ET site (cas
-     *  STOM observé) — seul sites_group est gardé car site a `parent_types: ["sites_group"]`.
-     *  Sans schéma, fallback heuristique. */
+     *  Filtre par `parent_type` : un type est macro s'il déclare le module comme parent.
+     *  Si l'API renvoie à plat des types avec parent commun (cas observé : sites_group + site
+     *  d'un protocole STOM-like), on garde uniquement les "racines" et on masque les enfants
+     *  qui apparaîtront via drill-down sur leur parent. */
     private fun typesAfficherEnListe(
         typesPresents: List<String>,
         schema: Map<String, MonitoringApi.MonitoringSchemaObjet>?,
     ): List<String> {
-        if (schema != null) {
-            val typesMacro = typesPresents.filter { type ->
-                schema[type]?.parentType == "module"
-            }
-            if (typesMacro.isNotEmpty()) return typesMacro
+        if (schema == null) return typesPresents
+        // Préférence : tout type qui déclare le module comme parent.
+        val typesMacro = typesPresents.filter { schema[it]?.parentType == "module" }
+        if (typesMacro.isNotEmpty()) return typesMacro
+        // Fallback purement structurel : retire les types dont le parent est lui-même présent
+        // dans la liste — ils ressortiront via drill-down. Plus de hardcoding sites_group/site.
+        val typesEnfants = typesPresents.filter { type ->
+            val pt = schema[type]?.parentType
+            pt != null && pt != "module" && pt in typesPresents
         }
-        if ("sites_group" in typesPresents) return typesPresents.filter { it != "site" }
-        return typesPresents
+        return if (typesEnfants.isEmpty()) typesPresents else typesPresents - typesEnfants.toSet()
     }
 
-    /** Ordonne les types pour le résumé : si schéma dispo, parents avant enfants (DAG plat) ;
-     *  sinon force sites_group avant site (heuristique). */
+    /** Ordonne les types pour le résumé : si schéma dispo, parents avant enfants (DAG plat).
+     *  Sans schéma, ordre d'origine — sans hypothèse sur les noms de types. */
     private fun ordonnerTypes(
         types: List<String>,
         schema: Map<String, MonitoringApi.MonitoringSchemaObjet>?,
     ): List<String> {
-        if (schema != null) {
-            val racines = schema["module"]?.childrenTypes.orEmpty().filter { it in types }
-            val reste = types.filter { it !in racines }
-            return racines + reste
-        }
-        if ("sites_group" in types && "site" in types) {
-            return listOf("sites_group", "site") + types.filter { it != "sites_group" && it != "site" }
-        }
-        return types
+        if (schema == null) return types
+        val racines = schema["module"]?.childrenTypes.orEmpty().filter { it in types }
+        val reste = types.filter { it !in racines }
+        return racines + reste
     }
 
-    /** Libellé d'un object_type : schéma serveur en priorité, sinon heuristique, sinon mapping
-     *  FR par défaut, sinon clé brute capitalisée. */
+    /** Libellé d'un object_type : schéma serveur en priorité (label_list pour les listes),
+     *  sinon fallback générique. Plus de mapping FR figé ni de logique sites_group/site. */
     private fun labelPour(
         type: String,
         schema: Map<String, MonitoringApi.MonitoringSchemaObjet>?,
-        counts: Map<String, Int>,
+        @Suppress("UNUSED_PARAMETER") counts: Map<String, Int>,
     ): String {
         schema?.get(type)?.let { s ->
             (s.labelList ?: s.label)?.takeIf { it.isNotEmpty() }?.let { return it }
-        }
-        // Heuristique : sites_group = macro, site = leaf quand les deux coexistent
-        if (counts.containsKey("sites_group") && counts.containsKey("site")) {
-            if (type == "sites_group") return "Sites"
-            if (type == "site") return "Points"
         }
         return labelTypeParDefaut(type)
     }
@@ -236,17 +229,12 @@ class SuiviDetailFragment : Fragment() {
         return v
     }
 
-    private fun labelTypeParDefaut(type: String): String = when (type) {
-        "site" -> "Sites"
-        "sites_group" -> "Groupes de sites"
-        "transect" -> "Transects"
-        "station" -> "Stations"
-        "point_ecoute" -> "Points d'écoute"
-        "quadrat" -> "Quadrats"
-        "visit", "visite" -> "Visites"
-        "observation" -> "Observations"
-        else -> type.replaceFirstChar { it.uppercase() }
-    }
+    /** Fallback générique quand le schéma serveur ne fournit pas de `label_list`. Capitalise
+     *  le code technique et remplace les `_` par des espaces — pas de mapping FR figé qui
+     *  dépendrait des conventions d'un protocole. Pour un rendu propre, c'est à l'admin
+     *  GeoNature de poser un `label_list` côté schéma. */
+    private fun labelTypeParDefaut(type: String): String =
+        type.replace('_', ' ').replaceFirstChar { it.uppercase() }
 
     private fun afficherListeSites(
         moduleCode: String,
@@ -283,6 +271,13 @@ class SuiviDetailFragment : Fragment() {
                 binding.llSites.addView(header)
             }
             val schemaType = schema?.get(type)
+            // Type d'enfant à créer via "+" sur chaque ligne : on cherche dans les
+            // childrenTypes de ce type un type qui se comporte comme une saisie. Pour un
+            // protocole `Site → Observation`, le "+" d'un site lance une observation ;
+            // pour un protocole `Site → Visite`, il lance une visite.
+            val typeSaisieEnfant = schemaType?.childrenTypes?.firstOrNull {
+                fr.ariegenature.geonat.network.MonitoringSync.estTypeSaisie(it)
+            }
             items.forEach { e ->
                 val row = LinearLayout(ctx).apply {
                     orientation = LinearLayout.HORIZONTAL
@@ -357,6 +352,34 @@ class SuiviDetailFragment : Fragment() {
                 row.addView(bloc)
                 row.addView(btnInfo)
                 if (btnCarte != null) row.addView(btnCarte)
+                // Bouton "+" pour créer directement une saisie (visite ou obs selon le
+                // protocole) sans avoir à drill-down dans la fiche du site. Affiché
+                // uniquement si l'object_type a un childrenType de type saisie.
+                if (typeSaisieEnfant != null) {
+                    val btnPlus = ImageButton(ctx).apply {
+                        setImageResource(R.drawable.ic_add)
+                        setBackgroundResource(borderless)
+                        contentDescription = "Nouvelle saisie"
+                        layoutParams = LinearLayout.LayoutParams(
+                            (40 * density).toInt(), (40 * density).toInt(),
+                        )
+                        setOnClickListener {
+                            if (e.id > 0) {
+                                findNavController().navigate(
+                                    R.id.action_suivi_to_nouvelle_visite,
+                                    bundleOf(
+                                        "moduleCode" to moduleCode,
+                                        "parentObjectType" to type,
+                                        "parentId" to e.id,
+                                        "titreSite" to e.nom,
+                                        "childObjectType" to typeSaisieEnfant,
+                                    )
+                                )
+                            }
+                        }
+                    }
+                    row.addView(btnPlus)
+                }
                 binding.llSites.addView(row)
             }
         }

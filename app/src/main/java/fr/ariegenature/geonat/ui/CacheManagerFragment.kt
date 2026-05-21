@@ -6,9 +6,12 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import androidx.core.content.ContextCompat
+import androidx.core.graphics.drawable.toBitmap
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
+import fr.ariegenature.geonat.R
 import fr.ariegenature.geonat.databinding.FragmentCacheManagerBinding
 import fr.ariegenature.geonat.network.MonitoringApi
 import fr.ariegenature.geonat.store.GeoNatureConfig
@@ -28,6 +31,8 @@ import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Overlay
 import org.osmdroid.views.overlay.Polygon
 import org.osmdroid.views.overlay.Polyline
+import org.osmdroid.views.overlay.mylocation.GpsMyLocationProvider
+import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
 import kotlin.math.cos
 import kotlin.math.max
 import kotlin.math.min
@@ -49,6 +54,7 @@ class CacheManagerFragment : Fragment() {
     /** Overlays posés par la dernière sélection de protocole — gardés pour pouvoir les
      *  retirer proprement avant d'en afficher d'autres (changement de protocole). */
     private val overlaysProtocole = mutableListOf<Overlay>()
+    private var locationOverlay: MyLocationNewOverlay? = null
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         Configuration.getInstance().userAgentValue = requireContext().packageName
@@ -74,6 +80,18 @@ class CacheManagerFragment : Fragment() {
         // Vue initiale : centre Ariège (couverture de l'usage principal de l'app).
         binding.map.controller.setZoom(12.0)
         binding.map.controller.setCenter(GeoPoint(42.96, 1.43))
+
+        // Position GPS du téléphone — pour que l'utilisateur sache où il se trouve par
+        // rapport à la zone qu'il s'apprête à mettre en cache.
+        locationOverlay = MyLocationNewOverlay(GpsMyLocationProvider(requireContext()), binding.map).apply {
+            setPersonIcon(ContextCompat.getDrawable(requireContext(), R.drawable.ic_gps_blue_dot)?.toBitmap())
+            setPersonHotspot(10f, 10f)
+            setDirectionArrow(
+                ContextCompat.getDrawable(requireContext(), R.drawable.ic_gps_blue_dot)?.toBitmap(),
+                ContextCompat.getDrawable(requireContext(), R.drawable.ic_gps_blue_dot)?.toBitmap(),
+            )
+        }
+        binding.map.overlays.add(locationOverlay)
 
         binding.btnRetour.setOnClickListener { findNavController().navigateUp() }
         binding.btnFondCarte.setOnClickListener {
@@ -493,11 +511,13 @@ class CacheManagerFragment : Fragment() {
     override fun onResume() {
         super.onResume()
         binding.map.onResume()
+        locationOverlay?.enableMyLocation()
     }
 
     override fun onPause() {
         super.onPause()
         binding.map.onPause()
+        locationOverlay?.disableMyLocation()
     }
 
     override fun onDestroyView() {

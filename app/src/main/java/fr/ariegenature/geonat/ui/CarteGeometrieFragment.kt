@@ -6,6 +6,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.core.content.ContextCompat
+import androidx.core.graphics.drawable.toBitmap
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
@@ -25,6 +26,8 @@ import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polygon
 import org.osmdroid.views.overlay.Polyline
+import org.osmdroid.views.overlay.mylocation.GpsMyLocationProvider
+import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
 
 /** Affiche la géométrie d'un objet monitoring (Point, LineString, Polygon, MultiPolygon)
  *  sur une carte plein écran. Pas dépendant du type d'objet : on rend ce qui arrive. */
@@ -32,6 +35,7 @@ class CarteGeometrieFragment : Fragment() {
     private var _binding: FragmentCarteGeometrieBinding? = null
     private val binding get() = _binding!!
     private var fondCarte = FondCarte.TOPO
+    private var locationOverlay: MyLocationNewOverlay? = null
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         Configuration.getInstance().userAgentValue = requireContext().packageName
@@ -55,6 +59,19 @@ class CarteGeometrieFragment : Fragment() {
 
         binding.map.setTileSource(tileSourcePour(fondCarte))
         binding.map.setMultiTouchControls(true)
+
+        // Position GPS du téléphone : même look bleu que les autres cartes de l'app
+        // (TraceFragment, SaisieRapideFragment). N'auto-centre PAS sur la position courante
+        // — on garde le centrage sur la géom de l'objet (cf. recadrer plus bas).
+        locationOverlay = MyLocationNewOverlay(GpsMyLocationProvider(requireContext()), binding.map).apply {
+            setPersonIcon(ContextCompat.getDrawable(requireContext(), R.drawable.ic_gps_blue_dot)?.toBitmap())
+            setPersonHotspot(10f, 10f)
+            setDirectionArrow(
+                ContextCompat.getDrawable(requireContext(), R.drawable.ic_gps_blue_dot)?.toBitmap(),
+                ContextCompat.getDrawable(requireContext(), R.drawable.ic_gps_blue_dot)?.toBitmap(),
+            )
+        }
+        binding.map.overlays.add(locationOverlay)
 
         binding.btnRetour.setOnClickListener { findNavController().navigateUp() }
         binding.btnFondCarte.setOnClickListener {
@@ -338,22 +355,45 @@ class CarteGeometrieFragment : Fragment() {
     }
 
     private fun recadrer(points: List<GeoPoint>) {
-        if (points.size == 1) {
-            binding.map.controller.setCenter(points[0])
-            binding.map.controller.setZoom(16.0)
-            return
-        }
-        val box = BoundingBox.fromGeoPoints(points)
+        if (points.isEmpty()) return
+        // On utilise zoomToBoundingBox dans tous les cas (même 1 point) car c'est la seule
+        // méthode qui force fiablement un layout/refresh avec le bon centre+zoom dès le
+        // 1er rendu. setCenter+setZoom directs peuvent être ignorés si la MapView n'a pas
+        // encore été mesurée au moment du post.
+        val box = if (points.size == 1) {
+            // Box artificielle autour du point unique : ~440 m de côté → zoom ~15-16.
+            val pt = points[0]
+            val offset = 0.002  // ≈ 220 m N-S, 165 m E-W aux latitudes tempérées
+            BoundingBox(
+                pt.latitude + offset, pt.longitude + offset,
+                pt.latitude - offset, pt.longitude - offset,
+            )
+        } else BoundingBox.fromGeoPoints(points)
         val degenere = (box.latNorth - box.latSouth) < 0.0001 && (box.lonEast - box.lonWest) < 0.0001
         if (degenere) {
-            binding.map.controller.setCenter(points[0])
-            binding.map.controller.setZoom(16.0)
+            val pt = points[0]
+            val offset = 0.002
+            val fallback = BoundingBox(
+                pt.latitude + offset, pt.longitude + offset,
+                pt.latitude - offset, pt.longitude - offset,
+            )
+            binding.map.zoomToBoundingBox(fallback, false)
         } else {
             binding.map.zoomToBoundingBox(box.increaseByScale(1.3f), false)
         }
     }
 
-    override fun onResume() { super.onResume(); binding.map.onResume() }
-    override fun onPause() { super.onPause(); binding.map.onPause() }
+    override fun onResume() {
+        super.onResume()
+        binding.map.onResume()
+        // Démarre la souscription au GPS uniquement quand on est à l'écran (coupe quand on
+        // sort pour libérer le récepteur).
+        locationOverlay?.enableMyLocation()
+    }
+    override fun onPause() {
+        super.onPause()
+        binding.map.onPause()
+        locationOverlay?.disableMyLocation()
+    }
     override fun onDestroyView() { super.onDestroyView(); _binding = null }
 }

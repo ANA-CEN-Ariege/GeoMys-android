@@ -161,6 +161,10 @@ object MonitoringApi {
          *  Évaluée à la volée par le renderer pour masquer/afficher dynamiquement le champ
          *  en fonction des autres valeurs. Null = toujours visible. */
         val hiddenExpr: String? = null,
+        /** `hidden: true` côté schéma serveur : champ technique caché à l'UI (id_base_visit,
+         *  id_module, medias, nb_observations…). Inclus dans le payload POST avec valeur
+         *  null sinon le serveur Marshmallow plante. */
+        val hiddenBool: Boolean = false,
     )
 
     /** Schéma d'un object_type déclaré par un protocole dans son `config/objects.json` serveur,
@@ -610,17 +614,22 @@ object MonitoringApi {
             val nom = it.next()
             val v = propsObj.optJSONObject(nom) ?: continue
             // `hidden` peut être :
-            //  - Boolean true  → champ totalement caché (id technique, FK), on skip.
+            //  - Boolean true  → champ technique masqué à l'UI (id_base_visit, id_module,
+            //    medias, nb_observations…). On le CONSERVE quand même dans le schéma car
+            //    le serveur Marshmallow l'attend dans le payload POST avec valeur null —
+            //    sans ça, un 500 silencieux. C'est `construireFormulaire` qui filtre l'UI.
             //  - Boolean false → champ visible inconditionnellement.
             //  - String        → expression d'affichage dynamique (à évaluer côté UI).
             val hiddenBrut = v.opt("hidden")
-            if (hiddenBrut is Boolean && hiddenBrut) continue
+            val hiddenBool = hiddenBrut is Boolean && hiddenBrut
             val hiddenExpr = (hiddenBrut as? String)
                 ?: v.opt("display")?.takeIf { it is String } as? String
             val typeWidget = v.optString("type_widget", "")
                 .ifEmpty { v.optString("widget", "") }
                 .ifEmpty { v.optString("type", "") }
-            if (typeWidget.isEmpty()) continue
+            // Un champ sans `type_widget` mais hidden=true est conservé (technique, payload-only).
+            // Sans type_widget ni hidden:true → on skip (entrée parasite).
+            if (typeWidget.isEmpty() && !hiddenBool) continue
             val label = v.optString("attribut_label", "")
                 .ifEmpty { v.optString("label", "") }
                 .ifEmpty { nom.replace('_', ' ').replaceFirstChar { c -> c.uppercase() } }
@@ -700,6 +709,7 @@ object MonitoringApi {
                 defaultValue = defaultValue,
                 defaultObjet = defaultObjet.toMap(),
                 hiddenExpr = hiddenExpr,
+                hiddenBool = hiddenBool,
                 filtres = filtresMap.toMap(),
                 definition = v.optString("definition", "").takeIf { it.isNotEmpty() },
                 moduleCodeFiltre = v.optString("module_code", "").takeIf { it.isNotEmpty() },
@@ -880,5 +890,197 @@ object MonitoringApi {
             }
         }
         filtrees.sortedBy { it.label.lowercase() }
+    }
+
+    /** Envoie une nouvelle visite (ou tout objet monitoring "saisissable") sur le serveur.
+     *  Endpoint : `POST /api/monitorings/object/<moduleCode>/<objectType>`.
+     *  Le body est un GeoJSON-like `{geometry, properties}` ; pour les visites, la
+     *  géométrie est généralement héritée du parent côté serveur — on n'envoie donc pas
+     *  de `geometry` par défaut.
+     *
+     *  [parentIdField] / [parentId] : nom du champ FK vers le parent (ex `id_base_site`)
+     *  et son id. Posés directement dans `properties` (le serveur les attend là, pas
+     *  dans l'URL).
+     *
+     *  [valeurs] : map code_propriété → valeur typée renvoyée par
+     *  [fr.ariegenature.geonat.monitoring.form.FormulaireRenderer.lireValeurs]. Les types
+     *  attendus côté serveur sont déduits ici par best-effort :
+     *  - Int / Long / Number → number JSON
+     *  - Boolean → boolean JSON
+     *  - List<*> → JSONArray (cas SELECT_MULTIPLE, observers, etc.)
+     *  - String → tentative parse Int sinon String JSON (les ids nomenclature/dataset
+     *    voyagent en String depuis le renderer alors que le serveur les veut en number).
+     *
+     *  Retourne le `id` du nouvel objet créé via Result.success, ou une exception via
+     *  Result.failure (auth, HTTP, parse). */
+    suspend fun envoyerVisite(
+        config: GeoNatureConfig,
+        moduleCode: String,
+        objectType: String,
+        parentIdField: String?,
+        parentId: Int?,
+        valeurs: Map<String, Any?>,
+        nomsChampsSchema: Collection<String> = emptyList(),
+    ): Result<Int> = withContext(Dispatchers.IO) {
+        runCatching {
+            val base = config.urlServeur.trim().trimEnd('/')
+            val auth = GeoNatureAuth.loginAvecCookies(base, config.login, config.motDePasse)
+                ?: throw GNErreur.AuthEchouee(401)
+            val (token, _, cookies) = auth
+
+            val properties = JSONObject()
+            // Lien au parent : injecté dans properties (le sélecteur de parent est masqué
+            // côté UI car déjà choisi par le drill-down qui amène ici).
+            if (!parentIdField.isNullOrEmpty() && parentId != null && parentId > 0) {
+                properties.put(parentIdField, parentId)
+            }
+            for ((code, brut) in valeurs) {
+                properties.put(code, normaliserPourJson(brut))
+            }
+            // `id_digitiser` : le serveur attend l'id_role de l'utilisateur qui enregistre.
+            // Contrainte NOT NULL côté DB monitoring → un 500 silencieux sans ce champ.
+            val idRole = config.idRoleUtilisateur.takeIf { it > 0 }
+            if (idRole != null && !properties.has("id_digitiser")) {
+                properties.put("id_digitiser", idRole)
+            }
+            // `id_dataset` : NOT NULL côté table monitoring (FK gn_meta.t_datasets).
+            // ⚠ Le dataset OCCTAX configuré dans l'app n'est PAS forcément valide ici —
+            // chaque protocole monitoring a son propre dataset rattaché. Si le schéma ne
+            // l'expose pas, on cherche dans le cache local le premier dataset rattaché
+            // au module courant (champ `moduleCodes` du cache datasets, peuplé au sync
+            // via /api/meta/datasets?fields=modules). Fallback sur le dataset OCCTAX global
+            // seulement si rien trouvé (instances anciennes sans la relation).
+            if (!properties.has("id_dataset")) {
+                val idDatasetModule = trouverDatasetPourModule(config, moduleCode)
+                val idDataset = idDatasetModule
+                    ?: config.idDataset.trim().toIntOrNull()?.takeIf { it > 0 }
+                if (idDataset != null) properties.put("id_dataset", idDataset)
+            }
+            // `visit_date_max` est en général NOT NULL en DB. Si le formulaire ne l'a pas
+            // collecté (cas fréquent : une seule date dans l'UI), copie depuis visit_date_min.
+            if (properties.has("visit_date_min") && !properties.has("visit_date_max")) {
+                properties.put("visit_date_max", properties.opt("visit_date_min"))
+            }
+            // Nettoie les valeurs vides résiduelles côté String : un champ DATE non rempli
+            // arrive à "" et casse le parse côté serveur ; pareil pour les heures, etc.
+            // On retire les clés à "" pour laisser le serveur appliquer son défaut.
+            val cleanedKeys = mutableListOf<String>()
+            properties.keys().forEach { k -> cleanedKeys.add(k) }
+            cleanedKeys.forEach { k ->
+                val v = properties.opt(k)
+                if (v is String && v.isBlank()) properties.remove(k)
+            }
+            // Padding : le serveur Marshmallow valide que TOUTES les propriétés du schéma
+            // sont présentes dans le payload, y compris les champs techniques cachés à
+            // l'UI (id_base_visit, id_module, medias, nb_observations, observers_txt…).
+            // Les champs absents reçoivent null — ce que fait aussi le formulaire web,
+            // sauf pour quelques champs typés array qui prennent `[]` par défaut.
+            val champsArrayParDefaut = setOf("medias")
+            nomsChampsSchema.forEach { k ->
+                if (!properties.has(k)) {
+                    if (k in champsArrayParDefaut) properties.put(k, JSONArray())
+                    else properties.put(k, JSONObject.NULL)
+                }
+            }
+
+            // Format simple `{properties: …}` — c'est exactement ce que le formulaire web
+            // GeoNature envoie sur la même instance (vérifié via DevTools). Le wrapper
+            // GeoJSON Feature complet déclenche un 500 silencieux côté serveur.
+            val body = JSONObject().put("properties", properties)
+
+            val urlStr = "$base/api/monitorings/object/$moduleCode/$objectType"
+            val bodyStr = body.toString()
+            android.util.Log.i("MonitoringApi", "POST $urlStr\n  body=$bodyStr")
+            val conn = URL(urlStr).openConnection() as java.net.HttpURLConnection
+            conn.requestMethod = "POST"
+            conn.doOutput = true
+            conn.connectTimeout = 20000
+            conn.readTimeout = 20000
+            conn.setRequestProperty("Content-Type", "application/json")
+            conn.setRequestProperty("Accept", "application/json")
+            if (token != null) conn.setRequestProperty("Authorization", "Bearer $token")
+            if (cookies.isNotEmpty()) conn.setRequestProperty("Cookie", cookies)
+            conn.outputStream.use { it.write(bodyStr.toByteArray(Charsets.UTF_8)) }
+
+            val code = conn.responseCode
+            if (code !in 200..299) {
+                val erreur = try {
+                    conn.errorStream?.bufferedReader()?.readText()
+                } catch (_: Exception) { null }
+                android.util.Log.w("MonitoringApi", "POST $urlStr → HTTP $code\n  réponse=$erreur")
+                throw GNErreur.EnvoiEchoue(code, erreur?.take(500) ?: "pas de message")
+            }
+            val text = conn.inputStream.bufferedReader().readText()
+            val obj = JSONObject(text)
+            // L'API retourne le nouvel objet créé sous forme GeoJSON Feature. L'id se trouve
+            // soit à la racine, soit dans `properties`, soit dans `id_<type>` du payload.
+            val idCree = obj.optInt("id", -1)
+                .takeIf { it > 0 }
+                ?: obj.optJSONObject("properties")?.optInt("id", -1)?.takeIf { it > 0 }
+                ?: obj.optJSONObject("properties")?.optInt("id_$objectType", -1)?.takeIf { it > 0 }
+                ?: 0
+            idCree
+        }
+    }
+
+    /** Convertit une valeur typée (issue du form renderer) en valeur acceptable par
+     *  JSONObject.put — préserve les types Number/Boolean, tente de parser les Strings
+     *  numériques en Int (pour matcher ce qu'attend le serveur sur id_nomenclature etc.),
+     *  sérialise List<*> en JSONArray. */
+    /** Cherche le premier dataset actif rattaché au [moduleCode] côté serveur. D'abord
+     *  dans le cache local OCCTAX (si par chance le dataset cumule plusieurs modules),
+     *  puis via un appel live `/api/meta/datasets?module_code=<m>&active=true` qui
+     *  retourne directement les datasets du module monitoring (filtré CRUVED). */
+    private fun trouverDatasetPourModule(config: GeoNatureConfig, moduleCode: String): Int? {
+        // 1) Cache local
+        val json = config.datasetsCacheJson.takeIf { it.isNotEmpty() }
+        if (json != null) {
+            try {
+                val t = object : com.google.gson.reflect.TypeToken<List<GeoNatureDataset>>() {}.type
+                val datasets: List<GeoNatureDataset>? = com.google.gson.Gson().fromJson(json, t)
+                datasets?.firstOrNull { moduleCode in it.moduleCodes }?.let { return it.id }
+            } catch (_: Exception) { /* fallback ci-dessous */ }
+        }
+        // 2) Appel live filtré par module (les datasets monitoring ne sont pas dans le
+        // cache OCCTAX par défaut — sync app filtre module_code=OCCTAX).
+        return try {
+            val base = config.urlServeur.trim().trimEnd('/')
+            val auth = GeoNatureAuth.loginAvecCookies(base, config.login, config.motDePasse) ?: return null
+            val (token, _, cookies) = auth
+            val variantes = listOf(moduleCode, moduleCode.lowercase()).distinct()
+            for (variant in variantes) {
+                val conn = URL("$base/api/meta/datasets?module_code=$variant&active=true").openConnection()
+                    as java.net.HttpURLConnection
+                conn.connectTimeout = 10000
+                conn.readTimeout = 10000
+                conn.setRequestProperty("Accept", "application/json")
+                if (token != null) conn.setRequestProperty("Authorization", "Bearer $token")
+                if (cookies.isNotEmpty()) conn.setRequestProperty("Cookie", cookies)
+                if (conn.responseCode != 200) continue
+                val txt = conn.inputStream.bufferedReader().readText()
+                val arr = try { JSONArray(txt) } catch (_: Exception) {
+                    JSONObject(txt).optJSONArray("data") ?: JSONArray()
+                }
+                if (arr.length() > 0) {
+                    val id = arr.getJSONObject(0).optInt("id_dataset", -1)
+                    if (id > 0) return id
+                }
+            }
+            null
+        } catch (_: Exception) { null }
+    }
+
+    private fun normaliserPourJson(v: Any?): Any {
+        return when (v) {
+            null -> JSONObject.NULL
+            is Boolean -> v
+            is Number -> v
+            is List<*> -> JSONArray().apply { v.forEach { put(normaliserPourJson(it)) } }
+            is String -> {
+                val t = v.trim()
+                t.toIntOrNull() ?: t
+            }
+            else -> v.toString()
+        }
     }
 }

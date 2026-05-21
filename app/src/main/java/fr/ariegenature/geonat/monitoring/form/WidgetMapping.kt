@@ -12,7 +12,7 @@ fun mapperViewType(prop: fr.ariegenature.geonat.network.MonitoringApi.Monitoring
         "number", "integer", "float", "decimal" -> ViewType.NUMBER
         "date" -> ViewType.DATE
         "datetime" -> ViewType.DATE // POC : on ignore la composante heure
-        "time" -> ViewType.TEXT // POC : "08:00" en libre — un ViewType.TIME dédié reste à porter
+        "time" -> ViewType.TIME
         "select", "radio" ->
             if (prop.multiple) ViewType.SELECT_MULTIPLE else ViewType.SELECT
         // Widget explicitement multi-sélection côté serveur (variantes vues sur le terrain).
@@ -46,6 +46,10 @@ fun construireFormulaire(schemaObjet: MonitoringApi.MonitoringSchemaObjet): Form
     val ignores = mutableListOf<Pair<String, String>>()
     ordre.forEach { nom ->
         val prop = schemaObjet.properties[nom] ?: return@forEach
+        // Les propriétés `hidden:true` côté schéma serveur sont conservées dans le
+        // MonitoringSchemaObjet pour le payload POST (le serveur Marshmallow les attend)
+        // mais on ne les affiche pas dans le formulaire UI.
+        if (prop.hiddenBool) return@forEach
         val viewType = mapperViewType(prop)
         if (viewType == null) {
             ignores.add(prop.nom to prop.typeWidget)

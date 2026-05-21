@@ -112,16 +112,21 @@ class FormulaireRenderer(
             ViewType.TEXT, ViewType.TEXTAREA -> (v as EditText).text.toString()
             ViewType.NUMBER -> (v as EditText).text.toString().toIntOrNull()
             ViewType.DATE -> (v as TextView).tag as? String ?: ""
+            ViewType.TIME -> (v as TextView).tag as? String ?: ""
             ViewType.SELECT -> {
                 val sp = v as Spinner
                 val idx = sp.selectedItemPosition
                 if (idx <= 0) "" else field.values.getOrNull(idx - 1)?.value.orEmpty()
             }
             ViewType.SELECT_MULTIPLE -> {
+                // Liste vide → null (sémantique "non renseigné" attendue par le serveur
+                // monitoring, aligné sur ce qu'envoie le formulaire web).
                 @Suppress("UNCHECKED_CAST")
-                ((v as TextView).tag as? List<String>).orEmpty()
+                ((v as TextView).tag as? List<String>)?.takeIf { it.isNotEmpty() }
             }
-            ViewType.CHECKBOX -> (v as android.widget.CheckBox).isChecked
+            // CheckBox non cochée = null (= "non renseigné"), cochée = true. Le serveur
+            // monitoring ne semble pas distinguer false explicite de "non renseigné".
+            ViewType.CHECKBOX -> if ((v as android.widget.CheckBox).isChecked) true else null
         }
     }
 
@@ -153,6 +158,7 @@ class FormulaireRenderer(
                 InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_SIGNED,
             )
             ViewType.DATE -> creerChampDate(field)
+            ViewType.TIME -> creerChampTime(field)
             ViewType.SELECT -> creerSpinner(field)
             ViewType.SELECT_MULTIPLE -> creerChampMultiSelect(field)
             ViewType.CHECKBOX -> creerCheckBox(field)
@@ -189,10 +195,14 @@ class FormulaireRenderer(
         }
 
     /** Champ DATE : un TextView cliquable qui ouvre un DatePickerDialog. La date choisie est
-     *  stockée dans `tag` au format ISO "YYYY-MM-DD" et affichée au format FR pour l'utilisateur. */
+     *  stockée dans `tag` au format "YYYY-M-D" (sans zero-padding, comme le formulaire web
+     *  GeoNature) et affichée au format FR pour l'utilisateur. */
     private fun creerChampDate(field: EditableField): TextView {
         val fmtAffichage = SimpleDateFormat("dd/MM/yyyy", Locale.FRANCE)
-        val fmtIso = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+        // Format aligné sur le formulaire web GeoNature : `yyyy-M-d` sans zero-padding
+        // sur le mois et le jour (ex: "2026-5-21"). Le SimpleDateFormat de Java avec un
+        // seul `M`/`d` produit exactement ce format.
+        val fmtIso = SimpleDateFormat("yyyy-M-d", Locale.US)
         val tv = TextView(ctx).apply {
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
             setPadding((8 * density).toInt(), (12 * density).toInt(), (8 * density).toInt(), (12 * density).toInt())
@@ -228,6 +238,54 @@ class FormulaireRenderer(
             ).show()
         }
         return tv
+    }
+
+    /** Champ TIME : TextView cliquable qui ouvre un TimePickerDialog 24h. L'heure choisie
+     *  est stockée dans `tag` au format "HH:MM" (ce que le serveur GeoNature attend) et
+     *  affichée à l'utilisateur tel quel. */
+    private fun creerChampTime(field: EditableField): TextView {
+        val tv = TextView(ctx).apply {
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+            setPadding((8 * density).toInt(), (12 * density).toInt(), (8 * density).toInt(), (12 * density).toInt())
+            setBackgroundResource(android.R.drawable.editbox_background_normal)
+            text = "Choisir une heure…"
+            setTextColor(0xFF888888.toInt())
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            )
+        }
+        // Pré-remplit avec field.value si fourni (accepte "HH:MM", "HH:MM:SS", "HHhMM").
+        (field.value as? String)?.let { brut ->
+            parseHeure(brut)?.let { (h, m) ->
+                val iso = "%02d:%02d".format(h, m)
+                tv.tag = iso
+                tv.text = iso
+                tv.setTextColor(0xFF000000.toInt())
+            }
+        }
+        tv.setOnClickListener {
+            val (hInit, mInit) = (tv.tag as? String)?.let { parseHeure(it) }
+                ?: Pair(java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY),
+                        java.util.Calendar.getInstance().get(java.util.Calendar.MINUTE))
+            android.app.TimePickerDialog(ctx, { _, h, m ->
+                val iso = "%02d:%02d".format(h, m)
+                tv.tag = iso
+                tv.text = iso
+                tv.setTextColor(0xFF000000.toInt())
+                appliquerVisibiliteConditionnelle()
+            }, hInit, mInit, true).show()
+        }
+        return tv
+    }
+
+    /** Parse tolérant les variantes courantes (HH:MM, HH:MM:SS, HHhMM, "10h30") en (heure, minute). */
+    private fun parseHeure(raw: String): Pair<Int, Int>? {
+        val s = raw.trim().lowercase().replace("h", ":")
+        val parts = s.split(":")
+        val h = parts.getOrNull(0)?.toIntOrNull()?.takeIf { it in 0..23 } ?: return null
+        val m = parts.getOrNull(1)?.toIntOrNull()?.takeIf { it in 0..59 } ?: 0
+        return h to m
     }
 
     /** Champ multi-sélection : TextView cliquable qui ouvre un dialog cases à cocher.

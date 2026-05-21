@@ -32,6 +32,14 @@ class NouvelleVisiteFragment : Fragment() {
     private val binding get() = _binding!!
     private lateinit var renderer: FormulaireRenderer
 
+    /** Métadonnées du formulaire chargé — renseignées par [chargerSchemaEtRendre] et
+     *  utilisées par [envoyerVisite] au moment du submit pour construire l'URL et le
+     *  lien parent. Null tant que le schéma serveur n'a pas été chargé (fallback démo). */
+    private var visitObjectType: String? = null
+    private var parentIdFieldChamp: String? = null
+    private var nomsChampsVisit: List<String> = emptyList()
+    private var enCoursEnvoi = false
+
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         _binding = FragmentNouvelleVisiteBinding.inflate(inflater, container, false)
         return binding.root
@@ -56,7 +64,7 @@ class NouvelleVisiteFragment : Fragment() {
         binding.btnRetour.setOnClickListener { findNavController().navigateUp() }
 
         renderer = FormulaireRenderer(requireContext(), binding.llFormulaire)
-        binding.btnSubmit.setOnClickListener { afficherValeurs() }
+        binding.btnSubmit.setOnClickListener { envoyerVisite() }
 
         if (moduleCode.isEmpty()) {
             renderer.rendre(creerChampsDemo())
@@ -117,6 +125,12 @@ class NouvelleVisiteFragment : Fragment() {
             // nomenclatures…). Auth cachée 5min côté GeoNatureAuth → 1 login pour N fetches.
             val champsAvecOptions = enrichirAvecOptions(config, construction.fields, visitSchema)
             renderer.rendre(champsAvecOptions)
+            // Mémorise les métadonnées nécessaires à l'envoi serveur (cf. envoyerVisite).
+            visitObjectType = visitSchema.type
+            parentIdFieldChamp = parentIdField
+            // Liste COMPLÈTE des propriétés du schéma (incluant les hidden:true techniques) —
+            // utilisée pour padder le payload POST avec null sur les champs non remplis.
+            nomsChampsVisit = visitSchema.properties.keys.toList()
             if (construction.ignores.isNotEmpty()) {
                 val recapIgnores = construction.ignores.joinToString(", ") { "${it.first} (${it.second})" }
                 ajouterDebug("${construction.ignores.size} champ(s) non supporté(s) : $recapIgnores")
@@ -212,11 +226,59 @@ class NouvelleVisiteFragment : Fragment() {
         binding.tvContexte.text = if (current.isEmpty()) msg else "$current\n\n$msg"
     }
 
-    private fun afficherValeurs() {
+    /** Envoie la visite saisie au serveur via [MonitoringApi.envoyerVisite]. Si le schéma
+     *  n'a pas pu être chargé (mode démo), fallback sur l'ancien dialog POC qui affiche
+     *  juste les valeurs collectées. */
+    private fun envoyerVisite() {
+        val moduleCode = arguments?.getString("moduleCode")
+        val visitType = visitObjectType
+        if (moduleCode.isNullOrEmpty() || visitType.isNullOrEmpty()) {
+            // Mode démo (schéma serveur absent) → on n'a pas de cible serveur à POSTer.
+            afficherValeursDemo()
+            return
+        }
+        if (enCoursEnvoi) return
+        enCoursEnvoi = true
+        binding.btnSubmit.isEnabled = false
+        val valeurs = renderer.lireValeurs()
+        val parentField = parentIdFieldChamp
+        val parentId = arguments?.getInt("parentId", -1)?.takeIf { it > 0 }
+        val config = GeoNatureConfig(requireContext())
+        viewLifecycleOwner.lifecycleScope.launch {
+            val res = MonitoringApi.envoyerVisite(
+                config = config,
+                moduleCode = moduleCode,
+                objectType = visitType,
+                parentIdField = parentField,
+                parentId = parentId,
+                valeurs = valeurs,
+                nomsChampsSchema = nomsChampsVisit,
+            )
+            if (!isAdded) return@launch
+            enCoursEnvoi = false
+            binding.btnSubmit.isEnabled = true
+            res.onSuccess { id ->
+                val msg = if (id > 0) "Visite enregistrée (id=$id)" else "Visite enregistrée"
+                android.widget.Toast.makeText(requireContext(), msg, android.widget.Toast.LENGTH_LONG).show()
+                findNavController().navigateUp()
+            }.onFailure { e ->
+                val msg = fr.ariegenature.geonat.network.humaniserErreurReseau(e)
+                AlertDialog.Builder(requireContext())
+                    .setTitle("Envoi échoué")
+                    .setMessage(msg)
+                    .setPositiveButton("OK", null)
+                    .show()
+            }
+        }
+    }
+
+    /** Fallback démo quand le schéma serveur n'est pas exploitable — affiche les valeurs
+     *  collectées dans un dialog sans tenter d'envoi. */
+    private fun afficherValeursDemo() {
         val valeurs = renderer.lireValeurs()
         val resume = valeurs.entries.joinToString("\n") { (k, v) -> "• $k : ${v ?: "—"}" }
         AlertDialog.Builder(requireContext())
-            .setTitle("Valeurs du formulaire (POC)")
+            .setTitle("Mode démo — pas d'envoi serveur")
             .setMessage(resume.ifEmpty { "Aucun champ rempli." })
             .setPositiveButton("OK", null)
             .show()

@@ -16,12 +16,18 @@ fun humaniserErreurReseau(e: Throwable): String {
         is GNErreur.AuthEchouee -> e.code
         else -> null
     }
+    // Pour les 4xx/5xx avec un message serveur non vide, on le remonte tel quel (utile au
+    // diagnostic : "field 'id_dataset' is required", "RoleNotAllowedException", etc.).
+    val detail = (e as? GNErreur.EnvoiEchoue)?.msg?.takeIf { it.isNotBlank() }
     return when (code) {
         401 -> "Identifiants expirés — reconnecte-toi depuis la config GeoNature (HTTP 401)."
         403 -> "Pas de droit d'accès à cette ressource (CRUVED) (HTTP 403)."
         404 -> "Ressource introuvable côté serveur (HTTP 404)."
-        in 500..599 -> "Erreur serveur (HTTP $code). Réessaye plus tard."
+        in 500..599 -> buildString {
+            append("Erreur serveur (HTTP $code).")
+            if (detail != null) append("\n\nDétail : $detail")
+        }
         null -> "Erreur réseau : ${e.message ?: e.javaClass.simpleName}"
-        else -> "Erreur HTTP $code : ${e.message ?: "—"}"
+        else -> "Erreur HTTP $code : ${detail ?: e.message ?: "—"}"
     }
 }

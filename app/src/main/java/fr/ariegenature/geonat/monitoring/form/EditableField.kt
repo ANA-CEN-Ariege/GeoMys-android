@@ -10,6 +10,8 @@ enum class ViewType {
     TEXTAREA,
     NUMBER,
     DATE,
+    /** Sélecteur d'heure (TimePickerDialog Material). Valeur retournée : "HH:MM". */
+    TIME,
     SELECT,
     /** Multi-sélection : utilisé pour les datalists `multiple: true` (observers, dataset multi,
      *  types de sites) ainsi que pour les widgets serveur `multiselect`. Rendu via dialog

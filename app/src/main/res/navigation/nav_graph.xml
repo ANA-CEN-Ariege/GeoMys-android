@@ -150,7 +150,7 @@
     <fragment
         android:id="@+id/saisieObservationFragment"
         android:name="fr.ariegenature.geonat.ui.SaisieObservationFragment"
-        android:label="Nouvelle observation">
+        android:label="Nouveau relevé">
         <action
             android:id="@+id/action_saisie_to_details"
             app:destination="@id/observationDetailsFragment" />

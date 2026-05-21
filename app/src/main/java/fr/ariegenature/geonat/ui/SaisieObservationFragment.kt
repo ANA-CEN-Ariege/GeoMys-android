@@ -190,7 +190,7 @@ class SaisieObservationFragment : Fragment() {
                 }
                 requireActivity().title = if (obsRelevExistants.size > 1)
                     "Modifier le relevé (${obsRelevExistants.size} esp.)"
-                else "Modifier l'observation"
+                else "Modifier le relevé"
             } else {
                 latitude = arguments?.getDouble("latitude") ?: 0.0
                 longitude = arguments?.getDouble("longitude") ?: 0.0
@@ -256,16 +256,15 @@ class SaisieObservationFragment : Fragment() {
 
         binding.btnAnnuler.setOnClickListener { findNavController().navigateUp() }
         binding.btnEnregistrer.setOnClickListener { enregistrer() }
-        // Bouton "Détails du relevé" : visible uniquement si le serveur déclare au moins
-        // un champ OCCTAX_RELEVE pour le dataset courant.
-        val defsReleveSession = AdditionalFieldsRenderer.fromJson(gnConfig.additionalFieldsOcctaxJson)
-            .filter { it.appliqueA(fr.ariegenature.geonat.network.AdditionalFieldsObject.RELEVE) }
-            .filter { it.visiblePour(gnConfig.idDataset.toIntOrNull(), emptyList()) }
-        if (defsReleveSession.isNotEmpty()) {
-            binding.btnDetailsReleve.visibility = View.VISIBLE
-            binding.btnDetailsReleve.setOnClickListener { ouvrirDetailsReleve(defsReleveSession) }
-        } else {
-            binding.btnDetailsReleve.visibility = View.GONE
+        // Bouton "Détails" : TOUJOURS visible. Le dialog affiche les infos de base du
+        // relevé (dataset, observateur, position) + les éventuels champs additionnels
+        // OCCTAX_RELEVE déclarés par le serveur pour le dataset courant.
+        binding.btnDetailsReleve.setOnClickListener {
+            val defsReleveSession = AdditionalFieldsRenderer
+                .fromJson(gnConfig.additionalFieldsOcctaxJson)
+                .filter { it.appliqueA(fr.ariegenature.geonat.network.AdditionalFieldsObject.RELEVE) }
+                .filter { it.visiblePour(gnConfig.idDataset.toIntOrNull(), emptyList()) }
+            ouvrirDetailsReleve(defsReleveSession)
         }
         updateBtnEnregistrerState()
     }
@@ -313,27 +312,69 @@ class SaisieObservationFragment : Fragment() {
                 else              -> "Oiseaux"
             }
 
-    /** Ouvre un dialog Material listant les champs additionnels OCCTAX_RELEVE. Édition
-     *  partagée par toutes les espèces — les valeurs sont stockées dans
-     *  [additionalFieldsReleveSession] et appliquées à chaque obs au save. */
+    /** Ouvre un dialog avec les informations du relevé. Toujours présent :
+     *   - en-tête : jeu de données, observateur, position GPS, type de géométrie
+     *   - puis, si le serveur déclare des champs additionnels OCCTAX_RELEVE pour le
+     *     dataset courant, ces champs éditables. */
     private fun ouvrirDetailsReleve(
         defs: List<fr.ariegenature.geonat.network.AdditionalFieldDef>,
     ) {
         val ctx = requireContext()
-        val container = android.widget.LinearLayout(ctx).apply {
+        val pad = (16 * resources.displayMetrics.density).toInt()
+        val racine = android.widget.LinearLayout(ctx).apply {
             orientation = android.widget.LinearLayout.VERTICAL
-            val pad = (16 * resources.displayMetrics.density).toInt()
             setPadding(pad, pad / 2, pad, pad / 2)
         }
-        AdditionalFieldsRenderer.rendre(container, defs, additionalFieldsReleveSession)
-        val scroll = android.widget.ScrollView(ctx).apply { addView(container) }
+
+        // En-tête : infos lecture seule du relevé (toujours présentes).
+        fun ligneInfo(label: String, valeur: String) {
+            if (valeur.isBlank()) return
+            racine.addView(android.widget.TextView(ctx).apply {
+                text = label
+                textSize = 12f
+                setTextColor(0xFF888888.toInt())
+            })
+            racine.addView(android.widget.TextView(ctx).apply {
+                text = valeur
+                textSize = 15f
+                setPadding(0, 0, 0, (8 * resources.displayMetrics.density).toInt())
+            })
+        }
+        ligneInfo("Jeu de données", gnConfig.nomDataset.ifEmpty { gnConfig.idDataset })
+        ligneInfo(
+            "Observateur",
+            gnConfig.observateurDefautNom.ifEmpty { gnConfig.nomUtilisateur.ifEmpty { gnConfig.login } },
+        )
+        ligneInfo("Position", "%.5f, %.5f".format(latitude, longitude))
+        geometryTypeSession?.takeIf { it.isNotEmpty() && it != "Point" }?.let {
+            ligneInfo("Géométrie", it)
+        }
+
+        // Conteneur des champs additionnels — peut rester vide si rien déclaré côté serveur.
+        val containerAdd = android.widget.LinearLayout(ctx).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+        }
+        if (defs.isNotEmpty()) {
+            racine.addView(android.widget.TextView(ctx).apply {
+                text = "Champs additionnels"
+                textSize = 12f
+                setTextColor(0xFF888888.toInt())
+                setPadding(0, (8 * resources.displayMetrics.density).toInt(), 0, 0)
+            })
+            AdditionalFieldsRenderer.rendre(containerAdd, defs, additionalFieldsReleveSession)
+            racine.addView(containerAdd)
+        }
+
+        val scroll = android.widget.ScrollView(ctx).apply { addView(racine) }
         com.google.android.material.dialog.MaterialAlertDialogBuilder(ctx)
             .setTitle("Détails du relevé")
             .setView(scroll)
-            .setPositiveButton("Valider") { _, _ ->
-                additionalFieldsReleveSession = AdditionalFieldsRenderer.collecter(container)
+            .setPositiveButton(if (defs.isEmpty()) "Fermer" else "Valider") { _, _ ->
+                if (defs.isNotEmpty()) {
+                    additionalFieldsReleveSession = AdditionalFieldsRenderer.collecter(containerAdd)
+                }
             }
-            .setNegativeButton("Annuler", null)
+            .apply { if (defs.isNotEmpty()) setNegativeButton("Annuler", null) }
             .show()
     }
 

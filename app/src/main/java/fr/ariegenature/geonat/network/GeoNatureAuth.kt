@@ -24,25 +24,50 @@ object GeoNatureAuth {
                 OutputStreamWriter(conn.outputStream).use { it.write(body) }
 
                 val code = conn.responseCode
-                // On évalue le code HTTP en premier : un 401/403 avec un Content-Type
-                // text/html (page d'erreur serveur) doit dire "Identifiants incorrects"
-                // et non "Mauvaise URL" — la vérification du Content-Type ne concerne
-                // que le cas 200 (où on attend du JSON parsable).
+                // L'API GeoNature peut répondre à un mauvais mot de passe par :
+                //   - HTTP 401/403 + body JSON (cas propre, traité explicitement),
+                //   - HTTP 200 + body JSON sans token (cas observé sur certaines instances),
+                //   - HTTP 200 + body texte d'erreur (rare mais possible).
+                // Le cas "HTTP 200 + body HTML" indique réellement une mauvaise URL serveur.
+                // On tente donc systématiquement de parser le body comme JSON pour distinguer
+                // erreur d'auth vs mauvaise URL.
                 when (code) {
                     200 -> {
-                        val ct = conn.getHeaderField("Content-Type") ?: ""
-                        if (!ct.contains("json")) {
+                        val bodyText = try {
+                            conn.inputStream.bufferedReader().readText()
+                        } catch (_: Exception) { "" }
+                        val json: JSONObject? = try { JSONObject(bodyText) } catch (_: Exception) { null }
+                        if (json == null) {
+                            // Pas du JSON parsable → probablement une page HTML (login Apache, etc.).
                             return@withContext Pair(false, "Mauvaise URL : réponse HTML reçue. Essayez d'ajouter ou retirer /GeoNature à l'URL.")
                         }
-                        val json = JSONObject(conn.inputStream.bufferedReader().readText())
                         val token = extractToken(json)
+                        if (token == null) {
+                            // JSON valide mais sans token → c'est probablement un message d'erreur
+                            // d'auth retourné en HTTP 200 (pattern fréquent avec Flask-JWT-Extended).
+                            val msgErreur = json.optString("msg", "")
+                                .ifEmpty { json.optString("message", "") }
+                                .ifEmpty { json.optString("error", "") }
+                            val ressembleAuth = msgErreur.contains("identifi", ignoreCase = true)
+                                || msgErreur.contains("password", ignoreCase = true)
+                                || msgErreur.contains("mot de passe", ignoreCase = true)
+                                || msgErreur.contains("login", ignoreCase = true)
+                                || msgErreur.contains("auth", ignoreCase = true)
+                                || msgErreur.contains("invalid", ignoreCase = true)
+                                || msgErreur.contains("incorrect", ignoreCase = true)
+                            return@withContext Pair(
+                                false,
+                                if (ressembleAuth || msgErreur.isEmpty())
+                                    "Identifiant ou mot de passe incorrect"
+                                else msgErreur,
+                            )
+                        }
                         // Sauvegarde du nom complet de l'utilisateur (utilisé comme déterminateur
                         // par défaut dans la saisie multi-taxons) et de son id_role (pour la
                         // pré-sélection dans les champs observers de saisie monitoring). Best-effort.
                         extraireNomComplet(json)?.let { config.nomUtilisateur = it }
                         extraireIdRole(json)?.let { config.idRoleUtilisateur = it }
-                        if (token != null) Pair(true, "Connexion réussie")
-                        else Pair(false, "Token absent de la réponse")
+                        Pair(true, "Connexion réussie")
                     }
                     401, 403 -> Pair(false, "Identifiant ou mot de passe incorrect")
                     404 -> Pair(false, "URL serveur introuvable (HTTP 404) — vérifiez l'adresse")

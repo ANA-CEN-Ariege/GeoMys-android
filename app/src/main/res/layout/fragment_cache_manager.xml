@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <org.osmdroid.views.MapView
+        android:id="@+id/map"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <ImageButton
+        android:id="@+id/btn_retour"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_gravity="top|start"
+        android:layout_margin="8dp"
+        android:background="@drawable/btn_circle_white"
+        android:contentDescription="Retour"
+        android:src="@drawable/ic_arrow_back"
+        app:tint="?attr/colorOnSurface" />
+
+    <!-- Boutons d'action empilés verticalement en haut à droite : changer de fond,
+         cibler un protocole, vider le cache. Le LinearLayout permet de garder un
+         espacement uniforme entre eux sans gérer des marginEnd cumulés. -->
+    <LinearLayout
+        android:id="@+id/conteneur_actions"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|end"
+        android:layout_margin="8dp"
+        android:orientation="vertical">
+
+        <ImageButton
+            android:id="@+id/btn_fond_carte"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:background="@drawable/btn_circle_white"
+            android:contentDescription="Changer le fond de carte"
+            android:src="@drawable/ic_map"
+            app:tint="?attr/colorOnSurface" />
+
+        <ImageButton
+            android:id="@+id/btn_protocole"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_marginTop="8dp"
+            android:background="@drawable/btn_circle_white"
+            android:contentDescription="Cibler un protocole"
+            android:src="@drawable/ic_list"
+            app:tint="?attr/colorOnSurface" />
+
+        <ImageButton
+            android:id="@+id/btn_vider_cache"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_marginTop="8dp"
+            android:background="@drawable/btn_circle_white"
+            android:contentDescription="Vider le cache"
+            android:src="@drawable/ic_delete"
+            app:tint="#C62828" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/tv_titre"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|center_horizontal"
+        android:layout_marginTop="16dp"
+        android:background="@drawable/badge_bg"
+        android:paddingHorizontal="12dp"
+        android:paddingVertical="6dp"
+        android:text="Cache des fonds"
+        android:textColor="@android:color/white"
+        android:textSize="14sp"
+        android:textStyle="bold" />
+
+    <!-- Panneau bas : infos surface/tuiles/poids + bouton télécharger.
+         Surfacé en blanc semi-opaque pour bien lire par dessus la carte. -->
+    <LinearLayout
+        android:id="@+id/panel_bas"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:background="#F2FFFFFF"
+        android:orientation="vertical"
+        android:padding="12dp">
+
+        <TextView
+            android:id="@+id/tv_surface"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/tv_tuiles"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:textColor="#666666"
+            android:textSize="12sp" />
+
+        <TextView
+            android:id="@+id/tv_cache_utilise"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:textColor="#666666"
+            android:textSize="12sp" />
+
+        <TextView
+            android:id="@+id/tv_avertissement"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:textColor="#C62828"
+            android:textSize="12sp"
+            android:visibility="gone" />
+
+        <Button
+            android:id="@+id/btn_charger"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="Charger les tuiles" />
+    </LinearLayout>
+</FrameLayout>

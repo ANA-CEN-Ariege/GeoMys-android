@@ -2,5 +2,7 @@
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
     <background android:drawable="@drawable/ic_launcher_background"/>
     <foreground android:drawable="@mipmap/ic_launcher_foreground"/>
-    <monochrome android:drawable="@mipmap/ic_launcher_foreground"/>
+    <!-- Pas de <monochrome> : pointer sur un webp couleur fait planter le parser
+         AdaptiveIconDrawable sur certains appareils (NPE Application.getResources()).
+         L'attribut n'est qu'un nice-to-have pour le thème dynamique d'Android 13+. -->
 </adaptive-icon>

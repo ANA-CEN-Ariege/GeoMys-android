@@ -72,6 +72,10 @@ class AccueilFragment : Fragment() {
                             findNavController().navigate(R.id.action_accueil_to_explorer)
                             true
                         }
+                        R.id.menu_cache_manager -> {
+                            findNavController().navigate(R.id.action_accueil_to_cache_manager)
+                            true
+                        }
                         else -> false
                     }
                 }

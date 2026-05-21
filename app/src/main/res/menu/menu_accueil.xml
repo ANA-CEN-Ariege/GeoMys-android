@@ -9,4 +9,7 @@
     <item
         android:id="@+id/menu_explorer"
         android:title="Explorer" />
+    <item
+        android:id="@+id/menu_cache_manager"
+        android:title="Cache Manager" />
 </menu>

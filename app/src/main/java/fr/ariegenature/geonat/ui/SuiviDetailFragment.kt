@@ -122,8 +122,10 @@ class SuiviDetailFragment : Fragment() {
                     .getOrNull() ?: MonitoringApi.LabelResolver()
             } else MonitoringApi.LabelResolver()
 
-            // Re-derive le nom de chaque enfant via le nameField du schéma, puis applique le tri
-            // déclaré par le protocole (schema.sorts) ou tri alphabétique par défaut.
+            // Re-derive le nom de chaque enfant via le nameField du schéma, puis tri
+            // alphabétique sur ce nom. On ignore volontairement `schema.sorts` ici : les
+            // protocoles l'utilisent surtout pour ordonner par id (peu lisible côté
+            // utilisateur). Le tri alpha simplifie la navigation dans des listes longues.
             val enfantsAffines: Map<String, List<MonitoringApi.MonitoringEnfant>> =
                 enfants.mapValues { (type, liste) ->
                     val nf = schema?.get(type)?.nameField
@@ -132,8 +134,8 @@ class SuiviDetailFragment : Fragment() {
                         val nomSchema = e.proprietes[nf]
                         if (!nomSchema.isNullOrEmpty()) e.copy(nom = nomSchema) else e
                     }
-                }.mapValues { (type, liste) ->
-                    MonitoringApi.trierEnfants(liste, schema?.get(type)?.sorts.orEmpty())
+                }.mapValues { (_, liste) ->
+                    MonitoringApi.trierEnfants(liste, emptyList())
                 }
 
             val counts = enfantsAffines.mapValues { it.value.size }

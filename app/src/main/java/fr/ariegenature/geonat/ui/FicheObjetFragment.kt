@@ -211,13 +211,14 @@ class FicheObjetFragment : Fragment() {
             // sinon on rend les saisies locales sous un header dédié.
             if (itemsBruts.isEmpty() && saisiesLocalesCeType.isEmpty()) return@forEach
             val schemaType = schema?.get(type)
-            // Re-derive nom via schema.nameField puis trie selon schema.sorts.
+            // Re-derive nom via schema.nameField puis tri alphabétique sur ce nom
+            // (les `sorts` du schéma sont volontairement ignorés — cf. SuiviDetailFragment).
             val nf = schemaType?.nameField
             val itemsAffines = if (nf != null) itemsBruts.map { e ->
                 val nomSchema = e.proprietes[nf]
                 if (!nomSchema.isNullOrEmpty()) e.copy(nom = nomSchema) else e
             } else itemsBruts
-            val items = MonitoringApi.trierEnfants(itemsAffines, schemaType?.sorts.orEmpty())
+            val items = MonitoringApi.trierEnfants(itemsAffines, emptyList())
             val typeLabel = schema?.get(type)?.let { it.labelList ?: it.label }
                 ?: labelTypeParDefaut(type)
             // Type d'enfant qui sera créé via le bouton "+" : on regarde si le type de

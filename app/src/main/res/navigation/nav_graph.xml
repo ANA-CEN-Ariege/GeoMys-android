@@ -29,7 +29,15 @@
         <action
             android:id="@+id/action_accueil_to_attente"
             app:destination="@id/saisiesEnAttenteFragment" />
+        <action
+            android:id="@+id/action_accueil_to_cache_manager"
+            app:destination="@id/cacheManagerFragment" />
     </fragment>
+
+    <fragment
+        android:id="@+id/cacheManagerFragment"
+        android:name="fr.ariegenature.geonat.ui.CacheManagerFragment"
+        android:label="Cache Manager" />
 
     <fragment
         android:id="@+id/suivisFragment"

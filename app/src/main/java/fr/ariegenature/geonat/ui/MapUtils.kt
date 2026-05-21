@@ -1,17 +1,39 @@
 package fr.ariegenature.geonat.ui
 
 import org.osmdroid.tileprovider.tilesource.OnlineTileSourceBase
-import org.osmdroid.tileprovider.tilesource.TileSourceFactory
+import org.osmdroid.tileprovider.tilesource.TileSourcePolicy
+import org.osmdroid.tileprovider.tilesource.XYTileSource
 import org.osmdroid.util.MapTileIndex
 
 enum class FondCarte { OSM, TOPO, SCAN25, ORTHO }
 
+/** Policy permissive : autorise le bulk download (FLAG_NO_BULK désactivé) — nécessaire pour
+ *  l'écran Cache Manager. Sur les autres écrans c'est neutre. Le respect des CGU OSM/IGN
+ *  reste de la responsabilité de l'utilisateur (l'app cap déjà la surface à 200 km², soit
+ *  bien en dessous des limites de quota courantes). */
+private val POLICY_PERMISSIVE = TileSourcePolicy(2, TileSourcePolicy.FLAG_NO_PREVENTIVE)
+
 fun tileSourcePour(fond: FondCarte) = when (fond) {
-    FondCarte.OSM    -> TileSourceFactory.MAPNIK
+    FondCarte.OSM    -> osmTileSource()
     FondCarte.TOPO   -> ignTileSource("GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2", "image/png", false)
     FondCarte.SCAN25 -> ignTileSource("GEOGRAPHICALGRIDSYSTEMS.MAPS", "image/jpeg", true)
     FondCarte.ORTHO  -> ignTileSource("ORTHOIMAGERY.ORTHOPHOTOS", "image/jpeg", false)
 }
+
+/** OSM/Mapnik avec policy permissive pour autoriser le bulk download depuis Cache Manager.
+ *  Note : TileSourceFactory.MAPNIK utilise une policy stricte qui refuse explicitement le
+ *  bulk download. On reconstruit la source à la main avec les mêmes serveurs miroir. */
+private fun osmTileSource(): OnlineTileSourceBase = XYTileSource(
+    "Mapnik",
+    0, 19, 256, ".png",
+    arrayOf(
+        "https://a.tile.openstreetmap.org/",
+        "https://b.tile.openstreetmap.org/",
+        "https://c.tile.openstreetmap.org/",
+    ),
+    "© OpenStreetMap contributors",
+    POLICY_PERMISSIVE,
+)
 
 fun FondCarte.suivant() = when (this) {
     FondCarte.OSM    -> FondCarte.TOPO
@@ -21,7 +43,7 @@ fun FondCarte.suivant() = when (this) {
 }
 
 fun ignTileSource(layer: String, fmt: String, prive: Boolean): OnlineTileSourceBase =
-    object : OnlineTileSourceBase("IGN_$layer", 2, 19, 256, "", arrayOf("")) {
+    object : OnlineTileSourceBase("IGN_$layer", 2, 19, 256, "", arrayOf(""), "", POLICY_PERMISSIVE) {
         override fun getTileURLString(pMapTileIndex: Long): String {
             val zoom = MapTileIndex.getZoom(pMapTileIndex)
             val x    = MapTileIndex.getX(pMapTileIndex)

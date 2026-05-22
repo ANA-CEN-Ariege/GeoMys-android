@@ -839,8 +839,12 @@ object MonitoringApi {
         }
         val idListObserver = schema["module"]?.idListObserver
         val base = config.urlServeur.trim().trimEnd('/')
-        val (token, _, cookies) = GeoNatureAuth.loginAvecCookies(base, config.login, config.motDePasse)
-            ?: return@withContext LabelResolver()
+        val auth = GeoNatureAuth.loginAvecCookies(base, config.login, config.motDePasse)
+        // En offline (auth KO), on peut quand même servir les observateurs via le cache
+        // disque écrit par le sync. On ne retourne plus immédiatement un resolver vide :
+        // on tente le fallback observateurs avant d'abandonner.
+        val token = auth?.first
+        val cookies = auth?.third.orEmpty()
 
         suspend fun fetchListe(path: String, keyId: String, keyLabel: String, dataPath: String?): Map<String, String> {
             val url = URL("$base/api/$path")
@@ -869,13 +873,25 @@ object MonitoringApi {
         }
 
         coroutineScope {
-            val nomenclaturesDeferred = codesNomenclature.map { code ->
+            // Nomenclatures et datasets : pas de fallback cache disque pour l'instant, donc
+            // si auth a échoué (offline), on les skippe pour ne pas timeout 15s × N requêtes.
+            val nomenclaturesDeferred = if (auth == null) emptyList() else codesNomenclature.map { code ->
                 async { code to fetchListe("nomenclatures/nomenclature/$code", "id_nomenclature", "label_fr", "values") }
             }
+            // Observateurs : on délègue à chargerObservateursDeListe qui gère le fallback
+            // cache disque automatiquement — utile en offline strict.
             val usersDeferred = if (besoinUsers && idListObserver != null) async {
-                fetchListe("users/menu/$idListObserver", "id_role", "nom_complet", null)
+                val arr = chargerObservateursDeListe(config, idListObserver) ?: return@async emptyMap()
+                val map = mutableMapOf<String, String>()
+                for (i in 0 until arr.length()) {
+                    val item = arr.optJSONObject(i) ?: continue
+                    val id = item.opt("id_role")?.toString() ?: continue
+                    val lbl = item.opt("nom_complet")?.toString() ?: continue
+                    if (id.isNotEmpty() && lbl.isNotEmpty()) map[id] = lbl
+                }
+                map.toMap()
             } else null
-            val datasetsDeferred = if (besoinDatasets) async {
+            val datasetsDeferred = if (besoinDatasets && auth != null) async {
                 fetchListe("meta/datasets", "id_dataset", "dataset_name", null)
             } else null
 
@@ -913,6 +929,37 @@ object MonitoringApi {
         return enfants.sortedWith(comp)
     }
 
+    /** Charge la liste d'observateurs d'une UsersHub `id_liste` : fetch live + persistance
+     *  dans le cache `MonitoringCache.keyObservateurs`, ou fallback sur le cache disque si
+     *  pas de réseau / auth en échec. Retourne null si vraiment rien ne marche. */
+    suspend fun chargerObservateursDeListe(
+        config: GeoNatureConfig,
+        idListe: Int,
+    ): JSONArray? = withContext(Dispatchers.IO) {
+        if (idListe <= 0) return@withContext null
+        val key = MonitoringCache.keyObservateurs(idListe)
+        val base = config.urlServeur.trim().trimEnd('/')
+        val auth = runCatching { GeoNatureAuth.loginAvecCookies(base, config.login, config.motDePasse) }.getOrNull()
+        if (auth != null) {
+            val (token, _, cookies) = auth
+            val res = runCatching {
+                val conn = URL("$base/api/users/menu/$idListe").openConnection() as java.net.HttpURLConnection
+                conn.connectTimeout = 15000; conn.readTimeout = 15000
+                conn.setRequestProperty("Accept", "application/json")
+                if (token != null) conn.setRequestProperty("Authorization", "Bearer $token")
+                if (cookies.isNotEmpty()) conn.setRequestProperty("Cookie", cookies)
+                if (conn.responseCode != 200) null
+                else conn.inputStream.bufferedReader().readText()
+            }.getOrNull()
+            if (res != null) {
+                MonitoringCache.setJson(key, res)
+                return@withContext runCatching { JSONArray(res) }.getOrNull()
+            }
+        }
+        // Fallback cache disque pour usage offline.
+        MonitoringCache.getJson(key)?.let { runCatching { JSONArray(it) }.getOrNull() }
+    }
+
     /** Fetch dynamiquement les options d'un widget `datalist` ou `nomenclature` (forme ancienne).
      *  Construit l'URL `<base>/api/<api>`, parse selon `dataPath` (si fourni) → array d'objets,
      *  puis projette chaque entrée sur (keyValue, keyLabel). Renvoie null sur erreur HTTP/auth/parse.
@@ -926,6 +973,14 @@ object MonitoringApi {
         val keyValue = prop.keyValue ?: "id"
         if (prop.application != null && prop.application != "GeoNature") {
             return@withContext null // TaxHub à supporter plus tard
+        }
+        // Cas spécial observateurs : on passe par le helper qui gère le cache disque
+        // (fetch live → cache → réutilisable en offline). Détection par préfixe d'URL.
+        val matchObs = Regex("""users/menu/(\d+)""").find(apiPath)
+        if (matchObs != null) {
+            val idListe = matchObs.groupValues[1].toIntOrNull() ?: return@withContext null
+            val arr = chargerObservateursDeListe(config, idListe) ?: return@withContext null
+            return@withContext extraireOptions(arr, keyValue, keyLabel, prop.filtres)
         }
         val base = config.urlServeur.trim().trimEnd('/')
         val (token, _, cookies) = GeoNatureAuth.loginAvecCookies(base, config.login, config.motDePasse)
@@ -946,6 +1001,18 @@ object MonitoringApi {
                 .firstOrNull { obj.has(it) } ?: return@withContext null
             obj.optJSONArray(cle) ?: return@withContext null
         }
+        extraireOptions(array, keyValue, keyLabel, prop.filtres)
+    }
+
+    /** Factorise la conversion d'un JSONArray d'objets en `List<OptionDatalist>` triée par
+     *  label, avec application des filtres déclarés au schéma (ex: stade biologique
+     *  restreint à ["Inconnu", "Chrysalide", …]). */
+    private fun extraireOptions(
+        array: JSONArray,
+        keyValue: String,
+        keyLabel: String,
+        filtres: Map<String, List<String>>,
+    ): List<OptionDatalist> {
         val opts = mutableListOf<OptionDatalist>()
         for (i in 0 until array.length()) {
             val item = array.optJSONObject(i) ?: continue
@@ -956,9 +1023,6 @@ object MonitoringApi {
             val lblDef = item.opt("label_default")?.toString()?.takeIf { it.isNotEmpty() }
             opts.add(OptionDatalist(v, l, cdNom, lblDef))
         }
-        // Filtres déclarés (ex: stade biologique filtré à ["Inconnu", "Chrysalide", …]) — restreint
-        // la liste fetchée selon les critères du schéma.
-        val filtres = prop.filtres
         val filtrees = if (filtres.isEmpty()) opts else opts.filter { o ->
             filtres.all { (champ, valeursAcceptables) ->
                 val v = when (champ) {
@@ -969,7 +1033,7 @@ object MonitoringApi {
                 v == null || v in valeursAcceptables
             }
         }
-        filtrees.sortedBy { it.label.lowercase() }
+        return filtrees.sortedBy { it.label.lowercase() }
     }
 
     /** Envoie une nouvelle visite (ou tout objet monitoring "saisissable") sur le serveur.

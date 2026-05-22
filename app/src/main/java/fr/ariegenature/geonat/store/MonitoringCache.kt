@@ -63,4 +63,7 @@ object MonitoringCache {
     fun keyEnfants(moduleCode: String): String = "enfants_${safeKey(moduleCode)}.json"
     fun keyObjet(moduleCode: String, type: String, id: Int): String =
         "objet_${safeKey(moduleCode)}_${safeKey(type)}_$id.json"
+    /** Cache local d'une liste UsersHub (`/api/users/menu/<id_liste>`) — utilisé pour
+     *  l'autocomplétion observateurs et la résolution id_role → nom complet en offline. */
+    fun keyObservateurs(idListe: Int): String = "observateurs_$idListe.json"
 }

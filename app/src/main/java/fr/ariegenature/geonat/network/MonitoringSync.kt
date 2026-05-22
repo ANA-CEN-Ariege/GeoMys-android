@@ -63,18 +63,25 @@ object MonitoringSync {
         var objetsCharges = 0
         var modulesOk = 0
         val modulesEnEchec = mutableListOf<String>()
+        // Collecte les `id_list_observer` distincts pour fetcher chaque liste UsersHub
+        // une seule fois à la fin (et pas N fois si plusieurs modules pointent dessus).
+        val listesObserversAFetch = mutableSetOf<Int>()
 
         for ((idx, module) in modules.withIndex()) {
             progression(idx + 1, modules.size, objetsCharges)
             try {
                 // Le schéma + les enfants directs sont indépendants → fetch en parallèle pour
                 // gagner ~1 RTT par module.
-                val (_, enfantsParType) = coroutineScope {
+                val (schema, enfantsParType) = coroutineScope {
                     val schemaDef = async { runCatching { MonitoringApi.chargerSchemaProtocole(config, module.moduleCode) }.getOrNull() }
                     val enfantsDef = async { runCatching { MonitoringApi.chargerEnfants(config, module.moduleCode) }.getOrDefault(emptyMap()) }
                     awaitAll(schemaDef, enfantsDef)
                     schemaDef.await() to enfantsDef.await()
                 }
+                // Le `id_list_observer` est porté par le type "module" du schéma. On le
+                // mémoise pour le fetch groupé en fin de sync.
+                schema?.get("module")?.idListObserver?.takeIf { it > 0 }
+                    ?.let { listesObserversAFetch.add(it) }
 
                 // BFS sur l'arborescence STRUCTURELLE — on filtre les types de saisie pour
                 // ne pas précharger l'historique des visites/obs. Chaque "tâche" = (type, id)
@@ -126,8 +133,27 @@ object MonitoringSync {
             }
         }
 
+        // Fetch + persiste chaque liste d'observateurs distincte rencontrée pendant la BFS.
+        // Échecs avalés : le sync principal est déjà OK, les observateurs sont un bonus.
+        var observateursListes = 0
+        if (listesObserversAFetch.isNotEmpty()) {
+            coroutineScope {
+                listesObserversAFetch.chunked(CHUNK_SIZE).forEach { chunk ->
+                    chunk.map { idListe ->
+                        async {
+                            val arr = runCatching {
+                                MonitoringApi.chargerObservateursDeListe(config, idListe)
+                            }.getOrNull()
+                            if (arr != null) 1 else 0
+                        }
+                    }.awaitAll().sum().also { observateursListes += it }
+                }
+            }
+        }
+
         val msg = buildString {
             append("$modulesOk/${modules.size} protocoles préchargés, $objetsCharges objets en cache")
+            if (observateursListes > 0) append(", $observateursListes liste(s) d'observateurs")
             if (modulesEnEchec.isNotEmpty()) append("\n⚠ Modules en échec : ${modulesEnEchec.joinToString(",")}")
         }
         Pair(modulesOk, msg)

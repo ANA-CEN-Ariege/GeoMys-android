@@ -6,12 +6,19 @@ import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import fr.ariegenature.geonat.GeoNatApplication
 import fr.ariegenature.geonat.model.Observation
+import fr.ariegenature.geonat.model.Sortie
 
 class TraceViewModel(application: Application) : AndroidViewModel(application) {
     val locationTracker = (application as GeoNatApplication).locationTracker
 
     private val _observations = MutableLiveData<MutableList<Observation>>(mutableListOf())
     val observations: LiveData<MutableList<Observation>> = _observations
+
+    /** Id de la sortie en cours d'édition (= reprise depuis l'onglet "À envoyer"). Quand
+     *  non-null, [TraceFragment.terminerSortie] doit remplacer la sortie existante au
+     *  lieu d'en créer une nouvelle. Reset par [reinitialiser]. */
+    var sortieEnEditionId: String? = null
+        private set
 
     val estActive: Boolean
         get() = (locationTracker.estEnCours.value == true)
@@ -69,6 +76,19 @@ class TraceViewModel(application: Application) : AndroidViewModel(application) {
     fun reinitialiser() {
         _observations.value = mutableListOf()
         locationTracker.reinitialiser()
+        sortieEnEditionId = null
+    }
+
+    /** Reprend une sortie sauvegardée : recharge les observations et la trace dans le
+     *  tracker, mémorise l'id pour que la sauvegarde finale remplace la sortie existante
+     *  (au lieu d'en créer une nouvelle). N'active pas le tracking GPS — c'est à
+     *  l'utilisateur de relancer le suivi via le switch dédié s'il veut continuer la
+     *  trace. */
+    fun reprendreSortie(sortie: Sortie) {
+        _observations.value = sortie.observations.toMutableList()
+        locationTracker.restaurerParcours(sortie.pointsParcours)
+        locationTracker.definirDistance(sortie.distanceTotale)
+        sortieEnEditionId = sortie.id
     }
 
     override fun onCleared() {

@@ -75,6 +75,16 @@
     </LinearLayout>
 
     <ImageButton
+        android:id="@+id/btn_editer"
+        android:layout_width="36dp"
+        android:layout_height="36dp"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:contentDescription="Continuer la saisie"
+        android:src="@drawable/ic_edit"
+        android:visibility="gone"
+        app:tint="?attr/colorPrimary" />
+
+    <ImageButton
         android:id="@+id/btn_supprimer"
         android:layout_width="36dp"
         android:layout_height="36dp"

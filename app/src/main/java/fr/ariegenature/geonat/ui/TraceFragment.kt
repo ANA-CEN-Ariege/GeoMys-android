@@ -154,6 +154,15 @@ class TraceFragment : Fragment() {
         sortieStore = SortieStore(requireContext())
         gnConfig = GeoNatureConfig(requireContext())
 
+        // Reprise éventuelle d'une sortie sauvegardée (depuis l'onglet "À envoyer" → édition).
+        // À faire AVANT setupMap pour que les overlays (parcours, obs) trouvent les données
+        // déjà dans le ViewModel et le LocationTracker.
+        val sortieIdReprise = arguments?.getString("sortieId")?.takeIf { it.isNotEmpty() }
+        if (sortieIdReprise != null && traceViewModel.sortieEnEditionId != sortieIdReprise) {
+            val sortie = sortieStore.charger().firstOrNull { it.id == sortieIdReprise }
+            if (sortie != null) traceViewModel.reprendreSortie(sortie)
+        }
+
         enregistrerTrace = requireContext()
             .getSharedPreferences("GeoNat_prefs", android.content.Context.MODE_PRIVATE)
             .getBoolean("enregistrer_trace", true)
@@ -756,6 +765,9 @@ class TraceFragment : Fragment() {
                     getString(R.string.enregistrer_quitter) -> terminerSortie(envoyerGN = false)
                     getString(R.string.enregistrer_envoyer_gn) -> terminerSortie(envoyerGN = true)
                     getString(R.string.supprimer_sortie) -> {
+                        // En mode reprise : supprimer aussi l'entrée du store, sinon la
+                        // sortie reste dans la liste avec ses anciennes obs/trace.
+                        traceViewModel.sortieEnEditionId?.let { sortieStore.supprimer(it) }
                         traceViewModel.locationTracker.arreterParcours()
                         traceViewModel.reinitialiser()
                         LocationForegroundService.stop(requireContext())
@@ -768,14 +780,29 @@ class TraceFragment : Fragment() {
     private fun terminerSortie(envoyerGN: Boolean) {
         traceViewModel.locationTracker.arreterParcours()
         LocationForegroundService.stop(requireContext())
-        val sortie = Sortie(
-            date = System.currentTimeMillis(),
-            pointsParcours = traceViewModel.locationTracker.parcours.value ?: emptyList(),
-            observations = traceViewModel.observations.value?.toList() ?: emptyList(),
-            distanceTotale = traceViewModel.locationTracker.distanceTotale.value ?: 0.0
-        )
+        // En reprise : on garde le même id et la date d'origine pour que la sortie reste à
+        // sa place chronologique dans la liste. Sinon, nouvelle sortie classique.
+        val idReprise = traceViewModel.sortieEnEditionId
+        val sortieExistante = idReprise?.let { id ->
+            sortieStore.charger().firstOrNull { it.id == id }
+        }
+        val sortie = if (sortieExistante != null) {
+            sortieExistante.copy(
+                pointsParcours = traceViewModel.locationTracker.parcours.value ?: emptyList(),
+                observations = traceViewModel.observations.value?.toList() ?: emptyList(),
+                distanceTotale = traceViewModel.locationTracker.distanceTotale.value ?: 0.0,
+            )
+        } else {
+            Sortie(
+                date = System.currentTimeMillis(),
+                pointsParcours = traceViewModel.locationTracker.parcours.value ?: emptyList(),
+                observations = traceViewModel.observations.value?.toList() ?: emptyList(),
+                distanceTotale = traceViewModel.locationTracker.distanceTotale.value ?: 0.0,
+            )
+        }
         if (sortie.pointsParcours.isNotEmpty() || sortie.observations.isNotEmpty()) {
-            sortieStore.ajouter(sortie)
+            if (idReprise != null) sortieStore.remplacer(idReprise, sortie)
+            else sortieStore.ajouter(sortie)
         }
         traceViewModel.reinitialiser()
 

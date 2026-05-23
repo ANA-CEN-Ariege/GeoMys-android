@@ -68,7 +68,11 @@ class SortiesFragment : Fragment() {
             },
             onDelete = { sortie ->
                 confirmerSuppression(sortie)
-            }
+            },
+            onEdit = { sortie ->
+                val bundle = Bundle().apply { putString("sortieId", sortie.id) }
+                findNavController().navigate(R.id.action_sorties_to_trace, bundle)
+            },
         )
 
         binding.recyclerView.layoutManager = LinearLayoutManager(requireContext())
@@ -173,7 +177,8 @@ class SortiesFragment : Fragment() {
 
 class SortieAdapter(
     private val onClick: (Sortie) -> Unit,
-    private val onDelete: (Sortie) -> Unit
+    private val onDelete: (Sortie) -> Unit,
+    private val onEdit: (Sortie) -> Unit = {},
 ) : RecyclerView.Adapter<SortieAdapter.ViewHolder>() {
     private var items: List<Sortie> = emptyList()
     private val fmt = SimpleDateFormat("dd MMM yyyy HH:mm", Locale.getDefault())
@@ -199,6 +204,12 @@ class SortieAdapter(
             tvNbPts.text = "${sortie.pointsParcours.size} pts"
             root.setOnClickListener { onClick(sortie) }
             btnSupprimer.setOnClickListener { onDelete(sortie) }
+            // Bouton "Continuer la saisie" : visible uniquement pour les sorties à envoyer
+            // (= non envoyées et non importées). Une sortie déjà envoyée n'a pas vocation
+            // à être ré-éditée côté local ; une sortie importée (GPX externe) idem.
+            val peutEditer = !sortie.envoyeGeoNature && !sortie.estImportee
+            btnEditer.visibility = if (peutEditer) android.view.View.VISIBLE else android.view.View.GONE
+            btnEditer.setOnClickListener { onEdit(sortie) }
         }
     }
 

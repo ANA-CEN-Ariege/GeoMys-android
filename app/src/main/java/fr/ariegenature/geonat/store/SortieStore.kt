@@ -30,6 +30,21 @@ class SortieStore(context: Context) {
         sauvegarder(sorties)
     }
 
+    /** Remplace la sortie [id] par [sortieMaj] en préservant sa position dans la liste. Si
+     *  l'id n'existe pas, ajoute en tête (= comportement [ajouter]). Utilisé pour la reprise
+     *  d'une sortie depuis l'onglet "À envoyer". */
+    fun remplacer(id: String, sortieMaj: Sortie) {
+        val sorties = charger()
+        val idx = sorties.indexOfFirst { it.id == id }
+        if (idx >= 0) {
+            sorties[idx] = sortieMaj
+            sauvegarder(sorties)
+        } else {
+            sorties.add(0, sortieMaj)
+            sauvegarder(sorties)
+        }
+    }
+
     fun supprimer(id: String) {
         val sorties = charger()
         sorties.removeAll { it.id == id }

@@ -154,6 +154,10 @@
         android:id="@+id/traceFragment"
         android:name="fr.ariegenature.geonat.ui.TraceFragment"
         android:label="Sortie">
+        <argument
+            android:name="sortieId"
+            app:argType="string"
+            android:defaultValue="" />
         <action
             android:id="@+id/action_trace_to_observations"
             app:destination="@id/observationsFragment" />
@@ -238,6 +242,9 @@
         <action
             android:id="@+id/action_sorties_to_detail"
             app:destination="@id/sortieDetailFragment" />
+        <action
+            android:id="@+id/action_sorties_to_trace"
+            app:destination="@id/traceFragment" />
     </fragment>
 
     <fragment

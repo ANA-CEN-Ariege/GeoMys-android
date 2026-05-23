@@ -111,4 +111,18 @@ class LocationTracker(private val context: Context) {
             _parcours.postValue(_parcoursMutable.toList())
         }
     }
+
+    /** Restaure la distance accumulée — utilisé lors de la reprise d'une sortie sauvegardée
+     *  pour que le compteur affiché continue depuis sa valeur précédente, pas depuis 0. */
+    fun definirDistance(distance: Double) {
+        distanceAccumulee = distance
+        _distanceTotale.postValue(distance)
+    }
+
+    /** Démarre l'état "tracking actif" SANS réinitialiser le parcours en cours (contrairement
+     *  à [demarrerParcours] qui efface tout). Utilisé après [restaurerParcours] pour
+     *  continuer une sortie sauvegardée. */
+    fun reprendreParcours() {
+        _estEnCours.postValue(true)
+    }
 }

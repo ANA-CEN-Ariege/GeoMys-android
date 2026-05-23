@@ -194,7 +194,11 @@ class SaisieObservationFragment : Fragment() {
             } else {
                 latitude = arguments?.getDouble("latitude") ?: 0.0
                 longitude = arguments?.getDouble("longitude") ?: 0.0
-                taxonInitial = Taxon.OISEAU
+                // Restaure le dernier groupe choisi par l'utilisateur. Fallback Oiseaux si
+                // jamais mémorisé. La validité par rapport aux boutons disponibles est
+                // vérifiée plus bas (taxonDepart).
+                taxonInitial = fr.ariegenature.geonat.ui.saisie.PreferencesSaisie
+                    .dernierTaxon(requireContext()) ?: Taxon.OISEAU
                 // Nouveau relevé venant de DetailsReleveFragment : on reçoit les valeurs
                 // OCCTAX_RELEVE déjà validées (required vérifiés en amont).
                 arguments?.getString("addReleveJson")?.takeIf { it.isNotEmpty() }?.let { json ->
@@ -518,6 +522,10 @@ class SaisieObservationFragment : Fragment() {
     // ─── Espèce / autocomplete ────────────────────────────────────────────────
 
     private fun onTaxonChanged() {
+        // Mémorise le nouveau groupe pour qu'il soit ré-appliqué à la prochaine ouverture
+        // d'un écran de saisie (mono ou multi-taxons).
+        fr.ariegenature.geonat.ui.saisie.PreferencesSaisie
+            .memoiserTaxon(requireContext(), taxonSelector.taxon)
         binding.etEspece.setText("")
         taxrefLookup.reset()
         refreshAutocompleteAdapter()
@@ -573,8 +581,14 @@ class SaisieObservationFragment : Fragment() {
         updateEspeceHint()
         binding.tilEspece.setEndIconOnClickListener { speech.lancer() }
 
+        // Restaure l'état du switch depuis la dernière session (partagé avec la saisie rapide).
+        rechercheNomSci = fr.ariegenature.geonat.ui.saisie.PreferencesSaisie
+            .rechercheNomSci(requireContext())
+        binding.switchNomSci.isChecked = rechercheNomSci
         binding.switchNomSci.setOnCheckedChangeListener { _, isChecked ->
             rechercheNomSci = isChecked
+            fr.ariegenature.geonat.ui.saisie.PreferencesSaisie
+                .memoiserNomSci(requireContext(), isChecked)
             binding.etEspece.setText("")
             taxrefLookup.reset()
             refreshAutocompleteAdapter()

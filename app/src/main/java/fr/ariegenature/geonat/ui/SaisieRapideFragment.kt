@@ -73,11 +73,11 @@ class SaisieRapideFragment : Fragment() {
     private var envoiJob: Job? = null
 
     // Paramètres par défaut
-    private var taxon: Taxon = Taxon.OISEAU
+    private var taxon: Taxon = Taxon.OISEAU  // remplacé par la valeur mémorisée au setupTaxonSelector
     private var especeDefaut = ""
     private var cdNomDefaut: Int? = null
     private var nombre = 1
-    private var rechercheNomSci = false
+    private var rechercheNomSci = false  // remplacé par la valeur mémorisée au setupAutocomplete
     private var taxRefStatut: TaxRefStatut? = null
     private var cdNomManuel = ""
 
@@ -325,6 +325,11 @@ class SaisieRapideFragment : Fragment() {
             ),
             idListeFiltre = gnConfig.taxaListeId.trim().toIntOrNull(),
         )
+        // Restaure le dernier groupe choisi par l'utilisateur (toutes saisies confondues).
+        // Si le groupe mémorisé n'est plus disponible (boutons filtrés selon la liste de
+        // taxons configurée), on retombe sur le 1er groupe dispo.
+        fr.ariegenature.geonat.ui.saisie.PreferencesSaisie.dernierTaxon(requireContext())
+            ?.let { taxon = it }
         if (taxon !in boutons.keys) taxon = boutons.keys.firstOrNull() ?: taxon
         taxonSelector = TaxonSelector(
             requireContext(),
@@ -332,6 +337,7 @@ class SaisieRapideFragment : Fragment() {
             initial = taxon,
         ) { t ->
             taxon = t
+            fr.ariegenature.geonat.ui.saisie.PreferencesSaisie.memoiserTaxon(requireContext(), t)
             binding.etEspece.setText("")
             taxRefStatut = null
             taxrefLookup.reset()
@@ -358,8 +364,14 @@ class SaisieRapideFragment : Fragment() {
             }
         }
 
+        // Restaure l'état du switch "noms scientifiques" depuis la dernière session.
+        rechercheNomSci = fr.ariegenature.geonat.ui.saisie.PreferencesSaisie
+            .rechercheNomSci(requireContext())
+        binding.switchNomSci.isChecked = rechercheNomSci
         binding.switchNomSci.setOnCheckedChangeListener { _, isChecked ->
             rechercheNomSci = isChecked
+            fr.ariegenature.geonat.ui.saisie.PreferencesSaisie
+                .memoiserNomSci(requireContext(), isChecked)
             binding.etEspece.setText("")
             taxRefStatut = null
             taxrefLookup.reset()

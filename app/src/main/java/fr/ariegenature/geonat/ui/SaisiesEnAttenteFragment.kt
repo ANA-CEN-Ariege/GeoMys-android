@@ -144,6 +144,24 @@ class SaisiesEnAttenteFragment : Fragment() {
         }
     }
 
+    /** Extrait le nom humain du taxon stocké dans [s.valeursJson] (si présent). On lit la
+     *  clé `cd_nom` du payload — convention gn_module_monitoring — et on résout via
+     *  TaxRefCache. Préfère le nom français quand dispo, sinon le nom scientifique.
+     *  Retourne null si la saisie ne porte pas de taxon ou si le cd_nom est inconnu. */
+    private fun nomTaxonDeSaisie(s: SaisieEnAttente): String? {
+        val cdNom = try {
+            val obj = org.json.JSONObject(s.valeursJson)
+            when (val v = obj.opt("cd_nom")) {
+                is Number -> v.toInt()
+                is String -> v.toIntOrNull()
+                else -> null
+            }
+        } catch (_: Exception) { null } ?: return null
+        if (cdNom <= 0) return null
+        val entry = fr.ariegenature.geonat.store.TaxRefCache.entreesParCdNom()[cdNom] ?: return null
+        return entry.nomFrOriginal?.takeIf { it.isNotEmpty() } ?: entry.sciNom
+    }
+
     private fun ordrePourTri(etat: SaisieEnAttente.Etat) = when (etat) {
         SaisieEnAttente.Etat.PENDING, SaisieEnAttente.Etat.SENDING -> 0
         SaisieEnAttente.Etat.ERROR -> 1
@@ -206,8 +224,12 @@ class SaisiesEnAttenteFragment : Fragment() {
         val labelType = fr.ariegenature.geonat.network.MonitoringApi
             .labelTypeEnCache(s.moduleCode, s.objectType)
             ?: s.objectType.replaceFirstChar { it.uppercase() }
+        // Si la saisie porte un cd_nom (typiquement une observation), on remplace le label
+        // type par le nom du taxon — plus parlant que "Observation" générique. Le type
+        // reste accessible visuellement via l'indentation et le contexte du groupe.
+        val titrePrincipal = nomTaxonDeSaisie(s) ?: labelType
         header.addView(TextView(ctx).apply {
-            text = "$flecheEnfant$icone $labelType$parentInfo"
+            text = "$flecheEnfant$icone $titrePrincipal$parentInfo"
             textSize = 15f
             layoutParams = LinearLayout.LayoutParams(
                 0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f,

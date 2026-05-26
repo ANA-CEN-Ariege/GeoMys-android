@@ -2,7 +2,7 @@
 
 Application Android de terrain pour la saisie naturaliste connectée à un serveur [GeoNature](https://github.com/PnX-SI/GeoNature) — observations libres (OccTax) **et** suivis protocolés (gn_module_monitoring), en ligne comme hors-ligne.
 
-Développée par le [CEN Ariège](https://www.cen-ariege.fr/).
+Développée par l'[ANA - CEN Ariège](https://ariegenature.fr/).
 
 ## Fonctionnalités principales
 

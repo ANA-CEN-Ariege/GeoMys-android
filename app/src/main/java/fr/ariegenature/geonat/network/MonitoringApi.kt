@@ -661,7 +661,9 @@ object MonitoringApi {
 
     /** Pour les widgets `observers`/`dataset`/`taxonomy_list` déclarés sans `api`/`keyLabel`/
      *  `keyValue`, applique les conventions standard gn_module_monitoring (URL fixe + champs
-     *  par défaut). Si le widget a déjà un api, on ne touche à rien.
+     *  par défaut). Pour `observers`/`taxonomy_list`, si le widget a déjà un api on ne touche
+     *  à rien. Le widget `dataset` fait exception : on garantit toujours un filtre `module_code`
+     *  (cf. ci-dessous), même quand un api explicite est fourni.
      *  [moduleCodeProtocole] : code du protocole en cours, utilisé pour filtrer les datasets
      *  d'un widget `dataset` quand le schéma n'a pas explicitement `module_code` — on prend
      *  par défaut les datasets rattachés au protocole, ce qui est ce que veut le serveur. */
@@ -671,19 +673,29 @@ object MonitoringApi {
         idListTaxonomy: Int?,
         moduleCodeProtocole: String,
     ): MonitoringPropertySchema {
+        // Cas `dataset` traité AVANT l'early-return sur apiUrl : on veut TOUJOURS un filtre
+        // `module_code`, même quand le schéma fournit déjà un `api` explicite (sinon
+        // /api/meta/datasets renvoie tous les jeux de données de l'instance, pas seulement
+        // ceux rattachés au protocole). Priorité au `module_code` du schéma, sinon le module
+        // du protocole en cours. Idempotent : on n'ajoute rien si `module_code` est déjà là.
+        if (prop.typeWidget.equals("dataset", ignoreCase = true) ||
+            prop.apiUrl?.contains("meta/datasets") == true
+        ) {
+            val codeFiltre = prop.moduleCodeFiltre ?: moduleCodeProtocole
+            val base = prop.apiUrl ?: "meta/datasets"
+            val apiFiltree = if (base.contains("module_code=")) base
+                else base + (if (base.contains('?')) "&" else "?") + "module_code=$codeFiltre"
+            return prop.copy(
+                apiUrl = apiFiltree,
+                keyLabel = prop.keyLabel ?: "dataset_name",
+                keyValue = prop.keyValue ?: "id_dataset",
+            )
+        }
         if (prop.apiUrl != null) return prop
         val (api, kLabel, kValue) = when (prop.typeWidget.lowercase()) {
             "observers" -> Triple(
                 idListObserver?.let { "users/menu/$it" } ?: return prop,
                 "nom_complet", "id_role",
-            )
-            "dataset" -> Triple(
-                // Filtre par module : priorité au `module_code` explicite du schéma, sinon
-                // on retombe sur le module du protocole en cours — c'est ce qui correspond
-                // à la pratique GeoNature (un protocole monitoring utilise les datasets
-                // rattachés à ce protocole, pas le dataset OCCTAX global).
-                "meta/datasets?module_code=${prop.moduleCodeFiltre ?: moduleCodeProtocole}",
-                "dataset_name", "id_dataset",
             )
             "taxonomy_list" -> Triple(
                 idListTaxonomy?.let { "biblistes/$it" } ?: return prop,
@@ -1004,6 +1016,30 @@ object MonitoringApi {
             val idListe = matchObs.groupValues[1].toIntOrNull() ?: return@withContext null
             val arr = chargerObservateursDeListe(config, idListe) ?: return@withContext null
             return@withContext extraireOptions(arr, keyValue, keyLabel, prop.filtres)
+        }
+        // Cas spécial dataset : on NE fait PAS confiance au filtre serveur
+        // /api/meta/datasets?module_code=X — sur cette instance il renvoie TOUS les datasets.
+        // On filtre le cache local des datasets (peuplé au sync via ?fields=modules), où
+        // chaque dataset porte ses `moduleCodes`. C'est exactement la source — et le filtre —
+        // de l'écran protocole (SuiviDetailFragment.afficherDatasetsAssocies), qui lui marche.
+        // Fallback sur le fetch live (ci-dessous) seulement si le cache ne donne aucun match.
+        if (apiPath.startsWith("meta/datasets") || prop.typeWidget.equals("dataset", ignoreCase = true)) {
+            val moduleCodeFiltre = Regex("""module_code=([^&]+)""").find(apiPath)?.groupValues?.get(1)
+                ?: prop.moduleCodeFiltre
+            val cache = config.datasetsCacheJson.takeIf { it.isNotEmpty() }
+            if (moduleCodeFiltre != null && cache != null) {
+                val datasets: List<GeoNatureDataset> = runCatching {
+                    val t = object : com.google.gson.reflect.TypeToken<List<GeoNatureDataset>>() {}.type
+                    com.google.gson.Gson().fromJson<List<GeoNatureDataset>>(cache, t)
+                }.getOrNull().orEmpty()
+                val associes = datasets.filter { moduleCodeFiltre in it.moduleCodes }
+                if (associes.isNotEmpty()) {
+                    return@withContext associes
+                        .map { OptionDatalist(it.id.toString(), it.nom) }
+                        .sortedBy { it.label.lowercase() }
+                }
+            }
+            // sinon : cache vide / aucun match → on retombe sur le fetch live ci-dessous.
         }
         val base = config.urlServeur.trim().trimEnd('/')
         val (token, _, cookies) = GeoNatureAuth.loginAvecCookies(base, config.login, config.motDePasse)

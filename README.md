@@ -118,4 +118,4 @@ Les APK debug sont publiés sur la page [Releases](https://github.com/ANA-CEN-Ar
 
 ## Licence
 
-© CEN Ariège — usage interne.
+© ANA - CEN Ariège — usage interne.

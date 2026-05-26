@@ -404,8 +404,10 @@ class NouvelleVisiteFragment : Fragment() {
         val parentTypeArg = arguments?.getString("parentObjectType")?.takeIf { it.isNotEmpty() }
 
         // Mode édition : on remplace les valeurs ET on remet la saisie en PENDING (efface
-        // un éventuel ERROR précédent). Pas de reset/chaînage en édition — on remonte d'un
-        // écran pour revenir à la liste des saisies en attente.
+        // un éventuel ERROR précédent). Au retour, on amène l'utilisateur sur la fiche du
+        // parent serveur (= l'écran qu'il voyait en saisissant à l'origine, avec la liste
+        // des visites/obs du point) — pas sur la liste "Mes visites" d'où venait le tap.
+        // Si pas de parent serveur (cas rare d'une saisie orpheline), fallback navigateUp.
         val uuidEdition = editUuid
         if (uuidEdition != null) {
             fr.ariegenature.geonat.store.OutboxMonitoring.mettreAJour(uuidEdition) {
@@ -419,7 +421,21 @@ class NouvelleVisiteFragment : Fragment() {
                 requireContext(), "Modifications enregistrées",
                 android.widget.Toast.LENGTH_SHORT,
             ).show()
-            findNavController().navigateUp()
+            val parentIdRetour = arguments?.getInt("parentId", -1)?.takeIf { it > 0 }
+            val parentTypeRetour = arguments?.getString("parentObjectType")?.takeIf { it.isNotEmpty() }
+            val moduleRetour = arguments?.getString("moduleCode")?.takeIf { it.isNotEmpty() }
+            if (parentIdRetour != null && parentTypeRetour != null && moduleRetour != null) {
+                findNavController().navigate(
+                    fr.ariegenature.geonat.R.id.action_nouvelle_visite_to_fiche,
+                    androidx.core.os.bundleOf(
+                        "moduleCode" to moduleRetour,
+                        "objectType" to parentTypeRetour,
+                        "id" to parentIdRetour,
+                    ),
+                )
+            } else {
+                findNavController().navigateUp()
+            }
             return
         }
 

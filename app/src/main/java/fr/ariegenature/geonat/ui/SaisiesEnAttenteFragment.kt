@@ -80,25 +80,62 @@ class SaisiesEnAttenteFragment : Fragment() {
             .filter { it.parentUuidLocal == null || it.parentUuidLocal !in uuidsConnus }
             .sortedWith(compareBy({ ordrePourTri(it.etat) }, { it.dateLocale }))
 
-        racines.forEach { racine ->
-            // Header de groupe : on remonte la chaîne des parents serveur du parent direct
-            // de la racine pour situer le groupe (par ex. "Forêt de Foix › Point Foix-Nord"
-            // pour une visite faite sur un point d'écoute). Si le parent serveur n'a jamais
-            // été ouvert dans l'app (cache vide), on omet le header — le titre de la racine
-            // gardera son fallback "type #id".
-            creerHeaderGroupe(racine)?.let { binding.llSaisies.addView(it) }
+        // Regroupement hiérarchique : Protocole → Site (header de groupe) → Visite/Obs.
+        // On préserve l'ordre des racines (déjà trié par état/date) au sein de chaque
+        // module, et on ordonne les modules par leur ordre d'apparition de la 1re racine.
+        val racinesParModule = linkedMapOf<String, MutableList<SaisieEnAttente>>()
+        racines.forEach { r ->
+            racinesParModule.getOrPut(r.moduleCode) { mutableListOf() }.add(r)
+        }
 
-            val lignes = mutableListOf<Pair<SaisieEnAttente, Int>>()
-            fun ajouterArbre(s: SaisieEnAttente, profondeur: Int) {
-                lignes.add(s to profondeur)
-                parParent[s.uuid].orEmpty()
-                    .sortedWith(compareBy({ ordrePourTri(it.etat) }, { it.dateLocale }))
-                    .forEach { ajouterArbre(it, profondeur + 1) }
+        racinesParModule.forEach { (moduleCode, racinesModule) ->
+            binding.llSaisies.addView(creerHeaderProtocole(moduleCode))
+            racinesModule.forEach { racine ->
+                // Header de groupe : on remonte la chaîne des parents serveur du parent direct
+                // de la racine pour situer le groupe (par ex. "Forêt de Foix › Point Foix-Nord"
+                // pour une visite faite sur un point d'écoute). Si le parent serveur n'a jamais
+                // été ouvert dans l'app (cache vide), on omet le header — le titre de la racine
+                // gardera son fallback "type #id".
+                creerHeaderGroupe(racine)?.let { binding.llSaisies.addView(it) }
+
+                val lignes = mutableListOf<Pair<SaisieEnAttente, Int>>()
+                fun ajouterArbre(s: SaisieEnAttente, profondeur: Int) {
+                    lignes.add(s to profondeur)
+                    parParent[s.uuid].orEmpty()
+                        .sortedWith(compareBy({ ordrePourTri(it.etat) }, { it.dateLocale }))
+                        .forEach { ajouterArbre(it, profondeur + 1) }
+                }
+                ajouterArbre(racine, 0)
+                lignes.forEach { (s, profondeur) ->
+                    binding.llSaisies.addView(creerLigne(s, fmtDate, profondeur))
+                }
             }
-            ajouterArbre(racine, 0)
-            lignes.forEach { (s, profondeur) ->
-                binding.llSaisies.addView(creerLigne(s, fmtDate, profondeur))
-            }
+        }
+    }
+
+    /** Header de section "Protocole : <nom>" qui regroupe toutes les saisies d'un même
+     *  moduleCode. Permet de scanner rapidement la liste quand plusieurs protocoles ont
+     *  des saisies en attente en parallèle. Style bleu foncé en majuscules pour bien le
+     *  distinguer du header de groupe (📍 Site, plus discret). */
+    private fun creerHeaderProtocole(moduleCode: String): View {
+        val ctx = requireContext()
+        val density = resources.displayMetrics.density
+        val label = fr.ariegenature.geonat.network.MonitoringApi.labelModuleEnCache(moduleCode)
+            ?: moduleCode
+        return TextView(ctx).apply {
+            text = "🔬 $label"
+            textSize = 14f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setTextColor(0xFF0D47A1.toInt())
+            isAllCaps = true
+            setPadding(
+                (12 * density).toInt(), (18 * density).toInt(),
+                (12 * density).toInt(), (2 * density).toInt(),
+            )
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            )
         }
     }
 

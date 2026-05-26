@@ -109,6 +109,11 @@
         android:id="@+id/nouvelleVisiteFragment"
         android:name="fr.ariegenature.geonat.ui.NouvelleVisiteFragment"
         android:label="Nouvelle visite">
+        <action
+            android:id="@+id/action_nouvelle_visite_to_fiche"
+            app:destination="@id/ficheObjetFragment"
+            app:popUpTo="@id/nouvelleVisiteFragment"
+            app:popUpToInclusive="true" />
         <argument
             android:name="moduleCode"
             app:argType="string"

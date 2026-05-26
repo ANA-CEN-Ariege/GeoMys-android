@@ -39,6 +39,29 @@ object MonitoringApi {
     fun moduleParCode(moduleCode: String): MonitoringModule? =
         dernierChargement.firstOrNull { it.moduleCode == moduleCode }
 
+    /** Résout le `module_label` (libellé humain) d'un protocole à partir de son code, en
+     *  cherchant d'abord la cache mémoire puis le cache disque modules. Retourne null si
+     *  le code n'est pas dans le cache (cas d'un protocole jamais visité). Pas d'appel
+     *  réseau. */
+    fun labelModuleEnCache(moduleCode: String): String? {
+        moduleParCode(moduleCode)?.moduleLabel?.takeIf { it.isNotEmpty() && it != moduleCode }
+            ?.let { return it }
+        val json = MonitoringCache.getJson(MonitoringCache.keyModules()) ?: return null
+        return try {
+            val arr = runCatching { JSONArray(json) }.getOrNull()
+                ?: JSONObject(json).let { o ->
+                    o.optJSONArray("data") ?: o.optJSONArray("items") ?: o.optJSONArray("modules")
+                } ?: return null
+            for (i in 0 until arr.length()) {
+                val item = arr.optJSONObject(i) ?: continue
+                if (item.optString("module_code") == moduleCode) {
+                    return item.optString("module_label", "").takeIf { it.isNotEmpty() }
+                }
+            }
+            null
+        } catch (_: Exception) { null }
+    }
+
     /** GET /api/monitorings/modules — liste les modules de suivi disponibles sur l'instance.
      *  Renvoie [] silencieusement si HTTP 404 (gn_module_monitoring non installé).
      *  Sur toute autre erreur HTTP (5xx, parse), propage l'exception. Sur erreur **réseau**

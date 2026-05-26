@@ -79,6 +79,13 @@ class NouvelleVisiteFragment : Fragment() {
         val modeEdition = editUuid != null
 
         binding.tvTitre.text = if (modeEdition) "Modifier la saisie" else "Nouvelle visite"
+        // Fil d'Ariane : reçu de l'écran appelant (= chemin complet jusqu'au parent de la
+        // saisie). Tous les segments sont des ancêtres cliquables (le formulaire lui-même
+        // n'est pas un niveau du fil). Vide quand on édite depuis « Saisies en attente ».
+        appliquerFilAriane(
+            binding.tvFil, findNavController(), moduleCode,
+            decoderFil(arguments?.getString("fil")), dernierCliquable = true,
+        )
         binding.tvContexte.text = buildString {
             if (titreSite.isNotEmpty()) append("Sur : $titreSite")
             if (moduleCode.isNotEmpty()) {
@@ -431,6 +438,9 @@ class NouvelleVisiteFragment : Fragment() {
                         "moduleCode" to moduleRetour,
                         "objectType" to parentTypeRetour,
                         "id" to parentIdRetour,
+                        // Le fil reçu = chemin complet jusqu'au parent (la saisie y est
+                        // attachée) = exactement le fil attendu par la fiche du parent.
+                        "fil" to arguments?.getString("fil").orEmpty(),
                     ),
                 )
             } else {

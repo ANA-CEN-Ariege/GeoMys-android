@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Fond du bandeau fil d'Ariane : rectangle à coins arrondis. La couleur est appliquée
+     via android:backgroundTint (= ?attr/colorSurfaceVariant) pour rester compatible
+     jour/nuit ; l'ombre vient de android:elevation (l'outline arrondi de ce shape la
+     rend arrondie elle aussi). -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@android:color/white" />
+    <corners android:radius="12dp" />
+</shape>

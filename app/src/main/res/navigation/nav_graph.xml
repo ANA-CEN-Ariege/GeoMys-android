@@ -94,6 +94,10 @@
         <argument
             android:name="id"
             app:argType="integer" />
+        <argument
+            android:name="fil"
+            app:argType="string"
+            android:defaultValue="" />
         <action
             android:id="@+id/action_fiche_to_fiche"
             app:destination="@id/ficheObjetFragment" />
@@ -132,6 +136,10 @@
             android:defaultValue="" />
         <argument
             android:name="editUuid"
+            app:argType="string"
+            android:defaultValue="" />
+        <argument
+            android:name="fil"
             app:argType="string"
             android:defaultValue="" />
     </fragment>

@@ -29,6 +29,11 @@ class FicheObjetFragment : Fragment() {
     private var _binding: FragmentFicheObjetBinding? = null
     private val binding get() = _binding!!
 
+    /** Fil d'Ariane complet de CET objet (= "Protocole › … › nom de l'objet"), reçu via
+     *  l'argument de navigation `fil` (l'appelant le connaît : c'est la ligne tapée). Le
+     *  dernier segment est l'objet courant ; les précédents préfixent le fil des enfants. */
+    private var filCourant: List<FilSegment> = emptyList()
+
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         _binding = FragmentFicheObjetBinding.inflate(inflater, container, false)
         return binding.root
@@ -43,6 +48,10 @@ class FicheObjetFragment : Fragment() {
         val id = arguments?.getInt("id", -1)?.takeIf { it > 0 } ?: return navUp()
 
         binding.btnRetour.setOnClickListener { findNavController().navigateUp() }
+
+        filCourant = decoderFil(arguments?.getString("fil"))
+        // Dernier segment = cet objet (non cliquable, on y est déjà) ; ancêtres cliquables.
+        appliquerFilAriane(binding.tvFil, findNavController(), moduleCode, filCourant, dernierCliquable = false)
 
         chargerEtAfficher(moduleCode, objectType, id)
     }
@@ -283,6 +292,7 @@ class FicheObjetFragment : Fragment() {
                                     "moduleCode" to objet.moduleCode,
                                     "objectType" to type,
                                     "id" to e.id,
+                                    "fil" to encoderFil(filCourant + FilSegment(type, e.id, nom)),
                                 )
                             )
                         }
@@ -325,6 +335,7 @@ class FicheObjetFragment : Fragment() {
                                     "parentId" to e.id,
                                     "titreSite" to nom,
                                     "childObjectType" to typeSaisieEnfant,
+                                    "fil" to encoderFil(filCourant + FilSegment(type, e.id, nom)),
                                 )
                             )
                         }
@@ -435,6 +446,7 @@ class FicheObjetFragment : Fragment() {
                             "parentId" to objet.id,
                             "titreSite" to (schemaObjetParent?.nameField?.let { objet.proprietes[it] } ?: ""),
                             "childObjectType" to type,
+                            "fil" to encoderFil(filCourant),
                         ),
                     )
                 }
@@ -529,6 +541,7 @@ class FicheObjetFragment : Fragment() {
                             "parentUuidLocal" to saisie.uuid,
                             "titreSite" to "Saisie locale du ${fmt.format(java.util.Date(saisie.dateLocale))}",
                             "childObjectType" to typeSaisieEnfant,
+                            "fil" to encoderFil(filCourant),
                         )
                     )
                 }

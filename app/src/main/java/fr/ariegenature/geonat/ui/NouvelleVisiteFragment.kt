@@ -256,33 +256,38 @@ class NouvelleVisiteFragment : Fragment() {
         fields: List<EditableField>,
         visitSchema: MonitoringApi.MonitoringSchemaObjet,
     ): List<EditableField> = coroutineScope {
+        val nouveaux = fields.toMutableList()
+        // Stocke les options brutes par index pour la résolution des défauts (cd_nomenclature
+        // / label_default → id_nomenclature). Le PropertyValue UI ne porte pas ces métadonnées.
+        val optionsParIdx = mutableMapOf<Int, List<MonitoringApi.OptionDatalist>>()
+        // Fetch des options des champs `datalist` (observers, dataset, nomenclatures…). Les
+        // SELECT/RADIO à `values` statiques n'ont pas d'apiUrl → non fetchés ici, mais ils
+        // reçoivent quand même leur défaut plus bas. ⚠ Avant, un `return` anticipé quand
+        // toFetch était vide sautait toute l'application des défauts (radio Oui/Non, etc.).
         val toFetch = fields.withIndex().filter { (_, f) ->
             (f.viewType == ViewType.SELECT || f.viewType == ViewType.SELECT_MULTIPLE) &&
                 f.values.isEmpty() &&
                 visitSchema.properties[f.code]?.apiUrl != null
         }
-        if (toFetch.isEmpty()) return@coroutineScope fields
-        val deferreds = toFetch.map { (idx, f) ->
-            val prop = visitSchema.properties.getValue(f.code)
-            async { idx to MonitoringApi.chargerOptionsDatalist(config, prop) }
-        }
-        val resultats = deferreds.awaitAll().toMap()
-        val notesEchecs = mutableListOf<String>()
-        val nouveaux = fields.toMutableList()
-        // Stocke les options brutes par index pour la résolution des défauts (cd_nomenclature
-        // / label_default → id_nomenclature). Le PropertyValue UI ne porte pas ces métadonnées.
-        val optionsParIdx = mutableMapOf<Int, List<MonitoringApi.OptionDatalist>>()
-        for ((idx, opts) in resultats) {
-            val f = nouveaux[idx]
-            if (opts == null) {
-                notesEchecs.add("${f.code} (fetch options échoué)")
-                continue
+        if (toFetch.isNotEmpty()) {
+            val deferreds = toFetch.map { (idx, f) ->
+                val prop = visitSchema.properties.getValue(f.code)
+                async { idx to MonitoringApi.chargerOptionsDatalist(config, prop) }
             }
-            optionsParIdx[idx] = opts
-            nouveaux[idx] = f.copy(values = opts.map { o -> PropertyValue(o.value, o.label) })
-        }
-        if (notesEchecs.isNotEmpty()) {
-            ajouterDebug("⚠ Datalists non chargées : ${notesEchecs.joinToString(", ")}")
+            val resultats = deferreds.awaitAll().toMap()
+            val notesEchecs = mutableListOf<String>()
+            for ((idx, opts) in resultats) {
+                val f = nouveaux[idx]
+                if (opts == null) {
+                    notesEchecs.add("${f.code} (fetch options échoué)")
+                    continue
+                }
+                optionsParIdx[idx] = opts
+                nouveaux[idx] = f.copy(values = opts.map { o -> PropertyValue(o.value, o.label) })
+            }
+            if (notesEchecs.isNotEmpty()) {
+                ajouterDebug("⚠ Datalists non chargées : ${notesEchecs.joinToString(", ")}")
+            }
         }
         // Application des valeurs par défaut déclarées dans le schéma : pour les widgets
         // nomenclature, on résout `default.cd_nomenclature` ou `default.label_default` en
@@ -513,7 +518,8 @@ class NouvelleVisiteFragment : Fragment() {
     private fun typerPourField(f: EditableField, v: Any?): Any? {
         if (v == null) return null
         return when (f.viewType) {
-            ViewType.TEXT, ViewType.TEXTAREA, ViewType.DATE, ViewType.TIME, ViewType.SELECT ->
+            ViewType.TEXT, ViewType.TEXTAREA, ViewType.DATE, ViewType.TIME, ViewType.SELECT,
+            ViewType.RADIO ->
                 v.toString()
             ViewType.NUMBER, ViewType.TAXON -> when (v) {
                 is Int -> v

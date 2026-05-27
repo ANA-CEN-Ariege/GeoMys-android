@@ -27,8 +27,13 @@ fun mapperViewType(prop: fr.ariegenature.geonat.network.MonitoringApi.Monitoring
         "date" -> ViewType.DATE
         "datetime" -> ViewType.DATE // POC : on ignore la composante heure
         "time" -> ViewType.TIME
-        "select", "radio" ->
+        "select" ->
             if (prop.multiple) ViewType.SELECT_MULTIPLE else ViewType.SELECT
+        // `radio` : choix unique en boutons radio (parité web GeoNature / gn_mobile_monitoring,
+        // qui rendent ce widget en RadioButton, pas en liste déroulante). Un `radio multiple`
+        // n'a pas de sens → on bascule sur la multi-sélection à cases.
+        "radio" ->
+            if (prop.multiple) ViewType.SELECT_MULTIPLE else ViewType.RADIO
         // Widget explicitement multi-sélection côté serveur (variantes vues sur le terrain).
         "multiselect", "multi_select", "select_multiple", "select-multiple" -> ViewType.SELECT_MULTIPLE
         // Booléens : différentes conventions serveur — toutes vers CheckBox.

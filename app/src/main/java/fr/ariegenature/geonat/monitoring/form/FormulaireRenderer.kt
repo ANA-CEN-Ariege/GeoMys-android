@@ -115,6 +115,14 @@ class FormulaireRenderer(
                 val idx = field.values.indexOfFirst { it.value == cible }
                 sp.setSelection(if (idx >= 0) idx + 1 else 0)
             }
+            ViewType.RADIO -> {
+                val rg = vue as android.widget.RadioGroup
+                val cible = valeur?.toString()
+                val bouton = (0 until rg.childCount)
+                    .mapNotNull { rg.getChildAt(it) as? android.widget.RadioButton }
+                    .firstOrNull { it.tag == cible }
+                if (bouton != null) rg.check(bouton.id) else rg.clearCheck()
+            }
             ViewType.DATE, ViewType.TIME -> (vue as TextView).apply {
                 val s = valeur?.toString().orEmpty()
                 tag = s
@@ -238,6 +246,11 @@ class FormulaireRenderer(
                 val idx = sp.selectedItemPosition
                 if (idx <= 0) "" else field.values.getOrNull(idx - 1)?.value.orEmpty()
             }
+            ViewType.RADIO -> {
+                val rg = v as android.widget.RadioGroup
+                val coche = rg.checkedRadioButtonId
+                if (coche == View.NO_ID) "" else rg.findViewById<View>(coche)?.tag as? String ?: ""
+            }
             ViewType.SELECT_MULTIPLE -> {
                 // Liste vide → null (sémantique "non renseigné" attendue par le serveur
                 // monitoring, aligné sur ce qu'envoie le formulaire web).
@@ -281,6 +294,7 @@ class FormulaireRenderer(
             ViewType.TIME -> creerChampTime(field)
             ViewType.TAXON -> creerChampTaxon(field)
             ViewType.SELECT -> creerSpinner(field)
+            ViewType.RADIO -> creerChampRadio(field)
             ViewType.SELECT_MULTIPLE -> creerChampMultiSelect(field)
             ViewType.CHECKBOX -> creerCheckBox(field)
         }
@@ -568,6 +582,40 @@ class FormulaireRenderer(
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
         return sp
+    }
+
+    /** Champ RADIO : groupe de boutons radio (widget serveur `radio`). Disposition horizontale
+     *  pour les petits jeux d'options courtes (ex. Oui/Non), verticale sinon — heuristique
+     *  alignée sur gn_mobile_monitoring. La `value` de l'option cochée est portée par le `tag`
+     *  de chaque bouton ; on pré-coche field.value si fournie (défaut serveur ou édition). */
+    private fun creerChampRadio(field: EditableField): android.widget.RadioGroup {
+        val horizontal = field.values.size <= 4 &&
+            field.values.all { it.label.length <= 15 } &&
+            field.values.sumOf { it.label.length } <= 40
+        val rg = android.widget.RadioGroup(ctx).apply {
+            orientation = if (horizontal) android.widget.RadioGroup.HORIZONTAL
+                else android.widget.RadioGroup.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            )
+        }
+        val defaut = field.value?.toString()
+        field.values.forEach { opt ->
+            val rb = com.google.android.material.radiobutton.MaterialRadioButton(ctx).apply {
+                id = View.generateViewId()
+                text = opt.label
+                tag = opt.value
+                setTextColor(couleurValeur)
+                // Marge à droite pour aérer les boutons quand ils sont côte à côte.
+                if (horizontal) setPadding(0, 0, (16 * density).toInt(), 0)
+            }
+            rg.addView(rb)
+            if (opt.value == defaut) rg.check(rb.id)
+        }
+        // Listener posé APRÈS le pré-cochage du défaut pour ne pas notifier pendant le rendu.
+        rg.setOnCheckedChangeListener { _, _ -> notifierChangement() }
+        return rg
     }
 
     /** Booléen rendu comme CheckBox. Pré-cochée si field.value est `true` (Boolean), ou la

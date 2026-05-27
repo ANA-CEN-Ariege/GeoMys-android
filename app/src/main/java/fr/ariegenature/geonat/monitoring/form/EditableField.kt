@@ -17,6 +17,10 @@ enum class ViewType {
      *  TaxRefCache, ou null si le texte ne matche aucun taxon. */
     TAXON,
     SELECT,
+    /** Choix unique rendu en boutons radio (widget serveur `radio`). Mêmes `values` qu'un
+     *  SELECT mais affiché comme un groupe de boutons (horizontal si peu d'options courtes,
+     *  ex. Oui/Non) plutôt qu'un Spinner. Valeur retournée = la `value` de l'option cochée. */
+    RADIO,
     /** Multi-sélection : utilisé pour les datalists `multiple: true` (observers, dataset multi,
      *  types de sites) ainsi que pour les widgets serveur `multiselect`. Rendu via dialog
      *  cases à cocher, valeur retournée = List<String>. */

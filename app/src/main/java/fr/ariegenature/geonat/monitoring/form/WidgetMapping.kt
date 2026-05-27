@@ -2,11 +2,25 @@ package fr.ariegenature.geonat.monitoring.form
 
 import fr.ariegenature.geonat.network.MonitoringApi
 
+/** Détection enrichie d'un champ taxonomie (parité isTaxonomyField de gn_mobile_monitoring) :
+ *  au-delà du `type_widget`, on reconnaît un `type_util == taxonomy`, un champ nommé `cd_nom`,
+ *  ou une api `taxref/allnamebylist/<id>`. */
+private fun estChampTaxon(prop: MonitoringApi.MonitoringPropertySchema): Boolean {
+    if (prop.typeWidget.lowercase() in setOf("taxonomy", "taxon", "taxon-input", "taxonomy-input")) return true
+    if (prop.typeUtil?.lowercase() == "taxonomy") return true
+    if (prop.nom == "cd_nom") return true
+    if (prop.apiUrl?.contains("allnamebylist/") == true) return true
+    return false
+}
+
 /** Convertit un schéma de propriété gn_module_monitoring vers le [ViewType] du renderer.
  *  Le `multiple` est lu depuis le schéma — datalist/observers/dataset peuvent être single
  *  (Spinner) ou multi (dialog cases à cocher). Renvoie null pour les widgets pas encore portés. */
-fun mapperViewType(prop: fr.ariegenature.geonat.network.MonitoringApi.MonitoringPropertySchema): ViewType? =
-    when (prop.typeWidget.lowercase()) {
+fun mapperViewType(prop: fr.ariegenature.geonat.network.MonitoringApi.MonitoringPropertySchema): ViewType? {
+    // Taxonomie détectée par plusieurs signaux (cf. estChampTaxon) — prioritaire car un
+    // champ taxon peut être déclaré en `datalist` côté serveur.
+    if (estChampTaxon(prop)) return ViewType.TAXON
+    return when (prop.typeWidget.lowercase()) {
         "text", "string" -> ViewType.TEXT
         "textarea", "observers-text" -> ViewType.TEXTAREA
         "number", "integer", "float", "decimal" -> ViewType.NUMBER
@@ -24,14 +38,30 @@ fun mapperViewType(prop: fr.ariegenature.geonat.network.MonitoringApi.Monitoring
         // depuis l'endpoint déclaré dans le schéma (api, keyLabel, keyValue, data_path).
         "datalist", "nomenclature", "observers", "dataset" ->
             if (prop.multiple) ViewType.SELECT_MULTIPLE else ViewType.SELECT
-        // Taxonomie : autocomplete TaxRef sur le cache local (= ce qu'on synchronise au sync).
+        // Taxonomie : déjà capté par estChampTaxon ci-dessus, conservé pour lisibilité.
         "taxonomy", "taxon", "taxon-input", "taxonomy-input" -> ViewType.TAXON
-        // Encore à porter :
-        //   medias       → composant galerie + upload de fichiers
-        //   geometry     → picker sur carte
-        //   min_max       → besoin d'un ViewType.MIN_MAX (deux NumberPicker côte à côte)
+        // Non portés (listés dans `ignores`, affichés à l'utilisateur) :
+        //   medias    → capture/import + upload gn_commons rattaché à l'objet créé (pipeline
+        //               dédié, cf. note point 7) ; non simulé pour ne pas corrompre le payload.
+        //   geometry  → picker carte : inutile ici (roadmap = saisies sur objets existants,
+        //               pas de création d'objet géolocalisé).
+        //   min_max   → besoin d'un ViewType.MIN_MAX (deux NumberPicker côte à côte)
         else -> null
     }
+}
+
+/** Champs techniques toujours exclus du FORMULAIRE de saisie (parité globalFieldsToExclude
+ *  de gn_mobile_monitoring). Ils restent dans le schéma (payload POST) mais ne sont jamais
+ *  éditables : identifiants, uuid, digitiser, compteurs et dates calculés côté serveur.
+ *  Filet de sécurité au cas où le serveur ne les marque pas tous `hidden:true` (certains
+ *  protocoles redéclarent nb_visits/last_visit dans `specific` juste pour le libellé). */
+private val CHAMPS_EXCLUS_FORMULAIRE = setOf(
+    "uuid_base_visit", "uuid_observation", "uuid_base_site", "uuid_sites_group",
+    "uuid_module_complement",
+    "id_module", "id_digitiser", "id_base_site",
+    "nb_observations", "nb_visits", "last_visit",
+    "observers_txt",
+)
 
 /** Construit une liste d'[EditableField] à partir d'un object_type du schéma serveur.
  *  Respecte `display_properties` pour l'ordre. Renvoie aussi la liste des propriétés ignorées
@@ -42,10 +72,19 @@ data class FormulaireConstruction(
 )
 
 fun construireFormulaire(schemaObjet: MonitoringApi.MonitoringSchemaObjet): FormulaireConstruction {
-    val ordre = schemaObjet.displayProperties.ifEmpty { schemaObjet.properties.keys.toList() }
+    // Priorité de l'ordre des champs : display_form > display_properties > toutes les clés
+    // (parité version web / gn_mobile_monitoring où display_form prime sur display_properties).
+    val ordre = schemaObjet.displayForm.ifEmpty {
+        schemaObjet.displayProperties.ifEmpty { schemaObjet.properties.keys.toList() }
+    }
+    // Exclusions techniques + cas spécifique sites_group (id_inventor inexistant pour ce type).
+    val exclus = if (schemaObjet.type == "sites_group")
+        CHAMPS_EXCLUS_FORMULAIRE + "id_inventor"
+    else CHAMPS_EXCLUS_FORMULAIRE
     val fields = mutableListOf<EditableField>()
     val ignores = mutableListOf<Pair<String, String>>()
     ordre.forEach { nom ->
+        if (nom in exclus) return@forEach
         val prop = schemaObjet.properties[nom] ?: return@forEach
         // Les propriétés `hidden:true` côté schéma serveur sont conservées dans le
         // MonitoringSchemaObjet pour le payload POST (le serveur Marshmallow les attend)
@@ -65,13 +104,13 @@ fun construireFormulaire(schemaObjet: MonitoringApi.MonitoringSchemaObjet): Form
                 obligatoire = prop.obligatoire,
                 aide = prop.definition,
                 hiddenExpr = prop.hiddenExpr,
-                // Pour les widgets TAXON, on transmet l'id_list_taxonomy déclaré au niveau
-                // de l'object_type (ex. id_list_taxonomy d'une "observation" STOM). Le
-                // renderer filtrera l'autocomplete TaxRef à cette liste. Si l'objet
-                // n'a pas d'id_list_taxonomy, le caller (NouvelleVisiteFragment) peut
-                // patcher avec le idListTaxonomy du module ou le idTaxaList du dataset.
+                // Pour les widgets TAXON, on transmet l'id_list_taxonomy : d'abord celui porté
+                // par le champ lui-même (id_list / api allnamebylist), sinon celui déclaré au
+                // niveau de l'object_type. Le renderer filtre l'autocomplete TaxRef à cette
+                // liste. Si rien, le caller (NouvelleVisiteFragment) peut patcher avec le
+                // idListTaxonomy du module ou le idTaxaList du dataset.
                 idListeTaxonomieRestreinte = if (viewType == ViewType.TAXON)
-                    schemaObjet.idListTaxonomy else null,
+                    (prop.idListTaxonomie ?: schemaObjet.idListTaxonomy) else null,
             )
         )
     }

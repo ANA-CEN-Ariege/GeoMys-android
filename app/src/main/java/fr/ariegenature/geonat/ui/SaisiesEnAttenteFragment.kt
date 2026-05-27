@@ -157,7 +157,7 @@ class SaisiesEnAttenteFragment : Fragment() {
         // Chaîne du plus haut au plus bas (parent direct en dernier). Chaque segment est
         // préfixé par le label humain de son type (ex. "Site : Forêt de Foix"). Si le
         // schéma cache n'a pas de label, fallback sur le type technique capitalisé.
-        val chemin = (ancetres.reversed() + (parentType to labelDirect))
+        val chemin = (ancetres.reversed().map { it.first to it.third } + (parentType to labelDirect))
             .joinToString(" › ") { (type, label) ->
                 val labelType = fr.ariegenature.geonat.network.MonitoringApi
                     .labelTypeEnCache(racine.moduleCode, type)
@@ -355,8 +355,42 @@ class SaisiesEnAttenteFragment : Fragment() {
     private fun ouvrirEdition(s: SaisieEnAttente) {
         findNavController().navigate(
             fr.ariegenature.geonat.R.id.action_attente_to_edition,
-            androidx.core.os.bundleOf("editUuid" to s.uuid),
+            androidx.core.os.bundleOf(
+                "editUuid" to s.uuid,
+                // Fil d'Ariane reconstruit depuis le cache (le formulaire l'affichera en
+                // texte simple : pas de pile de drill-down à remonter dans ce contexte).
+                "fil" to construireFilPourEdition(s),
+            ),
         )
+    }
+
+    /** Reconstruit le fil d'Ariane (encodé) d'une saisie pour l'écran d'édition : protocole
+     *  puis chaîne des parents serveur, via le même cache que [creerHeaderGroupe]. Les ids
+     *  réels (lus du cache) sont conservés pour que chaque segment reste cliquable et ouvre
+     *  la fiche correspondante. Renvoie au moins le segment protocole ; vide si moduleCode
+     *  manque. */
+    private fun construireFilPourEdition(s: SaisieEnAttente): String {
+        val segments = mutableListOf<FilSegment>()
+        val moduleLabel = fr.ariegenature.geonat.network.MonitoringApi
+            .labelModuleEnCache(s.moduleCode) ?: s.moduleCode
+        // Racine "Suivis › <protocole>".
+        segments.addAll(filRacineSuivis(moduleLabel))
+        val parentType = s.parentObjectType?.takeIf { it.isNotEmpty() }
+        val parentId = s.parentIdServeur
+        if (parentType != null && parentId != null) {
+            val labelDirect = fr.ariegenature.geonat.network.MonitoringApi
+                .labelObjetEnCache(s.moduleCode, parentType, parentId) ?: "$parentType #$parentId"
+            val ancetres = fr.ariegenature.geonat.network.MonitoringApi
+                .chaineParentsEnCache(s.moduleCode, parentType, parentId)
+            // ancetres = du parent direct vers le haut (type, id, label) → on inverse pour
+            // lire haut→bas, puis on ajoute le parent direct en queue (cohérent avec
+            // creerHeaderGroupe).
+            ancetres.reversed().forEach { (type, id, label) ->
+                segments.add(FilSegment(type, id, label))
+            }
+            segments.add(FilSegment(parentType, parentId, labelDirect))
+        }
+        return encoderFil(segments)
     }
 
     private fun afficherOptions(s: SaisieEnAttente) {

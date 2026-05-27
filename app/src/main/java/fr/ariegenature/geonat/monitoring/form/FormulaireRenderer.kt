@@ -42,6 +42,11 @@ class FormulaireRenderer(
      *  Utilisé par l'écran appelant pour piloter l'état du bouton de submit selon que
      *  les champs obligatoires sont remplis ou non. */
     private var onChangement: (() -> Unit)? = null
+    /** Règles `change` du schéma (auto-remplissage de champs dépendants). Vide par défaut. */
+    private var reglesChange: List<ChangeRules.Regle> = emptyList()
+    /** Garde anti-récursion : true pendant qu'on applique un patch des règles change
+     *  (sinon les setText/setSelection re-déclenchent les listeners → boucle infinie). */
+    private var appliquantChange = false
 
     fun rendre(fields: List<EditableField>) {
         parent.removeAllViews()
@@ -58,9 +63,72 @@ class FormulaireRenderer(
         // Évaluation initiale + listeners sur tous les éditables pour ré-évaluer en live.
         attacherListenersDynamiques()
         appliquerVisibiliteConditionnelle()
+        appliquerChangeRules()
         // Notifie aussi un état initial pour que le bouton démarre dans le bon mode
         // dès le rendu (typiquement : disabled tant que les obligatoires sont vides).
         onChangement?.invoke()
+    }
+
+    /** Déclare les règles `change` du schéma (cf. [ChangeRules]) et les applique une fois.
+     *  À appeler après [rendre]. */
+    fun setReglesChange(lignes: List<String>) {
+        reglesChange = ChangeRules.parser(lignes)
+        appliquerChangeRules()
+    }
+
+    /** Évalue les règles `change` contre les valeurs courantes et applique les champs à
+     *  mettre à jour. La garde [appliquantChange] empêche la récursion via les listeners. */
+    private fun appliquerChangeRules() {
+        if (reglesChange.isEmpty() || appliquantChange) return
+        val maj = ChangeRules.evaluer(reglesChange, lireValeurs())
+        if (maj.isEmpty()) return
+        appliquantChange = true
+        try {
+            maj.forEach { (code, valeur) -> appliquerValeur(code, valeur) }
+        } finally {
+            appliquantChange = false
+        }
+    }
+
+    /** Pose programmatiquement la valeur [valeur] dans le widget du champ [code] (utilisé par
+     *  les règles change). Ne fait rien si le champ n'existe pas / type non supporté. */
+    private fun appliquerValeur(code: String, valeur: Any?) {
+        val vue = vuesParCode[code] ?: return
+        val field = fieldsParCode[code] ?: return
+        when (field.viewType) {
+            ViewType.TEXT, ViewType.TEXTAREA, ViewType.NUMBER ->
+                (vue as EditText).setText(valeur?.toString() ?: "")
+            ViewType.CHECKBOX -> (vue as android.widget.CheckBox).isChecked = when (valeur) {
+                is Boolean -> valeur
+                is Number -> valeur.toInt() != 0
+                is String -> valeur.equals("true", true) || valeur == "1"
+                else -> false
+            }
+            ViewType.SELECT -> {
+                val sp = vue as Spinner
+                val cible = valeur?.toString()
+                val idx = field.values.indexOfFirst { it.value == cible }
+                sp.setSelection(if (idx >= 0) idx + 1 else 0)
+            }
+            ViewType.DATE, ViewType.TIME -> (vue as TextView).apply {
+                val s = valeur?.toString().orEmpty()
+                tag = s
+                if (s.isNotEmpty()) { text = s; setTextColor(0xFF000000.toInt()) }
+            }
+            ViewType.SELECT_MULTIPLE -> (vue as TextView).apply {
+                @Suppress("UNCHECKED_CAST")
+                val liste = when (valeur) {
+                    is List<*> -> valeur.map { it.toString() }
+                    null -> emptyList()
+                    else -> listOf(valeur.toString())
+                }
+                tag = liste
+                val labels = field.values.filter { it.value in liste }.map { it.label }
+                text = if (labels.isEmpty()) "Choisir…" else labels.joinToString(", ")
+            }
+            // TAXON : cible improbable d'une règle change, non géré.
+            ViewType.TAXON -> {}
+        }
     }
 
     /** Enregistre un callback notifié à chaque modification de champ ET immédiatement
@@ -74,6 +142,9 @@ class FormulaireRenderer(
      *  À appeler depuis tous les listeners/dialogs/pickers où une valeur de champ change. */
     private fun notifierChangement() {
         appliquerVisibiliteConditionnelle()
+        // Auto-remplissage des champs dépendants. La garde interne évite la récursion quand
+        // c'est nous-mêmes qui modifions un champ via un patch.
+        if (!appliquantChange) appliquerChangeRules()
         onChangement?.invoke()
     }
 

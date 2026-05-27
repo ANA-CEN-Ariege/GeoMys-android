@@ -79,9 +79,10 @@ class NouvelleVisiteFragment : Fragment() {
         val modeEdition = editUuid != null
 
         binding.tvTitre.text = if (modeEdition) "Modifier la saisie" else "Nouvelle visite"
-        // Fil d'Ariane : reçu de l'écran appelant (= chemin complet jusqu'au parent de la
-        // saisie). Tous les segments sont des ancêtres cliquables (le formulaire lui-même
-        // n'est pas un niveau du fil). Vide quand on édite depuis « Saisies en attente ».
+        // Fil d'Ariane : reçu de l'écran appelant (drill-down) ou reconstruit depuis le cache
+        // (édition depuis « Saisies en attente »). Tous les segments sont des ancêtres
+        // cliquables — le formulaire lui-même n'est pas un niveau du fil. Vide si aucun
+        // contexte n'a pu être déterminé.
         appliquerFilAriane(
             binding.tvFil, findNavController(), moduleCode,
             decoderFil(arguments?.getString("fil")), dernierCliquable = true,
@@ -226,6 +227,9 @@ class NouvelleVisiteFragment : Fragment() {
                 }
             } ?: champsAvecTaxon
             renderer.rendre(champsFinaux)
+            // Règles `change` du schéma : auto-remplissage de champs dépendants (ex.
+            // presence == 'Non' → count_min/count_max = 0). Appliquées après le rendu.
+            renderer.setReglesChange(visitSchema.changeRules)
             // Une fois posées dans les champs, les valeurs préremplies n'ont plus à être
             // ré-injectées (évite par ex. d'écraser une modification utilisateur si on
             // re-rentre dans ce code via un re-rendu).

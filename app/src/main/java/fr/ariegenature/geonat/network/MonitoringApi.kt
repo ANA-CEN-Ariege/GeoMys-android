@@ -188,6 +188,10 @@ object MonitoringApi {
          *  id_module, medias, nb_observations…). Inclus dans le payload POST avec valeur
          *  null sinon le serveur Marshmallow plante. */
         val hiddenBool: Boolean = false,
+        /** Liste taxonomique propre à CE champ (lue depuis `id_list` ou l'api
+         *  `taxref/allnamebylist/<id>`). Prime sur l'`idListTaxonomy` du module pour
+         *  restreindre l'autocomplete TaxRef d'un champ taxonomie. */
+        val idListTaxonomie: Int? = null,
     )
 
     /** Schéma d'un object_type déclaré par un protocole dans son `config/objects.json` serveur,
@@ -213,6 +217,14 @@ object MonitoringApi {
         /** Ordre d'affichage des propriétés dans une fiche ou un formulaire. Si vide, on affiche
          *  selon l'ordre d'insertion JSON de `properties`. */
         val displayProperties: List<String> = emptyList(),
+        /** `display_form` : sous-ensemble + ordre des champs spécifiquement pour le FORMULAIRE
+         *  de saisie. Prime sur `displayProperties` quand non vide (parité version web /
+         *  gn_mobile_monitoring : display_form > display_properties). */
+        val displayForm: List<String> = emptyList(),
+        /** Règles `change` (tableau de lignes JS `({objForm, meta}) => { … patchValue({…}) }`)
+         *  déclarées au niveau de l'object_type pour auto-remplir des champs dépendants.
+         *  Brut — l'évaluation est faite par [fr.ariegenature.geonat.monitoring.form.ChangeRules]. */
+        val changeRules: List<String> = emptyList(),
         /** Liste ordonnée des propriétés à afficher dans la vue LISTE de ce type (sous le nom).
          *  Ex chronoventaire site : `["base_site_name", "first_use_date", "last_visit", "nb_visits"]`.
          *  Séparé de `displayProperties` (qui est pour la fiche). */
@@ -395,8 +407,8 @@ object MonitoringApi {
         moduleCode: String,
         objectType: String,
         id: Int,
-    ): List<Pair<String, String>> {
-        val result = mutableListOf<Pair<String, String>>()
+    ): List<Triple<String, Int, String>> {
+        val result = mutableListOf<Triple<String, Int, String>>()
         var typeCourant = objectType
         var idCourant = id
         val visites = mutableSetOf<Pair<String, Int>>()
@@ -413,7 +425,7 @@ object MonitoringApi {
             val parentId = parentIdStr.toIntOrNull() ?: break
             val label = labelObjetEnCache(moduleCode, parentType, parentId)
                 ?: "$parentType #$parentId"
-            result.add(parentType to label)
+            result.add(Triple(parentType, parentId, label))
             typeCourant = parentType
             idCourant = parentId
         }
@@ -574,6 +586,10 @@ object MonitoringApi {
             }
             if (text.isNullOrEmpty()) return@withContext null
             val obj = try { JSONObject(text) } catch (_: Exception) { return@withContext null }
+            // Substitution des variables `__MODULE.XXX` (parité substituteVariables de
+            // gn_mobile_monitoring) : certains schémas embarquent ces placeholders dans des
+            // chaînes (api, id_list…). On les remplace par leur valeur lue dans le bloc `custom`.
+            substituerVariablesModule(obj)
             val result = linkedMapOf<String, MonitoringSchemaObjet>()
             val it = obj.keys()
             while (it.hasNext()) {
@@ -607,6 +623,21 @@ object MonitoringApi {
                         displayListArr.optString(i, "").takeIf { it.isNotEmpty() }?.let { displayListNoms.add(it) }
                     }
                 }
+                val displayFormArr = v.optJSONArray("display_form")
+                val displayFormNoms = mutableListOf<String>()
+                if (displayFormArr != null) {
+                    for (i in 0 until displayFormArr.length()) {
+                        displayFormArr.optString(i, "").takeIf { it.isNotEmpty() }?.let { displayFormNoms.add(it) }
+                    }
+                }
+                // `change` : tableau de lignes JS conservé brut pour l'évaluateur de règles.
+                val changeArr = v.optJSONArray("change")
+                val changeLignes = mutableListOf<String>()
+                if (changeArr != null) {
+                    for (i in 0 until changeArr.length()) {
+                        changeArr.optString(i, "").let { changeLignes.add(it) }
+                    }
+                }
                 val sortsArr = v.optJSONArray("sorts")
                 val sortsList = mutableListOf<Pair<String, String>>()
                 if (sortsArr != null) {
@@ -637,6 +668,8 @@ object MonitoringApi {
                     childrenTypes = children.ifEmpty { childrenFromTypesArr },
                     properties = parserPropertiesFusionnees(v),
                     displayProperties = displayProps,
+                    displayForm = displayFormNoms,
+                    changeRules = changeLignes,
                     displayList = displayListNoms,
                     sorts = sortsList,
                     idFieldName = v.optString("id_field_name", "").takeIf { it.isNotEmpty() },
@@ -711,15 +744,37 @@ object MonitoringApi {
     }
 
     /** Fusionne les blocs `generic` (héritage du modèle de base) et `specific` (custom protocole)
-     *  d'un object_type gn_module_monitoring. Specific surcharge generic en cas de collision.
-     *  Fallback sur `properties` (vieille forme) si les deux blocs sont absents. Ignore les
-     *  propriétés marquées `hidden: true` (id techniques, foreign keys) — sans intérêt en saisie. */
+     *  d'un object_type gn_module_monitoring. La fusion est faite **attribut par attribut** :
+     *  un `specific` peut surcharger seulement le `attribut_label` d'un champ generic tout en
+     *  conservant son `type_widget` (parité avec mergeConfigurations de gn_mobile_monitoring).
+     *  Ordre : champs generic d'abord, puis champs présents uniquement dans specific.
+     *  Fallback sur `properties` (vieille forme) si les deux blocs sont absents. */
     private fun parserPropertiesFusionnees(objSchema: JSONObject): Map<String, MonitoringPropertySchema> {
+        val generic = objSchema.optJSONObject("generic")
+        val specific = objSchema.optJSONObject("specific")
+        if (generic == null && specific == null) {
+            val map = linkedMapOf<String, MonitoringPropertySchema>()
+            objSchema.optJSONObject("properties")?.let { parserBlocProperties(it, map) }
+            return map
+        }
+        val cles = linkedSetOf<String>()
+        generic?.keys()?.forEach { cles.add(it) }
+        specific?.keys()?.forEach { cles.add(it) }
         val map = linkedMapOf<String, MonitoringPropertySchema>()
-        objSchema.optJSONObject("generic")?.let { parserBlocProperties(it, map) }
-        objSchema.optJSONObject("specific")?.let { parserBlocProperties(it, map) }
-        if (map.isEmpty()) objSchema.optJSONObject("properties")?.let { parserBlocProperties(it, map) }
+        for (nom in cles) {
+            val fusion = fusionnerChamp(generic?.optJSONObject(nom), specific?.optJSONObject(nom))
+            parserUnePropriete(nom, fusion)?.let { map[nom] = it }
+        }
         return map
+    }
+
+    /** Fusion shallow de deux config de champ : on copie d'abord les attributs `generic`,
+     *  puis ceux de `specific` qui les surchargent un par un. */
+    private fun fusionnerChamp(generic: JSONObject?, specific: JSONObject?): JSONObject {
+        val out = JSONObject()
+        generic?.keys()?.forEach { k -> out.put(k, generic.get(k)) }
+        specific?.keys()?.forEach { k -> out.put(k, specific.get(k)) }
+        return out
     }
 
     /** Parse un bloc d'object_type (generic ou specific) et accumule dans [into]. */
@@ -728,108 +783,208 @@ object MonitoringApi {
         while (it.hasNext()) {
             val nom = it.next()
             val v = propsObj.optJSONObject(nom) ?: continue
-            // `hidden` peut être :
-            //  - Boolean true  → champ technique masqué à l'UI (id_base_visit, id_module,
-            //    medias, nb_observations…). On le CONSERVE quand même dans le schéma car
-            //    le serveur Marshmallow l'attend dans le payload POST avec valeur null —
-            //    sans ça, un 500 silencieux. C'est `construireFormulaire` qui filtre l'UI.
-            //  - Boolean false → champ visible inconditionnellement.
-            //  - String        → expression d'affichage dynamique (à évaluer côté UI).
-            val hiddenBrut = v.opt("hidden")
-            val hiddenBool = hiddenBrut is Boolean && hiddenBrut
-            val hiddenExpr = (hiddenBrut as? String)
-                ?: v.opt("display")?.takeIf { it is String } as? String
-            val typeWidget = v.optString("type_widget", "")
-                .ifEmpty { v.optString("widget", "") }
-                .ifEmpty { v.optString("type", "") }
-            // Un champ sans `type_widget` mais hidden=true est conservé (technique, payload-only).
-            // Sans type_widget ni hidden:true → on skip (entrée parasite).
-            if (typeWidget.isEmpty() && !hiddenBool) continue
-            val label = v.optString("attribut_label", "")
-                .ifEmpty { v.optString("label", "") }
-                .ifEmpty { nom.replace('_', ' ').replaceFirstChar { c -> c.uppercase() } }
-            val obligatoire = v.optBoolean("required", false)
-            val nomenclatureType = v.optString("code_nomenclature_type", "")
-                .ifEmpty { v.optString("nomenclature_type", "") }
-                .takeIf { it.isNotEmpty() }
-            val valeursArr = v.optJSONArray("values")
-            val valeurs = mutableListOf<Pair<String, String>>()
-            if (valeursArr != null) {
-                for (i in 0 until valeursArr.length()) {
-                    val entry = valeursArr.optJSONObject(i)
-                    if (entry != null) {
-                        val value = entry.optString("value", "")
-                        val lbl = entry.optString("label", value)
-                        if (value.isNotEmpty()) valeurs.add(value to lbl)
-                    } else {
-                        valeursArr.optString(i, "").takeIf { it.isNotEmpty() }?.let { s -> valeurs.add(s to s) }
-                    }
-                }
-            }
-            // Pour les widgets `datalist` / `nomenclature` (forme ancienne) : récupère ce qu'il
-            // faut pour aller fetcher les options dynamiques côté serveur.
-            val apiUrl = v.optString("api", "").takeIf { it.isNotEmpty() }
-                ?: nomenclatureType?.let { "nomenclatures/nomenclature/$it" }
-            val application = v.optString("application", "").takeIf { it.isNotEmpty() }
-            val keyLabel = v.optString("keyLabel", "").takeIf { it.isNotEmpty() }
-            val keyValue = v.optString("keyValue", "").takeIf { it.isNotEmpty() }
-            val dataPath = v.optString("data_path", "").takeIf { it.isNotEmpty() }
-            val multiple = v.optBoolean("multiple", false) || v.optBoolean("multi_select", false)
-            val typeUtil = v.optString("type_util", "").takeIf { it.isNotEmpty() }
-            // Default value : peut être sous `default` (objet ou scalaire) ou directement
-            // sous `value` (scalaire ou objet).
-            val defaultBrut = v.opt("default") ?: v.opt("value")
-            var defaultValue: String? = null
-            val defaultObjet = mutableMapOf<String, String>()
-            when (defaultBrut) {
-                is String -> defaultValue = defaultBrut.takeIf { it.isNotEmpty() && it != "null" }
-                is Number, is Boolean -> defaultValue = defaultBrut.toString()
-                is JSONObject -> {
-                    val dIt = defaultBrut.keys()
-                    while (dIt.hasNext()) {
-                        val dk = dIt.next()
-                        defaultBrut.opt(dk)?.toString()?.takeIf { it.isNotEmpty() && it != "null" }
-                            ?.let { defaultObjet[dk] = it }
-                    }
-                }
-                else -> { /* null, JSONObject.NULL, ou type non géré */ }
-            }
-            // Filtres : Map<champ, liste-de-valeurs-acceptables>
-            val filtresMap = mutableMapOf<String, List<String>>()
-            v.optJSONObject("filters")?.let { fObj ->
-                val fIt = fObj.keys()
-                while (fIt.hasNext()) {
-                    val fKey = fIt.next()
-                    val fArr = fObj.optJSONArray(fKey) ?: continue
-                    val fVals = (0 until fArr.length()).mapNotNull { i ->
-                        fArr.optString(i, "").takeIf { it.isNotEmpty() }
-                    }
-                    if (fVals.isNotEmpty()) filtresMap[fKey] = fVals
-                }
-            }
-            into[nom] = MonitoringPropertySchema(
-                nom = nom,
-                typeWidget = typeWidget,
-                label = label,
-                obligatoire = obligatoire,
-                typeUtil = typeUtil,
-                nomenclatureType = nomenclatureType,
-                valeurs = valeurs,
-                apiUrl = apiUrl,
-                application = application,
-                keyLabel = keyLabel,
-                keyValue = keyValue,
-                dataPath = dataPath,
-                multiple = multiple,
-                defaultValue = defaultValue,
-                defaultObjet = defaultObjet.toMap(),
-                hiddenExpr = hiddenExpr,
-                hiddenBool = hiddenBool,
-                filtres = filtresMap.toMap(),
-                definition = v.optString("definition", "").takeIf { it.isNotEmpty() },
-                moduleCodeFiltre = v.optString("module_code", "").takeIf { it.isNotEmpty() },
-            )
+            parserUnePropriete(nom, v)?.let { into[nom] = it }
         }
+    }
+
+    /** Parse une config de champ (déjà fusionnée generic+specific) en [MonitoringPropertySchema].
+     *  Retourne null pour les entrées à ignorer (ni type_widget ni hidden:true). */
+    private fun parserUnePropriete(nom: String, v: JSONObject): MonitoringPropertySchema? {
+        // `hidden` peut être :
+        //  - Boolean true  → champ technique masqué à l'UI (id_base_visit, id_module,
+        //    medias, nb_observations…). On le CONSERVE quand même dans le schéma car
+        //    le serveur Marshmallow l'attend dans le payload POST avec valeur null —
+        //    sans ça, un 500 silencieux. C'est `construireFormulaire` qui filtre l'UI.
+        //  - Boolean false → champ visible inconditionnellement.
+        //  - String        → expression d'affichage dynamique (à évaluer côté UI).
+        val hiddenBrut = v.opt("hidden")
+        val hiddenBool = hiddenBrut is Boolean && hiddenBrut
+        val hiddenExpr = (hiddenBrut as? String)
+            ?: v.opt("display")?.takeIf { it is String } as? String
+        val typeWidget = v.optString("type_widget", "")
+            .ifEmpty { v.optString("widget", "") }
+            .ifEmpty { v.optString("type", "") }
+        // Un champ sans `type_widget` mais hidden=true est conservé (technique, payload-only).
+        // Sans type_widget ni hidden:true → on skip (entrée parasite).
+        if (typeWidget.isEmpty() && !hiddenBool) return null
+        val label = v.optString("attribut_label", "")
+            .ifEmpty { v.optString("label", "") }
+            .ifEmpty { nom.replace('_', ' ').replaceFirstChar { c -> c.uppercase() } }
+        val obligatoire = v.optBoolean("required", false)
+        val apiBrut = v.optString("api", "").takeIf { it.isNotEmpty() }
+        // Détection enrichie du type de nomenclature (parité isNomenclatureField de
+        // gn_mobile_monitoring) : code explicite, sinon inféré depuis l'`api`
+        // (.../nomenclature/CODE) ou le nom du champ (id_nomenclature_CODE).
+        val nomenclatureType = v.optString("code_nomenclature_type", "")
+            .ifEmpty { v.optString("nomenclature_type", "") }
+            .takeIf { it.isNotEmpty() }
+            ?: infererCodeNomenclature(nom, apiBrut)
+        val valeursArr = v.optJSONArray("values")
+        val valeurs = mutableListOf<Pair<String, String>>()
+        if (valeursArr != null) {
+            for (i in 0 until valeursArr.length()) {
+                val entry = valeursArr.optJSONObject(i)
+                if (entry != null) {
+                    val value = entry.optString("value", "")
+                    val lbl = entry.optString("label", value)
+                    if (value.isNotEmpty()) valeurs.add(value to lbl)
+                } else {
+                    valeursArr.optString(i, "").takeIf { it.isNotEmpty() }?.let { s -> valeurs.add(s to s) }
+                }
+            }
+        }
+        // Pour les widgets `datalist` / `nomenclature` (forme ancienne) : récupère ce qu'il
+        // faut pour aller fetcher les options dynamiques côté serveur.
+        val apiUrl = apiBrut
+            ?: nomenclatureType?.let { "nomenclatures/nomenclature/$it" }
+        val application = v.optString("application", "").takeIf { it.isNotEmpty() }
+        val keyLabel = v.optString("keyLabel", "").takeIf { it.isNotEmpty() }
+        val keyValue = v.optString("keyValue", "").takeIf { it.isNotEmpty() }
+        val dataPath = v.optString("data_path", "").takeIf { it.isNotEmpty() }
+        val multiple = v.optBoolean("multiple", false) || v.optBoolean("multi_select", false)
+        val typeUtil = v.optString("type_util", "").takeIf { it.isNotEmpty() }
+        // Liste taxonomique portée par le champ lui-même : `id_list` direct ou extrait de
+        // l'api `taxref/allnamebylist/<id>` (parité getTaxonListId). Sert à restreindre
+        // l'autocomplete TaxRef à la liste autorisée pour ce champ.
+        val idListTaxonomie = extraireInt(v.opt("id_list"))
+            ?: apiBrut?.let { extraireIdListeAllnamebylist(it) }
+        // Default value : peut être sous `default` (objet ou scalaire) ou directement
+        // sous `value` (scalaire ou objet).
+        val defaultBrut = v.opt("default") ?: v.opt("value")
+        var defaultValue: String? = null
+        val defaultObjet = mutableMapOf<String, String>()
+        when (defaultBrut) {
+            is String -> defaultValue = defaultBrut.takeIf { it.isNotEmpty() && it != "null" }
+            is Number, is Boolean -> defaultValue = defaultBrut.toString()
+            is JSONObject -> {
+                val dIt = defaultBrut.keys()
+                while (dIt.hasNext()) {
+                    val dk = dIt.next()
+                    defaultBrut.opt(dk)?.toString()?.takeIf { it.isNotEmpty() && it != "null" }
+                        ?.let { defaultObjet[dk] = it }
+                }
+            }
+            else -> { /* null, JSONObject.NULL, ou type non géré */ }
+        }
+        // Filtres : Map<champ, liste-de-valeurs-acceptables>
+        val filtresMap = mutableMapOf<String, List<String>>()
+        v.optJSONObject("filters")?.let { fObj ->
+            val fIt = fObj.keys()
+            while (fIt.hasNext()) {
+                val fKey = fIt.next()
+                val fArr = fObj.optJSONArray(fKey) ?: continue
+                val fVals = (0 until fArr.length()).mapNotNull { i ->
+                    fArr.optString(i, "").takeIf { it.isNotEmpty() }
+                }
+                if (fVals.isNotEmpty()) filtresMap[fKey] = fVals
+            }
+        }
+        return MonitoringPropertySchema(
+            nom = nom,
+            typeWidget = typeWidget,
+            label = label,
+            obligatoire = obligatoire,
+            typeUtil = typeUtil,
+            nomenclatureType = nomenclatureType,
+            valeurs = valeurs,
+            apiUrl = apiUrl,
+            application = application,
+            keyLabel = keyLabel,
+            keyValue = keyValue,
+            dataPath = dataPath,
+            multiple = multiple,
+            defaultValue = defaultValue,
+            defaultObjet = defaultObjet.toMap(),
+            hiddenExpr = hiddenExpr,
+            hiddenBool = hiddenBool,
+            filtres = filtresMap.toMap(),
+            definition = v.optString("definition", "").takeIf { it.isNotEmpty() },
+            moduleCodeFiltre = v.optString("module_code", "").takeIf { it.isNotEmpty() },
+            idListTaxonomie = idListTaxonomie,
+        )
+    }
+
+    /** Infère le code mnémonique d'un type de nomenclature quand il n'est pas explicite :
+     *  depuis l'api (`.../nomenclatures/nomenclature/STADE_VIE`) ou le nom du champ
+     *  (`id_nomenclature_stade_vie` → `stade_vie`). Renvoie null si rien d'exploitable. */
+    private fun infererCodeNomenclature(nom: String, api: String?): String? {
+        if (api != null && api.contains("nomenclatures/nomenclature/")) {
+            api.substringAfterLast('/').takeIf { it.isNotEmpty() }?.let { return it }
+        }
+        if (nom.startsWith("id_nomenclature_")) {
+            return nom.removePrefix("id_nomenclature_").takeIf { it.isNotEmpty() }
+        }
+        return null
+    }
+
+    /** Extrait l'id de liste taxonomique d'une api `taxref/allnamebylist/<id>`. */
+    private fun extraireIdListeAllnamebylist(api: String): Int? {
+        if (!api.contains("allnamebylist/")) return null
+        val parts = api.split('/')
+        val idx = parts.indexOf("allnamebylist")
+        return if (idx >= 0 && idx + 1 < parts.size) parts[idx + 1].toIntOrNull() else null
+    }
+
+    /** Remplace en place les placeholders `__MODULE.XXX` présents dans les chaînes du schéma
+     *  par leur valeur. La table de correspondance est construite depuis le bloc `custom`
+     *  (clés `__MODULE.XXX`) — c'est exactement ce que fait substituteVariables côté
+     *  gn_mobile_monitoring. No-op si aucun bloc `custom`. */
+    private fun substituerVariablesModule(racine: JSONObject) {
+        val custom = racine.optJSONObject("custom") ?: return
+        val subs = mutableMapOf<String, String>()
+        custom.keys().forEach { cle ->
+            if (cle.startsWith("__MODULE.")) {
+                val valeur = custom.opt(cle)
+                if (valeur != null && valeur != JSONObject.NULL) subs[cle] = valeur.toString()
+            }
+        }
+        if (subs.isEmpty()) return
+        substituerRecursif(racine, subs)
+    }
+
+    /** Parcourt récursivement un nœud JSON et remplace, dans chaque feuille String contenant
+     *  `__MODULE.`, les placeholders connus par leur valeur. */
+    private fun substituerRecursif(node: Any?, subs: Map<String, String>) {
+        when (node) {
+            is JSONObject -> {
+                val cles = node.keys().asSequence().toList()
+                for (cle in cles) {
+                    when (val valeur = node.opt(cle)) {
+                        is String -> if (valeur.contains("__MODULE.")) {
+                            node.put(cle, appliquerSubstitutions(valeur, subs))
+                        }
+                        is JSONObject, is JSONArray -> substituerRecursif(valeur, subs)
+                    }
+                }
+            }
+            is JSONArray -> {
+                for (i in 0 until node.length()) {
+                    when (val valeur = node.opt(i)) {
+                        is String -> if (valeur.contains("__MODULE.")) {
+                            node.put(i, appliquerSubstitutions(valeur, subs))
+                        }
+                        is JSONObject, is JSONArray -> substituerRecursif(valeur, subs)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun appliquerSubstitutions(valeur: String, subs: Map<String, String>): String {
+        var out = valeur
+        for ((placeholder, remplacement) in subs) {
+            if (out.contains(placeholder)) out = out.replace(placeholder, remplacement)
+        }
+        return out
+    }
+
+    /** Convertit une valeur JSON (Int/Double/String numérique) en Int, sinon null. */
+    private fun extraireInt(value: Any?): Int? = when (value) {
+        null, JSONObject.NULL -> null
+        is Int -> value
+        is Number -> value.toInt()
+        is String -> value.toIntOrNull()
+        else -> null
     }
 
     /** Une option de datalist fetchée depuis l'API serveur. `cdNomenclature`/`labelDefaut`

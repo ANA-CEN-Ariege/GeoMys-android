@@ -57,6 +57,10 @@ class SuiviDetailFragment : Fragment() {
         val module = MonitoringApi.moduleParCode(moduleCode)
         if (module == null) {
             binding.tvLabel.text = moduleCode
+            appliquerFilAriane(
+                binding.tvFil, findNavController(), moduleCode,
+                filRacineSuivis(moduleCode), dernierCliquable = false,
+            )
             binding.tvErreurDetail.visibility = View.VISIBLE
             binding.tvErreurDetail.text = "Recharge la liste pour voir les détails."
             return
@@ -67,6 +71,12 @@ class SuiviDetailFragment : Fragment() {
 
     private fun afficherModule(m: MonitoringModule) {
         filRacine = m.moduleLabel.ifEmpty { m.moduleCode }
+        // Bandeau "Suivis › Protocole" — le protocole est l'écran courant donc non cliquable ;
+        // "Suivis" ramène à la liste des protocoles.
+        appliquerFilAriane(
+            binding.tvFil, findNavController(), m.moduleCode,
+            filRacineSuivis(filRacine), dernierCliquable = false,
+        )
         binding.tvLabel.text = m.moduleLabel
         m.moduleDesc?.let {
             binding.tvDesc.text = it
@@ -325,10 +335,7 @@ class SuiviDetailFragment : Fragment() {
                                     "moduleCode" to moduleCode,
                                     "objectType" to type,
                                     "id" to e.id,
-                                    "fil" to encoderFil(listOf(
-                                        FilSegment("", -1, filRacine),
-                                        FilSegment(type, e.id, e.nom),
-                                    )),
+                                    "fil" to encoderFil(filRacineSuivis(filRacine) + FilSegment(type, e.id, e.nom)),
                                 )
                             )
                         }
@@ -380,10 +387,7 @@ class SuiviDetailFragment : Fragment() {
                                         "parentId" to e.id,
                                         "titreSite" to e.nom,
                                         "childObjectType" to typeSaisieEnfant,
-                                        "fil" to encoderFil(listOf(
-                                            FilSegment("", -1, filRacine),
-                                            FilSegment(type, e.id, e.nom),
-                                        )),
+                                        "fil" to encoderFil(filRacineSuivis(filRacine) + FilSegment(type, e.id, e.nom)),
                                     )
                                 )
                             }

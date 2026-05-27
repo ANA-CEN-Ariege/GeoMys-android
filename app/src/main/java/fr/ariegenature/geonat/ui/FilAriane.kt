@@ -25,9 +25,23 @@ import fr.ariegenature.geonat.R
 /** Séparateur d'affichage — chevron `›`, cohérent avec le fil des saisies en attente. */
 const val FIL_SEPARATEUR = " › "
 
-/** Un niveau du fil. [type]/[id] ne servent qu'aux segments objets (index ≥ 1) ; pour le
- *  protocole (index 0) seul [label] compte. */
+/** Marqueurs de [FilSegment.type] pour les deux niveaux racine (la cible de leur clic ne
+ *  dépend pas d'un id d'objet mais d'une destination fixe). Les segments objets, eux,
+ *  portent leur vrai `object_type`. */
+const val FIL_TYPE_SUIVIS = "__suivis__"
+const val FIL_TYPE_MODULE = "__module__"
+
+/** Un niveau du fil. Pour les segments objets, [type]/[id] sont l'`object_type` et l'id
+ *  serveur. Pour les racines [FIL_TYPE_SUIVIS]/[FIL_TYPE_MODULE], seul [label] est affiché —
+ *  la destination est fixe (liste des protocoles / détail du protocole courant). */
 data class FilSegment(val type: String, val id: Int, val label: String)
+
+/** Préfixe racine commun à tous les fils de suivi : "Suivis › <protocole>". À concaténer avec
+ *  les segments objets. [moduleLabel] = libellé du protocole courant. */
+fun filRacineSuivis(moduleLabel: String): List<FilSegment> = listOf(
+    FilSegment(FIL_TYPE_SUIVIS, -1, "Suivis"),
+    FilSegment(FIL_TYPE_MODULE, -1, moduleLabel),
+)
 
 // Séparateurs de sérialisation : caractères de contrôle (RS / US) absents des noms.
 private const val SEP_SEGMENT = "\u001E"
@@ -89,21 +103,28 @@ fun appliquerFilAriane(
  *    (non inclusif), ce qui replie d'un coup tous les niveaux au-dessus et évite la
  *    fragilité d'un pop suivi d'un navigate. Le fil est tronqué jusqu'à ce niveau. */
 private fun naviguerVersFil(nav: NavController, moduleCode: String, cible: List<FilSegment>) {
-    if (cible.size <= 1) {
-        // En pratique le fil n'est cliquable que dans le flux de drill-down, où
-        // SuiviDetailFragment est toujours dans la pile (popBackStack renvoie true).
-        nav.popBackStack(R.id.suiviDetailFragment, false)
-        return
-    }
     val seg = cible.last()
-    nav.navigate(
-        R.id.ficheObjetFragment,
-        bundleOf(
-            "moduleCode" to moduleCode,
-            "objectType" to seg.type,
-            "id" to seg.id,
-            "fil" to encoderFil(cible),
-        ),
-        NavOptions.Builder().setPopUpTo(R.id.suiviDetailFragment, false).build(),
-    )
+    when (seg.type) {
+        // "Suivis" → liste des protocoles. Remonter si dans la pile (drill-down), sinon ouvrir.
+        FIL_TYPE_SUIVIS ->
+            if (!nav.popBackStack(R.id.suivisFragment, false)) nav.navigate(R.id.suivisFragment)
+        // Protocole → son détail. Remonter si présent (fiable car unique), sinon ouvrir.
+        FIL_TYPE_MODULE ->
+            if (!nav.popBackStack(R.id.suiviDetailFragment, false)) {
+                nav.navigate(R.id.suiviDetailFragment, bundleOf("moduleCode" to moduleCode))
+            }
+        // Objet : un seul `navigate` vers sa fiche. Le popUpTo replie les niveaux au-dessus du
+        // détail-protocole quand il est présent (drill-down) ; sinon il est sans effet et on
+        // empile simplement la fiche cible (flux édition depuis « Saisies en attente »).
+        else -> nav.navigate(
+            R.id.ficheObjetFragment,
+            bundleOf(
+                "moduleCode" to moduleCode,
+                "objectType" to seg.type,
+                "id" to seg.id,
+                "fil" to encoderFil(cible),
+            ),
+            NavOptions.Builder().setPopUpTo(R.id.suiviDetailFragment, false).build(),
+        )
+    }
 }

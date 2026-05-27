@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Cadre de carte neutre, compatible thème clair ET sombre : pas de fond (le contenu
+     suit le fond de fenêtre du thème), simple bordure gris semi-transparent visible sur
+     fond clair comme sur fond sombre. Remplace @android:drawable/dialog_holo_light_frame
+     (cadre clair figé qui cassait l'affichage en mode sombre). -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <corners android:radius="8dp" />
+    <stroke
+        android:width="1dp"
+        android:color="#40888888" />
+</shape>

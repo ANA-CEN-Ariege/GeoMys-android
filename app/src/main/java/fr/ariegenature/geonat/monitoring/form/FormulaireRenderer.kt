@@ -31,6 +31,11 @@ class FormulaireRenderer(
     private val parent: ViewGroup,
 ) {
     private val density = ctx.resources.displayMetrics.density
+    /** Couleur de texte d'une valeur renseignée, résolue depuis le thème (colorOnSurface) —
+     *  remplace un noir codé en dur invisible en mode sombre. */
+    private val couleurValeur: Int = com.google.android.material.color.MaterialColors.getColor(
+        parent, com.google.android.material.R.attr.colorOnSurface, 0xFF000000.toInt(),
+    )
     /** code → vue éditable racine (l'EditText / Spinner / TextView selon le widget). */
     private val vuesParCode = linkedMapOf<String, View>()
     /** code → champ d'origine (pour relire son viewType au moment de lire les valeurs). */
@@ -113,7 +118,7 @@ class FormulaireRenderer(
             ViewType.DATE, ViewType.TIME -> (vue as TextView).apply {
                 val s = valeur?.toString().orEmpty()
                 tag = s
-                if (s.isNotEmpty()) { text = s; setTextColor(0xFF000000.toInt()) }
+                if (s.isNotEmpty()) { text = s; setTextColor(couleurValeur) }
             }
             ViewType.SELECT_MULTIPLE -> (vue as TextView).apply {
                 @Suppress("UNCHECKED_CAST")
@@ -322,7 +327,7 @@ class FormulaireRenderer(
         val tv = TextView(ctx).apply {
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
             setPadding((8 * density).toInt(), (12 * density).toInt(), (8 * density).toInt(), (12 * density).toInt())
-            setBackgroundResource(android.R.drawable.editbox_background_normal)
+            setBackgroundResource(fr.ariegenature.geonat.R.drawable.bg_carte_contour)
             text = "Choisir une date…"
             setTextColor(0xFF888888.toInt())
             layoutParams = LinearLayout.LayoutParams(
@@ -340,7 +345,7 @@ class FormulaireRenderer(
             if (date != null) {
                 tv.tag = fmtIso.format(date)
                 tv.text = fmtAffichage.format(date)
-                tv.setTextColor(0xFF000000.toInt())
+                tv.setTextColor(couleurValeur)
             }
         }
         tv.setOnClickListener {
@@ -354,7 +359,7 @@ class FormulaireRenderer(
                     cal.set(y, m, d)
                     tv.tag = fmtIso.format(cal.time)
                     tv.text = fmtAffichage.format(cal.time)
-                    tv.setTextColor(0xFF000000.toInt())
+                    tv.setTextColor(couleurValeur)
                     notifierChangement()
                 },
                 cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH),
@@ -370,7 +375,7 @@ class FormulaireRenderer(
         val tv = TextView(ctx).apply {
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
             setPadding((8 * density).toInt(), (12 * density).toInt(), (8 * density).toInt(), (12 * density).toInt())
-            setBackgroundResource(android.R.drawable.editbox_background_normal)
+            setBackgroundResource(fr.ariegenature.geonat.R.drawable.bg_carte_contour)
             text = "Choisir une heure…"
             setTextColor(0xFF888888.toInt())
             layoutParams = LinearLayout.LayoutParams(
@@ -384,7 +389,7 @@ class FormulaireRenderer(
                 val iso = "%02d:%02d".format(h, m)
                 tv.tag = iso
                 tv.text = iso
-                tv.setTextColor(0xFF000000.toInt())
+                tv.setTextColor(couleurValeur)
             }
         }
         tv.setOnClickListener {
@@ -395,7 +400,7 @@ class FormulaireRenderer(
                 val iso = "%02d:%02d".format(h, m)
                 tv.tag = iso
                 tv.text = iso
-                tv.setTextColor(0xFF000000.toInt())
+                tv.setTextColor(couleurValeur)
                 notifierChangement()
             }, hInit, mInit, true).show()
         }
@@ -493,7 +498,7 @@ class FormulaireRenderer(
         val tv = TextView(ctx).apply {
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
             setPadding((8 * density).toInt(), (12 * density).toInt(), (8 * density).toInt(), (12 * density).toInt())
-            setBackgroundResource(android.R.drawable.editbox_background_normal)
+            setBackgroundResource(fr.ariegenature.geonat.R.drawable.bg_carte_contour)
             tag = defaut
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -509,7 +514,7 @@ class FormulaireRenderer(
         val initLabels = field.values.filter { it.value in defaut }.map { it.label }
         if (initLabels.isNotEmpty()) {
             tv.text = initLabels.joinToString(", ")
-            tv.setTextColor(0xFF000000.toInt())
+            tv.setTextColor(couleurValeur)
         } else {
             tv.text = "Choisir…"
             tv.setTextColor(0xFF888888.toInt())
@@ -533,7 +538,7 @@ class FormulaireRenderer(
                         tv.setTextColor(0xFF888888.toInt())
                     } else {
                         tv.text = liste.joinToString(", ") { it.label }
-                        tv.setTextColor(0xFF000000.toInt())
+                        tv.setTextColor(couleurValeur)
                     }
                     notifierChangement()
                 }

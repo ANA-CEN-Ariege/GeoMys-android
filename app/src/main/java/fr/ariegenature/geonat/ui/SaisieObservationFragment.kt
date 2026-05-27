@@ -79,7 +79,11 @@ class SaisieObservationFragment : Fragment() {
         var additionalFieldsReleve: Map<String, String> = emptyMap(),
         var additionalFieldsOccurrence: Map<String, String> = emptyMap(),
         var additionalFieldsCounting0: Map<String, String> = emptyMap(),
-        val existingId: String? = null
+        val existingId: String? = null,
+        /** Id VM stable de cette espèce — identité pour l'upsert « au fil de l'eau » dans le
+         *  TraceViewModel (cf. [synchroniserBatch]). En édition d'une obs existante, c'est
+         *  [existingId] qui fait foi. */
+        val vmId: String = java.util.UUID.randomUUID().toString(),
     )
 
     private val pendingObs = mutableListOf<PendingObs>()
@@ -106,6 +110,12 @@ class SaisieObservationFragment : Fragment() {
     /** IDs des obs présentes au début de l'édition d'un relevé — sert à détecter celles que
      *  l'utilisateur a retirées de la liste pendant l'édition pour les supprimer au save. */
     private val obsInitialesIds = mutableSetOf<String>()
+
+    /** UUID du relevé en cours, stable pour toute la session de saisie : reprend l'UUID
+     *  édité ([releveIdEdite]) ou en génère un nouveau. Sert d'ancrage pour l'auto-save « au
+     *  fil de l'eau » ([synchroniserBatch]) — toutes les espèces du lot partagent ce releveId,
+     *  et on réécrit le même relevé à chaque modification (pas de doublon). */
+    private val releveIdSession: String by lazy { releveIdEdite ?: java.util.UUID.randomUUID().toString() }
 
     /** Vrai après le premier onViewCreated de cette instance de fragment. Quand la View est
      *  recréée au retour d'un sous-écran (Caractérisation / Dénombrement / Détails), évite
@@ -258,7 +268,6 @@ class SaisieObservationFragment : Fragment() {
         setupAutocomplete()
         rafraichirListe()
 
-        binding.btnAnnuler.setOnClickListener { findNavController().navigateUp() }
         binding.btnEnregistrer.setOnClickListener { enregistrer() }
         // Bouton "Détails" : TOUJOURS visible. Le dialog affiche les infos de base du
         // relevé (dataset, observateur, position) + les éventuels champs additionnels
@@ -293,6 +302,9 @@ class SaisieObservationFragment : Fragment() {
             binding.llPendingObs.addView(row)
         }
         updateBtnEnregistrerState()
+        // Auto-save « au fil de l'eau » : tout changement de la liste (ajout, suppression,
+        // retour d'un sous-écran de détail) est reflété dans le store via le TraceViewModel.
+        synchroniserBatch()
     }
 
     private fun supprimer(index: Int) {
@@ -711,88 +723,58 @@ class SaisieObservationFragment : Fragment() {
     // ─── Enregistrement ───────────────────────────────────────────────────────
 
     private fun enregistrer() {
-        if (pendingObs.isEmpty()) {
-            // L'utilisateur a vidé un relevé existant en édition → on supprime toutes ses obs.
-            if (obsInitialesIds.isNotEmpty()) {
-                traceViewModel.supprimerObservations(obsInitialesIds)
-            }
-            findNavController().navigateUp()
-            return
-        }
-        // En édition d'un relevé : on réutilise son UUID pour que les obs ajoutées en cours
-        // d'édition rejoignent le même relevé GeoNature. En saisie initiale : nouvel UUID.
-        val releveIdBatch = releveIdEdite ?: java.util.UUID.randomUUID().toString()
-        // Repère les obs initialement présentes mais retirées de la liste pendant l'édition
-        // (= l'utilisateur les a supprimées avec la corbeille de l'item) — à purger côté store.
-        val idsRestants = pendingObs.mapNotNull { it.existingId }.toHashSet()
-        val idsSupprimes = obsInitialesIds - idsRestants
-        if (idsSupprimes.isNotEmpty()) traceViewModel.supprimerObservations(idsSupprimes)
-        for (obs in pendingObs) {
+        // Le lot est déjà sauvé au fil de l'eau (cf. synchroniserBatch via rafraichirListe) ;
+        // on resynchronise par sécurité puis on revient.
+        synchroniserBatch()
+        findNavController().navigateUp()
+    }
+
+    /** Reflète l'état courant de [pendingObs] dans le TraceViewModel (qui le persiste aussitôt
+     *  dans le store, cf. son auto-save). Idempotent : chaque espèce porte une id VM stable
+     *  ([PendingObs.existingId] en édition, sinon [PendingObs.vmId]) → upsert ; les espèces
+     *  retirées de la liste sont supprimées du relevé. Toutes partagent [releveIdSession].
+     *  Appelé à chaque changement de la liste — il n'y a plus de bouton « Annuler », donc le
+     *  relevé en cours est toujours conservé (au fil de l'eau). */
+    private fun synchroniserBatch() {
+        val releveId = releveIdSession
+        val nouvelles = pendingObs.map { obs ->
+            val id = obs.existingId ?: obs.vmId
             val nomFinal = obs.espece.ifEmpty { "Espèce inconnue" }
             val cdNomFinal = obs.cdNom ?: obs.cdNomManuel.trim().toIntOrNull()
-            if (obs.existingId != null) {
-                val base = traceViewModel.observations.value?.find { it.id == obs.existingId } ?: continue
-                traceViewModel.modifierObservation(base.copy(
-                    espece                    = nomFinal,
-                    taxon                     = obs.taxon,
-                    cdNom                     = cdNomFinal,
-                    notes                     = obs.notes,
-                    nombre                    = obs.nombre,
-                    nombreMax                 = obs.nombreMax,
-                    sexe                      = obs.sexe.ifEmpty { null },
-                    stadeVie                  = obs.stadeVie.ifEmpty { null },
-                    objDenbr                  = obs.objDenbr.ifEmpty { null },
-                    typDenbr                  = obs.typDenbr.ifEmpty { null },
-                    denombrementsAdditionnels = obs.denombrementsAdditionnels,
-                    techniqueObs              = obs.techniqueObs.ifEmpty { null },
-                    statutObs                 = obs.statutObs.ifEmpty { null },
-                    statutBio                 = obs.statutBio.ifEmpty { null },
-                    etaBio                    = obs.etaBio.ifEmpty { null },
-                    preuveExist               = obs.preuveExist.ifEmpty { null },
-                    comportement              = obs.comportement.ifEmpty { null },
-                    methDetermin              = obs.methDetermin.ifEmpty { null },
-                    determinateur             = obs.determinateur.ifEmpty { null },
-                    mediaUrisCounting0        = obs.mediaUrisCounting0,
-                    additionalFieldsReleve    = additionalFieldsReleveSession,
-                    geometryType              = geometryTypeSession,
-                    geometryCoordsJson        = geometryCoordsJsonSession,
-                    additionalFieldsOccurrence = obs.additionalFieldsOccurrence,
-                    additionalFieldsCounting0 = obs.additionalFieldsCounting0,
-                ))
-            } else {
-                traceViewModel.ajouterObservation(Observation(
-                    espece                    = nomFinal,
-                    taxon                     = obs.taxon,
-                    cdNom                     = cdNomFinal,
-                    latitude                  = latitude,
-                    longitude                 = longitude,
-                    notes                     = obs.notes,
-                    nombre                    = obs.nombre,
-                    nombreMax                 = obs.nombreMax,
-                    sexe                      = obs.sexe.ifEmpty { null },
-                    stadeVie                  = obs.stadeVie.ifEmpty { null },
-                    objDenbr                  = obs.objDenbr.ifEmpty { null },
-                    typDenbr                  = obs.typDenbr.ifEmpty { null },
-                    denombrementsAdditionnels = obs.denombrementsAdditionnels,
-                    techniqueObs              = obs.techniqueObs.ifEmpty { null },
-                    statutObs                 = obs.statutObs.ifEmpty { null },
-                    statutBio                 = obs.statutBio.ifEmpty { null },
-                    etaBio                    = obs.etaBio.ifEmpty { null },
-                    preuveExist               = obs.preuveExist.ifEmpty { null },
-                    comportement              = obs.comportement.ifEmpty { null },
-                    methDetermin              = obs.methDetermin.ifEmpty { null },
-                    determinateur             = obs.determinateur.ifEmpty { null },
-                    mediaUrisCounting0        = obs.mediaUrisCounting0,
-                    additionalFieldsReleve    = additionalFieldsReleveSession,
-                    geometryType              = geometryTypeSession,
-                    geometryCoordsJson        = geometryCoordsJsonSession,
-                    additionalFieldsOccurrence = obs.additionalFieldsOccurrence,
-                    additionalFieldsCounting0 = obs.additionalFieldsCounting0,
-                    releveId                  = releveIdBatch,
-                ))
-            }
+            // Repart de l'obs existante (préserve date / position d'origine en édition),
+            // sinon crée une nouvelle obs à la position courante.
+            val base = traceViewModel.observations.value?.find { it.id == id }
+                ?: Observation(id = id, espece = nomFinal, latitude = latitude, longitude = longitude)
+            base.copy(
+                espece                    = nomFinal,
+                taxon                     = obs.taxon,
+                cdNom                     = cdNomFinal,
+                notes                     = obs.notes,
+                nombre                    = obs.nombre,
+                nombreMax                 = obs.nombreMax,
+                sexe                      = obs.sexe.ifEmpty { null },
+                stadeVie                  = obs.stadeVie.ifEmpty { null },
+                objDenbr                  = obs.objDenbr.ifEmpty { null },
+                typDenbr                  = obs.typDenbr.ifEmpty { null },
+                denombrementsAdditionnels = obs.denombrementsAdditionnels,
+                techniqueObs              = obs.techniqueObs.ifEmpty { null },
+                statutObs                 = obs.statutObs.ifEmpty { null },
+                statutBio                 = obs.statutBio.ifEmpty { null },
+                etaBio                    = obs.etaBio.ifEmpty { null },
+                preuveExist               = obs.preuveExist.ifEmpty { null },
+                comportement              = obs.comportement.ifEmpty { null },
+                methDetermin              = obs.methDetermin.ifEmpty { null },
+                determinateur             = obs.determinateur.ifEmpty { null },
+                mediaUrisCounting0        = obs.mediaUrisCounting0,
+                additionalFieldsReleve    = additionalFieldsReleveSession,
+                geometryType              = geometryTypeSession,
+                geometryCoordsJson        = geometryCoordsJsonSession,
+                additionalFieldsOccurrence = obs.additionalFieldsOccurrence,
+                additionalFieldsCounting0 = obs.additionalFieldsCounting0,
+                releveId                  = releveId,
+            )
         }
-        findNavController().navigateUp()
+        traceViewModel.remplacerObservationsDuReleve(releveId, nouvelles)
     }
 
     override fun onDestroyView() {

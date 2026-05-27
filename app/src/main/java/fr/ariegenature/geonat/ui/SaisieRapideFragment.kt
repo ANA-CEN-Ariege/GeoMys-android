@@ -1003,6 +1003,8 @@ class SaisieRapideFragment : Fragment() {
                     getString(R.string.enregistrer_quitter) -> terminerSaisie(envoyerGN = false)
                     getString(R.string.enregistrer_envoyer_gn) -> terminerSaisie(envoyerGN = true)
                     getString(R.string.supprimer_sortie) -> {
+                        // Purge aussi le brouillon auto-sauvé (sinon il resterait dans « À envoyer »).
+                        traceViewModel.sortieEnEditionId?.let { sortieStore.supprimer(it) }
                         traceViewModel.reinitialiser()
                         LocationForegroundService.stop(requireContext())
                         findNavController().navigateUp()
@@ -1014,13 +1016,19 @@ class SaisieRapideFragment : Fragment() {
 
     private fun terminerSaisie(envoyerGN: Boolean) {
         LocationForegroundService.stop(requireContext())
-        val sortie = Sortie(
-            date = System.currentTimeMillis(),
-            pointsParcours = emptyList(),
+        // La saisie a déjà été auto-sauvée au fil de l'eau sous `sortieEnEditionId` : on met
+        // à jour cette même entrée (préserve id + date + place dans la liste) au lieu d'en
+        // créer une nouvelle, sinon on dupliquerait le brouillon déjà présent dans le store.
+        val id = traceViewModel.sortieEnEditionId
+        val existante = id?.let { sid -> sortieStore.charger().firstOrNull { it.id == sid } }
+        val sortie = (existante ?: Sortie()).copy(
             observations = traceViewModel.observations.value?.toList() ?: emptyList(),
-            distanceTotale = 0.0
         )
-        if (sortie.observations.isNotEmpty()) sortieStore.ajouter(sortie)
+        if (sortie.observations.isNotEmpty()) {
+            if (id != null) sortieStore.remplacer(id, sortie) else sortieStore.ajouter(sortie)
+        } else {
+            id?.let { sortieStore.supprimer(it) }
+        }
         traceViewModel.reinitialiser()
 
         if (envoyerGN) envoyerVersGeoNature(sortie)

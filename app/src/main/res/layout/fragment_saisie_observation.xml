@@ -284,14 +284,6 @@
             android:orientation="horizontal">
 
             <Button
-                android:id="@+id/btn_annuler"
-                style="@style/Widget.Material3.Button.TextButton"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginEnd="8dp"
-                android:text="@string/annuler" />
-
-            <Button
                 android:id="@+id/btn_enregistrer"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"

@@ -50,6 +50,9 @@ class TraceFragment : Fragment() {
     private lateinit var gnConfig: GeoNatureConfig
 
     private var suivrePosition = true
+    /** Vrai uniquement au 1er affichage après une reprise de sortie : demande à [setupMap] de
+     *  cadrer la carte sur les obs/trace déjà saisies plutôt que sur la position courante. */
+    private var doitCentrerSurObs = false
     private var modePositionnement = false
     /** IDs des obs à repositionner sur la carte. Vide = pas en mode reposition. Un seul ID pour
      *  une obs solo, N IDs pour un relevé multi-taxons (toutes déplacées au même point). */
@@ -160,7 +163,12 @@ class TraceFragment : Fragment() {
         val sortieIdReprise = arguments?.getString("sortieId")?.takeIf { it.isNotEmpty() }
         if (sortieIdReprise != null && traceViewModel.sortieEnEditionId != sortieIdReprise) {
             val sortie = sortieStore.charger().firstOrNull { it.id == sortieIdReprise }
-            if (sortie != null) traceViewModel.reprendreSortie(sortie)
+            if (sortie != null) {
+                traceViewModel.reprendreSortie(sortie)
+                // Reprise depuis « Mes saisies » : on cadrera la carte sur les obs/trace déjà
+                // saisies (pas sur la position courante du téléphone).
+                doitCentrerSurObs = sortie.observations.isNotEmpty() || sortie.pointsParcours.isNotEmpty()
+            }
         }
 
         enregistrerTrace = requireContext()
@@ -190,15 +198,24 @@ class TraceFragment : Fragment() {
         binding.map.setTileSource(tileSourcePour(fondCarte))
         binding.map.setMultiTouchControls(true)
         binding.map.controller.setZoom(savedMapZoom)
-        // Au retour sur la carte (après saisie), on recentre sur la position du téléphone
-        // et on réactive le suivi pour que la carte (et donc le réticule, fixé au centre
-        // de l'écran) suive le déplacement. Sans ça, la carte restait collée à l'endroit
-        // de la dernière obs validée et `suivrePosition` était à false depuis le pan manuel.
-        val positionCourante = traceViewModel.locationTracker.position.value
-            ?.let { GeoPoint(it.latitude, it.longitude) }
-        binding.map.controller.setCenter(positionCourante ?: savedMapCenter ?: GeoPoint(46.5, 2.5))
-        suivrePosition = true
-        binding.btnCentrer.setImageResource(R.drawable.ic_location_on)
+        if (doitCentrerSurObs) {
+            // Reprise d'une sortie : on cadre sur les obs/trace existantes et on NE suit PAS
+            // la position (sinon le 1er fix GPS recentrerait aussitôt sur le téléphone).
+            doitCentrerSurObs = false
+            suivrePosition = false
+            binding.btnCentrer.setImageResource(R.drawable.ic_location_off)
+            centrerSurObservations()
+        } else {
+            // Au retour sur la carte (après saisie), on recentre sur la position du téléphone
+            // et on réactive le suivi pour que la carte (et donc le réticule, fixé au centre
+            // de l'écran) suive le déplacement. Sans ça, la carte restait collée à l'endroit
+            // de la dernière obs validée et `suivrePosition` était à false depuis le pan manuel.
+            val positionCourante = traceViewModel.locationTracker.position.value
+                ?.let { GeoPoint(it.latitude, it.longitude) }
+            binding.map.controller.setCenter(positionCourante ?: savedMapCenter ?: GeoPoint(46.5, 2.5))
+            suivrePosition = true
+            binding.btnCentrer.setImageResource(R.drawable.ic_location_on)
+        }
         // Restaure l'état du mode boussole (persisté sur l'instance fragment, mais
         // le binding est recréé). En mode figé, on remet la carte nord en haut.
         binding.compass.setActif(carteSuitBoussole)
@@ -361,6 +378,41 @@ class TraceFragment : Fragment() {
             // affichés sur la carte et seraient repris à la prochaine saisie.
             resetSaisieGeom()
             updateModePositionnement()
+        }
+    }
+
+    /** Cadre la carte sur l'emprise des observations (et de la trace) de la sortie reprise.
+     *  Posté après le layout de la carte car [org.osmdroid.views.MapView.zoomToBoundingBox]
+     *  a besoin des dimensions réelles de la vue. Un seul point → simple centrage + zoom. */
+    private fun centrerSurObservations() {
+        // Points valides uniquement : on écarte les (0,0) (obs/trace sans position fixée),
+        // sinon l'emprise s'étirerait jusqu'au golfe de Guinée.
+        val points = mutableListOf<GeoPoint>()
+        traceViewModel.observations.value?.forEach {
+            if (it.latitude != 0.0 || it.longitude != 0.0) points.add(GeoPoint(it.latitude, it.longitude))
+        }
+        traceViewModel.locationTracker.parcours.value?.forEach {
+            if (it.latitude != 0.0 || it.longitude != 0.0) points.add(GeoPoint(it.latitude, it.longitude))
+        }
+        if (points.isEmpty()) return
+        val minLat = points.minOf { it.latitude }
+        val maxLat = points.maxOf { it.latitude }
+        val minLon = points.minOf { it.longitude }
+        val maxLon = points.maxOf { it.longitude }
+        binding.map.post {
+            if (_binding == null) return@post
+            // Emprise quasi nulle (un seul point distinct — cas fréquent en multi-taxons où
+            // toutes les espèces partagent le même point) → centrage simple. Sinon
+            // zoomToBoundingBox sur une boîte d'aire nulle calcule un zoom aberrant et
+            // projette la carte n'importe où (Alaska).
+            if (maxLat - minLat < 1e-4 && maxLon - minLon < 1e-4) {
+                binding.map.controller.setZoom(18.0)
+                binding.map.controller.setCenter(GeoPoint((minLat + maxLat) / 2, (minLon + maxLon) / 2))
+            } else {
+                // increaseByScale ajoute une marge pour ne pas coller les points aux bords.
+                val box = org.osmdroid.util.BoundingBox(maxLat, maxLon, minLat, minLon).increaseByScale(1.3f)
+                binding.map.zoomToBoundingBox(box, false)
+            }
         }
     }
 

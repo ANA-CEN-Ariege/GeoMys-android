@@ -21,7 +21,11 @@ class SortieStore(context: Context) {
     }
 
     fun sauvegarder(sorties: List<Sortie>) {
-        prefs.edit().putString(key, gson.toJson(sorties)).apply()
+        // commit() (synchrone) et non apply() : l'auto-save « au fil de l'eau » doit être
+        // durable même sur un kill brutal (SIGKILL via stop Android Studio / force-stop /
+        // OOM) qui surviendrait avant le flush disque asynchrone d'apply(). Données petites
+        // + écritures peu fréquentes (au rythme des obs) → coût négligeable.
+        prefs.edit().putString(key, gson.toJson(sorties)).commit()
     }
 
     fun ajouter(sortie: Sortie) {

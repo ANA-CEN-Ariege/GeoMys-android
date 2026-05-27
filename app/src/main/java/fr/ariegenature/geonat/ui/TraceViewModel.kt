@@ -7,9 +7,14 @@ import androidx.lifecycle.MutableLiveData
 import fr.ariegenature.geonat.GeoNatApplication
 import fr.ariegenature.geonat.model.Observation
 import fr.ariegenature.geonat.model.Sortie
+import fr.ariegenature.geonat.store.SortieStore
 
 class TraceViewModel(application: Application) : AndroidViewModel(application) {
     val locationTracker = (application as GeoNatApplication).locationTracker
+
+    /** Store durable des sorties — sert à l'auto-save « au fil de l'eau » de la saisie en
+     *  cours (cf. [persisterBrouillon]). */
+    private val sortieStore = SortieStore(application)
 
     private val _observations = MutableLiveData<MutableList<Observation>>(mutableListOf())
     val observations: LiveData<MutableList<Observation>> = _observations
@@ -29,6 +34,7 @@ class TraceViewModel(application: Application) : AndroidViewModel(application) {
         val list = _observations.value ?: mutableListOf()
         list.add(obs)
         _observations.value = list
+        persisterBrouillon()
     }
 
     fun modifierObservation(obs: Observation) {
@@ -37,6 +43,7 @@ class TraceViewModel(application: Application) : AndroidViewModel(application) {
         if (idx >= 0) {
             list[idx] = obs
             _observations.value = list
+            persisterBrouillon()
         }
     }
 
@@ -44,6 +51,7 @@ class TraceViewModel(application: Application) : AndroidViewModel(application) {
         val list = _observations.value ?: return
         list.removeAll { it.id == id }
         _observations.value = list
+        persisterBrouillon()
     }
 
     /** Supprime toutes les obs partageant un [releveId] donné (= un "relevé" GeoNature au sens
@@ -52,6 +60,7 @@ class TraceViewModel(application: Application) : AndroidViewModel(application) {
         val list = _observations.value ?: return
         list.removeAll { it.releveId == releveId }
         _observations.value = list
+        persisterBrouillon()
     }
 
     /** Suppression par liste d'IDs — utilisé par l'édition de relevé pour purger les obs
@@ -62,6 +71,19 @@ class TraceViewModel(application: Application) : AndroidViewModel(application) {
         val set = ids.toHashSet()
         list.removeAll { it.id in set }
         _observations.value = list
+        persisterBrouillon()
+    }
+
+    /** Remplace en bloc toutes les observations d'un [releveId] par [nouvelles] (qui portent
+     *  ce même releveId), en une seule mutation → un seul auto-save. Utilisé par la saisie
+     *  multi-taxons pour refléter le lot en cours au fil de l'eau sans réécrire le store une
+     *  fois par espèce. Préserve l'ordre des autres relevés. */
+    fun remplacerObservationsDuReleve(releveId: String, nouvelles: List<Observation>) {
+        val list = _observations.value ?: mutableListOf()
+        list.removeAll { it.releveId == releveId }
+        list.addAll(nouvelles)
+        _observations.value = list
+        persisterBrouillon()
     }
 
     fun mettreAJourObservationPosition(id: String, lat: Double, lon: Double) {
@@ -70,6 +92,46 @@ class TraceViewModel(application: Application) : AndroidViewModel(application) {
         if (idx >= 0) {
             list[idx] = list[idx].copy(latitude = lat, longitude = lon)
             _observations.value = list
+            persisterBrouillon()
+        }
+    }
+
+    /** Auto-save « au fil de l'eau » de la saisie en cours : à chaque modification des
+     *  observations (mono ou multi-taxons), on écrit/met à jour la sortie courante dans
+     *  [SortieStore] sous une id stable ([sortieEnEditionId]). Elle apparaît ainsi dans
+     *  « Mes saisies → À envoyer » et survit à un kill de l'appli ; on la reprend via
+     *  « Continuer la saisie » (= [reprendreSortie]).
+     *
+     *  - 1ère obs d'une nouvelle saisie → crée la sortie et fixe [sortieEnEditionId].
+     *  - obs suivantes / reprise → met à jour la sortie existante (préserve id + date).
+     *  - saisie vidée (plus aucune obs ni trace) → purge le brouillon.
+     *  Ne touche jamais une sortie déjà envoyée à GeoNature. */
+    private fun persisterBrouillon() {
+        val obs = _observations.value?.toList() ?: emptyList()
+        val parcours = locationTracker.parcours.value ?: emptyList()
+        val distance = locationTracker.distanceTotale.value ?: 0.0
+        val id = sortieEnEditionId
+        if (obs.isEmpty() && parcours.isEmpty()) {
+            id?.let { sortieStore.supprimer(it) }
+            return
+        }
+        if (id != null) {
+            val existante = sortieStore.charger().firstOrNull { it.id == id }
+            if (existante?.envoyeGeoNature == true) return
+            val base = existante ?: Sortie(id = id)
+            sortieStore.remplacer(id, base.copy(
+                observations = obs,
+                pointsParcours = parcours,
+                distanceTotale = distance,
+            ))
+        } else {
+            val nouvelle = Sortie(
+                observations = obs,
+                pointsParcours = parcours,
+                distanceTotale = distance,
+            )
+            sortieStore.ajouter(nouvelle)
+            sortieEnEditionId = nouvelle.id
         }
     }
 

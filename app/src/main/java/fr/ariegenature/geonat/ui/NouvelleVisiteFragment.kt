@@ -36,6 +36,10 @@ class NouvelleVisiteFragment : Fragment() {
      *  utilisées par [envoyerVisite] au moment du submit pour construire l'URL et le
      *  lien parent. Null tant que le schéma serveur n'a pas été chargé (fallback démo). */
     private var visitObjectType: String? = null
+    /** Type d'enfant « saisie » du type créé (ex. observation pour une visite), résolu depuis
+     *  le schéma. Si non-null, l'enregistrement enchaîne directement sur la création de cet
+     *  enfant au lieu de revenir à la liste. */
+    private var typeSaisieEnfant: String? = null
     private var parentIdFieldChamp: String? = null
     private var nomsChampsVisit: List<String> = emptyList()
     private var enCoursEnvoi = false
@@ -236,6 +240,11 @@ class NouvelleVisiteFragment : Fragment() {
             valeursPreremplies = null
             // Mémorise les métadonnées nécessaires à l'envoi serveur (cf. envoyerVisite).
             visitObjectType = visitSchema.type
+            // Premier type d'enfant « saisie » du type créé (ex. visit → observation) : sert
+            // à enchaîner sur sa création après l'enregistrement (cf. envoyerVisite).
+            typeSaisieEnfant = visitSchema.childrenTypes.firstOrNull {
+                fr.ariegenature.geonat.network.MonitoringSync.estTypeSaisie(it)
+            }
             parentIdFieldChamp = parentIdField
             // Liste COMPLÈTE des propriétés du schéma (incluant les hidden:true techniques) —
             // utilisée pour padder le payload POST avec null sur les champs non remplis.
@@ -477,8 +486,29 @@ class NouvelleVisiteFragment : Fragment() {
             android.widget.Toast.LENGTH_LONG,
         ).show()
 
-        // Mode "chaîne de saisies" : reset du formulaire pour enchaîner une nouvelle obs
-        // sur le même parent. Sortie via "Terminer".
+        // Enchaînement : si l'objet créé a un type d'enfant « saisie » (ex. visite →
+        // observation), on bascule directement sur la création de cet enfant — parent = l'objet
+        // local qu'on vient de créer (parentUuidLocal) — au lieu de revenir à la liste. Le
+        // formulaire courant est remplacé (popUpTo) pour que « retour » revienne au fil.
+        val enfant = typeSaisieEnfant
+        if (enfant != null) {
+            findNavController().navigate(
+                fr.ariegenature.geonat.R.id.action_nouvelle_visite_enchainer,
+                androidx.core.os.bundleOf(
+                    "moduleCode" to moduleCode,
+                    "parentObjectType" to visitType,
+                    "parentUuidLocal" to saisie.uuid,
+                    "childObjectType" to enfant,
+                    "titreSite" to "$labelType (saisie locale)",
+                    "fil" to arguments?.getString("fil").orEmpty(),
+                ),
+            )
+            return
+        }
+
+        // Sinon : mode "chaîne de saisies" (ex. obs sur visite) → reset du formulaire pour
+        // une nouvelle saisie sur le même parent (sortie via "Terminer") ; à défaut, retour
+        // à la liste.
         val modeChaine = !parentTypeArg.isNullOrEmpty() &&
             fr.ariegenature.geonat.network.MonitoringSync.estTypeSaisie(parentTypeArg)
         if (modeChaine) {

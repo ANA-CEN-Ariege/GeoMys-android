@@ -146,6 +146,24 @@ class DenombrementFragment : Fragment() {
             val etMax = row.findViewById<TextInputEditText>(R.id.et_nombre_max)
             etMin.setText(denom.nombreMin.toString())
             etMax.setText(denom.nombreMax.toString())
+            // Saisie de Min → recopie automatique dans Max. On ne recopie que si Max
+            // « suivait » Min (vide ou égal à l'ancienne valeur de Min) pour ne pas écraser
+            // une borne max saisie volontairement (plage min-max). Listener posé APRÈS le
+            // setText initial pour ne pas se déclencher au pré-remplissage.
+            etMin.addTextChangedListener(object : android.text.TextWatcher {
+                private var ancienMin = ""
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {
+                    ancienMin = s?.toString().orEmpty()
+                }
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+                override fun afterTextChanged(s: android.text.Editable?) {
+                    val nouveauMin = s?.toString().orEmpty()
+                    val maxActuel = etMax.text?.toString().orEmpty()
+                    if ((maxActuel.isEmpty() || maxActuel == ancienMin) && maxActuel != nouveauMin) {
+                        etMax.setText(nouveauMin)
+                    }
+                }
+            })
 
             val sexeLayout = row.findViewById<LinearLayout>(R.id.layout_sexe)
             sexeLayout.visibility = if (sexeActif) View.VISIBLE else View.GONE

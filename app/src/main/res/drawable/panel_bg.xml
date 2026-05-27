@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Fond des panneaux flottants (saisie rapide, trace). colorSurface s'adapte au mode
+     clair/sombre via le thème Material3 DayNight — pas de blanc codé en dur (sinon le texte
+     themé devient illisible en mode sombre). -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android">
-    <solid android:color="#F5FFFFFF" />
+    <solid android:color="?attr/colorSurface" />
 </shape>

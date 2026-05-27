@@ -268,7 +268,9 @@ class SaisieObservationFragment : Fragment() {
         setupAutocomplete()
         rafraichirListe()
 
-        binding.btnEnregistrer.setOnClickListener { enregistrer() }
+        // Bouton coche (haut-droite) : la saisie est sauvée au fil de l'eau, ce bouton sert
+        // juste à terminer le relevé et sortir (synchro finale + navigateUp).
+        binding.btnOk.setOnClickListener { enregistrer() }
         // Bouton "Détails" : TOUJOURS visible. Le dialog affiche les infos de base du
         // relevé (dataset, observateur, position) + les éventuels champs additionnels
         // OCCTAX_RELEVE déclarés par le serveur pour le dataset courant.
@@ -279,7 +281,6 @@ class SaisieObservationFragment : Fragment() {
                 .filter { it.visiblePour(gnConfig.idDataset.toIntOrNull(), emptyList()) }
             ouvrirDetailsReleve(defsReleveSession)
         }
-        updateBtnEnregistrerState()
     }
 
     // ─── Liste des obs en attente ─────────────────────────────────────────────
@@ -287,10 +288,24 @@ class SaisieObservationFragment : Fragment() {
     private fun rafraichirListe() {
         binding.llPendingObs.removeAllViews()
         val inflater = LayoutInflater.from(requireContext())
+        // Map cdNom → entrée TaxRef construite une seule fois (pas par ligne) pour résoudre
+        // le nom scientifique à afficher sous le nom français.
+        val parCdNom = TaxRefCache.entreesParCdNom()
         pendingObs.forEachIndexed { index, obs ->
             val row = inflater.inflate(R.layout.item_pending_obs, binding.llPendingObs, false)
             row.findViewById<ImageView>(R.id.iv_taxon).setImageResource(taxonIcon(obs.taxon))
             row.findViewById<TextView>(R.id.tv_espece).text = obs.espece
+            // Nom scientifique sous le nom français (en italique via le layout). Affiché
+            // seulement si l'espèce affichée n'est pas déjà le nom sci (= un nom FR a été choisi).
+            row.findViewById<TextView>(R.id.tv_sci_nom).apply {
+                val sci = obs.cdNom?.let { parCdNom[it]?.sciNom }
+                if (sci != null && !sci.equals(obs.espece, ignoreCase = true)) {
+                    text = sci
+                    visibility = View.VISIBLE
+                } else {
+                    visibility = View.GONE
+                }
+            }
             row.findViewById<TextView>(R.id.tv_nombre).apply {
                 // Total = somme des count_min sur tous les dénombrements (counting #0 + additionnels).
                 val total = obs.nombre + obs.denombrementsAdditionnels.sumOf { it.nombreMin }
@@ -301,7 +316,6 @@ class SaisieObservationFragment : Fragment() {
             row.findViewById<ImageButton>(R.id.btn_delete).setOnClickListener { supprimer(index) }
             binding.llPendingObs.addView(row)
         }
-        updateBtnEnregistrerState()
         // Auto-save « au fil de l'eau » : tout changement de la liste (ajout, suppression,
         // retour d'un sous-écran de détail) est reflété dans le store via le TraceViewModel.
         synchroniserBatch()
@@ -690,9 +704,6 @@ class SaisieObservationFragment : Fragment() {
             gnConfig.nomUtilisateur.ifEmpty { gnConfig.login }
         }
 
-    private fun updateBtnEnregistrerState() {
-        binding.btnEnregistrer.isEnabled = pendingObs.isNotEmpty()
-    }
 
     // ─── Nombre ───────────────────────────────────────────────────────────────
 

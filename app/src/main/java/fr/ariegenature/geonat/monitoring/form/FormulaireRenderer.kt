@@ -41,6 +41,12 @@ class FormulaireRenderer(
     private val couleurErreur: Int = com.google.android.material.color.MaterialColors.getColor(
         parent, com.google.android.material.R.attr.colorError, 0xFFB00020.toInt(),
     )
+    /** Couleur de texte secondaire (label, placeholder "Choisir…", aide…). Avant on avait
+     *  des gris en dur (#888888, #666666) qui se brûlaient en mode sombre / sur le fond
+     *  accueil. Le ?attr/colorOnSurfaceVariant Material reste lisible sur les deux. */
+    private val couleurSecondaire: Int = com.google.android.material.color.MaterialColors.getColor(
+        parent, com.google.android.material.R.attr.colorOnSurfaceVariant, 0xFF888888.toInt(),
+    )
     /** code → vue éditable racine (l'EditText / Spinner / TextView selon le widget). */
     private val vuesParCode = linkedMapOf<String, View>()
     /** code → champ d'origine (pour relire son viewType au moment de lire les valeurs). */
@@ -55,6 +61,16 @@ class FormulaireRenderer(
      *  Utilisé par l'écran appelant pour piloter l'état du bouton de submit selon que
      *  les champs obligatoires sont remplis ou non. */
     private var onChangement: (() -> Unit)? = null
+    /** Callback invoqué quand l'utilisateur appuie sur le bouton d'un champ MEDIA. Reçoit
+     *  le code du champ + une lambda à invoquer avec l'URI String du fichier choisi (déjà
+     *  importé dans le stockage interne) ou null en cas d'annulation. Externe car le picker
+     *  Android (ActivityResultLauncher.GetContent) doit être enregistré dans le Fragment. */
+    private var onChoixMedia: ((codeChamp: String, callback: (uriLocale: String?) -> Unit) -> Unit)? = null
+
+    /** Enregistre le callback de choix média (cf. [onChoixMedia]). */
+    fun setOnChoixMedia(callback: (String, (String?) -> Unit) -> Unit) {
+        onChoixMedia = callback
+    }
     /** Règles `change` du schéma (auto-remplissage de champs dépendants). Vide par défaut. */
     private var reglesChange: List<ChangeRules.Regle> = emptyList()
     /** Garde anti-récursion : true pendant qu'on applique un patch des règles change
@@ -137,6 +153,14 @@ class FormulaireRenderer(
                 val s = valeur?.toString().orEmpty()
                 tag = s
                 if (s.isNotEmpty()) { text = s; setTextColor(couleurValeur) }
+            }
+            ViewType.MEDIA -> (vue as LinearLayout).apply {
+                val s = valeur?.toString().orEmpty()
+                tag = s.ifEmpty { null }
+                // Le 2e enfant est le TextView nom-de-fichier (cf. creerChampMedia).
+                (getChildAt(1) as? TextView)?.text =
+                    if (s.isNotEmpty()) java.io.File(android.net.Uri.parse(s).path ?: "").name
+                    else "Aucune photo"
             }
             ViewType.SELECT_MULTIPLE -> (vue as TextView).apply {
                 @Suppress("UNCHECKED_CAST")
@@ -314,6 +338,10 @@ class FormulaireRenderer(
             // CheckBox non cochée = null (= "non renseigné"), cochée = true. Le serveur
             // monitoring ne semble pas distinguer false explicite de "non renseigné".
             ViewType.CHECKBOX -> if ((v as android.widget.CheckBox).isChecked) true else null
+            // MEDIA : URI String stockée dans le tag du LinearLayout, ou null. Le payload
+            // POST de l'objet ne porte PAS cette valeur — l'envoi du fichier est différé
+            // à OutboxEnvoi (cf. SaisieEnAttente.mediaPathLocal).
+            ViewType.MEDIA -> (v as LinearLayout).tag as? String
         }
     }
 
@@ -329,7 +357,7 @@ class FormulaireRenderer(
         val labelTv = TextView(ctx).apply {
             text = if (field.obligatoire) "${field.label} *" else field.label
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
-            setTextColor(0xFF666666.toInt())
+            setTextColor(couleurSecondaire)
             setPadding(0, 0, 0, (4 * density).toInt())
         }
         container.addView(labelTv)
@@ -351,6 +379,7 @@ class FormulaireRenderer(
             ViewType.RADIO -> creerChampRadio(field)
             ViewType.SELECT_MULTIPLE -> creerChampMultiSelect(field)
             ViewType.CHECKBOX -> creerCheckBox(field)
+            ViewType.MEDIA -> creerChampMedia(field)
         }
         container.addView(editable)
         // Message d'erreur de validation min/max (NUMBER avec bornes uniquement). Créé GONE,
@@ -373,7 +402,7 @@ class FormulaireRenderer(
             val tvAide = TextView(ctx).apply {
                 text = aide
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-                setTextColor(0xFF888888.toInt())
+                setTextColor(couleurSecondaire)
                 setPadding(0, (2 * density).toInt(), 0, 0)
                 typeface = android.graphics.Typeface.create(typeface, android.graphics.Typeface.ITALIC)
             }
@@ -411,7 +440,7 @@ class FormulaireRenderer(
             setPadding((8 * density).toInt(), (12 * density).toInt(), (8 * density).toInt(), (12 * density).toInt())
             setBackgroundResource(fr.ariegenature.geonat.R.drawable.bg_carte_contour)
             text = "Choisir une date…"
-            setTextColor(0xFF888888.toInt())
+            setTextColor(couleurSecondaire)
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -459,7 +488,7 @@ class FormulaireRenderer(
             setPadding((8 * density).toInt(), (12 * density).toInt(), (8 * density).toInt(), (12 * density).toInt())
             setBackgroundResource(fr.ariegenature.geonat.R.drawable.bg_carte_contour)
             text = "Choisir une heure…"
-            setTextColor(0xFF888888.toInt())
+            setTextColor(couleurSecondaire)
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -599,7 +628,7 @@ class FormulaireRenderer(
             tv.setTextColor(couleurValeur)
         } else {
             tv.text = "Choisir…"
-            tv.setTextColor(0xFF888888.toInt())
+            tv.setTextColor(couleurSecondaire)
         }
         tv.setOnClickListener {
             @Suppress("UNCHECKED_CAST")
@@ -617,7 +646,7 @@ class FormulaireRenderer(
                     tv.tag = liste.map { it.value }
                     if (liste.isEmpty()) {
                         tv.text = "Choisir…"
-                        tv.setTextColor(0xFF888888.toInt())
+                        tv.setTextColor(couleurSecondaire)
                     } else {
                         tv.text = liste.joinToString(", ") { it.label }
                         tv.setTextColor(couleurValeur)
@@ -684,6 +713,76 @@ class FormulaireRenderer(
         // Listener posé APRÈS le pré-cochage du défaut pour ne pas notifier pendant le rendu.
         rg.setOnCheckedChangeListener { _, _ -> notifierChangement() }
         return rg
+    }
+
+    /** Champ MEDIA : conteneur horizontal [bouton "Ajouter une photo" | nom-de-fichier | ✕].
+     *  La sélection elle-même est déléguée au Fragment via [onChoixMedia] (qui doit avoir
+     *  registré un ActivityResultLauncher.GetContent). Le `tag` du LinearLayout porte l'URI
+     *  String du fichier importé localement, ou null tant que rien n'est sélectionné. La
+     *  contrainte de cardinalité est "un seul fichier" pour cette version. */
+    private fun creerChampMedia(field: EditableField): LinearLayout {
+        val container = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            )
+        }
+        val btn = com.google.android.material.button.MaterialButton(ctx).apply {
+            text = "Ajouter une photo"
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            )
+        }
+        val tvNom = TextView(ctx).apply {
+            text = "Aucune photo"
+            setTextColor(couleurSecondaire)
+            setPadding((12 * density).toInt(), 0, 0, 0)
+            layoutParams = LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f,
+            ).apply { gravity = android.view.Gravity.CENTER_VERTICAL }
+        }
+        val btnEffacer = com.google.android.material.button.MaterialButton(
+            ctx, null, com.google.android.material.R.attr.materialIconButtonStyle,
+        ).apply {
+            text = "✕"
+            visibility = View.GONE
+            setOnClickListener {
+                container.tag = null
+                tvNom.text = "Aucune photo"
+                tvNom.setTextColor(couleurSecondaire)
+                visibility = View.GONE
+                notifierChangement()
+            }
+        }
+        container.addView(btn)
+        container.addView(tvNom)
+        container.addView(btnEffacer)
+        // Pré-remplissage : édition d'une saisie déjà attachée à un fichier local.
+        (field.value as? String)?.takeIf { it.isNotEmpty() }?.let { uri ->
+            container.tag = uri
+            tvNom.text = java.io.File(android.net.Uri.parse(uri).path ?: "").name
+            tvNom.setTextColor(couleurValeur)
+            btnEffacer.visibility = View.VISIBLE
+        }
+        btn.setOnClickListener {
+            val cb = onChoixMedia ?: run {
+                android.widget.Toast.makeText(ctx,
+                    "Picker média non configuré (callback manquant)",
+                    android.widget.Toast.LENGTH_LONG).show()
+                return@setOnClickListener
+            }
+            cb(field.code) { uriLocale ->
+                if (uriLocale.isNullOrEmpty()) return@cb
+                container.tag = uriLocale
+                tvNom.text = java.io.File(android.net.Uri.parse(uriLocale).path ?: "").name
+                tvNom.setTextColor(couleurValeur)
+                btnEffacer.visibility = View.VISIBLE
+                notifierChangement()
+            }
+        }
+        return container
     }
 
     /** Booléen rendu comme CheckBox. Pré-cochée si field.value est `true` (Boolean), ou la

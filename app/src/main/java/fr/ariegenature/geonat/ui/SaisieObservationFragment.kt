@@ -362,7 +362,7 @@ class SaisieObservationFragment : Fragment() {
             racine.addView(android.widget.TextView(ctx).apply {
                 text = label
                 textSize = 12f
-                setTextColor(0xFF888888.toInt())
+                setTextColor(couleurSecondaire(ctx))
             })
             racine.addView(android.widget.TextView(ctx).apply {
                 text = valeur
@@ -388,7 +388,7 @@ class SaisieObservationFragment : Fragment() {
             racine.addView(android.widget.TextView(ctx).apply {
                 text = "Champs additionnels"
                 textSize = 12f
-                setTextColor(0xFF888888.toInt())
+                setTextColor(couleurSecondaire(ctx))
                 setPadding(0, (8 * resources.displayMetrics.density).toInt(), 0, 0)
             })
             AdditionalFieldsRenderer.rendre(containerAdd, defs, additionalFieldsReleveSession)

@@ -62,7 +62,7 @@ class SaisiesEnAttenteFragment : Fragment() {
         if (saisies.isEmpty()) {
             binding.llSaisies.addView(TextView(requireContext()).apply {
                 text = "Les saisies que tu enregistres apparaîtront ici jusqu'à leur envoi."
-                setTextColor(0xFF888888.toInt())
+                setTextColor(couleurSecondaire(requireContext()))
                 textSize = 13f
             })
             return
@@ -126,7 +126,9 @@ class SaisiesEnAttenteFragment : Fragment() {
             text = "🔬 $label"
             textSize = 14f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setTextColor(0xFF0D47A1.toInt())
+            // Label "🔬 PROTOCOLE" : jaune clair pour cohérence avec le reste des éléments
+            // cliquables / accent du fil Suivis. Avant : colorPrimary (bleu).
+            setTextColor(androidx.core.content.ContextCompat.getColor(ctx, fr.ariegenature.geonat.R.color.jaune_clair))
             isAllCaps = true
             setPadding(
                 (12 * density).toInt(), (18 * density).toInt(),
@@ -168,7 +170,7 @@ class SaisiesEnAttenteFragment : Fragment() {
         return TextView(requireContext()).apply {
             text = "📍 $chemin"
             textSize = 12f
-            setTextColor(0xFF424242.toInt())
+            setTextColor(couleurSurOnSurface(requireContext()))
             setPadding(
                 (12 * density).toInt(), (8 * density).toInt(),
                 (12 * density).toInt(), (4 * density).toInt(),
@@ -280,13 +282,13 @@ class SaisiesEnAttenteFragment : Fragment() {
             text = "${s.moduleCode} · ${fmtDate.format(Date(s.dateLocale))}" +
                 (s.idServeur?.let { " · id serveur=$it" } ?: "")
             textSize = 12f
-            setTextColor(0xFF666666.toInt())
+            setTextColor(couleurSecondaire(ctx))
         })
         s.messageErreur?.takeIf { it.isNotBlank() }?.let { err ->
             row.addView(TextView(ctx).apply {
                 text = err
                 textSize = 12f
-                setTextColor(0xFFC62828.toInt())
+                setTextColor(couleurErreur(ctx))
             })
         }
         // Tap court = options (réessayer en cas d'erreur, retirer pour SENT). Les
@@ -343,7 +345,11 @@ class SaisiesEnAttenteFragment : Fragment() {
             layoutParams = LinearLayout.LayoutParams(
                 (40 * density).toInt(), (40 * density).toInt(),
             )
-            val couleur = if (tintBleu) 0xFF1976D2.toInt() else 0xFFC62828.toInt()
+            // Icônes d'action : jaune clair pour Envoyer/Éditer (cohérence cliquable),
+            // colorError pour Supprimer (sémantique destructive maintenue).
+            val couleur = if (tintBleu)
+                androidx.core.content.ContextCompat.getColor(ctx, fr.ariegenature.geonat.R.color.jaune_clair)
+            else couleurErreur(ctx)
             setColorFilter(couleur)
             setOnClickListener { action() }
         }

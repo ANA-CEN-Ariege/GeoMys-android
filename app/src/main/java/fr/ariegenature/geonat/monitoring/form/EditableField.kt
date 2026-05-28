@@ -28,6 +28,12 @@ enum class ViewType {
     /** Booléen : widgets serveur `bool_checkbox` / `bool` / `checkbox`. Rendu en CheckBox
      *  Material, valeur retournée = Boolean. */
     CHECKBOX,
+    /** Pièce jointe média (photo) — widget serveur `medias`. Rendu : bouton "Ajouter une
+     *  photo" + nom du fichier sélectionné + bouton ✕. La valeur retournée par lireValeurs
+     *  est l'URI String du fichier copié localement (ou null si rien sélectionné). L'upload
+     *  effectif vers /api/gn_commons/media a lieu à l'envoi serveur côté OutboxEnvoi, après
+     *  création de l'objet parent (le serveur attend uuid_attached_row pour le rattacher). */
+    MEDIA,
 }
 
 /** Valeur d'une option pour un widget SELECT (et plus tard NOMENCLATURE_TYPE / RADIO).
@@ -59,4 +65,9 @@ data class EditableField(
     val minValue: String? = null,
     /** Borne max (cf [minValue]). */
     val maxValue: String? = null,
+    /** Pour les widgets MEDIA : table Postgres à laquelle le média est rattaché côté
+     *  gn_commons.t_medias (ex. `gn_monitoring.t_base_visits` pour le widget medias d'une
+     *  visite). Lu depuis `schema_dot_table` du schéma serveur, résolu en id_table_location
+     *  via /api/gn_commons/get_id_table_location/<schema_dot_table> au moment de l'upload. */
+    val schemaDotTable: String? = null,
 )

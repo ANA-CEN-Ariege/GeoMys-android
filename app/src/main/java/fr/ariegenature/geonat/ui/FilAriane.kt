@@ -2,6 +2,7 @@ package fr.ariegenature.geonat.ui
 
 import android.text.SpannableStringBuilder
 import android.text.Spanned
+import android.text.TextPaint
 import android.text.method.LinkMovementMethod
 import android.text.style.ClickableSpan
 import android.text.style.ImageSpan
@@ -87,6 +88,7 @@ fun appliquerFilAriane(
     tv.visibility = View.VISIBLE
     tv.movementMethod = LinkMovementMethod.getInstance()
     val sb = SpannableStringBuilder()
+    val couleurLien = ContextCompat.getColor(tv.context, R.color.jaune_clair)
     segments.forEachIndexed { i, seg ->
         if (i > 0) sb.append(FIL_SEPARATEUR)
         val debut = sb.length
@@ -97,16 +99,19 @@ fun appliquerFilAriane(
             sb.append(" ")
             val drawable = ContextCompat.getDrawable(tv.context, R.drawable.ic_home)
             if (drawable != null) {
-                val taille = (tv.textSize * 1.05f).toInt()
+                // Taille = 2× la taille du texte (×2.10 pour cumuler le petit boost optique
+                // d'avant 1.05 + le +100% demandé). Sur un fil 14sp ça donne ~30sp d'icône,
+                // bien visible en plein soleil sans déséquilibrer le bandeau.
+                val taille = (tv.textSize * 2.10f).toInt()
                 drawable.setBounds(0, 0, taille, taille)
-                // Teinte avec colorOnSurface pour rester lisible en mode sombre — pas de
-                // gris en dur (cf feedback-mode-sombre).
-                drawable.setTint(
-                    com.google.android.material.color.MaterialColors.getColor(
-                        tv, com.google.android.material.R.attr.colorOnSurface, 0xFF424242.toInt(),
-                    )
-                )
-                sb.setSpan(ImageSpan(drawable, ImageSpan.ALIGN_CENTER), debut, debut + 1,
+                // Teinte jaune clair pour ressortir sur le fond accueil sombre — cohérent
+                // avec les liens cliquables du fil et les boutons "+" des suivis.
+                drawable.setTint(couleurLien)
+                // ALIGN_BOTTOM : le bas de l'icône s'aligne sur la ligne de base du texte
+                // → l'icône grossie reste posée sur la même ligne que "Suivis › Protocole"
+                // au lieu de flotter au centre (ALIGN_CENTER décalait visuellement vers le
+                // haut quand la taille de l'icône dépasse celle du texte).
+                sb.setSpan(ImageSpan(drawable, ImageSpan.ALIGN_BOTTOM), debut, debut + 1,
                     Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             }
         } else {
@@ -116,8 +121,15 @@ fun appliquerFilAriane(
         val estDernier = i == segments.lastIndex
         if (estDernier && !dernierCliquable) return@forEachIndexed
         val cible = segments.subList(0, i + 1).toList()
+        // ClickableSpan personnalisé : couleur jaune clair + pas de soulignement (l'underline
+        // par défaut système devient agressif sur un fil avec plusieurs liens). Le tap reste
+        // détecté via onClick.
         sb.setSpan(object : ClickableSpan() {
             override fun onClick(widget: View) = naviguerVersFil(nav, moduleCode, cible)
+            override fun updateDrawState(ds: TextPaint) {
+                ds.color = couleurLien
+                ds.isUnderlineText = false
+            }
         }, debut, fin, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
     }
     tv.text = sb

@@ -67,7 +67,7 @@
         android:background="?attr/selectableItemBackgroundBorderless"
         android:contentDescription="Détails du protocole"
         android:src="@drawable/ic_info"
-        app:tint="?attr/colorControlNormal" />
+        app:tint="@color/jaune_clair" />
 
     <ImageButton
         android:id="@+id/btn_carte"
@@ -76,5 +76,5 @@
         android:background="?attr/selectableItemBackgroundBorderless"
         android:contentDescription="Voir tous les sites sur carte"
         android:src="@drawable/ic_eye"
-        app:tint="?attr/colorControlNormal" />
+        app:tint="@color/jaune_clair" />
 </LinearLayout>

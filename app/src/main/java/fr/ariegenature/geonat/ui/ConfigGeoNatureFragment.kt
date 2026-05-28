@@ -262,7 +262,7 @@ class ConfigGeoNatureFragment : Fragment() {
             binding.tilTaxaListe.visibility = View.GONE
             binding.tvErreurListes.visibility = View.VISIBLE
             binding.tvErreurListes.text = "Liste imposée par le jeu de données"
-            binding.tvErreurListes.setTextColor(0xFF555555.toInt())
+            binding.tvErreurListes.setTextColor(couleurSecondaire(requireContext()))
         } else {
             // Dataset sans contrainte : restaure la liste complète + réactive le contrôle.
             binding.acListes.isEnabled = true
@@ -521,7 +521,13 @@ class ConfigGeoNatureFragment : Fragment() {
                 if (nbModulesOk > 0 || msgSuivis.startsWith("Aucun")) append("\nSuivis : $msgSuivis")
             }
             binding.tvSyncResultat.setTextColor(
-                if (etapesEnEchec.isNotEmpty()) 0xFFE65100.toInt() else 0xFF333333.toInt()
+                // Étape en échec → orange Material (colorSecondary du thème night), sinon
+                // texte standard sur surface. Évite #333333 invisible sur le fond accueil.
+                if (etapesEnEchec.isNotEmpty())
+                    com.google.android.material.color.MaterialColors.getColor(
+                        binding.tvSyncResultat, com.google.android.material.R.attr.colorSecondary, 0xFFE65100.toInt(),
+                    )
+                else couleurSurOnSurface(requireContext())
             )
             updateCacheInfo()
             updateAvertissementListe()

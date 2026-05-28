@@ -271,7 +271,7 @@ class SuiviDetailFragment : Fragment() {
                     text = labelPour(type, schema, counts)
                     setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
                     setTypeface(typeface, android.graphics.Typeface.BOLD)
-                    setTextColor(android.graphics.Color.parseColor("#888888"))
+                    setTextColor(couleurSecondaire(ctx))
                     isAllCaps = true
                     layoutParams = LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT,
@@ -291,6 +291,11 @@ class SuiviDetailFragment : Fragment() {
             val typeSaisieEnfant = schemaType?.childrenTypes?.firstOrNull {
                 fr.ariegenature.geonat.network.MonitoringSync.estTypeSaisie(it)
             }
+                // Safety : si jamais le niveau macro liste lui-même une saisie (cas rare,
+                // schéma plat où visites/passages remontent en racine), on n'ajoute pas de
+                // "+" — adding sub-saisies à une saisie historique n'a pas de sens. Aligné
+                // sur la même règle que FicheObjetFragment côté enfants serveur.
+                ?.takeIf { !fr.ariegenature.geonat.network.MonitoringSync.estTypeSaisie(type) }
             items.forEach { e ->
                 val row = LinearLayout(ctx).apply {
                     orientation = LinearLayout.HORIZONTAL
@@ -316,7 +321,7 @@ class SuiviDetailFragment : Fragment() {
                     val sub = TextView(ctx).apply {
                         text = sousTitre
                         setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-                        setTextColor(android.graphics.Color.parseColor("#666666"))
+                        setTextColor(couleurSecondaire(ctx))
                         maxLines = 1
                         ellipsize = android.text.TextUtils.TruncateAt.END
                     }
@@ -324,6 +329,8 @@ class SuiviDetailFragment : Fragment() {
                 }
                 val btnInfo = ImageButton(ctx).apply {
                     setImageResource(R.drawable.ic_info)
+                    imageTintList = android.content.res.ColorStateList.valueOf(
+                        androidx.core.content.ContextCompat.getColor(ctx, R.color.jaune_clair))
                     setBackgroundResource(borderless)
                     contentDescription = "Détails"
                     layoutParams = LinearLayout.LayoutParams((40 * density).toInt(), (40 * density).toInt())
@@ -346,6 +353,8 @@ class SuiviDetailFragment : Fragment() {
                 val aGeometrie = schemaType?.geometryType != null
                 val btnCarte = if (aGeometrie) ImageButton(ctx).apply {
                     setImageResource(R.drawable.ic_eye)
+                    imageTintList = android.content.res.ColorStateList.valueOf(
+                        androidx.core.content.ContextCompat.getColor(ctx, R.color.jaune_clair))
                     setBackgroundResource(borderless)
                     contentDescription = "Voir sur carte"
                     layoutParams = LinearLayout.LayoutParams((40 * density).toInt(), (40 * density).toInt())
@@ -376,6 +385,11 @@ class SuiviDetailFragment : Fragment() {
                 if (typeSaisieEnfant != null) {
                     val btnPlus = ImageButton(ctx).apply {
                         setImageResource(R.drawable.ic_add)
+                        // Teinte jaune clair pour ressortir sur le fond accueil sombre
+                        // (Amber 200) — cohérent avec les liens du fil d'Ariane et l'icône
+                        // maison ; signale visuellement l'action "saisie".
+                        imageTintList = android.content.res.ColorStateList.valueOf(
+                            androidx.core.content.ContextCompat.getColor(ctx, R.color.jaune_clair))
                         setBackgroundResource(borderless)
                         contentDescription = "Nouvelle saisie"
                         layoutParams = LinearLayout.LayoutParams(

@@ -7,5 +7,9 @@
         <item name="colorOnSecondary">@color/colorOnSecondary</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:windowLightStatusBar" tools:targetApi="m">false</item>
+        <!-- App de terrain → fond sombre type accueil partout pour optimiser la lisibilité
+             en plein soleil. Toutes les fenêtres (Activity + fragments via ?android:
+             attr/windowBackground) montrent le dégradé là où la vue est transparente. -->
+        <item name="android:windowBackground">@drawable/bg_accueil</item>
     </style>
 </resources>

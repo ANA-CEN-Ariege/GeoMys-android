@@ -43,7 +43,7 @@
              Tap → écran SaisiesEnAttenteFragment. Visible uniquement si count > 0. -->
         <Button
             android:id="@+id/btn_saisies_attente"
-            style="@style/Widget.Material3.Button.OutlinedButton"
+            style="@style/Widget.GeoNat.Button.OutlinedButton"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginBottom="12dp"

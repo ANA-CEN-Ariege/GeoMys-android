@@ -17,6 +17,10 @@
     <color name="white_70">#B3FFFFFF</color>
     <color name="accueil_top">#14402E</color>
     <color name="accueil_bottom">#0D264C</color>
+    <!-- Jaune clair (Material Amber 200) — utilisé pour les boutons "+" Suivis, les liens
+         cliquables du fil d'Ariane et l'icône maison. Choisi pour rester chaleureux et
+         lisible sur le fond accueil sombre (forêt → nuit). -->
+    <color name="jaune_clair">#FFE082</color>
     <color name="white">#FFFFFFFF</color>
     <color name="black">#FF000000</color>
 </resources>

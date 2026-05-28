@@ -179,7 +179,7 @@ class FicheObjetFragment : Fragment() {
                 // Schéma serveur en priorité (attribut_label), sinon mapping FR par défaut.
                 text = schemaCe?.properties?.get(k)?.label ?: labelChamp(k)
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-                setTextColor(android.graphics.Color.parseColor("#888888"))
+                setTextColor(couleurSecondaire(ctx))
             }
             val value = TextView(ctx).apply {
                 // Résolution ID → label via le resolver si type_util est géré, sinon formatage.
@@ -243,6 +243,14 @@ class FicheObjetFragment : Fragment() {
             val typeSaisieEnfant = schemaType?.childrenTypes?.firstOrNull {
                 fr.ariegenature.geonat.network.MonitoringSync.estTypeSaisie(it)
             }
+            // Sur les enfants SERVEUR uniquement, on neutralise le "+" quand la ligne EST
+            // elle-même une saisie déjà historisée côté serveur (visite/passage/observation
+            // déjà saisie). Empêche d'ajouter des sous-obs à une visite ancienne : les
+            // observations doivent être saisies pendant la visite, pas a posteriori.
+            // Les saisies locales (PENDING/ERROR) conservent leur "+" car ce sont les saisies
+            // en cours sur lesquelles l'utilisateur enchaîne légitimement.
+            val typeSaisieEnfantServeur = typeSaisieEnfant
+                ?.takeIf { !fr.ariegenature.geonat.network.MonitoringSync.estTypeSaisie(type) }
             binding.llEnfants.addView(creerHeaderType(
                 type, typeLabel, items.size + saisiesLocalesCeType.size,
                 objet, schemaObjet, density, borderlessAttr,
@@ -273,7 +281,7 @@ class FicheObjetFragment : Fragment() {
                     val sub = TextView(ctx).apply {
                         text = sousTitre
                         setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-                        setTextColor(android.graphics.Color.parseColor("#666666"))
+                        setTextColor(couleurSecondaire(ctx))
                         maxLines = 1
                         ellipsize = android.text.TextUtils.TruncateAt.END
                     }
@@ -281,6 +289,8 @@ class FicheObjetFragment : Fragment() {
                 }
                 val btnInfo = ImageButton(ctx).apply {
                     setImageResource(R.drawable.ic_info)
+                    imageTintList = android.content.res.ColorStateList.valueOf(
+                        androidx.core.content.ContextCompat.getColor(ctx, R.color.jaune_clair))
                     setBackgroundResource(borderless)
                     contentDescription = "Détails"
                     layoutParams = LinearLayout.LayoutParams((40 * density).toInt(), (40 * density).toInt())
@@ -301,6 +311,8 @@ class FicheObjetFragment : Fragment() {
                 val aGeometrie = schemaType?.geometryType != null
                 val btnCarte = if (aGeometrie) ImageButton(ctx).apply {
                     setImageResource(R.drawable.ic_eye)
+                    imageTintList = android.content.res.ColorStateList.valueOf(
+                        androidx.core.content.ContextCompat.getColor(ctx, R.color.jaune_clair))
                     setBackgroundResource(borderless)
                     contentDescription = "Voir sur carte"
                     layoutParams = LinearLayout.LayoutParams((40 * density).toInt(), (40 * density).toInt())
@@ -322,10 +334,14 @@ class FicheObjetFragment : Fragment() {
                         }
                     }
                 } else null
-                // Bouton "+" : nouvelle saisie attachée à cet enfant, visible uniquement
-                // si le schéma de l'enfant déclare un type de saisie comme childrenType.
-                val btnPlus = if (typeSaisieEnfant != null) ImageButton(ctx).apply {
+                // Bouton "+" : nouvelle saisie attachée à cet enfant. Visible uniquement
+                // si le schéma de l'enfant déclare un type de saisie comme childrenType
+                // ET si cet enfant n'est pas lui-même une saisie déjà historisée côté serveur
+                // (typeSaisieEnfantServeur encapsule les 2 conditions).
+                val btnPlus = if (typeSaisieEnfantServeur != null) ImageButton(ctx).apply {
                     setImageResource(R.drawable.ic_add)
+                    imageTintList = android.content.res.ColorStateList.valueOf(
+                        androidx.core.content.ContextCompat.getColor(ctx, R.color.jaune_clair))
                     setBackgroundResource(borderless)
                     contentDescription = "Nouvelle saisie"
                     layoutParams = LinearLayout.LayoutParams((40 * density).toInt(), (40 * density).toInt())
@@ -338,7 +354,7 @@ class FicheObjetFragment : Fragment() {
                                     "parentObjectType" to type,
                                     "parentId" to e.id,
                                     "titreSite" to nom,
-                                    "childObjectType" to typeSaisieEnfant,
+                                    "childObjectType" to typeSaisieEnfantServeur,
                                     "fil" to encoderFil(filCourant + FilSegment(type, e.id, nom)),
                                 )
                             )
@@ -429,13 +445,15 @@ class FicheObjetFragment : Fragment() {
             text = "$label ($count)"
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
             setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setTextColor(android.graphics.Color.parseColor("#888888"))
+            setTextColor(couleurSecondaire(ctx))
             isAllCaps = true
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         })
         if (fr.ariegenature.geonat.network.MonitoringSync.estTypeSaisie(type)) {
             row.addView(ImageButton(ctx).apply {
                 setImageResource(R.drawable.ic_add)
+                imageTintList = android.content.res.ColorStateList.valueOf(
+                    androidx.core.content.ContextCompat.getColor(ctx, R.color.jaune_clair))
                 setBackgroundResource(borderlessId)
                 contentDescription = "Nouvelle $label"
                 layoutParams = LinearLayout.LayoutParams(
@@ -524,7 +542,11 @@ class FicheObjetFragment : Fragment() {
         bloc.addView(TextView(ctx).apply {
             text = "${fmt.format(java.util.Date(saisie.dateLocale))} · à envoyer"
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-            setTextColor(android.graphics.Color.parseColor("#8B6914"))
+            // Statut "à envoyer" → teinte ambrée/orange Material (colorSecondary du thème,
+            // orange en mode sombre). Avant : #8B6914 codé en dur (illisible sur fond accueil).
+            setTextColor(com.google.android.material.color.MaterialColors.getColor(
+                this, com.google.android.material.R.attr.colorSecondary, 0xFFFF6D00.toInt(),
+            ))
         })
         row.addView(bloc)
         // Bouton + : pareil que pour les enfants serveur, mais pointe le parent via
@@ -533,6 +555,8 @@ class FicheObjetFragment : Fragment() {
         if (typeSaisieEnfant != null) {
             val btnPlus = ImageButton(ctx).apply {
                 setImageResource(R.drawable.ic_add)
+                imageTintList = android.content.res.ColorStateList.valueOf(
+                    androidx.core.content.ContextCompat.getColor(ctx, R.color.jaune_clair))
                 setBackgroundResource(borderless)
                 contentDescription = "Nouvelle saisie"
                 layoutParams = LinearLayout.LayoutParams((40 * density).toInt(), (40 * density).toInt())

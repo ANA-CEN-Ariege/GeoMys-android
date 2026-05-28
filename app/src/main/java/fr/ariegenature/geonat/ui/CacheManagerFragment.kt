@@ -145,7 +145,10 @@ class CacheManagerFragment : Fragment() {
         binding.tvCacheUtilise.text = "Cache : %d / %d MB (%.0f %%)".format(
             utilise / (1024 * 1024), max / (1024 * 1024), pct,
         )
-        binding.tvCacheUtilise.setTextColor(if (pct >= 90.0) 0xFFC62828.toInt() else 0xFF666666.toInt())
+        binding.tvCacheUtilise.setTextColor(
+            if (pct >= 90.0) couleurErreur(requireContext())
+            else couleurSecondaire(requireContext())
+        )
 
         val depasse = surface > SURFACE_MAX_KM2
         binding.btnCharger.isEnabled = !depasse && nbTuiles > 0

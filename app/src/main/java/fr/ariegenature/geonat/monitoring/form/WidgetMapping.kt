@@ -45,13 +45,18 @@ fun mapperViewType(prop: fr.ariegenature.geonat.network.MonitoringApi.Monitoring
             if (prop.multiple) ViewType.SELECT_MULTIPLE else ViewType.SELECT
         // Taxonomie : déjà capté par estChampTaxon ci-dessus, conservé pour lisibilité.
         "taxonomy", "taxon", "taxon-input", "taxonomy-input" -> ViewType.TAXON
-        // Non portés (listés dans `ignores`, affichés à l'utilisateur) :
-        //   medias    → capture/import + upload gn_commons rattaché à l'objet créé (pipeline
-        //               dédié, cf. note point 7) ; non simulé pour ne pas corrompre le payload.
-        //   geometry  → picker carte : inutile ici (roadmap = saisies sur objets existants,
-        //               pas de création d'objet géolocalisé).
-        //   min_max   → besoin d'un ViewType.MIN_MAX (deux NumberPicker côte à côte)
-        else -> null
+        // `html` : bloc d'aide / message texte injecté par le protocole web. Pas saisissable
+        // → on l'écarte explicitement (parité avec isHtmlWidget de gn_mobile_monitoring).
+        "html" -> null
+        // `medias` : pièce jointe — upload différé vers gn_commons après création de l'objet
+        // (cf. OutboxEnvoi.envoyerUne). MVP single-file ; multi-fichiers à porter plus tard.
+        "medias" -> ViewType.MEDIA
+        // Non portés nativement, mais on dégrade gracieusement en TEXT pour ne pas perdre
+        // le champ — l'utilisateur saisira en clair plutôt que de voir le champ disparaître :
+        //   geometry  → picker carte (hors périmètre actuel monitoring) ;
+        //   min_max   → couple de NumberPicker côte à côte (à porter quand un protocole l'utilise).
+        // Parité gn_mobile_monitoring : `default: return 'TextField'`.
+        else -> ViewType.TEXT
     }
 }
 
@@ -77,10 +82,23 @@ data class FormulaireConstruction(
 )
 
 fun construireFormulaire(schemaObjet: MonitoringApi.MonitoringSchemaObjet): FormulaireConstruction {
-    // Priorité de l'ordre des champs : display_form > display_properties > toutes les clés
-    // (parité version web / gn_mobile_monitoring où display_form prime sur display_properties).
-    val ordre = schemaObjet.displayForm.ifEmpty {
-        schemaObjet.displayProperties.ifEmpty { schemaObjet.properties.keys.toList() }
+    // Parité version web monitoring (monitoring-form.component.ts → initObjFormDefiniton +
+    // sortObjFormDefinition) : on inclut TOUTES les propriétés du schéma fusionné
+    // generic+specific qui ont un type_widget exploitable, puis on trie par display_properties
+    // (display_form n'est PAS utilisé pour filtrer côté web). Notre ancien filtrage par
+    // union(display_form, display_properties) masquait les champs canoniques comme `comments`
+    // et `id_dataset` que les protocoles laissent souvent hors de ces listes (ex. apollons).
+    // L'ordre final est : display_properties d'abord (dans l'ordre déclaré), puis les autres
+    // champs du schéma dans leur ordre serveur (LinkedHashMap preserve l'insertion).
+    val displayProps = schemaObjet.displayProperties
+    val ordre = if (displayProps.isEmpty()) {
+        schemaObjet.properties.keys.toList()
+    } else {
+        val deja = LinkedHashSet<String>()
+        val resultat = mutableListOf<String>()
+        displayProps.forEach { if (it in schemaObjet.properties && deja.add(it)) resultat.add(it) }
+        schemaObjet.properties.keys.forEach { if (deja.add(it)) resultat.add(it) }
+        resultat
     }
     // Exclusions techniques + cas spécifique sites_group (id_inventor inexistant pour ce type).
     val exclus = if (schemaObjet.type == "sites_group")
@@ -121,6 +139,9 @@ fun construireFormulaire(schemaObjet: MonitoringApi.MonitoringSchemaObjet): Form
                 // résolue contre les valeurs courantes au moment de la validation.
                 minValue = if (viewType == ViewType.NUMBER) prop.minValue else null,
                 maxValue = if (viewType == ViewType.NUMBER) prop.maxValue else null,
+                // MEDIA uniquement : table cible côté gn_commons pour résoudre id_table_location
+                // lors de l'upload du fichier après création de l'objet parent.
+                schemaDotTable = if (viewType == ViewType.MEDIA) prop.schemaDotTable else null,
             )
         )
     }

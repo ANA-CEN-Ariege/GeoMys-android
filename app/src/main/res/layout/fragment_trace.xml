@@ -227,62 +227,79 @@
             android:textSize="16sp" />
     </LinearLayout>
 
-    <!-- Panneau contrôle normal -->
+    <!-- Panneau contrôle normal. Trois cases pondérées (poids 1 chacune) qui se partagent
+         équitablement la largeur. Quand le wrapper de Play est masqué (cf TraceFragment :
+         enregistrement de trace désactivé), les deux autres récupèrent l'espace et se
+         retrouvent automatiquement centrées sur leur moitié. -->
     <LinearLayout
         android:id="@+id/panneau_controle"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom"
         android:background="@drawable/panel_bg"
-        android:gravity="center"
         android:orientation="horizontal"
         android:paddingHorizontal="20dp"
         android:paddingVertical="16dp">
 
-        <!-- Bouton parcours (play/stop) -->
-        <ImageButton
-            android:id="@+id/btn_parcours"
-            android:layout_width="52dp"
-            android:layout_height="52dp"
-            android:background="@drawable/btn_circle_white"
-            android:contentDescription="Parcours"
-            android:src="@drawable/ic_play" />
-
-        <View android:layout_width="0dp" android:layout_height="0dp" android:layout_weight="1" />
-
-        <!-- Bouton observation -->
-        <ImageButton
-            android:id="@+id/btn_observation"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:background="@drawable/btn_circle_white"
-            android:contentDescription="Observation"
-            android:src="@drawable/ic_add" />
-
-        <View android:layout_width="0dp" android:layout_height="0dp" android:layout_weight="1" />
-
-        <!-- Bouton liste avec badge -->
-        <FrameLayout android:layout_width="wrap_content" android:layout_height="wrap_content">
-
+        <!-- Case Play -->
+        <FrameLayout
+            android:id="@+id/wrap_parcours"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1">
             <ImageButton
-                android:id="@+id/btn_liste"
-                android:layout_width="44dp"
-                android:layout_height="44dp"
+                android:id="@+id/btn_parcours"
+                android:layout_width="52dp"
+                android:layout_height="52dp"
+                android:layout_gravity="center"
                 android:background="@drawable/btn_circle_white"
-                android:contentDescription="Liste"
-                android:src="@drawable/ic_list" />
+                android:contentDescription="Parcours"
+                android:src="@drawable/ic_play" />
+        </FrameLayout>
 
-            <TextView
-                android:id="@+id/liste_badge"
+        <!-- Case Observation -->
+        <FrameLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1">
+            <ImageButton
+                android:id="@+id/btn_observation"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:layout_gravity="center"
+                android:background="@drawable/btn_circle_white"
+                android:contentDescription="Observation"
+                android:src="@drawable/ic_add" />
+        </FrameLayout>
+
+        <!-- Case Liste avec badge -->
+        <FrameLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1">
+            <FrameLayout
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_gravity="top|end"
-                android:background="@drawable/badge_orange"
-                android:minWidth="18dp"
-                android:paddingHorizontal="4dp"
-                android:textColor="@android:color/white"
-                android:textSize="10sp"
-                android:visibility="gone" />
+                android:layout_gravity="center">
+                <ImageButton
+                    android:id="@+id/btn_liste"
+                    android:layout_width="44dp"
+                    android:layout_height="44dp"
+                    android:background="@drawable/btn_circle_white"
+                    android:contentDescription="Liste"
+                    android:src="@drawable/ic_list" />
+                <TextView
+                    android:id="@+id/liste_badge"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="top|end"
+                    android:background="@drawable/badge_orange"
+                    android:minWidth="18dp"
+                    android:paddingHorizontal="4dp"
+                    android:textColor="@android:color/white"
+                    android:textSize="10sp"
+                    android:visibility="gone" />
+            </FrameLayout>
         </FrameLayout>
     </LinearLayout>
 
@@ -301,7 +318,7 @@
 
         <Button
             android:id="@+id/btn_annuler_position"
-            style="@style/Widget.Material3.Button.TextButton"
+            style="@style/Widget.GeoNat.Button.TextButton"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:backgroundTint="@android:color/darker_gray"
@@ -314,7 +331,7 @@
              à la position courante du réticule et l'ajoute à la géométrie en cours. -->
         <Button
             android:id="@+id/btn_ajouter_sommet"
-            style="@style/Widget.Material3.Button.OutlinedButton"
+            style="@style/Widget.GeoNat.Button.OutlinedButton"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginEnd="8dp"

@@ -16,7 +16,7 @@
 
     <Button
         android:id="@+id/btn_voir_taxons"
-        style="@style/Widget.Material3.Button.TextButton"
+        style="@style/Widget.GeoNat.Button.TextButton"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:minWidth="0dp"

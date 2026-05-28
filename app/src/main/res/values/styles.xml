@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- Bouton texte (action secondaire, sans contour ni fond). Hérite du TextButton Material3
+         mais force la couleur du texte en jaune clair pour cohérence avec les autres
+         éléments cliquables (fil d'Ariane, boutons +, info, œil) sur le fond accueil sombre.
+         La couleur de ripple reste celle de Material (gris doux), correcte sur dark. -->
+    <style name="Widget.GeoNat.Button.TextButton" parent="Widget.Material3.Button.TextButton">
+        <item name="android:textColor">@color/jaune_clair</item>
+    </style>
+
+    <!-- Bouton avec contour (action secondaire formelle). Texte + contour en jaune clair
+         pour rester dans la même charte cliquable que les TextButton, le fil d'Ariane et
+         les icônes "+ / i / œil". -->
+    <style name="Widget.GeoNat.Button.OutlinedButton" parent="Widget.Material3.Button.OutlinedButton">
+        <item name="android:textColor">@color/jaune_clair</item>
+        <item name="strokeColor">@color/jaune_clair</item>
+    </style>
+
+</resources>

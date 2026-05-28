@@ -1,6 +1,7 @@
 package fr.ariegenature.geonat
 
 import android.app.Application
+import androidx.appcompat.app.AppCompatDelegate
 import fr.ariegenature.geonat.location.LocationTracker
 import fr.ariegenature.geonat.store.MapTileCache
 import fr.ariegenature.geonat.store.MonitoringCache
@@ -19,6 +20,12 @@ class GeoNatApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // App de terrain plein soleil → on force le mode sombre globalement. Combiné avec le
+        // windowBackground = bg_accueil du thème, ça donne :
+        //   - fond sombre dégradé (forêt → nuit) partout pour optimiser le contraste,
+        //   - widgets Material en couleurs sombres + texte clair (onSurface = white-ish)
+        //     pour éviter d'avoir à patcher chaque TextView à la main.
+        AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
         TaxRefCache.init(this)
         NomenclatureCache.init(this)
         MonitoringCache.init(this)

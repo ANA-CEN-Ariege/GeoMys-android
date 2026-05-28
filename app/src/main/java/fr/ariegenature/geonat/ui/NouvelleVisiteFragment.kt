@@ -42,6 +42,15 @@ class NouvelleVisiteFragment : Fragment() {
     private var typeSaisieEnfant: String? = null
     private var parentIdFieldChamp: String? = null
     private var nomsChampsVisit: List<String> = emptyList()
+    /** Nom du champ uuid du type visité (ex. `uuid_base_visit`) — lu depuis le schéma serveur.
+     *  Quand un champ MEDIA est rempli, on pré-génère un uuid côté client, on l'injecte dans
+     *  le payload POST à ce champ, et on le réutilise comme `uuid_attached_row` pour l'upload
+     *  gn_commons (cf. OutboxEnvoi). Null si le schéma n'expose pas d'uuid_field_name. */
+    private var uuidFieldNameVisit: String? = null
+    /** Champs montés sur le rendu courant — sert à retrouver les EditableField MEDIA et leur
+     *  `schemaDotTable` au moment du submit (la valeur récupérée par renderer.lireValeurs ne
+     *  contient que l'URI, pas les métadonnées). */
+    private var champsCourants: List<EditableField> = emptyList()
     private var enCoursEnvoi = false
     /** Mode édition : uuid de la SaisieEnAttente à modifier. Quand non-null, le submit fait
      *  un `mettreAJour` au lieu d'un `ajouter` ; et avant le rendu on précharge les
@@ -50,6 +59,50 @@ class NouvelleVisiteFragment : Fragment() {
     /** Snapshot des valeurs à pré-remplir au prochain rendu (mode édition). Consommé une
      *  seule fois par [chargerSchemaEtRendre] juste avant l'appel à `renderer.rendre`. */
     private var valeursPreremplies: Map<String, Any?>? = null
+    /** Chemin média existant à ré-injecter dans le champ MEDIA en mode édition (le
+     *  valeursJson outbox ne stocke pas l'URI fichier — elle vit dans
+     *  SaisieEnAttente.mediaPathLocal). Consommé une fois après construction du formulaire. */
+    private var mediaPathPreremplir: String? = null
+    /** Lambda en attente du retour du picker média. Set par le callback du renderer (cf.
+     *  [FormulaireRenderer.setOnChoixMedia]), invoquée dans [pickPhotoLauncher] avec l'URI
+     *  String du fichier copié localement (ou null si annulation). */
+    private var attendCallbackMedia: ((String?) -> Unit)? = null
+    private val pickPhotoLauncher = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.GetContent()
+    ) { uri ->
+        val cb = attendCallbackMedia
+        attendCallbackMedia = null
+        if (uri == null || cb == null) { cb?.invoke(null); return@registerForActivityResult }
+        val uriLocale = importerMedia(uri, defaultMime = "image/jpeg")
+        cb(uriLocale)
+    }
+
+    /** Copie le contenu de l'URI fourni par le picker dans `filesDir/medias/photo_<ts>.<ext>`
+     *  pour le rendre indépendant du cycle de vie de l'Uri système. Retourne l'URI String du
+     *  fichier copié ou null en cas d'échec. Pattern repris de DenombrementFragment.importerMedia. */
+    private fun importerMedia(source: android.net.Uri, defaultMime: String): String? {
+        val ctx = requireContext()
+        val mime = ctx.contentResolver.getType(source) ?: defaultMime
+        val ext = when (mime) {
+            "image/jpeg", "image/jpg" -> "jpg"
+            "image/png" -> "png"
+            "image/heic", "image/heif" -> "heic"
+            "image/webp" -> "webp"
+            else -> mime.substringAfter("/").ifEmpty { "jpg" }
+        }
+        val dir = java.io.File(ctx.filesDir, "medias").apply { mkdirs() }
+        val dest = java.io.File(dir, "photo_${System.currentTimeMillis()}.$ext")
+        return try {
+            ctx.contentResolver.openInputStream(source)?.use { input ->
+                dest.outputStream().use { out -> input.copyTo(out) }
+            }
+            dest.toURI().toString()
+        } catch (e: Exception) {
+            android.widget.Toast.makeText(ctx,
+                "Import média échoué : ${e.message}", android.widget.Toast.LENGTH_LONG).show()
+            null
+        }
+    }
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         _binding = FragmentNouvelleVisiteBinding.inflate(inflater, container, false)
@@ -76,12 +129,16 @@ class NouvelleVisiteFragment : Fragment() {
             saisieEnEdition.parentIdServeur?.let { arguments?.putInt("parentId", it) }
             saisieEnEdition.parentUuidLocal?.let { arguments?.putString("parentUuidLocal", it) }
             valeursPreremplies = chargerValeursPourEdition(saisieEnEdition)
+            mediaPathPreremplir = saisieEnEdition.mediaPathLocal
         }
 
         val titreSite = arguments?.getString("titreSite").orEmpty()
         val moduleCode = arguments?.getString("moduleCode").orEmpty()
         val modeEdition = editUuid != null
 
+        // Titre par défaut avant chargement du schéma (le type exact arrive dans
+        // chargerSchemaEtRendre). En édition, on garde "Modifier la saisie" en attendant
+        // de pouvoir formuler "Édition de la visite / du passage / de l'observation".
         binding.tvTitre.text = if (modeEdition) "Modifier la saisie" else "Nouvelle visite"
         // Fil d'Ariane : reçu de l'écran appelant (drill-down) ou reconstruit depuis le cache
         // (édition depuis « Saisies en attente »). Tous les segments sont des ancêtres
@@ -122,6 +179,13 @@ class NouvelleVisiteFragment : Fragment() {
         // ne sont pas remplis. Le renderer notifie via setOnChangement à chaque édition
         // (saisie texte, sélection, picker, multi-select…) — on remet le bouton à jour.
         renderer.setOnChangement { majEtatBoutonSubmit() }
+        // Le renderer ne peut pas lancer le picker système (l'API ActivityResult exige un
+        // enregistrement côté Fragment) — on lui fournit un callback qui stocke la lambda
+        // de retour et déclenche le launcher photo. Cardinalité MVP : une seule photo.
+        renderer.setOnChoixMedia { _, callback ->
+            attendCallbackMedia = callback
+            pickPhotoLauncher.launch("image/*")
+        }
 
         if (moduleCode.isEmpty()) {
             renderer.rendre(creerChampsDemo())
@@ -182,9 +246,11 @@ class NouvelleVisiteFragment : Fragment() {
                 renderer.rendre(creerChampsDemo())
                 return@launch
             }
-            // Titre adapté au type courant (visite / observation / …).
+            // Titre adapté au type courant (visite / observation / …) ET au mode (création vs
+            // édition d'une saisie outbox). Le `genre` du schéma permet d'accorder l'article.
             val labelType = visitSchema.label ?: visitSchema.type.replaceFirstChar { it.uppercase() }
-            binding.tvTitre.text = "Nouvelle $labelType"
+            binding.tvTitre.text = if (editUuid != null) titreEdition(labelType, visitSchema.genre)
+                else "Nouvelle $labelType"
             val constructionBrute: FormulaireConstruction = construireFormulaire(visitSchema)
             // Cache le champ de sélection du parent (id_base_site / id_dalle / id_circuit…) :
             // l'utilisateur a déjà choisi son parent via le drill-down qui amène ici, l'interface
@@ -225,12 +291,25 @@ class NouvelleVisiteFragment : Fragment() {
             // typant chaque value selon le ViewType du champ (les pre-remplissages des
             // creerChamp* attendent des types spécifiques — Int pour TAXON, String pour
             // DATE/SELECT, List<String> pour SELECT_MULTIPLE, etc.).
-            val champsFinaux = valeursPreremplies?.let { valeurs ->
+            val champsFinaux0 = valeursPreremplies?.let { valeurs ->
                 champsAvecTaxon.map { f ->
                     if (!valeurs.containsKey(f.code)) f
                     else f.copy(value = typerPourField(f, valeurs[f.code]))
                 }
             } ?: champsAvecTaxon
+            // Mode édition : pré-remplit le 1er champ MEDIA avec le path stocké sur la saisie
+            // (mediaPathLocal ne fait pas partie du valeursJson). MVP single-file ; quand on
+            // passera à plusieurs champs MEDIA il faudra un mapping code → path.
+            val champsFinaux = mediaPathPreremplir?.takeIf { it.isNotEmpty() }?.let { path ->
+                var faitPour: String? = null
+                champsFinaux0.map { f ->
+                    if (faitPour == null && f.viewType == ViewType.MEDIA) {
+                        faitPour = f.code
+                        f.copy(value = path)
+                    } else f
+                }
+            } ?: champsFinaux0
+            mediaPathPreremplir = null
             renderer.rendre(champsFinaux)
             // Règles `change` du schéma : auto-remplissage de champs dépendants (ex.
             // presence == 'Non' → count_min/count_max = 0). Appliquées après le rendu.
@@ -250,6 +329,8 @@ class NouvelleVisiteFragment : Fragment() {
             // Liste COMPLÈTE des propriétés du schéma (incluant les hidden:true techniques) —
             // utilisée pour padder le payload POST avec null sur les champs non remplis.
             nomsChampsVisit = visitSchema.properties.keys.toList()
+            uuidFieldNameVisit = visitSchema.uuidFieldName
+            champsCourants = champsFinaux
             if (construction.ignores.isNotEmpty()) {
                 val recapIgnores = construction.ignores.joinToString(", ") { "${it.first} (${it.second})" }
                 ajouterDebug("${construction.ignores.size} champ(s) non supporté(s) : $recapIgnores")
@@ -419,7 +500,19 @@ class NouvelleVisiteFragment : Fragment() {
             afficherValeursDemo()
             return
         }
-        val valeurs = renderer.lireValeurs()
+        val valeurs = renderer.lireValeurs().toMutableMap()
+        // Extraction du média (single-file MVP) : on prend le premier champ MEDIA non vide
+        // parmi les champs montés, on capture son URI + schema_dot_table, puis on RETIRE la
+        // clé du payload `valeurs` — le serveur Marshmallow n'accepte pas un media:"file://…"
+        // dans le POST de l'objet, l'upload se fait après création via gn_commons.
+        val champMedia = champsCourants.firstOrNull {
+            it.viewType == ViewType.MEDIA && (valeurs[it.code] as? String)?.isNotEmpty() == true
+        }
+        val mediaPath = champMedia?.let { valeurs[it.code] as? String }
+        val mediaSchemaDotTable = champMedia?.schemaDotTable
+        // Retire toutes les clés MEDIA (rempli OU vide) du payload — elles ne doivent jamais
+        // partir telles quelles ; le champ medias[] sera padder à `[]` côté envoyerVisite.
+        champsCourants.filter { it.viewType == ViewType.MEDIA }.forEach { valeurs.remove(it.code) }
         // Sérialise les valeurs via JSONObject pour éviter les pertes de type Gson lors
         // de la déshydratation à l'envoi (Int → Double, etc.).
         val valeursJson = org.json.JSONObject().apply {
@@ -436,11 +529,20 @@ class NouvelleVisiteFragment : Fragment() {
         // Si pas de parent serveur (cas rare d'une saisie orpheline), fallback navigateUp.
         val uuidEdition = editUuid
         if (uuidEdition != null) {
-            fr.ariegenature.geonat.store.OutboxMonitoring.mettreAJour(uuidEdition) {
-                it.copy(
+            fr.ariegenature.geonat.store.OutboxMonitoring.mettreAJour(uuidEdition) { ancien ->
+                // Sur une saisie legacy sans uuidPayload, on en génère un MAINTENANT si on a
+                // un média à uploader (sinon inutile). Le serveur acceptera l'uuid_field_name
+                // si le schéma l'expose.
+                val nouvelUuid = ancien.uuidPayload
+                    ?: if (mediaPath != null && uuidFieldNameVisit != null) java.util.UUID.randomUUID().toString() else null
+                ancien.copy(
                     valeursJson = valeursJson,
                     etat = fr.ariegenature.geonat.store.SaisieEnAttente.Etat.PENDING,
                     messageErreur = null,
+                    mediaPathLocal = mediaPath,
+                    mediaSchemaDotTable = mediaSchemaDotTable,
+                    uuidPayload = nouvelUuid,
+                    uuidFieldName = uuidFieldNameVisit ?: ancien.uuidFieldName,
                 )
             }
             android.widget.Toast.makeText(
@@ -468,6 +570,12 @@ class NouvelleVisiteFragment : Fragment() {
             return
         }
 
+        // uuid pré-généré uniquement quand on a un média ET un uuid_field_name déclaré côté
+        // schéma : sans uuid_field_name on ne sait pas où l'injecter dans le payload, et sans
+        // média on n'a rien à rattacher après création. Évite de spammer le serveur avec un
+        // uuid client sur tous les objets — laisse Postgres en générer un comme aujourd'hui.
+        val uuidNouveau = if (mediaPath != null && uuidFieldNameVisit != null)
+            java.util.UUID.randomUUID().toString() else null
         val saisie = fr.ariegenature.geonat.store.SaisieEnAttente(
             moduleCode = moduleCode,
             objectType = visitType,
@@ -477,6 +585,10 @@ class NouvelleVisiteFragment : Fragment() {
             parentIdField = parentField,
             nomsChampsSchema = nomsChampsVisit,
             valeursJson = valeursJson,
+            uuidPayload = uuidNouveau,
+            uuidFieldName = uuidFieldNameVisit,
+            mediaPathLocal = mediaPath,
+            mediaSchemaDotTable = mediaSchemaDotTable,
         )
         fr.ariegenature.geonat.store.OutboxMonitoring.ajouter(saisie)
 
@@ -564,6 +676,10 @@ class NouvelleVisiteFragment : Fragment() {
                 else -> listOf(v.toString())
             }
             ViewType.CHECKBOX -> v
+            // MEDIA : on attend l'URI String du fichier local (cf. SaisieEnAttente.mediaPathLocal)
+            // — le valeursJson stocké ne contient PAS ce champ. Le pré-remplissage en édition se
+            // fait via un copy() de l'EditableField fait par le caller, pas via cette branche.
+            ViewType.MEDIA -> v.toString()
         }
     }
 
@@ -595,6 +711,25 @@ class NouvelleVisiteFragment : Fragment() {
         // Vide le bandeau debug pour ne pas accumuler les logs de l'envoi précédent.
         binding.tvContexte.text = ""
         chargerSchemaEtRendre(moduleCode)
+    }
+
+    /** Formule un titre « Édition de la visite » / « du passage » / « de l'observation »
+     *  en accord avec le genre déclaré par le schéma et l'élision sur voyelle initiale.
+     *  Fallback simple si genre absent : on choisit « du / de la / de l' » d'après la
+     *  voyelle initiale uniquement (correct dans 90 % des cas — « observation » → l',
+     *  « visite » → la par défaut). Le label arrive ici en casse d'origine ; on le passe
+     *  en minuscules pour éviter un mix « Édition de la Visite ». */
+    private fun titreEdition(label: String, genre: String?): String {
+        val mot = label.lowercase()
+        val commenceParVoyelle = mot.firstOrNull()?.let { c ->
+            c in setOf('a', 'à', 'â', 'e', 'é', 'è', 'ê', 'i', 'î', 'o', 'ô', 'u', 'ù', 'û', 'h', 'y')
+        } == true
+        val article = when {
+            commenceParVoyelle -> "de l'"
+            genre.equals("M", ignoreCase = true) -> "du "
+            else -> "de la "
+        }
+        return "Édition $article$mot"
     }
 
     /** Fallback démo quand le schéma serveur n'est pas exploitable — affiche les valeurs

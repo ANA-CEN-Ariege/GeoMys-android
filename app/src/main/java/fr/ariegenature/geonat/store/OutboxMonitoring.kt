@@ -34,6 +34,21 @@ data class SaisieEnAttente(
     /** Id serveur attribué après envoi réussi — utile pour le drill-down ou pour purger
      *  cette saisie de la file plus tard. */
     val idServeur: Int? = null,
+    /** uuid pré-généré côté client à la création de la saisie, injecté dans le payload POST
+     *  au champ [uuidFieldName] (ex. `uuid_base_visit`). Sert ensuite à rattacher un média
+     *  uploadé sur gn_commons à l'objet créé via `uuid_attached_row`. Null si le schéma ne
+     *  déclare pas d'uuid_field_name (vieux protocole) ou pour les saisies sans média. */
+    val uuidPayload: String? = null,
+    /** Nom du champ uuid du schéma (cf. [uuidPayload]) — recopié du MonitoringSchemaObjet. */
+    val uuidFieldName: String? = null,
+    /** Chemin local du fichier média à uploader après création de l'objet. Format URI String
+     *  pointant vers filesDir/medias/… (copie locale faite à la sélection pour survivre au
+     *  cycle de vie de l'Uri ACTION_GET_CONTENT). Null = pas de média. MVP single-file ;
+     *  passer à List<String> quand on portera la multi-pj. */
+    val mediaPathLocal: String? = null,
+    /** `schema_dot_table` du champ media (ex. `gn_monitoring.t_base_visits`), résolu en
+     *  id_table_location côté envoi. Null si pas de média. */
+    val mediaSchemaDotTable: String? = null,
 ) {
     enum class Etat { PENDING, SENDING, SENT, ERROR }
 }

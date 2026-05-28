@@ -127,7 +127,10 @@ object OutboxEnvoi {
     }
 
     /** Envoie une saisie isolée. Lit les valeurs depuis valeursJson, reconstitue la Map
-     *  attendue par [MonitoringApi.envoyerVisite] et POST. */
+     *  attendue par [MonitoringApi.envoyerVisite] et POST. En cas de succès, déclenche
+     *  l'upload du média éventuel (mediaPathLocal) vers gn_commons. Un échec d'upload média
+     *  ne fait pas basculer la saisie en ERROR — l'objet est créé côté serveur, on garde
+     *  SENT avec un message d'avertissement. */
     private suspend fun envoyerUne(config: GeoNatureConfig, s: SaisieEnAttente): Result<Int> {
         return try {
             val valeurs = mutableMapOf<String, Any?>()
@@ -137,7 +140,7 @@ object OutboxEnvoi {
                 val k = it.next()
                 valeurs[k] = if (obj.isNull(k)) null else obj.opt(k)
             }
-            MonitoringApi.envoyerVisite(
+            val resVisite = MonitoringApi.envoyerVisite(
                 config = config,
                 moduleCode = s.moduleCode,
                 objectType = s.objectType,
@@ -145,7 +148,29 @@ object OutboxEnvoi {
                 parentId = s.parentIdServeur,
                 valeurs = valeurs,
                 nomsChampsSchema = s.nomsChampsSchema,
+                uuidClient = s.uuidPayload,
+                uuidFieldName = s.uuidFieldName,
             )
+            // Upload média (single-file MVP) après création réussie. La saisie reste SENT
+            // même si l'upload échoue — l'objet est en base côté serveur, c'est juste la
+            // pièce jointe qui manque. On log via android.util.Log pour diagnostic.
+            if (resVisite.isSuccess && s.mediaPathLocal != null &&
+                s.mediaSchemaDotTable != null && s.uuidPayload != null
+            ) {
+                val (ok, err) = fr.ariegenature.geonat.network.GeoNatureUpload.uploaderMediaMonitoring(
+                    config = config,
+                    mediaPath = s.mediaPathLocal,
+                    schemaDotTable = s.mediaSchemaDotTable,
+                    uuidAttachedRow = s.uuidPayload,
+                    titre = "${s.objectType} ${s.uuidPayload.take(8)}",
+                    author = config.nomUtilisateur.ifEmpty { config.login },
+                )
+                if (!ok) {
+                    android.util.Log.w("OutboxEnvoi",
+                        "Upload média échoué pour ${s.uuid} (objet créé OK) : $err")
+                }
+            }
+            resVisite
         } catch (e: Exception) {
             Result.failure(e)
         }

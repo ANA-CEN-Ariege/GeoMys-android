@@ -580,12 +580,73 @@ object GeoNatureUpload {
         }
     }
 
+    /** Variante monitoring de l'upload média : résout l'id_table_location depuis le
+     *  `schema_dot_table` du champ medias (ex. `gn_monitoring.t_base_visits`) et passe un
+     *  `uuid_attached_row` pour rattacher le média à l'objet créé côté gn_commons.t_medias.
+     *  Diffère du flot OCCTAX qui embarque le media dans le payload du counting via media_id.
+     *  Retourne (succes, messageErreur). */
+    suspend fun uploaderMediaMonitoring(
+        config: GeoNatureConfig,
+        mediaPath: String,
+        schemaDotTable: String,
+        uuidAttachedRow: String,
+        titre: String,
+        author: String,
+    ): Pair<Boolean, String?> = withContext(Dispatchers.IO) {
+        val base = config.urlServeur.trim().trimEnd('/')
+        val auth = GeoNatureAuth.loginAvecCookies(base, config.login, config.motDePasse)
+            ?: return@withContext Pair(false, "Authentification GeoNature échouée")
+        val (token, _, cookies) = auth
+        val (idTableLoc, errTable) = resoudreIdTableLocationPour(base, token, cookies, schemaDotTable)
+        if (idTableLoc == null) return@withContext Pair(false, errTable ?: "id_table_location introuvable pour $schemaDotTable")
+        val (json, err) = uploaderMediaFile(
+            base = base, token = token, cookies = cookies,
+            mediaPath = mediaPath, author = author, titre = titre,
+            idTableLocation = idTableLoc, idTypeMedia = null,
+            uuidAttachedRow = uuidAttachedRow,
+        )
+        if (json != null) Pair(true, null) else Pair(false, err)
+    }
+
+    /** Résout l'id_table_location pour un `schema.table` arbitraire (ex.
+     *  `gn_monitoring.t_base_visits`). Pas de cache : un même client peut envoyer des saisies
+     *  pour plusieurs types d'objet (visit, observation, …) — un cache global se contenterait
+     *  du premier hit. Pour le volume actuel (1 saisie = 1 ou 0 média), 1 appel HTTP additionnel
+     *  n'est pas critique. */
+    private fun resoudreIdTableLocationPour(
+        base: String, token: String?, cookies: String, schemaDotTable: String,
+    ): Pair<Long?, String?> = try {
+        val url = URL("$base/api/gn_commons/get_id_table_location/$schemaDotTable")
+        val conn = url.openConnection() as java.net.HttpURLConnection
+        conn.connectTimeout = 10000
+        conn.readTimeout = 10000
+        conn.setRequestProperty("Accept", "application/json")
+        if (token != null) conn.setRequestProperty("Authorization", "Bearer $token")
+        if (cookies.isNotEmpty()) conn.setRequestProperty("Cookie", cookies)
+        val code = conn.responseCode
+        if (code != 200) {
+            val body = try { (conn.errorStream ?: conn.inputStream)?.bufferedReader()?.readText()?.take(200) } catch (_: Exception) { null }
+            Pair(null, "get_id_table_location/$schemaDotTable HTTP $code : ${body ?: ""}")
+        } else {
+            val text = conn.inputStream.bufferedReader().readText().trim()
+            val id = text.trim('"').toLongOrNull()
+                ?: try { JSONObject(text).optLong("id_table_location", -1L).takeIf { it > 0 } } catch (_: Exception) { null }
+            if (id != null && id > 0) Pair(id, null)
+            else Pair(null, "Réponse get_id_table_location non parsable : ${text.take(100)}")
+        }
+    } catch (e: Exception) {
+        Pair(null, "Exception get_id_table_location : ${e.message}")
+    }
+
     /** Upload multipart d'un fichier média vers `/api/gn_commons/media` (singulier).
      *  Retourne le JSON Media renvoyé par le serveur (à inclure dans le counting JSON), ou null si échec. */
     private fun uploaderMediaFile(
         base: String, token: String?, cookies: String,
         mediaPath: String, author: String, titre: String,
         idTableLocation: Long, idTypeMedia: Int?,
+        /** Optionnel : rattache le média à un objet en passant son uuid (champ `uuid_attached_row`
+         *  côté gn_commons.t_medias). Utilisé pour les médias monitoring liés à une visite, etc. */
+        uuidAttachedRow: String? = null,
     ): Pair<JSONObject?, String?> {
         val file = try {
             val parsed = android.net.Uri.parse(mediaPath)
@@ -622,6 +683,7 @@ object GeoNatureUpload {
         val prefix = StringBuilder().apply {
             part("id_table_location", idTableLocation.toString(), this)
             idTypeMedia?.let { part("id_nomenclature_media_type", it.toString(), this) }
+            uuidAttachedRow?.takeIf { it.isNotEmpty() }?.let { part("uuid_attached_row", it, this) }
             part("author", author, this)
             part("title_fr", titre, this)
             part("description_fr", "Saisie GeoNat mobile", this)

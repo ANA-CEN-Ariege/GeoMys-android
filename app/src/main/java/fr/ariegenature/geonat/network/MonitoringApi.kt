@@ -278,6 +278,18 @@ object MonitoringApi {
         /** Borne maximale (cf. [minValue]). Couple typique côté monitoring :
          *  `count_min` avec `max: "(value) => value.count_max"` pour forcer min ≤ max. */
         val maxValue: String? = null,
+        /** Vrai si le champ a été déclaré dans le bloc `specific` de l'object_type côté
+         *  schéma serveur (par opposition au bloc `generic` du modèle de base). Parité avec
+         *  `isInSpecific` de gn_mobile_monitoring : un champ specific est **toujours inclus**
+         *  dans le formulaire de saisie, même s'il n'est pas listé dans `display_form` /
+         *  `display_properties`. C'est typiquement comme ça que les protocoles ajoutent leurs
+         *  champs custom sans avoir à redéclarer tout le display_form. */
+        val enSpecific: Boolean = false,
+        /** Pour les widgets `medias` : table Postgres à laquelle le média est rattaché côté
+         *  gn_commons (champ `schema_dot_table` du schéma serveur, ex.
+         *  `gn_monitoring.t_base_visits`). Sert à résoudre l'id_table_location lors de
+         *  l'upload du fichier via /api/gn_commons/media. */
+        val schemaDotTable: String? = null,
     )
 
     /** Schéma d'un object_type déclaré par un protocole dans son `config/objects.json` serveur,
@@ -331,6 +343,16 @@ object MonitoringApi {
          *  `MultiPolygon`, …). Null si le type n'a pas de géométrie associée — dans ce cas
          *  le bouton "voir sur carte" est inutile et masqué. */
         val geometryType: String? = null,
+        /** Nom du champ uuid de cet object_type (ex. `uuid_base_visit` pour les visites).
+         *  Sert à pré-générer un uuid côté client et l'injecter dans le payload POST de
+         *  création, pour pouvoir ensuite rattacher les médias gn_commons à cet uuid via
+         *  `uuid_attached_row` sans avoir à reparser la réponse serveur. */
+        val uuidFieldName: String? = null,
+        /** Genre grammatical du label (`M` / `F`), tel que déclaré par le protocole.
+         *  Utilisé côté UI pour formuler proprement « Édition de la visite » vs « Édition
+         *  du passage » vs « Édition de l'observation ». Null = inconnu (heuristique
+         *  voyelle initiale uniquement). */
+        val genre: String? = null,
     )
 
     /** Cache des labels résolus depuis le serveur — permet de remplacer les IDs (id_role,
@@ -762,6 +784,8 @@ object MonitoringApi {
                     idListObserver = v.optInt("id_list_observer", -1).takeIf { it > 0 },
                     idListTaxonomy = v.optInt("id_list_taxonomy", -1).takeIf { it > 0 },
                     geometryType = v.optString("geometry_type", "").takeIf { it.isNotEmpty() && it != "null" },
+                    uuidFieldName = v.optString("uuid_field_name", "").takeIf { it.isNotEmpty() },
+                    genre = v.optString("genre", "").takeIf { it.isNotEmpty() },
                 )
             }
             // Post-processing : dérive l'URL des widgets `observers`/`dataset`/`taxonomy_list`
@@ -846,10 +870,20 @@ object MonitoringApi {
         val cles = linkedSetOf<String>()
         generic?.keys()?.forEach { cles.add(it) }
         specific?.keys()?.forEach { cles.add(it) }
+        // Set des clés présentes dans le bloc `specific` — sert à 2 choses :
+        //  - passer `enSpecific=true` à parserUnePropriete pour qu'il infère un widget
+        //    même quand `type_widget` est absent (cas typique d'un protocole qui n'écrit
+        //    que `type_util: 'date'` ou `type_util: 'user'` côté specific) ;
+        //  - marquer le PropertySchema résultant pour que construireFormulaire l'inclue
+        //    même si display_form ne le liste pas.
+        val clesSpecific = specific?.keys()?.asSequence()?.toSet().orEmpty()
         val map = linkedMapOf<String, MonitoringPropertySchema>()
         for (nom in cles) {
             val fusion = fusionnerChamp(generic?.optJSONObject(nom), specific?.optJSONObject(nom))
-            parserUnePropriete(nom, fusion)?.let { map[nom] = it }
+            val estSpecific = nom in clesSpecific
+            parserUnePropriete(nom, fusion, enSpecific = estSpecific)?.let {
+                map[nom] = if (estSpecific) it.copy(enSpecific = true) else it
+            }
         }
         return map
     }
@@ -874,8 +908,16 @@ object MonitoringApi {
     }
 
     /** Parse une config de champ (déjà fusionnée generic+specific) en [MonitoringPropertySchema].
-     *  Retourne null pour les entrées à ignorer (ni type_widget ni hidden:true). */
-    private fun parserUnePropriete(nom: String, v: JSONObject): MonitoringPropertySchema? {
+     *  Retourne null pour les entrées à ignorer (ni type_widget ni hidden:true). [enSpecific]
+     *  indique si le champ vient du bloc `specific` côté serveur — auquel cas on est plus
+     *  tolérant sur l'absence de `type_widget` (parité gn_mobile_monitoring : un champ
+     *  specific est toujours inclus, avec un widget inféré à partir de `type_util` ou
+     *  défaut `text`). */
+    private fun parserUnePropriete(
+        nom: String,
+        v: JSONObject,
+        enSpecific: Boolean = false,
+    ): MonitoringPropertySchema? {
         // `hidden` peut être :
         //  - Boolean true  → champ technique masqué à l'UI (id_base_visit, id_module,
         //    medias, nb_observations…). On le CONSERVE quand même dans le schéma car
@@ -887,12 +929,25 @@ object MonitoringApi {
         val hiddenBool = hiddenBrut is Boolean && hiddenBrut
         val hiddenExpr = (hiddenBrut as? String)
             ?: v.opt("display")?.takeIf { it is String } as? String
-        val typeWidget = v.optString("type_widget", "")
+        val typeWidgetBrut = v.optString("type_widget", "")
             .ifEmpty { v.optString("widget", "") }
             .ifEmpty { v.optString("type", "") }
-        // Un champ sans `type_widget` mais hidden=true est conservé (technique, payload-only).
-        // Sans type_widget ni hidden:true → on skip (entrée parasite).
-        if (typeWidget.isEmpty() && !hiddenBool) return null
+        // Champ sans `type_widget` :
+        //   - hidden=true → conservé tel quel (technique, payload-only) ;
+        //   - dans specific → on infère un widget : `type_util==date` → date, sinon text
+        //     (parité gn_mobile_monitoring form_config_parser.dart:829-832) ;
+        //   - sinon → entrée parasite ou champ calculé serveur (nb_visits…), on skip.
+        val typeUtilBrut = v.optString("type_util", "").takeIf { it.isNotEmpty() }
+        val typeWidget = if (typeWidgetBrut.isEmpty()) {
+            when {
+                hiddenBool -> ""
+                enSpecific -> when (typeUtilBrut?.lowercase()) {
+                    "date" -> "date"
+                    else -> "text"
+                }
+                else -> return null
+            }
+        } else typeWidgetBrut
         val label = v.optString("attribut_label", "")
             .ifEmpty { v.optString("label", "") }
             .ifEmpty { nom.replace('_', ' ').replaceFirstChar { c -> c.uppercase() } }
@@ -928,7 +983,7 @@ object MonitoringApi {
         val keyValue = v.optString("keyValue", "").takeIf { it.isNotEmpty() }
         val dataPath = v.optString("data_path", "").takeIf { it.isNotEmpty() }
         val multiple = v.optBoolean("multiple", false) || v.optBoolean("multi_select", false)
-        val typeUtil = v.optString("type_util", "").takeIf { it.isNotEmpty() }
+        val typeUtil = typeUtilBrut
         // Liste taxonomique portée par le champ lui-même : `id_list` direct ou extrait de
         // l'api `taxref/allnamebylist/<id>` (parité getTaxonListId). Sert à restreindre
         // l'autocomplete TaxRef à la liste autorisée pour ce champ.
@@ -998,6 +1053,7 @@ object MonitoringApi {
             idListTaxonomie = idListTaxonomie,
             minValue = minValue,
             maxValue = maxValue,
+            schemaDotTable = v.optString("schema_dot_table", "").takeIf { it.isNotEmpty() },
         )
     }
 
@@ -1408,6 +1464,10 @@ object MonitoringApi {
         parentId: Int?,
         valeurs: Map<String, Any?>,
         nomsChampsSchema: Collection<String> = emptyList(),
+        /** uuid pré-généré côté client à injecter dans le payload sous [uuidFieldName].
+         *  Sert à connaître à l'avance l'uuid_attached_row pour l'upload média ultérieur. */
+        uuidClient: String? = null,
+        uuidFieldName: String? = null,
     ): Result<Int> = withContext(Dispatchers.IO) {
         runCatching {
             val base = config.urlServeur.trim().trimEnd('/')
@@ -1423,6 +1483,13 @@ object MonitoringApi {
             }
             for ((code, brut) in valeurs) {
                 properties.put(code, normaliserPourJson(brut))
+            }
+            // uuid pré-généré côté client (cas où on a un média à rattacher après création).
+            // Injecté seulement si le caller a fourni le nom du champ — sinon on ne sait pas
+            // où le mettre dans le payload et le serveur générera son propre uuid.
+            if (!uuidClient.isNullOrEmpty() && !uuidFieldName.isNullOrEmpty() &&
+                !properties.has(uuidFieldName)) {
+                properties.put(uuidFieldName, uuidClient)
             }
             // `id_digitiser` : le serveur attend l'id_role de l'utilisateur qui enregistre.
             // Contrainte NOT NULL côté DB monitoring → un 500 silencieux sans ce champ.

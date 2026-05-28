@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Bandeau d'info parcours (distance + nb obs) en bas de la carte multi-taxon. Avant :
+     #CC1B6CA8 (colorPrimary bleu 80%) → presque noir/invisible sur le fond accueil sombre.
+     Maintenant : Material colorSurfaceVariant à 85% pour un gris doux qui contraste avec
+     le dégradé navy ; le texte/icônes en blanc restent parfaitement lisibles. -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android">
-    <solid android:color="#CC1B6CA8" />
+    <solid android:color="?attr/colorSurfaceVariant" />
 </shape>

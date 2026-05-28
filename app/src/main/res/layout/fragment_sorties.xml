@@ -32,7 +32,7 @@
 
         <Button
             android:id="@+id/btn_importer_gpx"
-            style="@style/Widget.Material3.Button.TextButton"
+            style="@style/Widget.GeoNat.Button.TextButton"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="Importer GPX" />
@@ -43,12 +43,16 @@
         android:layout_height="1dp"
         android:background="?attr/colorControlHighlight" />
 
-    <!-- Onglets -->
+    <!-- Onglets À envoyer / Envoyés / Importés. Indicateur et texte sélectionné en jaune
+         clair pour cohérence avec les autres éléments cliquables ; texte des onglets
+         inactifs reste en colorOnSurfaceVariant (Material) — lisible sur fond sombre. -->
     <com.google.android.material.tabs.TabLayout
         android:id="@+id/tab_layout"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:paddingHorizontal="8dp" />
+        android:paddingHorizontal="8dp"
+        app:tabIndicatorColor="@color/jaune_clair"
+        app:tabSelectedTextColor="@color/jaune_clair" />
 
     <!-- Vue vide -->
     <LinearLayout

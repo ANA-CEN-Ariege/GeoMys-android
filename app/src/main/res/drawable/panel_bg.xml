@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Fond des panneaux flottants (saisie rapide, trace). colorSurface s'adapte au mode
-     clair/sombre via le thème Material3 DayNight — pas de blanc codé en dur (sinon le texte
-     themé devient illisible en mode sombre). -->
+<!-- Fond des panneaux flottants en bas de la carte (trace : panneau de contrôle avec
+     play/+/liste, panneau de validation position ; saisie rapide : panneau de config et
+     panneau actif). Solide @color/accueil_bottom = #0D264C (le bas du dégradé accueil) →
+     visuellement la même couleur bleu nuit que le reste de l'écran, mais opaque pour
+     masquer la carte qui sinon transparaîtrait au niveau du panneau. -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android">
-    <solid android:color="?attr/colorSurface" />
+    <solid android:color="@color/accueil_bottom" />
 </shape>

@@ -181,7 +181,11 @@ class TraceFragment : Fragment() {
         demanderPermissions()
         applyWindowInsets()
 
-        binding.btnParcours.visibility = if (enregistrerTrace) View.VISIBLE else View.GONE
+        // On masque LE WRAPPER (case poids 1) et non le bouton seul : sinon la case vide
+        // continue de prendre sa part de largeur et les 2 boutons restants ne se
+        // recentreraient pas. Le wrapper en GONE → poids retiré → + et Liste se partagent
+        // 50/50, centrés sur leur moitié.
+        binding.wrapParcours.visibility = if (enregistrerTrace) View.VISIBLE else View.GONE
 
         // Le bouton retour système doit traverser le dialog « Terminer la sortie »
         // pour libérer le GPS comme le clic sur la croix — sinon le foreground service

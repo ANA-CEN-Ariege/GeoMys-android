@@ -71,7 +71,7 @@
         <!-- Action connexion -->
         <Button
             android:id="@+id/btn_tester_connexion"
-            style="@style/Widget.Material3.Button.OutlinedButton"
+            style="@style/Widget.GeoNat.Button.OutlinedButton"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
@@ -218,7 +218,7 @@
                      compteur ; un tap sur un groupe affiche les taxons de ce groupe. -->
                 <Button
                     android:id="@+id/btn_taxons_par_groupe"
-                    style="@style/Widget.Material3.Button.TextButton"
+                    style="@style/Widget.GeoNat.Button.TextButton"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:minHeight="36dp"
@@ -246,7 +246,7 @@
 
             <Button
                 android:id="@+id/btn_vider_cache"
-                style="@style/Widget.Material3.Button.TextButton"
+                style="@style/Widget.GeoNat.Button.TextButton"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="4dp"

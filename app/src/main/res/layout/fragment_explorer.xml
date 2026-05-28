@@ -41,7 +41,7 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_filtre_oiseau"
-                style="@style/Widget.Material3.Button.TextButton"
+                style="@style/Widget.GeoNat.Button.TextButton"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:contentDescription="Oiseaux"
@@ -58,7 +58,7 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_filtre_mammifere"
-                style="@style/Widget.Material3.Button.TextButton"
+                style="@style/Widget.GeoNat.Button.TextButton"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:contentDescription="Mammifères"
@@ -75,7 +75,7 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_filtre_reptile"
-                style="@style/Widget.Material3.Button.TextButton"
+                style="@style/Widget.GeoNat.Button.TextButton"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:contentDescription="Reptiles"
@@ -92,7 +92,7 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_filtre_batracien"
-                style="@style/Widget.Material3.Button.TextButton"
+                style="@style/Widget.GeoNat.Button.TextButton"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:contentDescription="Batraciens"
@@ -109,7 +109,7 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_filtre_mollusque"
-                style="@style/Widget.Material3.Button.TextButton"
+                style="@style/Widget.GeoNat.Button.TextButton"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:contentDescription="Mollusques"
@@ -126,7 +126,7 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_filtre_poisson"
-                style="@style/Widget.Material3.Button.TextButton"
+                style="@style/Widget.GeoNat.Button.TextButton"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:contentDescription="Poissons"
@@ -143,7 +143,7 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_filtre_insecte"
-                style="@style/Widget.Material3.Button.TextButton"
+                style="@style/Widget.GeoNat.Button.TextButton"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:contentDescription="Insectes"
@@ -160,7 +160,7 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_filtre_invertebres"
-                style="@style/Widget.Material3.Button.TextButton"
+                style="@style/Widget.GeoNat.Button.TextButton"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:contentDescription="Autres invertébrés"
@@ -177,7 +177,7 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_filtre_plante"
-                style="@style/Widget.Material3.Button.TextButton"
+                style="@style/Widget.GeoNat.Button.TextButton"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:contentDescription="Plantes"
@@ -194,7 +194,7 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_filtre_fonge"
-                style="@style/Widget.Material3.Button.TextButton"
+                style="@style/Widget.GeoNat.Button.TextButton"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:contentDescription="Fonge"

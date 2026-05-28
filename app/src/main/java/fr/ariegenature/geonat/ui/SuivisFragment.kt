@@ -81,9 +81,9 @@ class SuivisFragment : Fragment() {
             binding.progressSuivis.visibility = View.GONE
             if (modules.isEmpty()) {
                 binding.tvErreurSuivis.visibility = View.VISIBLE
-                binding.tvErreurSuivis.text = "Aucun protocole disponible.\n" +
+                binding.tvErreurSuivis.text = "Aucun protocole accessible pour ${gnConfig.login}.\n" +
                     "Vérifie que gn_module_monitoring est installé sur le serveur " +
-                    "et que tu as les droits CRUVED de lecture."
+                    "et que l'utilisateur a au moins un droit CRUVED > 0 sur les modules concernés."
             } else {
                 afficherModules(modules)
             }
@@ -125,6 +125,10 @@ class SuivisFragment : Fragment() {
                         "objectType" to "module",
                         "id" to m.idModule,
                         "titre" to m.moduleLabel,
+                        // Fil de la carte = racine "Suivis › Protocole" (pas de segment objet
+                        // puisqu'on affiche le protocole lui-même). Au tap d'un site, on
+                        // ajoutera son segment pour donner "Suivis › Protocole › Site".
+                        "fil" to encoderFil(filRacineSuivis(m.moduleLabel)),
                     )
                 )
             }

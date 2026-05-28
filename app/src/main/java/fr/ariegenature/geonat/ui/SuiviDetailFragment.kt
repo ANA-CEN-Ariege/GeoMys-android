@@ -358,6 +358,10 @@ class SuiviDetailFragment : Fragment() {
                                     "objectType" to type,
                                     "id" to e.id,
                                     "titre" to e.nom,
+                                    // Fil de la carte = "Suivis › Protocole › Site" — au tap
+                                    // d'un point enfant, le segment du point sera ajouté pour
+                                    // donner un fil "Suivis › Protocole › Site › Point".
+                                    "fil" to encoderFil(filRacineSuivis(filRacine) + FilSegment(type, e.id, e.nom)),
                                 )
                             )
                         }

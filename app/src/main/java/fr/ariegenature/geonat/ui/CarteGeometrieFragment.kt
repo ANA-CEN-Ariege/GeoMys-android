@@ -5,14 +5,17 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import androidx.appcompat.app.AlertDialog
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.drawable.toBitmap
+import androidx.core.os.bundleOf
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import fr.ariegenature.geonat.R
 import fr.ariegenature.geonat.databinding.FragmentCarteGeometrieBinding
 import fr.ariegenature.geonat.network.MonitoringApi
+import fr.ariegenature.geonat.network.MonitoringSync
 import fr.ariegenature.geonat.store.GeoNatureConfig
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -36,6 +39,15 @@ class CarteGeometrieFragment : Fragment() {
     private val binding get() = _binding!!
     private var fondCarte = FondCarte.TOPO
     private var locationOverlay: MyLocationNewOverlay? = null
+    /** Schéma du protocole, chargé une fois pour les deux chemins (objet / protocole). Sert à
+     *  décider, au tap sur un overlay, si on peut proposer "Nouvelle saisie" (= y a-t-il un
+     *  enfant de type saisie déclaré pour ce type d'objet ?). Null tant que pas chargé ou
+     *  si le serveur ne renvoie pas de schéma. */
+    private var schema: Map<String, MonitoringApi.MonitoringSchemaObjet>? = null
+
+    /** Métadonnées portées par chaque overlay cliquable : ce qu'il faut pour ouvrir la fiche
+     *  ou démarrer une saisie sur l'objet cliqué. */
+    private data class CarteItem(val type: String, val id: Int, val label: String)
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         Configuration.getInstance().userAgentValue = requireContext().packageName
@@ -97,6 +109,11 @@ class CarteGeometrieFragment : Fragment() {
 
     /** Carte d'un objet (site, sites_group, visite, …) : sa géométrie + celle de ses enfants. */
     private suspend fun chargerObjet(config: GeoNatureConfig, moduleCode: String, objectType: String, id: Int) {
+        // Schéma + objet en parallèle (le schéma est utilisé par le dialog d'actions au tap
+        // sur un overlay : il décide si "Nouvelle saisie" est proposée pour un type donné).
+        val schemaDeferred = coroutineScope {
+            async { runCatching { MonitoringApi.chargerSchemaProtocole(config, moduleCode) }.getOrNull() }
+        }
         val objet = try {
             MonitoringApi.chargerObjet(config, moduleCode, objectType, id)
         } catch (e: Exception) {
@@ -106,6 +123,7 @@ class CarteGeometrieFragment : Fragment() {
             binding.tvErreur.visibility = View.VISIBLE
             return
         }
+        schema = schemaDeferred.await()
         if (!isAdded) return
         val geoStr = objet.geometrieGeoJson
         if (geoStr.isNullOrEmpty()) {
@@ -121,15 +139,18 @@ class CarteGeometrieFragment : Fragment() {
         // sont avalés (best-effort) pour ne pas planter la carte entière sur un 403 isolé.
         val aFetch: List<Pair<String, MonitoringApi.MonitoringEnfant>> =
             objet.enfants.flatMap { (ctype, items) -> items.map { ctype to it } }
-        val enfantsAvecGeo: List<Pair<String, String?>> = if (aFetch.isEmpty()) emptyList() else coroutineScope {
-            aFetch.map { (ctype, e) ->
-                async {
-                    val geo = e.geometrieGeoJson?.takeIf { it.isNotEmpty() }
-                        ?: runCatching { MonitoringApi.chargerObjet(config, moduleCode, ctype, e.id).geometrieGeoJson }.getOrNull()
-                    e.nom to geo
-                }
-            }.awaitAll()
-        }
+        // Triplet (type, enfant, GeoJSON) — on conserve type+id pour pouvoir attacher des
+        // actions au tap (drill fiche / nouvelle saisie sur l'enfant cliqué).
+        val enfantsAvecGeo: List<Triple<String, MonitoringApi.MonitoringEnfant, String?>> =
+            if (aFetch.isEmpty()) emptyList() else coroutineScope {
+                aFetch.map { (ctype, e) ->
+                    async {
+                        val geo = e.geometrieGeoJson?.takeIf { it.isNotEmpty() }
+                            ?: runCatching { MonitoringApi.chargerObjet(config, moduleCode, ctype, e.id).geometrieGeoJson }.getOrNull()
+                        Triple(ctype, e, geo)
+                    }
+                }.awaitAll()
+            }
 
         if (!isAdded) return
         binding.progressCarte.visibility = View.GONE
@@ -137,11 +158,16 @@ class CarteGeometrieFragment : Fragment() {
         try {
             val tous = mutableListOf<GeoPoint>()
             // Géométrie principale : label = titre passé via Bundle (le nom de l'objet ouvert).
-            val titrePrincipal = arguments?.getString("titre")?.takeIf { it.isNotEmpty() }
-            tous += rendre(JSONObject(geoStr), estEnfant = false, label = titrePrincipal)
-            enfantsAvecGeo.forEach { (nom, gj) ->
+            // On attache l'item (type/id/label) à ses overlays pour que le tap propose les
+            // mêmes actions que sur ses enfants (typiquement "Nouvelle saisie" si le schéma
+            // l'autorise — utile quand on est sur la carte d'un site sans points enfants).
+            val titrePrincipal = arguments?.getString("titre")?.takeIf { it.isNotEmpty() } ?: objectType
+            val itemPrincipal = CarteItem(type = objectType, id = id, label = titrePrincipal)
+            tous += rendre(JSONObject(geoStr), estEnfant = false, item = itemPrincipal)
+            enfantsAvecGeo.forEach { (ctype, e, gj) ->
                 if (gj.isNullOrEmpty()) return@forEach
-                try { tous += rendre(JSONObject(gj), estEnfant = true, label = nom) }
+                val itemEnfant = CarteItem(type = ctype, id = e.id, label = e.nom)
+                try { tous += rendre(JSONObject(gj), estEnfant = true, item = itemEnfant) }
                 catch (_: Exception) { /* enfant illisible, on l'ignore */ }
             }
             terminer(tous)
@@ -164,7 +190,7 @@ class CarteGeometrieFragment : Fragment() {
             binding.tvErreur.visibility = View.VISIBLE
             return
         }
-        val schema = MonitoringApi.chargerSchemaProtocole(config, moduleCode)
+        schema = MonitoringApi.chargerSchemaProtocole(config, moduleCode)
         if (!isAdded) return
 
         val rootsSchema = schema?.get("module")?.childrenTypes.orEmpty()
@@ -174,7 +200,7 @@ class CarteGeometrieFragment : Fragment() {
                 // Retire les types dont le parent est lui-même présent (les enfants
                 // ressortiront via drill-down sur leur parent macro).
                 val enfants = enfantsParType.keys.filter { type ->
-                    val pt = schema[type]?.parentType
+                    val pt = schema?.get(type)?.parentType
                     pt != null && pt != "module" && pt in enfantsParType.keys
                 }.toSet()
                 enfantsParType.keys.filter { it !in enfants }
@@ -191,12 +217,13 @@ class CarteGeometrieFragment : Fragment() {
             return
         }
 
-        val enfantsAvecGeo: List<Pair<String, String?>> = coroutineScope {
+        // On conserve type+id+nom de chaque site pour pouvoir attacher les actions de tap.
+        val enfantsAvecGeo: List<Triple<String, MonitoringApi.MonitoringEnfant, String?>> = coroutineScope {
             aFetch.map { (ctype, e) ->
                 async {
                     val geo = e.geometrieGeoJson?.takeIf { it.isNotEmpty() }
                         ?: runCatching { MonitoringApi.chargerObjet(config, moduleCode, ctype, e.id).geometrieGeoJson }.getOrNull()
-                    e.nom to geo
+                    Triple(ctype, e, geo)
                 }
             }.awaitAll()
         }
@@ -205,9 +232,10 @@ class CarteGeometrieFragment : Fragment() {
         binding.progressCarte.visibility = View.GONE
 
         val tous = mutableListOf<GeoPoint>()
-        enfantsAvecGeo.forEach { (nom, gj) ->
+        enfantsAvecGeo.forEach { (ctype, e, gj) ->
             if (gj.isNullOrEmpty()) return@forEach
-            try { tous += rendre(JSONObject(gj), estEnfant = false, label = nom) }
+            val item = CarteItem(type = ctype, id = e.id, label = e.nom)
+            try { tous += rendre(JSONObject(gj), estEnfant = false, item = item) }
             catch (_: Exception) { /* géo illisible, on l'ignore */ }
         }
         terminer(tous)
@@ -224,8 +252,10 @@ class CarteGeometrieFragment : Fragment() {
 
     /** Ajoute les overlays correspondant à une géométrie GeoJSON sur la carte et renvoie tous
      *  les GeoPoint qu'elle couvre (pour le recadrage global). [estEnfant] = style plus discret.
-     *  [label] = nom à afficher au tap sur le marker/polygone (titre InfoWindow / Toast). */
-    private fun rendre(geo: JSONObject, estEnfant: Boolean, label: String?): List<GeoPoint> {
+     *  [item] = type/id/label de l'objet sous-jacent. Quand non-null, le tap sur l'overlay
+     *  ouvre un dialog d'actions (fiche / nouvelle saisie selon le schéma). Quand null,
+     *  l'overlay est passif (pas de tap). */
+    private fun rendre(geo: JSONObject, estEnfant: Boolean, item: CarteItem?): List<GeoPoint> {
         val type = geo.optString("type", "")
         val coords = geo.opt("coordinates")
         val points = mutableListOf<GeoPoint>()
@@ -234,26 +264,26 @@ class CarteGeometrieFragment : Fragment() {
                 val arr = coords as? JSONArray ?: return points
                 val pt = lonLatToGeoPoint(arr) ?: return points
                 points += pt
-                ajouterMarker(pt, estEnfant, label)
+                ajouterMarker(pt, estEnfant, item)
             }
             "LineString" -> {
                 val arr = coords as? JSONArray ?: return points
                 val pts = extrairePoints(arr)
                 if (pts.isEmpty()) return points
                 points += pts
-                ajouterPolyline(pts, estEnfant, label)
+                ajouterPolyline(pts, estEnfant, item)
             }
             "MultiPoint" -> {
                 val arr = coords as? JSONArray ?: return points
                 val pts = extrairePoints(arr)
                 points += pts
-                pts.forEach { ajouterMarker(it, estEnfant, label) }
+                pts.forEach { ajouterMarker(it, estEnfant, item) }
             }
             "Polygon" -> {
                 val arr = coords as? JSONArray ?: return points
                 extraireAnneaux(arr).forEach { ring ->
                     points += ring
-                    ajouterPolygone(ring, estEnfant, label)
+                    ajouterPolygone(ring, estEnfant, item)
                 }
             }
             "MultiPolygon" -> {
@@ -262,7 +292,7 @@ class CarteGeometrieFragment : Fragment() {
                     val poly = arr.optJSONArray(i) ?: continue
                     extraireAnneaux(poly).forEach { ring ->
                         points += ring
-                        ajouterPolygone(ring, estEnfant, label)
+                        ajouterPolygone(ring, estEnfant, item)
                     }
                 }
             }
@@ -297,7 +327,7 @@ class CarteGeometrieFragment : Fragment() {
         return anneaux
     }
 
-    private fun ajouterMarker(pt: GeoPoint, estEnfant: Boolean, label: String?) {
+    private fun ajouterMarker(pt: GeoPoint, estEnfant: Boolean, item: CarteItem?) {
         val drawableRes = if (estEnfant) R.drawable.ic_location_pin else R.drawable.ic_location_pin
         val marker = Marker(binding.map).apply {
             position = pt
@@ -306,32 +336,32 @@ class CarteGeometrieFragment : Fragment() {
                 it.setTint(if (estEnfant) 0xFFFF9800.toInt() else 0xFFD32F2F.toInt())
             }
             setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-            if (!label.isNullOrEmpty()) {
-                title = label
-                // osmdroid affiche un InfoWindow par défaut au tap sur le marker, avec title/snippet.
+            if (item != null && item.label.isNotEmpty()) title = item.label
+            // Au tap, on substitue notre dialog d'actions à l'InfoWindow par défaut (qui se
+            // contente d'afficher le titre). Si pas d'item rattaché, on garde le comportement
+            // osmdroid standard (InfoWindow simple).
+            if (item != null) setOnMarkerClickListener { _, _ ->
+                montrerActions(item); true
             }
         }
         binding.map.overlays.add(marker)
     }
 
-    private fun ajouterPolyline(pts: List<GeoPoint>, estEnfant: Boolean, label: String?) {
+    private fun ajouterPolyline(pts: List<GeoPoint>, estEnfant: Boolean, item: CarteItem?) {
         val pl = Polyline(binding.map).apply {
             setPoints(pts)
             outlinePaint.color = if (estEnfant) 0xCCFF9800.toInt() else 0xCC2196F3.toInt()
             outlinePaint.strokeWidth = if (estEnfant) 3f else 5f
             outlinePaint.strokeCap = Paint.Cap.ROUND
-            if (!label.isNullOrEmpty()) {
-                title = label
-                setOnClickListener { _, _, _ ->
-                    android.widget.Toast.makeText(requireContext(), label, android.widget.Toast.LENGTH_SHORT).show()
-                    true
-                }
+            if (item != null && item.label.isNotEmpty()) {
+                title = item.label
+                setOnClickListener { _, _, _ -> montrerActions(item); true }
             }
         }
         binding.map.overlays.add(pl)
     }
 
-    private fun ajouterPolygone(ring: List<GeoPoint>, estEnfant: Boolean, label: String?) {
+    private fun ajouterPolygone(ring: List<GeoPoint>, estEnfant: Boolean, item: CarteItem?) {
         val poly = Polygon(binding.map).apply {
             points = ring
             if (estEnfant) {
@@ -343,15 +373,115 @@ class CarteGeometrieFragment : Fragment() {
                 outlinePaint.color = 0xFF1976D2.toInt()
                 outlinePaint.strokeWidth = 3f
             }
-            if (!label.isNullOrEmpty()) {
-                title = label
-                setOnClickListener { _, _, _ ->
-                    android.widget.Toast.makeText(requireContext(), label, android.widget.Toast.LENGTH_SHORT).show()
-                    true
-                }
+            if (item != null && item.label.isNotEmpty()) {
+                title = item.label
+                setOnClickListener { _, _, _ -> montrerActions(item); true }
             }
         }
         binding.map.overlays.add(poly)
+    }
+
+    /** Ouvre un AlertDialog Material proposant les actions disponibles sur [item] : drill vers
+     *  la fiche, et/ou démarrage d'une nouvelle saisie (si le schéma déclare un enfant de type
+     *  saisie). Quand aucune action n'est pertinente (objet sans `childrenTypes` saisie + déjà
+     *  sur l'écran courant), on se contente d'un Toast avec le label. */
+    private fun montrerActions(item: CarteItem) {
+        val moduleCode = arguments?.getString("moduleCode") ?: return
+        val parentObjectType = arguments?.getString("objectType")
+        val parentId = arguments?.getInt("id", -1) ?: -1
+        val cestLObjetCourant = item.type == parentObjectType && item.id == parentId
+
+        // Type d'enfant à créer côté "+ Nouvelle saisie" : on lit le schéma du type cliqué et
+        // on cherche un childrenType qui matche l'heuristique [MonitoringSync.estTypeSaisie].
+        // Cohérent avec ce que font SuiviDetailFragment / FicheObjetFragment, donc même
+        // comportement quel que soit le chemin d'entrée (liste vs carte).
+        val schemaType = schema?.get(item.type)
+        val typeSaisieEnfant = schemaType?.childrenTypes?.firstOrNull(MonitoringSync::estTypeSaisie)
+
+        // Fil d'Ariane à propager au tap. Le carteFil contient le chemin qui a mené à cette
+        // carte ; on l'étend du segment de l'item cliqué — sauf si cet item EST l'objet
+        // courant (dans ce cas le segment final est déjà dans carteFil).
+        val filCible = filPourItem(item, cestLObjetCourant)
+
+        // Construction des actions disponibles. La fiche n'est pas re-proposée si on y est
+        // déjà (item == objet courant de la carte) — éviterait une boucle visuelle inutile.
+        val actions = mutableListOf<Pair<String, () -> Unit>>()
+        if (!cestLObjetCourant) {
+            actions.add("Voir la fiche" to { naviguerVersFiche(moduleCode, item, filCible) })
+        }
+        if (typeSaisieEnfant != null) {
+            actions.add("Nouvelle saisie" to {
+                naviguerVersNouvelleSaisie(moduleCode, item, typeSaisieEnfant, filCible)
+            })
+        }
+
+        if (actions.isEmpty()) {
+            // Pas d'action proposable (objet courant + pas de saisie déclarée pour ce type) :
+            // on conserve un retour visuel minimal pour confirmer que le tap a été pris.
+            android.widget.Toast.makeText(requireContext(), item.label, android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
+        AlertDialog.Builder(requireContext())
+            .setTitle(item.label)
+            .setItems(actions.map { it.first }.toTypedArray()) { _, which -> actions[which].second.invoke() }
+            .setNegativeButton("Fermer", null)
+            .show()
+    }
+
+    /** Construit le fil d'Ariane cible quand l'utilisateur tape sur [item].
+     *
+     *  - Cas A : l'item EST l'objet courant de la carte → on réutilise le carteFil reçu de
+     *    l'appelant (il contient déjà ce segment en bout).
+     *  - Cas B : l'item est un autre objet (enfant de l'objet courant, ou site macro listé
+     *    sur la carte d'un protocole) → on étend le carteFil avec le segment de l'item.
+     *  - Cas dégénéré : carteFil vide (compat anciennes versions sans propagation) → fallback
+     *    sur un fil minimal "Suivis › Protocole [› Objet]". */
+    private fun filPourItem(item: CarteItem, cestLObjetCourant: Boolean): List<FilSegment> {
+        val carteFil = decoderFil(arguments?.getString("fil"))
+        if (carteFil.isNotEmpty()) {
+            return if (cestLObjetCourant) carteFil
+            else carteFil + FilSegment(item.type, item.id, item.label)
+        }
+        // Fallback (carte ouverte par une ancienne version sans propagation du fil).
+        val moduleCode = arguments?.getString("moduleCode").orEmpty()
+        val labelModule = MonitoringApi.labelModuleEnCache(moduleCode) ?: moduleCode
+        val racine = filRacineSuivis(labelModule)
+        return if (cestLObjetCourant) racine else racine + FilSegment(item.type, item.id, item.label)
+    }
+
+    /** Navigation vers la fiche de [item] avec le fil [filCible] (= chemin réel dans la
+     *  hiérarchie monitoring jusqu'à cet objet). */
+    private fun naviguerVersFiche(moduleCode: String, item: CarteItem, filCible: List<FilSegment>) {
+        findNavController().navigate(
+            R.id.action_carte_to_fiche,
+            bundleOf(
+                "moduleCode" to moduleCode,
+                "objectType" to item.type,
+                "id" to item.id,
+                "fil" to encoderFil(filCible),
+            ),
+        )
+    }
+
+    /** Navigation vers le formulaire de nouvelle saisie, [item] devenant le parent et
+     *  [childObjectType] le type d'objet à créer (visite / observation / …). */
+    private fun naviguerVersNouvelleSaisie(
+        moduleCode: String,
+        item: CarteItem,
+        childObjectType: String,
+        filCible: List<FilSegment>,
+    ) {
+        findNavController().navigate(
+            R.id.action_carte_to_nouvelle_visite,
+            bundleOf(
+                "moduleCode" to moduleCode,
+                "parentObjectType" to item.type,
+                "parentId" to item.id,
+                "titreSite" to item.label,
+                "childObjectType" to childObjectType,
+                "fil" to encoderFil(filCible),
+            ),
+        )
     }
 
     private fun recadrer(points: List<GeoPoint>) {

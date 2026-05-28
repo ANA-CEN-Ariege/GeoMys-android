@@ -28,7 +28,22 @@ data class MonitoringModule(
     val idListTaxonomy: Int? = null,
     val metaCreateDate: String? = null,
     val metaUpdateDate: String? = null,
-)
+    /** Permissions CRUVED de l'utilisateur **courant** sur ce module, telles que retournées
+     *  par `/api/monitorings/modules` (le bloc `cruved` est renseigné côté backend en fonction
+     *  des droits de l'utilisateur authentifié). Map `"C"|"R"|"U"|"V"|"E"|"D" → niveau 0..3`,
+     *  ou null pour les serveurs/responses qui n'exposent pas du tout le bloc (rétrocompat).
+     *  Sémantique d'un niveau (GeoNature) : 0 = aucun droit, 1 = ses propres données,
+     *  2 = données de son organisme, 3 = toutes les données. */
+    val cruved: Map<String, Int>? = null,
+) {
+    /** True si l'utilisateur a au moins UN droit > 0 sur ce module (parité
+     *  `_hasModulePermissions` de gn_mobile_monitoring). Sert à masquer les modules sur lesquels
+     *  l'utilisateur n'a rien — typiquement filtrage de la liste des protocoles. Quand le bloc
+     *  CRUVED est absent (vieux serveur, cache antérieur au filtrage), on considère le module
+     *  visible : c'est le comportement historique de l'app, qu'on ne casse pas en silence. */
+    val aAuMoinsUnDroit: Boolean
+        get() = cruved == null || cruved.values.any { it > 0 }
+}
 
 object MonitoringApi {
 
@@ -119,13 +134,30 @@ object MonitoringApi {
                         idListTaxonomy = item.optInt("id_list_taxonomy", -1).takeIf { it > 0 },
                         metaCreateDate = item.optString("meta_create_date", "").takeIf { it.isNotEmpty() },
                         metaUpdateDate = item.optString("meta_update_date", "").takeIf { it.isNotEmpty() },
+                        cruved = parserCruved(item.optJSONObject("cruved")),
                     )
                 )
             }
             // Note : `active_frontend: false` est fréquent sur les protocoles ariégeois — ça
             // signifie "pas dans le menu web GeoNature" et non "désactivé". Ne pas filtrer
             // dessus sinon on cache tous les protocoles légitimes.
-            result.sortedBy { it.moduleLabel.lowercase() }.also { dernierChargement = it }
+            //
+            // Filtrage CRUVED : on n'expose à l'utilisateur que les modules sur lesquels il a
+            // au moins UN droit > 0 (parité gn_mobile_monitoring). Le serveur renvoie déjà le
+            // bloc personnalisé par utilisateur dans la réponse — il suffit de l'appliquer.
+            // Les modules avec `cruved` absent (vieux serveurs, ou cache antérieur à cette
+            // version) sont préservés via [MonitoringModule.aAuMoinsUnDroit] pour ne pas
+            // disparaître silencieusement.
+            val total = result.size
+            val filtres = result.filter { it.aAuMoinsUnDroit }
+            if (filtres.size < total) {
+                android.util.Log.i(
+                    "MonitoringApi",
+                    "chargerModules : ${total - filtres.size} module(s) masqué(s) par CRUVED " +
+                        "(droits nuls pour ${config.login}), ${filtres.size} conservé(s)",
+                )
+            }
+            filtres.sortedBy { it.moduleLabel.lowercase() }.also { dernierChargement = it }
         }
 
     /** Un enfant (site, sites_group, …) d'un module monitoring : id technique + nom "best-effort"
@@ -932,6 +964,27 @@ object MonitoringApi {
         is Number, is Boolean -> brut.toString()
         is String -> brut.trim().takeIf { it.isNotEmpty() }
         else -> null
+    }
+
+    /** Parse le bloc `cruved` d'un module monitoring en Map<lettre, niveau>. Le serveur
+     *  envoie typiquement `{"C": 1, "R": 3, "U": 1, "V": 0, "E": 0, "D": 0}`. On accepte
+     *  Number ou String numérique ; on normalise la clé en MAJUSCULE pour éviter les surprises
+     *  selon les versions de backend. Retourne null si le bloc est absent ou non-objet (cas
+     *  rétrocompat où on garde le module visible). */
+    private fun parserCruved(obj: JSONObject?): Map<String, Int>? {
+        if (obj == null) return null
+        val map = mutableMapOf<String, Int>()
+        val it = obj.keys()
+        while (it.hasNext()) {
+            val k = it.next()
+            val niveau = when (val v = obj.opt(k)) {
+                is Number -> v.toInt()
+                is String -> v.toIntOrNull()
+                else -> null
+            } ?: continue
+            map[k.uppercase()] = niveau
+        }
+        return if (map.isEmpty()) null else map
     }
 
     /** Infère le code mnémonique d'un type de nomenclature quand il n'est pas explicite :

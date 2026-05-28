@@ -313,6 +313,10 @@ class FicheObjetFragment : Fragment() {
                                     "objectType" to type,
                                     "id" to e.id,
                                     "titre" to nom,
+                                    // Fil de la carte = fil courant + l'enfant (= la fiche
+                                    // dont la carte va s'ouvrir). Permet au tap d'un sous-
+                                    // enfant sur la carte de poursuivre la chaîne réelle.
+                                    "fil" to encoderFil(filCourant + FilSegment(type, e.id, nom)),
                                 )
                             )
                         }

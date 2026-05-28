@@ -169,6 +169,22 @@
             android:name="titre"
             app:argType="string"
             android:defaultValue="" />
+        <!-- Fil d'Ariane préfixe propagé par l'appelant : "Suivis › Protocole" pour la
+             carte d'un module, "Suivis › Protocole › … › Objet" pour la carte d'un
+             objet. Utilisé au tap d'un overlay pour reconstruire un fil cohérent avec
+             la hiérarchie réelle (et non un fil minimal repartant du protocole). -->
+        <argument
+            android:name="fil"
+            app:argType="string"
+            android:defaultValue="" />
+        <!-- Actions ouvertes par le tap sur un overlay (marker/polyline/polygone) : drill
+             vers la fiche de l'objet cliqué, ou démarrage direct d'une saisie sur lui. -->
+        <action
+            android:id="@+id/action_carte_to_fiche"
+            app:destination="@id/ficheObjetFragment" />
+        <action
+            android:id="@+id/action_carte_to_nouvelle_visite"
+            app:destination="@id/nouvelleVisiteFragment" />
     </fragment>
 
     <fragment

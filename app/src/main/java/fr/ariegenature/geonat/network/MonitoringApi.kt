@@ -84,6 +84,10 @@ object MonitoringApi {
     suspend fun chargerModules(config: GeoNatureConfig): List<MonitoringModule> =
         withContext(Dispatchers.IO) {
             val base = config.urlServeur.trim().trimEnd('/')
+            // `depuisReseau` = true si le JSON vient d'un appel HTTP réussi (et non du cache
+            // disque). On l'utilise plus bas pour décider de réécrire le cache (uniquement
+            // sur un fetch frais — pas de réécriture quand on est en fallback offline).
+            var depuisReseau = false
             val text = try {
                 val auth = GeoNatureAuth.loginAvecCookies(base, config.login, config.motDePasse)
                 if (auth == null) {
@@ -101,9 +105,14 @@ object MonitoringApi {
                     val code = conn.responseCode
                     if (code == 404) return@withContext emptyList()
                     if (code != 200) throw GNErreur.EnvoiEchoue(code, "Modules monitoring : HTTP $code")
-                    val brut = conn.inputStream.bufferedReader().readText()
-                    MonitoringCache.setJson(MonitoringCache.keyModules(), brut)
-                    brut
+                    depuisReseau = true
+                    conn.inputStream.bufferedReader().readText()
+                    // ⚠ on NE met PAS le brut en cache ici : la réponse serveur inclut tous
+                    // les modules de l'instance avec un bloc CRUVED personnalisé. Si on cache
+                    // le brut, l'offline ultérieur expose des protocoles auxquels l'utilisateur
+                    // n'a pas droit (et que la re-lecture filtre quand même, mais on garde
+                    // alors en clair les permissions inutiles sur disque). On écrit le cache
+                    // après filtrage, plus bas.
                 }
             } catch (e: IOException) {
                 MonitoringCache.getJson(MonitoringCache.keyModules()) ?: throw e
@@ -113,30 +122,33 @@ object MonitoringApi {
                 obj.optJSONArray("data") ?: obj.optJSONArray("items") ?: obj.optJSONArray("modules")
                     ?: throw GNErreur.EnvoiEchoue(0, "Modules monitoring : format JSON inattendu")
             }
-            val result = mutableListOf<MonitoringModule>()
+            // Parsing en deux temps pour pouvoir filtrer CRUVED ET ré-écrire le cache disque
+            // avec uniquement les items accessibles. On conserve le JSONObject brut de chaque
+            // module à côté du modèle Kotlin, ainsi on n'a pas à re-sérialiser depuis le data
+            // class (on garderait moins de champs que le serveur n'en envoie).
+            val parsed = mutableListOf<Pair<MonitoringModule, JSONObject>>()
             for (i in 0 until array.length()) {
                 val item = array.getJSONObject(i)
                 val idModule = item.optInt("id_module", -1).takeIf { it > 0 } ?: continue
                 val moduleCode = item.optString("module_code", "").ifEmpty { continue }
                 val label = item.optString("module_label", moduleCode).ifEmpty { moduleCode }
                 val desc = item.optString("module_desc", "").takeIf { it.isNotEmpty() }
-                result.add(
-                    MonitoringModule(
-                        idModule = idModule,
-                        moduleCode = moduleCode,
-                        moduleLabel = label,
-                        moduleDesc = desc,
-                        modulePicto = item.optString("module_picto", "").takeIf { it.isNotEmpty() },
-                        activeFrontend = if (item.has("active_frontend")) item.optBoolean("active_frontend") else null,
-                        activeBackend = if (item.has("active_backend")) item.optBoolean("active_backend") else null,
-                        bSynthese = if (item.has("b_synthese")) item.optBoolean("b_synthese") else null,
-                        idListObserver = item.optInt("id_list_observer", -1).takeIf { it > 0 },
-                        idListTaxonomy = item.optInt("id_list_taxonomy", -1).takeIf { it > 0 },
-                        metaCreateDate = item.optString("meta_create_date", "").takeIf { it.isNotEmpty() },
-                        metaUpdateDate = item.optString("meta_update_date", "").takeIf { it.isNotEmpty() },
-                        cruved = parserCruved(item.optJSONObject("cruved")),
-                    )
+                val m = MonitoringModule(
+                    idModule = idModule,
+                    moduleCode = moduleCode,
+                    moduleLabel = label,
+                    moduleDesc = desc,
+                    modulePicto = item.optString("module_picto", "").takeIf { it.isNotEmpty() },
+                    activeFrontend = if (item.has("active_frontend")) item.optBoolean("active_frontend") else null,
+                    activeBackend = if (item.has("active_backend")) item.optBoolean("active_backend") else null,
+                    bSynthese = if (item.has("b_synthese")) item.optBoolean("b_synthese") else null,
+                    idListObserver = item.optInt("id_list_observer", -1).takeIf { it > 0 },
+                    idListTaxonomy = item.optInt("id_list_taxonomy", -1).takeIf { it > 0 },
+                    metaCreateDate = item.optString("meta_create_date", "").takeIf { it.isNotEmpty() },
+                    metaUpdateDate = item.optString("meta_update_date", "").takeIf { it.isNotEmpty() },
+                    cruved = parserCruved(item.optJSONObject("cruved")),
                 )
+                parsed.add(m to item)
             }
             // Note : `active_frontend: false` est fréquent sur les protocoles ariégeois — ça
             // signifie "pas dans le menu web GeoNature" et non "désactivé". Ne pas filtrer
@@ -148,8 +160,8 @@ object MonitoringApi {
             // Les modules avec `cruved` absent (vieux serveurs, ou cache antérieur à cette
             // version) sont préservés via [MonitoringModule.aAuMoinsUnDroit] pour ne pas
             // disparaître silencieusement.
-            val total = result.size
-            val filtres = result.filter { it.aAuMoinsUnDroit }
+            val total = parsed.size
+            val filtres = parsed.filter { (m, _) -> m.aAuMoinsUnDroit }
             if (filtres.size < total) {
                 android.util.Log.i(
                     "MonitoringApi",
@@ -157,7 +169,18 @@ object MonitoringApi {
                         "(droits nuls pour ${config.login}), ${filtres.size} conservé(s)",
                 )
             }
-            filtres.sortedBy { it.moduleLabel.lowercase() }.also { dernierChargement = it }
+            // Réécrit le cache disque avec uniquement les items accessibles, dans le même
+            // format que le serveur (JSONArray d'items bruts). Préserve donc tous les champs
+            // serveur sans avoir à les re-sérialiser depuis MonitoringModule. Pas de
+            // réécriture quand on lit déjà depuis le cache (déjà filtré au tour précédent).
+            if (depuisReseau) {
+                val arr = JSONArray()
+                filtres.forEach { (_, raw) -> arr.put(raw) }
+                MonitoringCache.setJson(MonitoringCache.keyModules(), arr.toString())
+            }
+            filtres.map { (m, _) -> m }
+                .sortedBy { it.moduleLabel.lowercase() }
+                .also { dernierChargement = it }
         }
 
     /** Un enfant (site, sites_group, …) d'un module monitoring : id technique + nom "best-effort"

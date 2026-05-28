@@ -10,6 +10,7 @@ import androidx.fragment.app.activityViewModels
 import androidx.navigation.fragment.findNavController
 import fr.ariegenature.geonat.R
 import fr.ariegenature.geonat.databinding.FragmentAccueilBinding
+import fr.ariegenature.geonat.network.MonitoringApi
 import fr.ariegenature.geonat.store.GeoNatureConfig
 import fr.ariegenature.geonat.store.SortieStore
 
@@ -58,6 +59,11 @@ class AccueilFragment : Fragment() {
         binding.btnMenu.setOnClickListener { view ->
             PopupMenu(requireContext(), view).apply {
                 menuInflater.inflate(R.menu.menu_accueil, menu)
+                // "Mes visites" ne concerne que les saisies monitoring : on masque l'entrée
+                // si l'utilisateur n'a accès à aucun protocole (CRUVED nul, ou cache vide
+                // avant la première synchro). Cohérent avec la visibilité du bouton "Suivis".
+                menu.findItem(R.id.menu_mes_visites)?.isVisible =
+                    MonitoringApi.countModulesEnCache() > 0
                 setOnMenuItemClickListener { item ->
                     when (item.itemId) {
                         R.id.menu_mes_sorties -> {
@@ -95,6 +101,16 @@ class AccueilFragment : Fragment() {
         updateSortiesCount()
         updateGnIndicator()
         updateButtonState()
+        updateSuivisVisibility()
+    }
+
+    /** Affiche le bouton "Suivis" uniquement si l'utilisateur a au moins un protocole
+     *  accessible (cache filtré par CRUVED, cf [MonitoringApi.countModulesEnCache]). Quand
+     *  il est masqué, le spacer de poids 1 au-dessus de la zone boutons décale naturellement
+     *  les 2 boutons de saisie vers le bas — le cluster bouton reste collé au bas de l'écran. */
+    private fun updateSuivisVisibility() {
+        binding.btnSuivis.visibility =
+            if (MonitoringApi.countModulesEnCache() > 0) View.VISIBLE else View.GONE
     }
 
     private fun updateButtonState() {

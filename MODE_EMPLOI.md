@@ -153,6 +153,8 @@ Conçue pour les contacts ponctuels qu'on veut noter sans interrompre une marche
 
 Taper **Suivis** sur l'accueil. La liste affiche uniquement les protocoles auxquels **votre compte** a droit (filtrage CRUVED côté serveur + cache local).
 
+> 💡 Si tu n'as accès à aucun protocole, le bouton **Suivis** et l'entrée **Mes visites** du menu burger disparaissent automatiquement — la place est laissée aux deux saisies OccTax.
+
 Pour chaque protocole : icône **ℹ️** (fiche) ou **🗺️** (carte de tous les sites du protocole).
 
 ### Fiche d'un protocole

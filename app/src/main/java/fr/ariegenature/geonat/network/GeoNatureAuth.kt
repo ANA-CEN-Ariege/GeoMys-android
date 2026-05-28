@@ -15,6 +15,11 @@ object GeoNatureAuth {
                 val base = config.urlServeur.trim().trimEnd('/')
                 val url = URL("$base/api/auth/login")
                 val conn = url.openConnection() as java.net.HttpURLConnection
+                // GeoNature renvoie un 302 vers `/#/login` (la SPA HTML) quand les identifiants
+                // sont invalides au lieu d'un 401 propre. Si on laissait HttpURLConnection
+                // suivre automatiquement, on tomberait sur la SPA et on diagnostiquerait à tort
+                // une mauvaise URL. Parité gn_mobile_monitoring (login_api_impl.dart).
+                conn.instanceFollowRedirects = false
                 conn.requestMethod = "POST"
                 conn.doOutput = true
                 conn.connectTimeout = 10000
@@ -24,27 +29,35 @@ object GeoNatureAuth {
                 OutputStreamWriter(conn.outputStream).use { it.write(body) }
 
                 val code = conn.responseCode
-                // L'API GeoNature peut répondre à un mauvais mot de passe par :
-                //   - HTTP 401/403 + body JSON (cas propre, traité explicitement),
-                //   - HTTP 200 + body JSON sans token (cas observé sur certaines instances),
-                //   - HTTP 200 + body texte d'erreur (rare mais possible).
-                // Le cas "HTTP 200 + body HTML" indique réellement une mauvaise URL serveur.
-                // On tente donc systématiquement de parser le body comme JSON pour distinguer
-                // erreur d'auth vs mauvaise URL.
+                // Distinction fine des réponses GeoNature observées en prod :
+                //   - HTTP 200 + body JSON avec token → succès,
+                //   - HTTP 200 + body JSON sans token / avec `msg` → auth refusée en mode "soft",
+                //   - HTTP 200 + body HTML → vraie mauvaise URL (la racine du site sert la SPA),
+                //   - HTTP 302 vers `#/login` ou hors `/api/` → identifiants invalides
+                //     (cas Apache/Gunicorn qui transforme un échec auth en redirect SPA),
+                //   - HTTP 302 HTTP→HTTPS → l'utilisateur doit corriger l'URL,
+                //   - HTTP 401/403 → identifiants invalides (cas propre),
+                //   - HTTP 404 → URL serveur introuvable.
                 when (code) {
+                    in 300..399 -> diagnostiquerRedirect(conn, url)
                     200 -> {
                         val bodyText = try {
                             conn.inputStream.bufferedReader().readText()
                         } catch (_: Exception) { "" }
                         val json: JSONObject? = try { JSONObject(bodyText) } catch (_: Exception) { null }
                         if (json == null) {
-                            // Pas du JSON parsable → probablement une page HTML (login Apache, etc.).
-                            return@withContext Pair(false, "Mauvaise URL : réponse HTML reçue. Essayez d'ajouter ou retirer /GeoNature à l'URL.")
+                            // Pas du JSON parsable → typiquement la SPA HTML servie quand l'URL
+                            // ne pointe pas vers l'API (cas le plus fréquent ici : racine du
+                            // site GeoNature au lieu de l'URL d'instance).
+                            return@withContext Pair(
+                                false,
+                                "L'URL saisie ne pointe pas vers une API GeoNature : réponse HTML reçue. Vérifiez l'URL du serveur.",
+                            )
                         }
                         val token = extractToken(json)
                         if (token == null) {
-                            // JSON valide mais sans token → c'est probablement un message d'erreur
-                            // d'auth retourné en HTTP 200 (pattern fréquent avec Flask-JWT-Extended).
+                            // JSON valide mais sans token → message d'erreur d'auth en HTTP 200
+                            // (pattern Flask-JWT-Extended sur certaines instances).
                             val msgErreur = json.optString("msg", "")
                                 .ifEmpty { json.optString("message", "") }
                                 .ifEmpty { json.optString("error", "") }
@@ -77,6 +90,37 @@ object GeoNatureAuth {
                 Pair(false, "Impossible de joindre le serveur : ${e.message}")
             }
         }
+
+    /** Diagnostique une réponse 3xx du serveur GeoNature en se basant sur le header `Location`.
+     *  Trois sorties possibles, alignées sur la logique gn_mobile_monitoring :
+     *
+     *  - **HTTP → HTTPS** : le serveur redirige vers son équivalent HTTPS. Le POST initial
+     *    serait perdu si Dart/Java rejouait la requête — on demande à l'utilisateur de mettre
+     *    à jour son URL pour éviter d'envoyer son mot de passe en clair.
+     *  - **Redirect SPA** : URL cible contient `#` (= fragment Angular `/#/login`), OU le
+     *    redirect SORT de `/api/` (origine sous `/api/auth/login`, cible hors). C'est le
+     *    pattern GeoNature pour signaler des identifiants invalides via une redirection.
+     *  - **Autre** : redirection inattendue, on rapporte le code + le Location pour aider au
+     *    diagnostic. */
+    private fun diagnostiquerRedirect(
+        conn: java.net.HttpURLConnection,
+        urlOrigine: URL,
+    ): Pair<Boolean, String> {
+        val location = conn.getHeaderField("Location").orEmpty()
+        val code = conn.responseCode
+        return when {
+            urlOrigine.protocol == "http" && location.startsWith("https://", ignoreCase = true) ->
+                Pair(
+                    false,
+                    "Le serveur redirige vers HTTPS. Modifiez l'URL pour qu'elle commence par « https:// ».",
+                )
+            location.contains("#") ||
+                (urlOrigine.path.contains("/api/") && !location.contains("/api/")) ->
+                Pair(false, "Identifiant ou mot de passe incorrect")
+            else ->
+                Pair(false, "Redirection inattendue ($code) → $location")
+        }
+    }
 
     /** Cache de session du dernier login réussi : permet aux appels en rafale (par ex. 73
      *  chargerObjet en parallèle pour la carte d'un protocole) de ne pas re-authentifier

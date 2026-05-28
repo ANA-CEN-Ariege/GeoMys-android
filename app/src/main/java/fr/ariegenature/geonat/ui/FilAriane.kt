@@ -4,8 +4,10 @@ import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.method.LinkMovementMethod
 import android.text.style.ClickableSpan
+import android.text.style.ImageSpan
 import android.view.View
 import android.widget.TextView
+import androidx.core.content.ContextCompat
 import androidx.core.os.bundleOf
 import androidx.navigation.NavController
 import androidx.navigation.NavOptions
@@ -25,9 +27,10 @@ import fr.ariegenature.geonat.R
 /** Séparateur d'affichage — chevron `›`, cohérent avec le fil des saisies en attente. */
 const val FIL_SEPARATEUR = " › "
 
-/** Marqueurs de [FilSegment.type] pour les deux niveaux racine (la cible de leur clic ne
- *  dépend pas d'un id d'objet mais d'une destination fixe). Les segments objets, eux,
+/** Marqueurs de [FilSegment.type] pour les niveaux racine fixes (la cible de leur clic
+ *  ne dépend pas d'un id d'objet mais d'une destination fixe). Les segments objets, eux,
  *  portent leur vrai `object_type`. */
+const val FIL_TYPE_ACCUEIL = "__accueil__"
 const val FIL_TYPE_SUIVIS = "__suivis__"
 const val FIL_TYPE_MODULE = "__module__"
 
@@ -36,9 +39,12 @@ const val FIL_TYPE_MODULE = "__module__"
  *  la destination est fixe (liste des protocoles / détail du protocole courant). */
 data class FilSegment(val type: String, val id: Int, val label: String)
 
-/** Préfixe racine commun à tous les fils de suivi : "Suivis › <protocole>". À concaténer avec
- *  les segments objets. [moduleLabel] = libellé du protocole courant. */
+/** Préfixe racine commun à tous les fils de suivi : "🏠 › Suivis › <protocole>". L'entrée
+ *  ACCUEIL est rendue sous forme d'icône maison cliquable (cf [appliquerFilAriane]) pour
+ *  permettre de revenir à l'écran d'accueil depuis n'importe quelle profondeur de drill.
+ *  [moduleLabel] = libellé du protocole courant. */
 fun filRacineSuivis(moduleLabel: String): List<FilSegment> = listOf(
+    FilSegment(FIL_TYPE_ACCUEIL, -1, "Accueil"),
     FilSegment(FIL_TYPE_SUIVIS, -1, "Suivis"),
     FilSegment(FIL_TYPE_MODULE, -1, moduleLabel),
 )
@@ -84,7 +90,28 @@ fun appliquerFilAriane(
     segments.forEachIndexed { i, seg ->
         if (i > 0) sb.append(FIL_SEPARATEUR)
         val debut = sb.length
-        sb.append(seg.label)
+        // Pour le segment ACCUEIL, on insère un placeholder remplacé par une icône maison
+        // via ImageSpan — le label "Accueil" sert uniquement de fallback talkback / copier-
+        // coller. Les autres segments restent en texte normal.
+        if (seg.type == FIL_TYPE_ACCUEIL) {
+            sb.append(" ")
+            val drawable = ContextCompat.getDrawable(tv.context, R.drawable.ic_home)
+            if (drawable != null) {
+                val taille = (tv.textSize * 1.05f).toInt()
+                drawable.setBounds(0, 0, taille, taille)
+                // Teinte avec colorOnSurface pour rester lisible en mode sombre — pas de
+                // gris en dur (cf feedback-mode-sombre).
+                drawable.setTint(
+                    com.google.android.material.color.MaterialColors.getColor(
+                        tv, com.google.android.material.R.attr.colorOnSurface, 0xFF424242.toInt(),
+                    )
+                )
+                sb.setSpan(ImageSpan(drawable, ImageSpan.ALIGN_CENTER), debut, debut + 1,
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
+        } else {
+            sb.append(seg.label)
+        }
         val fin = sb.length
         val estDernier = i == segments.lastIndex
         if (estDernier && !dernierCliquable) return@forEachIndexed
@@ -105,6 +132,11 @@ fun appliquerFilAriane(
 private fun naviguerVersFil(nav: NavController, moduleCode: String, cible: List<FilSegment>) {
     val seg = cible.last()
     when (seg.type) {
+        // Accueil (icône maison) → racine de l'app. popBackStack jusqu'à accueilFragment ;
+        // si on n'y arrive pas (pile rétractée), navigate explicite avec clearBackStack pour
+        // ne laisser que l'accueil dans la pile.
+        FIL_TYPE_ACCUEIL ->
+            if (!nav.popBackStack(R.id.accueilFragment, false)) nav.navigate(R.id.accueilFragment)
         // "Suivis" → liste des protocoles. Remonter si dans la pile (drill-down), sinon ouvrir.
         FIL_TYPE_SUIVIS ->
             if (!nav.popBackStack(R.id.suivisFragment, false)) nav.navigate(R.id.suivisFragment)

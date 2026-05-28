@@ -120,7 +120,13 @@ object MonitoringApi {
                     if (token != null) conn.setRequestProperty("Authorization", "Bearer $token")
                     if (cookies.isNotEmpty()) conn.setRequestProperty("Cookie", cookies)
                     val code = conn.responseCode
-                    if (code == 404) return@withContext emptyList()
+                    // 404 → gn_module_monitoring non installé sur l'instance.
+                    // 403 → utilisateur authentifié mais sans aucun droit CRUVED sur le
+                    // monitoring (cas légitime côté terrain : c'est juste « aucun protocole
+                    // accessible »). Dans les deux cas on renvoie une liste vide silencieuse
+                    // — l'appelant (SuivisFragment, MonitoringSync, countModulesEnCache, …)
+                    // gère ce zéro naturellement, plus de bandeau "étape en échec" parasite.
+                    if (code == 404 || code == 403) return@withContext emptyList()
                     if (code != 200) throw GNErreur.EnvoiEchoue(code, "Modules monitoring : HTTP $code")
                     depuisReseau = true
                     conn.inputStream.bufferedReader().readText()

@@ -111,8 +111,7 @@ class ConfigGeoNatureFragment : Fragment() {
         }
 
         binding.btnViderCache.setOnClickListener {
-            TaxRefCache.vider()
-            MonitoringCache.vider()
+            viderTousLesCaches()
             updateCacheInfo()
             updateAvertissementListe()
             updateStatusIndicator()
@@ -434,11 +433,28 @@ class ConfigGeoNatureFragment : Fragment() {
      *  Si une ou plusieurs étapes échouent (même partiellement), un bandeau d'avertissement
      *  liste les étapes en échec à la fin pour que l'utilisateur sache que le chargement
      *  n'a pas été complet et qu'il peut relancer. */
+    /** Purge les trois caches locaux (TaxRef, nomenclatures, monitoring) en une opération.
+     *  Centralisé pour rester cohérent entre le bouton "Vider le cache" et le démarrage d'un
+     *  "Recharger les données". Ne touche pas aux JSON SharedPreferences (datasets / listes /
+     *  observateurs / additional_fields) : ils sont réécrits naturellement par les fonctions
+     *  de chargement à la prochaine sync, et préservés en cas d'échec d'une étape. */
+    private fun viderTousLesCaches() {
+        TaxRefCache.vider()
+        NomenclatureCache.vider()
+        MonitoringCache.vider()
+    }
+
     private fun chargerToutesLesDonnees() {
         binding.btnChargerDonnees.isEnabled = false
         binding.btnTesterConnexion.isEnabled = false
         binding.progressSync.visibility = View.VISIBLE
         binding.tvSyncResultat.visibility = View.GONE
+
+        // Purge des caches AVANT chargement : "Recharger" doit repartir d'une ardoise propre
+        // côté local, sinon on garde des entrées orphelines (taxons d'une ancienne liste, nomenc-
+        // latures d'un module retiré côté serveur, etc.) qui faussent les compteurs et la saisie.
+        viderTousLesCaches()
+        updateCacheInfo()
 
         viewLifecycleOwner.lifecycleScope.launch {
             // Étapes 1-4 en parallèle (indépendantes, rapides). Chacune retourne null si OK,

@@ -1,4 +1,4 @@
-# BioNat / GeoNat — Mode d'emploi
+# GeoNat — Mode d'emploi
 
 Application Android de terrain pour la saisie naturaliste connectée à un serveur [GeoNature](https://github.com/PnX-SI/GeoNature). Ce guide couvre la prise en main et l'utilisation au quotidien.
 

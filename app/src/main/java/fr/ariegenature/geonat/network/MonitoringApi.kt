@@ -192,6 +192,14 @@ object MonitoringApi {
          *  `taxref/allnamebylist/<id>`). Prime sur l'`idListTaxonomy` du module pour
          *  restreindre l'autocomplete TaxRef d'un champ taxonomie. */
         val idListTaxonomie: Int? = null,
+        /** Borne minimale pour un champ numérique. Brut serveur car peut être un littéral
+         *  (`"min": 0`) ou une expression `(value) => value.<autre_champ>` qui pointe vers
+         *  un autre champ du formulaire. Résolu à la volée par [fr.ariegenature.geonat
+         *  .monitoring.form.ValidationExpr] au moment de la validation. */
+        val minValue: String? = null,
+        /** Borne maximale (cf. [minValue]). Couple typique côté monitoring :
+         *  `count_min` avec `max: "(value) => value.count_max"` pour forcer min ≤ max. */
+        val maxValue: String? = null,
     )
 
     /** Schéma d'un object_type déclaré par un protocole dans son `config/objects.json` serveur,
@@ -866,6 +874,15 @@ object MonitoringApi {
             }
             else -> { /* null, JSONObject.NULL, ou type non géré */ }
         }
+        // Bornes numériques : lues à la racine OU dans un sous-objet `validations` (les deux
+        // formats coexistent côté GeoNature ; gn_mobile_monitoring lit aussi les deux). On
+        // conserve la valeur brute en String — elle peut être un littéral (`"0"`, `0`) ou une
+        // expression arrow JS (`"(value) => value.count_max"`) résolue à la volée par
+        // [fr.ariegenature.geonat.monitoring.form.ValidationExpr].
+        val validationsObj = v.optJSONObject("validations")
+        val minValue = bornBrute(v.opt("min")) ?: validationsObj?.let { bornBrute(it.opt("min")) }
+        val maxValue = bornBrute(v.opt("max")) ?: validationsObj?.let { bornBrute(it.opt("max")) }
+
         // Filtres : Map<champ, liste-de-valeurs-acceptables>
         val filtresMap = mutableMapOf<String, List<String>>()
         v.optJSONObject("filters")?.let { fObj ->
@@ -901,7 +918,20 @@ object MonitoringApi {
             definition = v.optString("definition", "").takeIf { it.isNotEmpty() },
             moduleCodeFiltre = v.optString("module_code", "").takeIf { it.isNotEmpty() },
             idListTaxonomie = idListTaxonomie,
+            minValue = minValue,
+            maxValue = maxValue,
         )
+    }
+
+    /** Normalise une borne (`min`/`max`) lue dans le schéma : Number/Boolean → toString,
+     *  String non vide → trimée, JSONObject.NULL / null / "" → null. On ne valide PAS le
+     *  contenu ici : une expression `(value) => …` est conservée telle quelle, pour résolution
+     *  ultérieure par ValidationExpr. */
+    private fun bornBrute(brut: Any?): String? = when (brut) {
+        null, JSONObject.NULL -> null
+        is Number, is Boolean -> brut.toString()
+        is String -> brut.trim().takeIf { it.isNotEmpty() }
+        else -> null
     }
 
     /** Infère le code mnémonique d'un type de nomenclature quand il n'est pas explicite :

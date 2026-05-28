@@ -36,6 +36,11 @@ class FormulaireRenderer(
     private val couleurValeur: Int = com.google.android.material.color.MaterialColors.getColor(
         parent, com.google.android.material.R.attr.colorOnSurface, 0xFF000000.toInt(),
     )
+    /** Couleur d'erreur du thème (colorError) — utilisée pour les messages de validation
+     *  sous les champs hors bornes. Reste lisible en mode sombre. */
+    private val couleurErreur: Int = com.google.android.material.color.MaterialColors.getColor(
+        parent, com.google.android.material.R.attr.colorError, 0xFFB00020.toInt(),
+    )
     /** code → vue éditable racine (l'EditText / Spinner / TextView selon le widget). */
     private val vuesParCode = linkedMapOf<String, View>()
     /** code → champ d'origine (pour relire son viewType au moment de lire les valeurs). */
@@ -43,6 +48,9 @@ class FormulaireRenderer(
     /** code → conteneur LinearLayout englobant le champ — pour piloter sa visibilité
      *  via les expressions `hidden` du schéma serveur. */
     private val wrappersParCode = linkedMapOf<String, View>()
+    /** code → TextView qui affiche le message d'erreur de validation sous le champ (créé
+     *  vide pour chaque NUMBER ayant min/max, GONE tant qu'il n'y a pas de violation). */
+    private val erreursParCode = linkedMapOf<String, TextView>()
     /** Callback notifié à chaque modification d'un champ (saisie, sélection, picker…).
      *  Utilisé par l'écran appelant pour piloter l'état du bouton de submit selon que
      *  les champs obligatoires sont remplis ou non. */
@@ -58,6 +66,7 @@ class FormulaireRenderer(
         vuesParCode.clear()
         fieldsParCode.clear()
         wrappersParCode.clear()
+        erreursParCode.clear()
         fields.forEach { field ->
             fieldsParCode[field.code] = field
             val (rowView, editable) = creerLigne(field)
@@ -69,6 +78,7 @@ class FormulaireRenderer(
         attacherListenersDynamiques()
         appliquerVisibiliteConditionnelle()
         appliquerChangeRules()
+        appliquerValidations()
         // Notifie aussi un état initial pour que le bouton démarre dans le bon mode
         // dès le rendu (typiquement : disabled tant que les obligatoires sont vides).
         onChangement?.invoke()
@@ -158,6 +168,7 @@ class FormulaireRenderer(
         // Auto-remplissage des champs dépendants. La garde interne évite la récursion quand
         // c'est nous-mêmes qui modifions un champ via un patch.
         if (!appliquantChange) appliquerChangeRules()
+        appliquerValidations()
         onChangement?.invoke()
     }
 
@@ -178,6 +189,49 @@ class FormulaireRenderer(
             }
         }.keys.toList()
     }
+
+    /** Codes des champs actuellement en violation de min/max. Un champ vide ne compte pas
+     *  (c'est `obligatoire` qui s'en charge) et un champ masqué non plus. À combiner avec
+     *  [champsObligatoiresManquants] côté caller pour piloter l'état du bouton de submit. */
+    fun champsInvalides(): List<String> {
+        val valeurs = lireValeurs()
+        return fieldsParCode.mapNotNull { (code, field) ->
+            if (field.viewType != ViewType.NUMBER) return@mapNotNull null
+            if (wrappersParCode[code]?.visibility == View.GONE) return@mapNotNull null
+            val v = ValidationExpr.violation(valeurs[code], field.minValue, field.maxValue, valeurs)
+            if (v != null) code else null
+        }
+    }
+
+    /** Met à jour chaque TextView d'erreur sous les champs NUMBER ayant des bornes. Appelée
+     *  après chaque modification de champ — une borne `(value) => value.autre_champ` doit
+     *  être ré-évaluée quand l'autre champ change, pas seulement le champ courant. */
+    private fun appliquerValidations() {
+        if (erreursParCode.isEmpty()) return
+        val valeurs = lireValeurs()
+        erreursParCode.forEach { (code, tvErreur) ->
+            val field = fieldsParCode[code] ?: return@forEach
+            val violation = ValidationExpr.violation(
+                valeurs[code], field.minValue, field.maxValue, valeurs,
+            )
+            if (violation == null) {
+                tvErreur.visibility = View.GONE
+            } else {
+                tvErreur.text = when (violation.type) {
+                    ValidationExpr.Violation.Type.TROP_PETIT ->
+                        "Valeur ≥ ${formaterBorne(violation.borne)} attendue"
+                    ValidationExpr.Violation.Type.TROP_GRAND ->
+                        "Valeur ≤ ${formaterBorne(violation.borne)} attendue"
+                }
+                tvErreur.visibility = View.VISIBLE
+            }
+        }
+    }
+
+    /** Formate une borne pour l'affichage : entier sans décimale (`10`, pas `10.0`) si la
+     *  valeur est entière, sinon avec un seul chiffre significatif après la virgule. */
+    private fun formaterBorne(d: Double): String =
+        if (d == d.toLong().toDouble()) d.toLong().toString() else d.toString()
 
     /** Attache un listener "valeur changée" sur chaque éditeur. Chaque modification
      *  re-évalue les expressions `hidden` de tous les champs et met à jour leur visibilité. */
@@ -299,6 +353,20 @@ class FormulaireRenderer(
             ViewType.CHECKBOX -> creerCheckBox(field)
         }
         container.addView(editable)
+        // Message d'erreur de validation min/max (NUMBER avec bornes uniquement). Créé GONE,
+        // peuplé/affiché par [appliquerValidations] à chaque modification de champ.
+        if (field.viewType == ViewType.NUMBER &&
+            (field.minValue != null || field.maxValue != null)
+        ) {
+            val tvErreur = TextView(ctx).apply {
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+                setTextColor(couleurErreur)
+                setPadding(0, (2 * density).toInt(), 0, 0)
+                visibility = View.GONE
+            }
+            container.addView(tvErreur)
+            erreursParCode[field.code] = tvErreur
+        }
         // Texte d'aide (definition du schéma serveur) sous le champ — utile pour expliquer
         // ce qu'on attend, particulièrement sur les protocoles techniques.
         field.aide?.takeIf { it.isNotEmpty() }?.let { aide ->

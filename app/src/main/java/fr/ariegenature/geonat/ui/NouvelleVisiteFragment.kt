@@ -130,13 +130,14 @@ class NouvelleVisiteFragment : Fragment() {
         chargerSchemaEtRendre(moduleCode)
     }
 
-    /** Active/désactive le bouton de submit selon que des champs obligatoires sont vides.
-     *  Délègue le calcul au renderer (seul à connaître la visibilité courante imposée par
-     *  les expressions `hidden` du schéma). */
+    /** Active/désactive le bouton de submit selon que des champs obligatoires sont vides
+     *  OU qu'un champ numérique viole ses bornes min/max. Délègue le calcul au renderer
+     *  (seul à connaître la visibilité courante imposée par les expressions `hidden`). */
     private fun majEtatBoutonSubmit() {
         if (enCoursEnvoi) return
         val manquants = renderer.champsObligatoiresManquants()
-        binding.btnSubmit.isEnabled = manquants.isEmpty()
+        val invalides = renderer.champsInvalides()
+        binding.btnSubmit.isEnabled = manquants.isEmpty() && invalides.isEmpty()
     }
 
     private fun chargerSchemaEtRendre(moduleCode: String) {

@@ -53,4 +53,10 @@ data class EditableField(
      *  l'autocomplete. Vient typiquement de `schema.idListTaxonomy` du protocole ou du
      *  `dataset.idTaxaList` rattaché. Null = toutes les espèces du cache TaxRef proposées. */
     val idListeTaxonomieRestreinte: Int? = null,
+    /** Borne min (brute serveur, cf [fr.ariegenature.geonat.network.MonitoringApi
+     *  .MonitoringPropertySchema.minValue]). Évaluée par [ValidationExpr] côté renderer pour
+     *  afficher un message d'erreur sous le champ et bloquer le submit le cas échéant. */
+    val minValue: String? = null,
+    /** Borne max (cf [minValue]). */
+    val maxValue: String? = null,
 )

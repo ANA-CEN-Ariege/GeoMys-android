@@ -116,6 +116,11 @@ fun construireFormulaire(schemaObjet: MonitoringApi.MonitoringSchemaObjet): Form
                 // idListTaxonomy du module ou le idTaxaList du dataset.
                 idListeTaxonomieRestreinte = if (viewType == ViewType.TAXON)
                     (prop.idListTaxonomie ?: schemaObjet.idListTaxonomy) else null,
+                // Bornes numériques (NUMBER uniquement — ignorées sinon). On les transmet brutes :
+                // un littéral est résolu immédiatement, une expression `(value) => value.X` est
+                // résolue contre les valeurs courantes au moment de la validation.
+                minValue = if (viewType == ViewType.NUMBER) prop.minValue else null,
+                maxValue = if (viewType == ViewType.NUMBER) prop.maxValue else null,
             )
         )
     }

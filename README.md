@@ -16,10 +16,10 @@ Développée par l'[ANA - CEN Ariège](https://ariegenature.fr/).
 
 ### Suivis protocolés (`gn_module_monitoring`)
 - **100 % schema-driven** : aucun protocole en dur. L'app parse `/api/monitorings/config/<module>` et construit dynamiquement formulaires, fils d'Ariane et navigations selon l'arborescence du protocole (`sites_group → site → visit → observation`, `zone → station → point`, etc.).
-- **Form renderer dynamique** : 9 widgets supportés — TEXT, TEXTAREA, NUMBER, DATE, TIME, CHECKBOX, SELECT, SELECT_MULTIPLE, TAXON. Pré-remplissage des valeurs par défaut, masquage conditionnel via `hidden_expr` Angular-like.
+- **Form renderer dynamique** : 10 widgets supportés — TEXT, TEXTAREA, NUMBER, DATE, TIME, CHECKBOX, SELECT, SELECT_MULTIPLE, RADIO, TAXON. Pré-remplissage des valeurs par défaut serveur, masquage conditionnel via `hidden_expr` Angular-like, auto-remplissage de champs dépendants via les règles `change` du schéma.
 - **Datalists fetchées à la volée** depuis les endpoints déclarés par le schéma (observateurs UsersHub, nomenclatures, datasets…).
 - **Restriction des taxons** au `id_list_taxonomy` du protocole (ou du dataset associé).
-- **Validation** : le bouton Enregistrer est désactivé tant que les champs obligatoires visibles ne sont pas remplis.
+- **Validation** : le bouton Enregistrer est désactivé tant que les champs obligatoires visibles ne sont pas remplis OU qu'un champ numérique viole ses bornes `min`/`max` (littérales ou pointant vers un autre champ via `(value) => value.<champ>`, message d'erreur inline sous le champ).
 
 ### Mode offline complet
 - **Outbox local** des saisies monitoring (visites + observations) : stockage JSON write-through, lien parent → enfant via UUID local quand le parent n'a pas encore d'id serveur.
@@ -71,7 +71,8 @@ app/src/main/java/fr/ariegenature/geonat/
 │                           # MonitoringCache, OutboxMonitoring, SortieStore,
 │                           # MapTileCache
 ├── monitoring/form/        # Form renderer dynamique (EditableField,
-│                           # FormulaireRenderer, WidgetMapping, HiddenExpr)
+│                           # FormulaireRenderer, WidgetMapping, HiddenExpr,
+│                           # ChangeRules, ValidationExpr)
 ├── location/               # LocationTracker, LocationForegroundService
 ├── gpx/                    # Export GPX
 └── ui/                     # Fragments : Accueil, Trace, SaisieRapide,

@@ -806,11 +806,15 @@ class SaisieRapideFragment : Fragment() {
         // défaut, et un tap sur la carte permet de poser un point manuel à un endroit
         // précis (matérialisé par un marker "goutte").
         binding.reticule.visibility      = View.GONE
-        binding.tvCompteur.visibility    = if (modeActif) View.VISIBLE else View.GONE
-        // Carte et bouton fond de carte cachés tant qu'on n'a pas démarré la saisie
+        // La visibilité du compteur dépend AUSSI du nombre d'obs (cf updateCompteur) :
+        // on délègue plutôt que de la pré-positionner ici.
+        updateCompteur()
+        // Carte et stack de contrôles (GPS / boussole / fond) cachés tant qu'on n'a pas
+        // démarré la saisie. Le wrapper ll_carte_controles porte la visibilité du groupe ;
+        // les trois boutons à l'intérieur héritent. La boussole reste pilotée individuellement
+        // pour son état actif/inactif (rotation map ou non).
         binding.map.visibility           = if (modeActif) View.VISIBLE else View.GONE
-        binding.btnFondCarte.visibility  = if (modeActif) View.VISIBLE else View.GONE
-        binding.compass.visibility       = if (modeActif) View.VISIBLE else View.GONE
+        binding.llCarteControles.visibility = if (modeActif) View.VISIBLE else View.GONE
         if (modeActif) binding.compass.setActif(carteSuitBoussole)
         if (!modeActif) {
             snackJob?.cancel()
@@ -821,6 +825,9 @@ class SaisieRapideFragment : Fragment() {
     private fun updateCompteur() {
         val n = compteurSession
         binding.tvCompteur.text = "$n obs. enregistrée${if (n > 1) "s" else ""}"
+        // Bandeau masqué tant qu'aucune observation n'a été enregistrée — évite un libellé
+        // "0 obs. enregistrée" inutile en haut de la carte au démarrage de la saisie.
+        binding.tvCompteur.visibility = if (modeActif && n > 0) View.VISIBLE else View.GONE
     }
 
     private fun updateResumeActif() {
@@ -928,10 +935,12 @@ class SaisieRapideFragment : Fragment() {
 
     private fun applyWindowInsets() {
         // Carte plein écran, overlays et panneaux à l'écart des barres système.
+        // btnRetour (coche verte) reste en haut → status bar margin. Le stack
+        // ll_carte_controles est en bas → nav bar margin pour ne pas chevaucher la barre
+        // de navigation gestuelle. Les paddings/marges XML d'origine sont conservés.
         binding.btnRetour.applyStatusBarMargin()
-        binding.btnFondCarte.applyStatusBarMargin()
-        binding.compass.applyStatusBarMargin()
         binding.tvCompteur.applyStatusBarMargin()
+        binding.llCarteControles.applyNavBarMargin()
         binding.panneauConfig.applySystemBarInsets(includeIme = true)
         binding.panneauActif.applyNavBarInset()
     }

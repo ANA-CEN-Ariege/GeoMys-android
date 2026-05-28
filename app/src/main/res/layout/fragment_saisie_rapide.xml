@@ -43,19 +43,19 @@
             android:background="@drawable/reticule_dot" />
     </FrameLayout>
 
-    <!-- Bouton terminer / quitter — petit cercle vert avec coche -->
+    <!-- Bouton terminer / quitter — petit cercle vert avec coche, en HAUT À DROITE. -->
     <ImageButton
         android:id="@+id/btn_retour"
         android:layout_width="32dp"
         android:layout_height="32dp"
-        android:layout_gravity="top|start"
+        android:layout_gravity="top|end"
         android:layout_margin="16dp"
         android:background="?attr/selectableItemBackgroundBorderless"
         android:contentDescription="Terminer la saisie"
         android:scaleType="fitCenter"
         android:src="@drawable/coche" />
 
-    <!-- Compteur session (haut centre, mode actif) -->
+    <!-- Compteur session (haut centre, mode actif) — n obs. enregistrée(s) cumulées. -->
     <TextView
         android:id="@+id/tv_compteur"
         android:layout_width="wrap_content"
@@ -69,28 +69,48 @@
         android:textSize="13sp"
         android:visibility="gone" />
 
-    <!-- Bouton fond de carte (visible uniquement en mode actif) -->
-    <ImageButton
-        android:id="@+id/btn_fond_carte"
-        android:layout_width="44dp"
-        android:layout_height="44dp"
-        android:layout_gravity="top|end"
-        android:layout_margin="12dp"
-        android:background="@drawable/btn_map_bg"
-        android:contentDescription="Changer fond"
-        android:src="@drawable/ic_map"
-        android:visibility="gone" />
-
-    <!-- Boussole (sous le bouton fond de carte) — toggle rotation carte -->
-    <fr.ariegenature.geonat.ui.CompassView
-        android:id="@+id/compass"
-        android:layout_width="44dp"
-        android:layout_height="44dp"
-        android:layout_gravity="top|end"
-        android:layout_marginTop="68dp"
+    <!-- Stack de contrôles carte (visible uniquement en mode actif) — empilés verticalement
+         en BAS À DROITE de la carte. De haut en bas : recentrage GPS, boussole (toggle
+         rotation), fond de carte. Le marginBottom décale le stack au-dessus du panneau actif
+         (~180dp avec le snack de confirmation visible) pour qu'il reste accessible sans
+         chevaucher le résumé / FAB d'enregistrement. -->
+    <LinearLayout
+        android:id="@+id/ll_carte_controles"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|end"
         android:layout_marginEnd="12dp"
-        android:elevation="4dp"
-        android:visibility="gone" />
+        android:layout_marginBottom="180dp"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <!-- Bouton re-centrage GPS — toggle suivi position (cf updateGpsLockIcon). -->
+        <ImageButton
+            android:id="@+id/btn_centrer_gps"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:background="@drawable/btn_circle_white"
+            android:contentDescription="Recentrer sur ma position"
+            android:src="@drawable/ic_location_on" />
+
+        <!-- Boussole (toggle rotation carte) — espacement vertical visuel = 12dp. -->
+        <fr.ariegenature.geonat.ui.CompassView
+            android:id="@+id/compass"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:layout_marginTop="12dp"
+            android:elevation="4dp" />
+
+        <!-- Bouton fond de carte (rotation des 4 fonds OSM/IGN). -->
+        <ImageButton
+            android:id="@+id/btn_fond_carte"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:layout_marginTop="12dp"
+            android:background="@drawable/btn_map_bg"
+            android:contentDescription="Changer fond"
+            android:src="@drawable/ic_map" />
+    </LinearLayout>
 
     <!-- ═══════════════════════════════════════════
          PANNEAU CONFIGURATION (état initial)
@@ -508,28 +528,14 @@
                 android:textSize="12sp" />
         </LinearLayout>
 
-        <!-- Boutons d'action -->
+        <!-- Boutons d'action — uniquement le FAB d'enregistrement (le bouton de recentrage
+             GPS est désormais dans le stack overlay carte, cf ll_carte_controles). -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="10dp"
-            android:gravity="center_vertical"
+            android:gravity="center_vertical|end"
             android:orientation="horizontal">
-
-            <View
-                android:layout_width="0dp"
-                android:layout_height="0dp"
-                android:layout_weight="1" />
-
-            <!-- Bouton re-centrage GPS -->
-            <ImageButton
-                android:id="@+id/btn_centrer_gps"
-                android:layout_width="44dp"
-                android:layout_height="44dp"
-                android:layout_marginEnd="12dp"
-                android:background="@drawable/btn_circle_white"
-                android:contentDescription="Recentrer sur ma position"
-                android:src="@drawable/ic_location_on" />
 
             <com.google.android.material.floatingactionbutton.FloatingActionButton
                 android:id="@+id/btn_enregistrer_ici"

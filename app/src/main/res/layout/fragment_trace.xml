@@ -66,12 +66,12 @@
             android:textSize="14sp" />
     </LinearLayout>
 
-    <!-- Bouton terminer / quitter (haut gauche) — petit cercle vert avec coche -->
+    <!-- Bouton terminer / quitter — petit cercle vert avec coche, HAUT DROITE. -->
     <ImageButton
         android:id="@+id/btn_retour"
         android:layout_width="32dp"
         android:layout_height="32dp"
-        android:layout_gravity="top|start"
+        android:layout_gravity="top|end"
         android:layout_margin="16dp"
         android:background="?attr/selectableItemBackgroundBorderless"
         android:contentDescription="Terminer la sortie"
@@ -117,38 +117,46 @@
             android:src="@drawable/ic_geom_polygon" />
     </LinearLayout>
 
-    <!-- Boussole (haut droite) -->
-    <fr.ariegenature.geonat.ui.CompassView
-        android:id="@+id/compass"
-        android:layout_width="44dp"
-        android:layout_height="44dp"
-        android:layout_gravity="top|end"
-        android:layout_margin="12dp"
-        android:elevation="4dp" />
-
-    <!-- Bouton fond de carte (haut droite, sous la boussole) -->
-    <ImageButton
-        android:id="@+id/btn_fond_carte"
-        android:layout_width="44dp"
-        android:layout_height="44dp"
-        android:layout_gravity="top|end"
-        android:layout_marginTop="68dp"
+    <!-- Stack de contrôles carte — empilés verticalement en BAS À DROITE de la carte. De
+         haut en bas : recentrage GPS, boussole (toggle rotation), fond de carte. Le
+         marginBottom décale le stack au-dessus du panneau bas (~84dp pour panneau_controle
+         ou panneau_validation_position) plus l'info_barre éventuelle. -->
+    <LinearLayout
+        android:id="@+id/ll_carte_controles"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|end"
         android:layout_marginEnd="12dp"
-        android:background="@drawable/btn_map_bg"
-        android:contentDescription="Changer fond"
-        android:src="@drawable/ic_map" />
+        android:layout_marginBottom="100dp"
+        android:orientation="vertical">
 
-    <!-- Bouton centrer (haut droite, sous btn_fond_carte) -->
-    <ImageButton
-        android:id="@+id/btn_centrer"
-        android:layout_width="44dp"
-        android:layout_height="44dp"
-        android:layout_gravity="top|end"
-        android:layout_marginTop="124dp"
-        android:layout_marginEnd="12dp"
-        android:background="@drawable/btn_circle_white"
-        android:contentDescription="Centrer"
-        android:src="@drawable/ic_location_on" />
+        <!-- Bouton centrage (toggle suivi position). -->
+        <ImageButton
+            android:id="@+id/btn_centrer"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:background="@drawable/btn_circle_white"
+            android:contentDescription="Centrer"
+            android:src="@drawable/ic_location_on" />
+
+        <!-- Boussole (toggle rotation carte). -->
+        <fr.ariegenature.geonat.ui.CompassView
+            android:id="@+id/compass"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:layout_marginTop="12dp"
+            android:elevation="4dp" />
+
+        <!-- Bouton fond de carte (rotation des 4 fonds OSM/IGN). -->
+        <ImageButton
+            android:id="@+id/btn_fond_carte"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:layout_marginTop="12dp"
+            android:background="@drawable/btn_map_bg"
+            android:contentDescription="Changer fond"
+            android:src="@drawable/ic_map" />
+    </LinearLayout>
 
     <!-- Barre d'info parcours -->
     <LinearLayout

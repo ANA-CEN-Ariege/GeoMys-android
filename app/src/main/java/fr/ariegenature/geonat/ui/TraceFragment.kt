@@ -934,14 +934,13 @@ class TraceFragment : Fragment() {
 
 
     private fun applyWindowInsets() {
-        // Carte plein écran, overlays à l'écart des barres système. Les helpers
-        // cumulent avec les marges XML (12dp pour les boutons, 68dp pour le bouton
-        // fond carte sous la boussole) — pas de double application.
+        // Carte plein écran, overlays à l'écart des barres système. La coche verte reste
+        // en haut → status bar margin. Le stack ll_carte_controles est en bas → nav bar
+        // margin pour ne pas chevaucher la barre de navigation gestuelle. Les marges
+        // XML d'origine (12dp / 16dp) sont conservées et cumulées par les helpers.
         binding.btnRetour.applyStatusBarMargin()
-        binding.compass.applyStatusBarMargin()
-        binding.btnFondCarte.applyStatusBarMargin()
-        binding.btnCentrer.applyStatusBarMargin()
         binding.bandeauPositionnement.applyStatusBarMargin()
+        binding.llCarteControles.applyNavBarMargin()
         binding.panneauControle.applyNavBarMargin()
         binding.panneauValidationPosition.applyNavBarMargin()
         binding.infoBarre.applyNavBarMargin()

@@ -54,6 +54,23 @@ object MonitoringApi {
     fun moduleParCode(moduleCode: String): MonitoringModule? =
         dernierChargement.firstOrNull { it.moduleCode == moduleCode }
 
+    /** Compte les protocoles actuellement disponibles : taille de [dernierChargement] s'il
+     *  est peuplé (cas où l'utilisateur a déjà navigué dans Suivis lors de cette session),
+     *  sinon longueur du JSONArray du cache disque. Le cache disque est déjà filtré CRUVED
+     *  (cf [chargerModules]) donc le nombre retourné correspond bien aux protocoles
+     *  accessibles à l'utilisateur, pas à tout ce que le serveur expose. Pas d'appel réseau. */
+    fun countModulesEnCache(): Int {
+        if (dernierChargement.isNotEmpty()) return dernierChargement.size
+        val json = MonitoringCache.getJson(MonitoringCache.keyModules()) ?: return 0
+        return try {
+            val arr = runCatching { JSONArray(json) }.getOrNull()
+                ?: JSONObject(json).let { o ->
+                    o.optJSONArray("data") ?: o.optJSONArray("items") ?: o.optJSONArray("modules")
+                } ?: return 0
+            arr.length()
+        } catch (_: Exception) { 0 }
+    }
+
     /** Résout le `module_label` (libellé humain) d'un protocole à partir de son code, en
      *  cherchant d'abord la cache mémoire puis le cache disque modules. Retourne null si
      *  le code n'est pas dans le cache (cas d'un protocole jamais visité). Pas d'appel

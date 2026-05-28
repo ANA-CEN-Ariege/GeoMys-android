@@ -141,11 +141,123 @@
             android:orientation="vertical"
             android:visibility="gone">
 
-            <!-- Jeu de données -->
+            <!-- Panneau "Données en cache" : résumé numérique des 3 grands ensembles
+                 synchronisés depuis le serveur. Affiché en haut de la section pour que
+                 l'utilisateur ait un check rapide de ce que l'app a actuellement en local
+                 avant de descendre vers les sélections (jeu de données, listes, etc.). -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="20dp"
+                android:layout_marginBottom="6dp"
+                android:text="Données en cache"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:paddingVertical="2dp">
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Protocoles"
+                    android:textSize="14sp" />
+                <TextView
+                    android:id="@+id/tv_count_protocoles"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="—"
+                    android:textSize="14sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:paddingVertical="2dp">
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Nomenclatures"
+                    android:textSize="14sp" />
+                <TextView
+                    android:id="@+id/tv_count_nomenclatures"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="—"
+                    android:textSize="14sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingVertical="2dp">
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Taxons"
+                    android:textSize="14sp" />
+                <TextView
+                    android:id="@+id/tv_count_taxons"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="8dp"
+                    android:text="—"
+                    android:textSize="14sp"
+                    android:textStyle="bold" />
+                <!-- Ouvre un dialog listant les groupes (Oiseaux, Mammifères, …) avec leur
+                     compteur ; un tap sur un groupe affiche les taxons de ce groupe. -->
+                <Button
+                    android:id="@+id/btn_taxons_par_groupe"
+                    style="@style/Widget.Material3.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:minHeight="36dp"
+                    android:paddingHorizontal="12dp"
+                    android:text="Détails" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/tv_avertissement_liste"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:textColor="@android:color/holo_orange_dark"
+                android:textSize="13sp"
+                android:textStyle="bold"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/tv_tax_ref_version"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:textSize="12sp"
+                android:visibility="gone" />
+
+            <Button
+                android:id="@+id/btn_vider_cache"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="Vider le cache"
+                android:textColor="@android:color/holo_red_dark" />
+
+            <!-- Jeu de données -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="24dp"
                 android:layout_marginBottom="4dp"
                 android:text="Jeu de données"
                 android:textSize="14sp"
@@ -261,57 +373,6 @@
                 android:textSize="12sp"
                 android:visibility="gone" />
 
-            <!-- Cache TaxRef -->
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="24dp"
-                android:layout_marginBottom="4dp"
-                android:text="Cache TaxRef"
-                android:textSize="16sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/tv_avertissement_liste"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="6dp"
-                android:textColor="@android:color/holo_orange_dark"
-                android:textSize="13sp"
-                android:textStyle="bold"
-                android:visibility="gone" />
-
-            <TextView
-                android:id="@+id/tv_cache_info"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                android:textColor="?attr/colorControlNormal"
-                android:textSize="13sp" />
-
-            <LinearLayout
-                android:id="@+id/ll_groupes_details"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:orientation="vertical" />
-
-            <TextView
-                android:id="@+id/tv_tax_ref_version"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                android:textSize="12sp"
-                android:visibility="gone" />
-
-            <Button
-                android:id="@+id/btn_vider_cache"
-                style="@style/Widget.Material3.Button.TextButton"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:text="Vider le cache"
-                android:textColor="@android:color/holo_red_dark" />
         </LinearLayout>
 
         <!-- Statut configuration -->

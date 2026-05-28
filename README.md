@@ -4,6 +4,8 @@ Application Android de terrain pour la saisie naturaliste connectée à un serve
 
 Développée par l'[ANA - CEN Ariège](https://ariegenature.fr/).
 
+👉 **Mode d'emploi utilisateur** : voir [`MODE_EMPLOI.md`](MODE_EMPLOI.md) pour la prise en main, les workflows terrain et les cas particuliers.
+
 ## Fonctionnalités principales
 
 ### Saisie libre (OccTax)
@@ -48,6 +50,8 @@ Quatre fonds disponibles, basculables au tap :
 | Liste de taxons | Liste TaxHub pour l'autocomplétion OccTax (`id_liste`) |
 
 Le bouton **Tester** vérifie la connexion et charge automatiquement les datasets et listes disponibles. Le bouton **Synchroniser** télécharge le cache TaxRef + nomenclatures + (pour le monitoring) modules / schémas / listes / fiches.
+
+Un panneau **Données en cache** affiche en haut de la section le nombre de **protocoles**, **nomenclatures** et **taxons** actuellement disponibles localement. Pour les taxons, un bouton **Détails** ouvre un dialog qui liste les groupes taxonomiques (Oiseaux, Mammifères, …) avec leur effectif filtré sur la liste sélectionnée — un tap sur un groupe affiche la liste détaillée des taxons.
 
 ## Écran d'accueil
 

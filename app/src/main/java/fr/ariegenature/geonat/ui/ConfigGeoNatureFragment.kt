@@ -10,9 +10,9 @@ import android.widget.ArrayAdapter
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
+import androidx.appcompat.app.AlertDialog
 import fr.ariegenature.geonat.R
 import fr.ariegenature.geonat.databinding.FragmentConfigGeonatureBinding
-import fr.ariegenature.geonat.databinding.ItemConfigGroupeBinding
 import fr.ariegenature.geonat.model.Taxon
 import fr.ariegenature.geonat.network.AdditionalFieldsApi
 import fr.ariegenature.geonat.network.GeoNatureAuth
@@ -21,6 +21,7 @@ import fr.ariegenature.geonat.network.GeoNatureDataset
 import fr.ariegenature.geonat.network.GeoNatureListe
 import fr.ariegenature.geonat.network.GeoNatureObservateur
 import fr.ariegenature.geonat.network.GeoNatureSync
+import fr.ariegenature.geonat.network.MonitoringApi
 import fr.ariegenature.geonat.network.MonitoringSync
 import fr.ariegenature.geonat.store.GeoNatureConfig
 import fr.ariegenature.geonat.store.MonitoringCache
@@ -120,6 +121,8 @@ class ConfigGeoNatureFragment : Fragment() {
             binding.btnChargerDonnees.text = "Charger les données"
             binding.llSectionDonnees.visibility = View.GONE
         }
+
+        binding.btnTaxonsParGroupe.setOnClickListener { montrerTaxonsParGroupe() }
 
         binding.fabValider.setOnClickListener {
             sauvegarderChamps()
@@ -553,45 +556,59 @@ class ConfigGeoNatureFragment : Fragment() {
     }
 
     private fun updateCacheInfo() {
-        val count = TaxRefCache.count
+        val nbTaxons = TaxRefCache.count
+        val nbNomenclatures = NomenclatureCache.count
+        val nbProtocoles = MonitoringApi.countModulesEnCache()
 
-        binding.llGroupesDetails.removeAllViews()
+        binding.tvCountProtocoles.text = nbProtocoles.toString()
+        binding.tvCountNomenclatures.text = nbNomenclatures.toString()
+        // Compte brut du cache TaxRef (toutes listes serveur confondues, tous groupes inclus).
+        // Le filtre par liste sélectionnée n'est pas appliqué ici : il vaut au moment de la
+        // saisie, pas pour mesurer la taille du cache. Il est en revanche reflété dans le
+        // dialog "Par groupe" qui montre les effectifs filtrés sur la liste courante.
+        binding.tvCountTaxons.text = nbTaxons.toString()
 
-        // Les comptes par groupe affichés reflètent la liste sélectionnée — cohérent
-        // avec ce que la saisie propose. Sur cache exhaustif, basé sur l'intersection
-        // index_taxon ∩ listesParCdNom[idListeFiltre] via indexParTaxon(taxon, filtre).
-        val idListeFiltre = gnConfig.taxaListeId.trim().toIntOrNull()
-        fun nbPour(t: Taxon): Int = TaxRefCache.indexParTaxon(t, idListeFiltre)?.size ?: 0
-
-        val taxrefText = when (count) {
-            0 -> "Cache vide"
-            else -> {
-                ajouterLigneGroupe("Oiseaux", Taxon.OISEAU, nbPour(Taxon.OISEAU))
-                ajouterLigneGroupe("Mammifères", Taxon.MAMMIFERE, nbPour(Taxon.MAMMIFERE))
-                ajouterLigneGroupe("Reptiles", Taxon.REPTILE, nbPour(Taxon.REPTILE))
-                ajouterLigneGroupe("Amphibiens", Taxon.BATRACIEN, nbPour(Taxon.BATRACIEN))
-                ajouterLigneGroupe("Poissons", Taxon.POISSON, nbPour(Taxon.POISSON))
-                ajouterLigneGroupe("Insectes", Taxon.INSECTE, nbPour(Taxon.INSECTE))
-                ajouterLigneGroupe("Fonge", Taxon.FONGE, nbPour(Taxon.FONGE))
-                ajouterLigneGroupe("Mollusques", Taxon.MOLLUSQUE, nbPour(Taxon.MOLLUSQUE))
-                ajouterLigneGroupe("Invertébrés", Taxon.INVERTEBRES, nbPour(Taxon.INVERTEBRES))
-                ajouterLigneGroupe("Plantes", Taxon.PLANTE, nbPour(Taxon.PLANTE))
-                if (idListeFiltre != null) "$count taxons en cache (filtré liste $idListeFiltre)"
-                else "$count taxons en cache"
-            }
-        }
-        binding.tvCacheInfo.text = taxrefText
-        binding.btnViderCache.isEnabled = count > 0
+        binding.btnTaxonsParGroupe.isEnabled = nbTaxons > 0
+        binding.btnViderCache.isEnabled = nbTaxons > 0 || nbNomenclatures > 0 || nbProtocoles > 0
     }
 
-    private fun ajouterLigneGroupe(label: String, taxon: Taxon, count: Int) {
-        if (count == 0) return
-        val itemBinding = ItemConfigGroupeBinding.inflate(layoutInflater, binding.llGroupesDetails, true)
-        itemBinding.tvGroupeNom.text = "$label ($count)"
-        itemBinding.btnVoirTaxons.setOnClickListener {
-            val bundle = Bundle().apply { putString("taxonName", taxon.name) }
-            findNavController().navigate(R.id.action_config_to_taxons, bundle)
+    /** Ouvre un AlertDialog listant les groupes taxonomiques avec leur effectif (filtré
+     *  sur la liste sélectionnée le cas échéant). Un tap sur un groupe ouvre la liste
+     *  détaillée de ses taxons via [TaxonsListeFragment]. Groupes vides masqués pour ne
+     *  pas afficher des entrées inutiles. */
+    private fun montrerTaxonsParGroupe() {
+        val idListeFiltre = gnConfig.taxaListeId.trim().toIntOrNull()
+        val groupes = listOf(
+            "Oiseaux" to Taxon.OISEAU,
+            "Mammifères" to Taxon.MAMMIFERE,
+            "Reptiles" to Taxon.REPTILE,
+            "Amphibiens" to Taxon.BATRACIEN,
+            "Poissons" to Taxon.POISSON,
+            "Insectes" to Taxon.INSECTE,
+            "Fonge" to Taxon.FONGE,
+            "Mollusques" to Taxon.MOLLUSQUE,
+            "Invertébrés" to Taxon.INVERTEBRES,
+            "Plantes" to Taxon.PLANTE,
+        ).map { (label, t) ->
+            Triple(label, t, TaxRefCache.indexParTaxon(t, idListeFiltre)?.size ?: 0)
+        }.filter { it.third > 0 }
+
+        if (groupes.isEmpty()) {
+            android.widget.Toast.makeText(requireContext(), "Aucun taxon en cache", android.widget.Toast.LENGTH_SHORT).show()
+            return
         }
+        val items = groupes.map { "${it.first} (${it.third})" }.toTypedArray()
+        AlertDialog.Builder(requireContext())
+            .setTitle(if (idListeFiltre != null) "Taxons par groupe (liste $idListeFiltre)" else "Taxons par groupe")
+            .setItems(items) { _, which ->
+                val (_, taxon, _) = groupes[which]
+                findNavController().navigate(
+                    R.id.action_config_to_taxons,
+                    Bundle().apply { putString("taxonName", taxon.name) },
+                )
+            }
+            .setNegativeButton("Fermer", null)
+            .show()
     }
 
     override fun onDestroyView() {

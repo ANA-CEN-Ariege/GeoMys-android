@@ -566,17 +566,15 @@ class FormulaireRenderer(
         val idListeRestreinte = field.idListeTaxonomieRestreinte
         scope.launch {
             val (noms, diagDetails) = withContext(Dispatchers.Default) {
-                if (idListeRestreinte != null) {
-                    val cdNomsAutorises = fr.ariegenature.geonat.store.TaxRefCache.cdNomsDansListe(idListeRestreinte)
-                    val resultat = fr.ariegenature.geonat.store.TaxRefCache.toutesLesEntrees()
-                        .filter { (_, entry) -> entry.cdNom in cdNomsAutorises }
-                        .keys
-                        .toList()
-                    resultat to "liste=$idListeRestreinte, ${cdNomsAutorises.size} cd_nom autorisés, ${resultat.size} suggestions"
+                // Index memoizé côté TaxRefCache : pas de re-matérialisation des 15-50k
+                // entrées à chaque rendu d'un champ TAXON (cf. audit B5).
+                val resultat = fr.ariegenature.geonat.store.TaxRefCache.nomsSuggestion(idListeRestreinte)
+                val diag = if (idListeRestreinte != null) {
+                    "liste=$idListeRestreinte, ${resultat.size} suggestions"
                 } else {
-                    val resultat = fr.ariegenature.geonat.store.TaxRefCache.toutesLesEntrees().keys.toList()
-                    resultat to "liste=null (toutes), ${resultat.size} suggestions"
+                    "liste=null (toutes), ${resultat.size} suggestions"
                 }
+                resultat to diag
             }
             android.util.Log.i("FormulaireRenderer",
                 "Champ TAXON '${field.code}' → $diagDetails")

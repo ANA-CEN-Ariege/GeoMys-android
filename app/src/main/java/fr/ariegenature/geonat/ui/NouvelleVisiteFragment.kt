@@ -521,6 +521,11 @@ class NouvelleVisiteFragment : Fragment() {
         val parentField = parentIdFieldChamp
         val parentIdInt = arguments?.getInt("parentId", -1)?.takeIf { it > 0 }
         val parentTypeArg = arguments?.getString("parentObjectType")?.takeIf { it.isNotEmpty() }
+        // Champs texte-libre : leur valeur ne doit pas être coercée en Int à l'envoi même
+        // si numérique (ex. commentaire "42") — cf. audit B6, côté envoyerVisite.
+        val champsTexteLibre = champsCourants
+            .filter { it.viewType == ViewType.TEXT || it.viewType == ViewType.TEXTAREA }
+            .map { it.code }
 
         // Mode édition : on remplace les valeurs ET on remet la saisie en PENDING (efface
         // un éventuel ERROR précédent). Au retour, on amène l'utilisateur sur la fiche du
@@ -543,6 +548,7 @@ class NouvelleVisiteFragment : Fragment() {
                     mediaSchemaDotTable = mediaSchemaDotTable,
                     uuidPayload = nouvelUuid,
                     uuidFieldName = uuidFieldNameVisit ?: ancien.uuidFieldName,
+                    champsTexteLibre = champsTexteLibre,
                 )
             }
             android.widget.Toast.makeText(
@@ -584,6 +590,7 @@ class NouvelleVisiteFragment : Fragment() {
             parentUuidLocal = arguments?.getString("parentUuidLocal")?.takeIf { it.isNotEmpty() },
             parentIdField = parentField,
             nomsChampsSchema = nomsChampsVisit,
+            champsTexteLibre = champsTexteLibre,
             valeursJson = valeursJson,
             uuidPayload = uuidNouveau,
             uuidFieldName = uuidFieldNameVisit,

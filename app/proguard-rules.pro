@@ -19,3 +19,28 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# ---------------------------------------------------------------------------
+# Gson — préventif. isMinifyEnabled=false aujourd'hui ; ces règles évitent que
+# l'activation future de R8 casse le parsing par réflexion (TypeToken, champs).
+# ---------------------------------------------------------------------------
+# Signatures génériques nécessaires aux TypeToken<List<...>> / Map<...>.
+-keepattributes Signature
+-keepattributes *Annotation*
+# Gson interne + sous-classes anonymes de TypeToken (object : TypeToken<...>(){}).
+-keep class com.google.gson.reflect.TypeToken { *; }
+-keep class * extends com.google.gson.reflect.TypeToken
+-keepclassmembers,allowobfuscation class * {
+    @com.google.gson.annotations.SerializedName <fields>;
+}
+# Modèles désérialisés par réflexion (cf. audit B2). On garde le constructeur et
+# les champs : R8 ne doit ni les renommer ni les supprimer.
+-keep class fr.ariegenature.geonat.network.GeoNatureDataset { *; }
+-keep class fr.ariegenature.geonat.network.GeoNatureListe { *; }
+-keep class fr.ariegenature.geonat.network.GeoNatureObservateur { *; }
+-keep class fr.ariegenature.geonat.network.AdditionalFieldDef { *; }
+-keep class fr.ariegenature.geonat.store.SaisieEnAttente { *; }
+-keep class fr.ariegenature.geonat.store.TaxRefEntry { *; }
+-keep class fr.ariegenature.geonat.store.NomValeur { *; }
+-keep class fr.ariegenature.geonat.model.Denombrement { *; }
+-keep class fr.ariegenature.geonat.model.Sortie { *; }

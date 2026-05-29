@@ -543,11 +543,25 @@ object GeoNatureUpload {
         // 2. Sinon, si c'est un de nos codes internes ("0", "1", "2"…), on résout par le label.
         if (labels.containsKey(code)) {
             val label = labels[code]!!.lowercase()
-            return nomenclatures[type]?.get(label)
+            val resolu = nomenclatures[type]?.get(label)
+            if (resolu == null) {
+                android.util.Log.w(
+                    TAG_MEDIA,
+                    "Nomenclature $type : label '$label' (code interne '$code') absent de la nomenclature serveur → champ omis du payload"
+                )
+            }
+            return resolu
         }
 
         // 3. Fallback : résolution via le texte brut.
-        return nomenclatures[type]?.get(code.lowercase())
+        val resolu = nomenclatures[type]?.get(code.lowercase())
+        if (resolu == null) {
+            android.util.Log.w(
+                TAG_MEDIA,
+                "Nomenclature $type : code '$code' non résolu (ni id serveur, ni label connu, ni texte brut) → champ omis du payload"
+            )
+        }
+        return resolu
     }
 
     /** Cache de l'id_table_location pour pr_occtax.cor_counting_occtax (résolu au premier appel).

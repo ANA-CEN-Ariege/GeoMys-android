@@ -84,6 +84,10 @@ object TaxRefCache {
     // Memoization du dernier filtre par id_liste demandé — la saisie reste sur la même
     // liste pendant toute une session, recalculer à chaque suggestion serait gâché.
     @Volatile private var memCdNomsDansListe: Pair<Int, Set<Int>>? = null
+    // Listes de suggestions (clés normalisées) servant l'autocomplete taxon. Memoizées
+    // pour ne pas re-matérialiser 15-50k entrées à chaque rendu d'un champ TAXON (audit B5).
+    @Volatile private var memTousLesNoms: List<String>? = null
+    @Volatile private var memNomsParListe: Pair<Int, List<String>>? = null
 
     fun init(context: Context) {
         prefs = context.getSharedPreferences("taxref_cache", Context.MODE_PRIVATE)
@@ -231,6 +235,7 @@ object TaxRefCache {
         ecrireFichier(FILE_LISTES, gson.toJson(existing))
         memListes = existing
         memCdNomsDansListe = null
+        memNomsParListe = null
     }
 
     /** Retourne les id_liste UsersHub auxquelles le cd_nom appartient (vide si inconnu). */
@@ -246,6 +251,25 @@ object TaxRefCache {
             if (idListe in listes) cdStr.toIntOrNull()?.let(result::add)
         }
         return result.also { memCdNomsDansListe = idListe to it }
+    }
+
+    /** Clés (noms normalisés) servant de suggestions à l'autocomplete taxon.
+     *  [idListe]=null → toutes les clés du cache. Sinon restreint aux taxons appartenant
+     *  à la liste. Memoizé : la liste taxon ne change pas pendant une session de saisie,
+     *  et le rendu d'un champ TAXON ne doit pas re-matérialiser 15-50k entrées à chaque
+     *  fois (cf. audit B5). Invalidé quand le cache ou les listes changent. */
+    fun nomsSuggestion(idListe: Int?): List<String> {
+        if (idListe == null) {
+            memTousLesNoms?.let { return it }
+            return charger().keys.toList().also { memTousLesNoms = it }
+        }
+        memNomsParListe?.let { (id, noms) -> if (id == idListe) return noms }
+        val autorises = cdNomsDansListe(idListe)
+        val noms = charger().asSequence()
+            .filter { (_, entry) -> entry.cdNom in autorises }
+            .map { it.key }
+            .toList()
+        return noms.also { memNomsParListe = idListe to noms }
     }
 
     private fun chargerListesParCdNom(): Map<String, List<Int>> {
@@ -321,6 +345,8 @@ object TaxRefCache {
         memEntreesParCdNom = null
         memVernsParCdNom = null
         memCdNomsDansListe = null
+        memTousLesNoms = null
+        memNomsParListe = null
     }
 
     var versionSauvegardee: String?
@@ -373,5 +399,7 @@ object TaxRefCache {
         mem = cache
         memEntreesParCdNom = null
         memVernsParCdNom = null
+        memTousLesNoms = null
+        memNomsParListe = null
     }
 }

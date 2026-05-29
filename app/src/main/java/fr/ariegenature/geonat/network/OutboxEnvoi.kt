@@ -81,7 +81,23 @@ object OutboxEnvoi {
                 // passera en SENT au tour suivant.
                 if (saisie.parentUuidLocal != null) {
                     val parent = OutboxMonitoring.tout().firstOrNull { it.uuid == saisie.parentUuidLocal }
-                    if (parent?.etat != SaisieEnAttente.Etat.SENT) continue
+                    // Parent introuvable ou définitivement en échec : l'enfant ne sera jamais
+                    // envoyable dans ce run (on ne rejoue pas les ERROR). On le bascule en ERROR
+                    // au lieu de le laisser PENDING indéfiniment (cf. audit B3 — compteur
+                    // "en attente" trompeur). L'utilisateur corrigera le parent puis "Réessayer".
+                    if (parent == null || parent.etat == SaisieEnAttente.Etat.ERROR) {
+                        val raison = if (parent == null) "parent introuvable" else "parent en échec"
+                        OutboxMonitoring.mettreAJour(saisie.uuid) {
+                            it.copy(etat = SaisieEnAttente.Etat.ERROR, messageErreur = raison)
+                        }
+                        echecs++
+                        envoyees++
+                        messages.add("⚠ ${saisie.objectType} : $raison")
+                        progression(envoyees, total, "")
+                        continue
+                    }
+                    // Parent encore PENDING/SENDING : sera repris quand il passera en SENT.
+                    if (parent.etat != SaisieEnAttente.Etat.SENT) continue
                     if (parent.idServeur != null) {
                         OutboxMonitoring.mettreAJour(saisie.uuid) {
                             it.copy(parentIdServeur = parent.idServeur, parentUuidLocal = null)
@@ -148,6 +164,7 @@ object OutboxEnvoi {
                 parentId = s.parentIdServeur,
                 valeurs = valeurs,
                 nomsChampsSchema = s.nomsChampsSchema,
+                champsTexteLibre = s.champsTexteLibre,
                 uuidClient = s.uuidPayload,
                 uuidFieldName = s.uuidFieldName,
             )

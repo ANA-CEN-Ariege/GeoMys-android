@@ -1543,6 +1543,9 @@ object MonitoringApi {
         parentId: Int?,
         valeurs: Map<String, Any?>,
         nomsChampsSchema: Collection<String> = emptyList(),
+        /** Codes des champs texte-libre dont la valeur String ne doit PAS être coercée en
+         *  Int même si elle est numérique (cf. audit B6). Vide → coercition historique. */
+        champsTexteLibre: Collection<String> = emptyList(),
         /** uuid pré-généré côté client à injecter dans le payload sous [uuidFieldName].
          *  Sert à connaître à l'avance l'uuid_attached_row pour l'upload média ultérieur. */
         uuidClient: String? = null,
@@ -1561,7 +1564,9 @@ object MonitoringApi {
                 properties.put(parentIdField, parentId)
             }
             for ((code, brut) in valeurs) {
-                properties.put(code, normaliserPourJson(brut))
+                // Un champ texte-libre garde sa valeur String telle quelle : "42" dans un
+                // commentaire ne doit pas partir en number (audit B6).
+                properties.put(code, normaliserPourJson(brut, preserverString = code in champsTexteLibre))
             }
             // uuid pré-généré côté client (cas où on a un média à rattacher après création).
             // Injecté seulement si le caller a fourni le nom du champ — sinon on ne sait pas
@@ -1703,7 +1708,10 @@ object MonitoringApi {
         } catch (_: Exception) { null }
     }
 
-    private fun normaliserPourJson(v: Any?): Any {
+    /** [preserverString] : quand true, une valeur String numérique reste String (champ
+     *  texte-libre). N'affecte que le niveau racine — les items d'array (observers, etc.)
+     *  restent coercés car le serveur les veut en Int. */
+    private fun normaliserPourJson(v: Any?, preserverString: Boolean = false): Any {
         if (v === JSONObject.NULL) return JSONObject.NULL
         return when (v) {
             null -> JSONObject.NULL
@@ -1721,7 +1729,7 @@ object MonitoringApi {
             is List<*> -> JSONArray().apply { v.forEach { put(normaliserPourJson(it)) } }
             is String -> {
                 val t = v.trim()
-                t.toIntOrNull() ?: t
+                if (preserverString) t else t.toIntOrNull() ?: t
             }
             else -> v.toString()
         }

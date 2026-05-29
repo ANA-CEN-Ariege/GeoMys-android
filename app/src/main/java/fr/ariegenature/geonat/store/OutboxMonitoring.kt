@@ -24,6 +24,11 @@ data class SaisieEnAttente(
     val parentUuidLocal: String? = null,
     val parentIdField: String? = null,
     val nomsChampsSchema: List<String> = emptyList(),
+    /** Codes des champs texte-libre (widgets TEXT/TEXTAREA) du schéma. Sert à l'envoi à
+     *  NE PAS coercer en Int une valeur numérique saisie dans un commentaire (ex. "42")
+     *  — sinon Marshmallow rejette un Int sur un champ typé `string` côté serveur (audit B6).
+     *  Vide pour les saisies legacy → comportement historique (coercition de tout). */
+    val champsTexteLibre: List<String> = emptyList(),
     /** JSON sérialisé du payload des valeurs collectées par le form renderer. Stocké en
      *  String pour éviter les pertes de type Gson (Int → Double, etc.). Reparsé via
      *  JSONObject au moment de l'envoi. */

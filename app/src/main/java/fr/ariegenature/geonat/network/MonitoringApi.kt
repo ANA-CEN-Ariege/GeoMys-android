@@ -290,6 +290,12 @@ object MonitoringApi {
          *  `gn_monitoring.t_base_visits`). Sert à résoudre l'id_table_location lors de
          *  l'upload du fichier via /api/gn_commons/media. */
         val schemaDotTable: String? = null,
+        /** Pour le widget `dataset` du champ id_dataset : valeur `creatable_in_module` du
+         *  schéma, format `"<module_code>.<code_object>"` (ex. `apollons.MONITORINGS_VISITES`
+         *  pour le picker dataset d'une visite). Passée au backend via `?create=<value>`
+         *  pour ne lister que les jeux où l'utilisateur connecté a le droit CRUVED `C` sur
+         *  cet object — parité formulaire web monitoring. */
+        val creatableInModule: String? = null,
     )
 
     /** Schéma d'un object_type déclaré par un protocole dans son `config/objects.json` serveur,
@@ -826,8 +832,21 @@ object MonitoringApi {
         ) {
             val codeFiltre = prop.moduleCodeFiltre ?: moduleCodeProtocole
             val base = prop.apiUrl ?: "meta/datasets"
-            val apiFiltree = if (base.contains("module_code=")) base
+            val avecModule = if (base.contains("module_code=")) base
                 else base + (if (base.contains('?')) "&" else "?") + "module_code=$codeFiltre"
+            // `active=true` : exclut les jeux de données archivés du picker (parité web).
+            // Idempotent : on n'ajoute pas si le schéma fournit déjà un filtre actif explicite.
+            val avecActif = if (avecModule.contains("active=")) avecModule
+                else avecModule + "&active=true"
+            // `create=<module>.<code_object>` : restreint via CRUVED action=C sur l'objet visé
+            // par cette création (ex. apollons.MONITORINGS_VISITES pour un id_dataset de visite).
+            // Backend gn_meta : `TDatasets.filter_by_creatable(module_code, object_code)`. Sans
+            // ça on listait les datasets du module entier, y compris ceux où le user n'a pas
+            // le droit de saisir une visite. Idempotent.
+            val apiFiltree = prop.creatableInModule?.takeIf { it.isNotEmpty() }?.let { cim ->
+                if (avecActif.contains("create=")) avecActif
+                else avecActif + "&create=$cim"
+            } ?: avecActif
             return prop.copy(
                 apiUrl = apiFiltree,
                 keyLabel = prop.keyLabel ?: "dataset_name",
@@ -1054,6 +1073,7 @@ object MonitoringApi {
             minValue = minValue,
             maxValue = maxValue,
             schemaDotTable = v.optString("schema_dot_table", "").takeIf { it.isNotEmpty() },
+            creatableInModule = v.optString("creatable_in_module", "").takeIf { it.isNotEmpty() },
         )
     }
 
@@ -1357,33 +1377,43 @@ object MonitoringApi {
             val arr = chargerObservateursDeListe(config, idListe) ?: return@withContext null
             return@withContext extraireOptions(arr, keyValue, keyLabel, prop.filtres)
         }
-        // Cas spécial dataset : on NE fait PAS confiance au filtre serveur
-        // /api/meta/datasets?module_code=X — sur cette instance il renvoie TOUS les datasets.
-        // On filtre le cache local des datasets (peuplé au sync via ?fields=modules), où
-        // chaque dataset porte ses `moduleCodes`. C'est exactement la source — et le filtre —
-        // de l'écran protocole (SuiviDetailFragment.afficherDatasetsAssocies), qui lui marche.
-        // Fallback sur le fetch live (ci-dessous) seulement si le cache ne donne aucun match.
-        if (apiPath.startsWith("meta/datasets") || prop.typeWidget.equals("dataset", ignoreCase = true)) {
+        // Cas spécial dataset : la source autoritative est l'endpoint serveur
+        // /api/meta/datasets, qui applique côté backend (a) le filtre `create=<module>.<code_object>`
+        // = CRUVED action=C scope du user authentifié (cf. TDatasets.filter_by_creatable +
+        // filter_by_scope sur cor_dataset_actor — un user "MES données" scope=1 ne voit
+        // que les datasets dont il est acteur), (b) le filtre `active=true`, (c) le filtre
+        // `module_code`. Le cache local datasetsCacheJson n'est PAS une source fiable :
+        // peuplé via /meta/datasets?fields=modules sans `create`, il contient TOUS les
+        // datasets rattachés au module, sans filtre CRUVED. On le réservait donc à un
+        // fallback offline.
+        // L'apiUrl reçue par chargerOptionsDatalist a déjà été enrichie par derirverApiSiManquant
+        // (active=true + create=<creatable_in_module> + module_code=<code>), donc le fetch
+        // live ci-dessous renvoie exactement la liste que le web propose. On ne court-circuite
+        // PAS avec le cache local.
+        // Fallback offline : si le fetch live échoue, on retombe en bas sur le cache filtré
+        // par moduleCodes — meilleure approximation hors-ligne, à défaut de mieux.
+        // Helper local pour le fallback dataset offline. Renvoie null si on n'est pas sur
+        // le cas dataset ou si le cache ne donne rien d'exploitable.
+        fun fallbackDatasetCache(): List<OptionDatalist>? {
+            if (!apiPath.startsWith("meta/datasets") &&
+                !prop.typeWidget.equals("dataset", ignoreCase = true)
+            ) return null
             val moduleCodeFiltre = Regex("""module_code=([^&]+)""").find(apiPath)?.groupValues?.get(1)
-                ?: prop.moduleCodeFiltre
-            val cache = config.datasetsCacheJson.takeIf { it.isNotEmpty() }
-            if (moduleCodeFiltre != null && cache != null) {
-                val datasets: List<GeoNatureDataset> = runCatching {
-                    val t = object : com.google.gson.reflect.TypeToken<List<GeoNatureDataset>>() {}.type
-                    com.google.gson.Gson().fromJson<List<GeoNatureDataset>>(cache, t)
-                }.getOrNull().orEmpty()
-                val associes = datasets.filter { moduleCodeFiltre in it.moduleCodes }
-                if (associes.isNotEmpty()) {
-                    return@withContext associes
-                        .map { OptionDatalist(it.id.toString(), it.nom) }
-                        .sortedBy { it.label.lowercase() }
-                }
-            }
-            // sinon : cache vide / aucun match → on retombe sur le fetch live ci-dessous.
+                ?: prop.moduleCodeFiltre ?: return null
+            val cache = config.datasetsCacheJson.takeIf { it.isNotEmpty() } ?: return null
+            val datasets: List<GeoNatureDataset> = runCatching {
+                val t = object : com.google.gson.reflect.TypeToken<List<GeoNatureDataset>>() {}.type
+                com.google.gson.Gson().fromJson<List<GeoNatureDataset>>(cache, t)
+            }.getOrNull().orEmpty()
+            val associes = datasets.filter { moduleCodeFiltre in it.moduleCodes }
+            if (associes.isEmpty()) return null
+            return associes
+                .map { OptionDatalist(it.id.toString(), it.nom) }
+                .sortedBy { it.label.lowercase() }
         }
         val base = config.urlServeur.trim().trimEnd('/')
         val (token, _, cookies) = GeoNatureAuth.loginAvecCookies(base, config.login, config.motDePasse)
-            ?: return@withContext null
+            ?: return@withContext fallbackDatasetCache()
         val url = URL("$base/api/$apiPath")
         val conn = url.openConnection() as java.net.HttpURLConnection
         conn.connectTimeout = 15000
@@ -1391,14 +1421,16 @@ object MonitoringApi {
         conn.setRequestProperty("Accept", "application/json")
         if (token != null) conn.setRequestProperty("Authorization", "Bearer $token")
         if (cookies.isNotEmpty()) conn.setRequestProperty("Cookie", cookies)
-        if (conn.responseCode != 200) return@withContext null
+        if (conn.responseCode != 200) return@withContext fallbackDatasetCache()
         val text = conn.inputStream.bufferedReader().readText()
         // Réponse soit array direct, soit objet contenant data_path → array.
         val array: JSONArray = try { JSONArray(text) } catch (_: Exception) {
-            val obj = try { JSONObject(text) } catch (_: Exception) { return@withContext null }
+            val obj = try { JSONObject(text) } catch (_: Exception) {
+                return@withContext fallbackDatasetCache()
+            }
             val cle = prop.dataPath ?: listOf("values", "data", "items", "results")
-                .firstOrNull { obj.has(it) } ?: return@withContext null
-            obj.optJSONArray(cle) ?: return@withContext null
+                .firstOrNull { obj.has(it) } ?: return@withContext fallbackDatasetCache()
+            obj.optJSONArray(cle) ?: return@withContext fallbackDatasetCache()
         }
         extraireOptions(array, keyValue, keyLabel, prop.filtres)
     }

@@ -1442,7 +1442,6 @@ object MonitoringApi {
                 }
             }
             val urlStr = "$base/api/$chemin" + if (querysUrl.isNotEmpty()) "?${querysUrl.joinToString("&")}" else ""
-            android.util.Log.i("DatasetPicker", "POST $urlStr  body=$paramsBody")
             URL(urlStr) to paramsBody.toString()
         } else {
             URL("$base/api/$apiPath") to null
@@ -1459,12 +1458,8 @@ object MonitoringApi {
             conn.setRequestProperty("Content-Type", "application/json")
             conn.outputStream.use { it.write(postBody.toByteArray(Charsets.UTF_8)) }
         }
-        val code = conn.responseCode
-        if (estDataset) android.util.Log.i("DatasetPicker", "→ HTTP $code")
-        if (code != 200) return@withContext fallbackDatasetCache()
+        if (conn.responseCode != 200) return@withContext fallbackDatasetCache()
         val text = conn.inputStream.bufferedReader().readText()
-        if (estDataset) android.util.Log.i("DatasetPicker",
-            "→ corps ${text.length} octets, début=${text.take(120)}")
         // Réponse soit array direct, soit objet contenant data_path → array.
         val array: JSONArray = try { JSONArray(text) } catch (_: Exception) {
             val obj = try { JSONObject(text) } catch (_: Exception) {

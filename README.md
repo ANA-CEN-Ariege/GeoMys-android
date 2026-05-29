@@ -39,6 +39,8 @@ Quatre fonds disponibles, basculables au tap :
 - **IGN Scan25**
 - **IGN Ortho** (orthophotos)
 
+**Position courante & GPS externe** : la carte « Explorer » s'abonne au GPS en direct et se recentre automatiquement sur la position dès le premier point reçu (le bouton « Centrer » suit la position live). L'app lit le `LocationManager` standard d'Android : un récepteur externe (ex. **RTK** relayé par **SW Maps** en « position fictive » / mock location) est donc utilisé de façon transparente, sans configuration côté app.
+
 ## Configuration GeoNature
 
 Écran de configuration (icône engrenage en haut à droite) :

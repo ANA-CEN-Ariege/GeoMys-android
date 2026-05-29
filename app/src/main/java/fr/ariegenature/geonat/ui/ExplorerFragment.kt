@@ -6,6 +6,8 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Typeface
 import android.graphics.drawable.BitmapDrawable
+import android.location.Location
+import android.location.LocationListener
 import android.location.LocationManager
 import android.os.Bundle
 import android.view.LayoutInflater
@@ -48,6 +50,14 @@ class ExplorerFragment : Fragment() {
     private var sensorManager: android.hardware.SensorManager? = null
     private var sensorListener: android.hardware.SensorEventListener? = null
 
+    // Localisation en direct : indispensable pour les GPS externes (RTK via SW Maps
+    // en position fictive). getLastKnownLocation seul renvoie souvent null au lancement
+    // → la carte tombait sur le fallback "centre de la France".
+    private var locationManager: LocationManager? = null
+    private var locationListener: LocationListener? = null
+    private var derniereLoc: Location? = null
+    private var aCentreSurPosition = false
+
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         Configuration.getInstance().userAgentValue = requireContext().packageName
         _binding = FragmentExplorerBinding.inflate(inflater, container, false)
@@ -59,6 +69,7 @@ class ExplorerFragment : Fragment() {
         gnConfig = GeoNatureConfig(requireContext())
 
         setupMap()
+        setupLocalisation()
         setupCompass()
         setupFiltres()
         binding.btnRetour.setOnClickListener { findNavController().navigateUp() }
@@ -98,12 +109,57 @@ class ExplorerFragment : Fragment() {
                 ?: lm.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
         } catch (_: Exception) { null }
         if (lastLoc != null) {
+            derniereLoc = lastLoc
+            aCentreSurPosition = true
             binding.map.controller.setZoom(12.0)
             binding.map.controller.setCenter(GeoPoint(lastLoc.latitude, lastLoc.longitude))
         } else {
+            // Pas de position en cache : on affiche le fallback (centre France), mais
+            // demarrerLocalisation() recentrera dès la 1ère position reçue en direct.
             binding.map.controller.setZoom(6.0)
             binding.map.controller.setCenter(GeoPoint(46.5, 2.5))
         }
+    }
+
+    /** Prépare l'écoute du GPS en direct. L'abonnement réel est démarré dans onResume
+     *  et arrêté dans onPause pour respecter le cycle de vie. */
+    private fun setupLocalisation() {
+        locationManager = requireContext()
+            .getSystemService(android.content.Context.LOCATION_SERVICE) as LocationManager
+        locationListener = object : LocationListener {
+            override fun onLocationChanged(loc: Location) {
+                derniereLoc = loc
+                // Recentre automatiquement sur la 1ère position reçue tant qu'on n'a
+                // pas encore centré sur une vraie position (carte sur le fallback).
+                if (!aCentreSurPosition) {
+                    aCentreSurPosition = true
+                    _binding?.map?.controller?.setZoom(16.0)
+                    _binding?.map?.controller?.animateTo(GeoPoint(loc.latitude, loc.longitude))
+                }
+            }
+            @Deprecated("Deprecated") override fun onStatusChanged(p: String?, s: Int, e: Bundle?) {}
+            override fun onProviderEnabled(provider: String) {}
+            override fun onProviderDisabled(provider: String) {}
+        }
+    }
+
+    @Suppress("MissingPermission")
+    private fun demarrerLocalisation() {
+        val lm = locationManager ?: return
+        val listener = locationListener ?: return
+        try {
+            if (lm.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                lm.requestLocationUpdates(LocationManager.GPS_PROVIDER, 2000L, 5f, listener)
+            }
+            if (lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+                lm.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 2000L, 5f, listener)
+            }
+        } catch (_: Exception) {}
+    }
+
+    private fun arreterLocalisation() {
+        val listener = locationListener ?: return
+        try { locationManager?.removeUpdates(listener) } catch (_: Exception) {}
     }
 
     private fun boutonsParTaxon(): Map<Taxon, com.google.android.material.button.MaterialButton> = mapOf(
@@ -188,9 +244,11 @@ class ExplorerFragment : Fragment() {
     }
 
     private fun centrerSurPosition() {
-        val lm = requireContext().getSystemService(android.content.Context.LOCATION_SERVICE)
-            as LocationManager
-        val loc = try {
+        // Priorité à la position live (reçue via le GPS, mock RTK compris) ; on retombe
+        // sur le cache système seulement si aucune position live n'est encore arrivée.
+        val loc = derniereLoc ?: try {
+            val lm = requireContext().getSystemService(android.content.Context.LOCATION_SERVICE)
+                as LocationManager
             @Suppress("MissingPermission")
             lm.getLastKnownLocation(LocationManager.GPS_PROVIDER)
                 ?: lm.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
@@ -365,6 +423,7 @@ class ExplorerFragment : Fragment() {
     override fun onResume() {
         super.onResume()
         binding.map.onResume()
+        demarrerLocalisation()
         val sensor = sensorManager?.getDefaultSensor(android.hardware.Sensor.TYPE_ROTATION_VECTOR)
         if (sensor != null && sensorListener != null) {
             sensorManager?.registerListener(sensorListener, sensor, android.hardware.SensorManager.SENSOR_DELAY_UI)
@@ -374,6 +433,7 @@ class ExplorerFragment : Fragment() {
     override fun onPause() {
         super.onPause()
         binding.map.onPause()
+        arreterLocalisation()
         sensorManager?.unregisterListener(sensorListener)
     }
 
@@ -381,6 +441,9 @@ class ExplorerFragment : Fragment() {
         super.onDestroyView()
         fetchJob?.cancel()
         debounceJob?.cancel()
+        arreterLocalisation()
+        locationManager = null
+        locationListener = null
         sensorManager?.unregisterListener(sensorListener)
         sensorManager = null
         sensorListener = null

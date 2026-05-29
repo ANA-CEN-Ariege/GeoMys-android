@@ -1414,16 +1414,51 @@ object MonitoringApi {
         val base = config.urlServeur.trim().trimEnd('/')
         val (token, _, cookies) = GeoNatureAuth.loginAvecCookies(base, config.login, config.motDePasse)
             ?: return@withContext fallbackDatasetCache()
-        val url = URL("$base/api/$apiPath")
         val estDataset = apiPath.startsWith("meta/datasets") ||
             prop.typeWidget.equals("dataset", ignoreCase = true)
-        if (estDataset) android.util.Log.i("DatasetPicker", "GET $url")
-        val conn = url.openConnection() as java.net.HttpURLConnection
+        // Pour le widget `dataset`, on doit obligatoirement POST avec body JSON : le backend
+        // n'applique `filter_by_params` (= filtre `active`, `module_code` etc.) QUE quand
+        // `request.is_json` est True. En GET avec query string, le `create=…` filtre via
+        // CRUVED mais `active=true` est ignoré — on récupère alors les datasets inactifs en
+        // plus, et la liste est plus grosse que ce que propose la version web.
+        // Cf. backend/geonature/core/gn_meta/routes.py::get_datasets.
+        val (urlFinale, postBody) = if (estDataset) {
+            // Sépare la query string : on garde l'éventuel `orderby` côté URL (comme le web),
+            // et on transforme `module_code`, `active`, `create`, … en JSON body.
+            val (chemin, query) = apiPath.split('?', limit = 2).let {
+                it[0] to (it.getOrNull(1).orEmpty())
+            }
+            val paramsBody = JSONObject()
+            val querysUrl = mutableListOf<String>()
+            query.split('&').filter { it.isNotEmpty() }.forEach { kv ->
+                val (k, vRaw) = kv.split('=', limit = 2).let {
+                    it[0] to (it.getOrNull(1).orEmpty())
+                }
+                val v = java.net.URLDecoder.decode(vRaw, "UTF-8")
+                when {
+                    k == "orderby" -> querysUrl.add("$k=$vRaw")
+                    k == "active" -> paramsBody.put(k, v.equals("true", ignoreCase = true))
+                    else -> paramsBody.put(k, v)
+                }
+            }
+            val urlStr = "$base/api/$chemin" + if (querysUrl.isNotEmpty()) "?${querysUrl.joinToString("&")}" else ""
+            android.util.Log.i("DatasetPicker", "POST $urlStr  body=$paramsBody")
+            URL(urlStr) to paramsBody.toString()
+        } else {
+            URL("$base/api/$apiPath") to null
+        }
+        val conn = urlFinale.openConnection() as java.net.HttpURLConnection
         conn.connectTimeout = 15000
         conn.readTimeout = 15000
         conn.setRequestProperty("Accept", "application/json")
         if (token != null) conn.setRequestProperty("Authorization", "Bearer $token")
         if (cookies.isNotEmpty()) conn.setRequestProperty("Cookie", cookies)
+        if (postBody != null) {
+            conn.requestMethod = "POST"
+            conn.doOutput = true
+            conn.setRequestProperty("Content-Type", "application/json")
+            conn.outputStream.use { it.write(postBody.toByteArray(Charsets.UTF_8)) }
+        }
         val code = conn.responseCode
         if (estDataset) android.util.Log.i("DatasetPicker", "→ HTTP $code")
         if (code != 200) return@withContext fallbackDatasetCache()

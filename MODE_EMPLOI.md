@@ -23,7 +23,7 @@ Aucun compte spécifique à créer : on utilise un compte **GeoNature** existant
 | Champ | Exemple |
 |---|---|
 | URL du serveur | `https://geonature.ariegenature.fr/geonature` |
-| Identifiant | `prenom.nom` |
+| Identifiant | (Votre nom d'utilisateur GeoNature) |
 | Mot de passe | (votre mot de passe GeoNature) |
 
 Taper **Connexion** : la coche verte indique que le serveur répond et que vos identifiants sont reconnus.

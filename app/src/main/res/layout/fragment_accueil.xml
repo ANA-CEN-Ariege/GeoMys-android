@@ -53,15 +53,18 @@
         android:paddingBottom="60dp"
         android:paddingTop="60dp">
 
-        <!-- Logo : on pointe sur le foreground directement (webp simple) au lieu de
-             @mipmap/ic_launcher qui résout vers l'adaptive-icon XML. Inflater un
-             AdaptiveIconDrawable via android:src plante avec un NPE
-             `Application.getResources() == null` sur certains appareils (cf. l'issue
-             AOSP — même symptôme que le `<monochrome>` retiré précédemment). -->
+        <!-- Logo : on utilise @drawable/logo_geonat (PNG avec fond transparent), généré
+             à partir du foreground d'icône adaptative en supprimant son carré blanc opaque.
+             Le @mipmap/ic_launcher_foreground d'origine contient un fond blanc plein qui
+             apparaissait comme un carré derrière le logo. Inflater @mipmap/ic_launcher
+             (AdaptiveIconDrawable) via android:src plante par ailleurs avec un NPE
+             `Application.getResources() == null` sur certains appareils (cf. issue AOSP) —
+             on évite ce chemin. -->
         <ImageView
             android:layout_width="120dp"
             android:layout_height="120dp"
-            android:src="@mipmap/ic_launcher_foreground" />
+            android:contentDescription="Logo GeoNat"
+            android:src="@drawable/logo_geonat" />
 
         <TextView
             android:layout_width="wrap_content"

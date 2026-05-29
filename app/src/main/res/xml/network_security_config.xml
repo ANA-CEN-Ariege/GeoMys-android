@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Configuration réseau de l'app. Aujourd'hui : permissive — cleartext autorisé partout,
+    équivalent à l'ancien `android:usesCleartextTraffic="true"` du manifest. L'app cible
+    plusieurs instances GeoNature internes ANA/CEN dont certaines exposent un endpoint
+    HTTP (réseaux LAN, serveurs de test). La couche auth gère déjà le cas HTTP→HTTPS
+    (cf. GeoNatureAuth.diagnostiquerRedirect) en demandant à l'utilisateur de corriger
+    son URL plutôt que de pousser le mdp en clair.
+
+    Pour restreindre par la suite à une liste blanche de domaines, remplacer
+    `base-config` par `domain-config` + `<domain>example.org</domain>`, et passer
+    `cleartextTrafficPermitted="false"` sur `base-config`.
+
+    Doc : https://developer.android.com/training/articles/security-config
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

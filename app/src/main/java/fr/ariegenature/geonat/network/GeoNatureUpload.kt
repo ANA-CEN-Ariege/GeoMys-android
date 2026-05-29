@@ -40,6 +40,15 @@ object GeoNatureUpload {
     private const val TAG_MEDIA = "GeoNatMedia"
     private val nomenclatureCache = mutableMapOf<String, Int>()
 
+    /** Vide les caches mémoire process-wide : ids de nomenclatures résolus + id_table_location
+     *  cor_counting_occtax. À appeler quand l'URL/login/mdp serveur changent — sinon on
+     *  réutilise des ids issus de l'instance précédente (les id_nomenclature et
+     *  id_table_location varient d'un GeoNature à l'autre). */
+    fun invaliderCaches() {
+        nomenclatureCache.clear()
+        idTableLocationCountingCache = null
+    }
+
     // Correspondance code interne → label minuscule stable (même logique qu'OrniTrace)
     // Les cd_nomenclature varient d'une instance GeoNature à l'autre ; les labels sont stables.
     private val SEXE_LABELS     = mapOf("1" to "mâle", "2" to "femelle", "5" to "indéterminé")

@@ -13,6 +13,10 @@ import android.widget.LinearLayout
 import android.widget.Spinner
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
@@ -23,12 +27,17 @@ import java.util.Locale
  *  (b) pas de mediator de coords min/max pour l'instant, (c) widgets POC limités à 5.
  *
  *  Cycle de vie typique :
- *    val r = FormulaireRenderer(ctx, parent)
+ *    val r = FormulaireRenderer(ctx, parent, viewLifecycleOwner.lifecycleScope)
  *    r.rendre(fields)         // ajoute les vues
  *    val valeurs = r.lireValeurs()  // au moment du submit */
 class FormulaireRenderer(
     private val ctx: Context,
     private val parent: ViewGroup,
+    /** Scope lifecycle-aware (typiquement `viewLifecycleOwner.lifecycleScope` du Fragment).
+     *  Sert au peuplement asynchrone de l'autocomplete TaxRef : sans rattachement au cycle
+     *  de vie de la View, un détachement (rotation, back) laisserait tourner un Thread brut
+     *  qui survit au formulaire et tente d'attacher un adapter à une vue détruite. */
+    private val scope: CoroutineScope,
 ) {
     private val density = ctx.resources.displayMetrics.density
     /** Couleur de texte d'une valeur renseignée, résolue depuis le thème (colorOnSurface) —
@@ -548,34 +557,34 @@ class FormulaireRenderer(
             }
             (field.value as? String)?.takeIf { it.isNotEmpty() }?.let { setText(it, false) }
         }
-        // Adapter peuplé en arrière-plan via Thread brut (pas de scope dispo ici). La
-        // liste des taxons est grosse → on évite de bloquer le rendu du formulaire.
+        // Adapter peuplé en arrière-plan via une coroutine rattachée au [scope] du Fragment.
+        // La liste des taxons est grosse (15k+) → on évite de bloquer le rendu du formulaire.
         // Si le schéma déclare une id_list_taxonomy, on restreint l'autocomplete aux
         // cd_nom qui appartiennent à cette liste (= taxons "autorisés" pour ce protocole).
+        // Le rattachement au lifecycle annule automatiquement le scan si la View est détruite
+        // pendant le calcul (rotation, back) — plus de race contre une vue déjà détachée.
         val idListeRestreinte = field.idListeTaxonomieRestreinte
-        Thread {
-            val noms: List<String>
-            val diagDetails: String
-            if (idListeRestreinte != null) {
-                val cdNomsAutorises = fr.ariegenature.geonat.store.TaxRefCache.cdNomsDansListe(idListeRestreinte)
-                noms = fr.ariegenature.geonat.store.TaxRefCache.toutesLesEntrees()
-                    .filter { (_, entry) -> entry.cdNom in cdNomsAutorises }
-                    .keys
-                    .toList()
-                diagDetails = "liste=$idListeRestreinte, ${cdNomsAutorises.size} cd_nom autorisés, ${noms.size} suggestions"
-            } else {
-                noms = fr.ariegenature.geonat.store.TaxRefCache.toutesLesEntrees().keys.toList()
-                diagDetails = "liste=null (toutes), ${noms.size} suggestions"
+        scope.launch {
+            val (noms, diagDetails) = withContext(Dispatchers.Default) {
+                if (idListeRestreinte != null) {
+                    val cdNomsAutorises = fr.ariegenature.geonat.store.TaxRefCache.cdNomsDansListe(idListeRestreinte)
+                    val resultat = fr.ariegenature.geonat.store.TaxRefCache.toutesLesEntrees()
+                        .filter { (_, entry) -> entry.cdNom in cdNomsAutorises }
+                        .keys
+                        .toList()
+                    resultat to "liste=$idListeRestreinte, ${cdNomsAutorises.size} cd_nom autorisés, ${resultat.size} suggestions"
+                } else {
+                    val resultat = fr.ariegenature.geonat.store.TaxRefCache.toutesLesEntrees().keys.toList()
+                    resultat to "liste=null (toutes), ${resultat.size} suggestions"
+                }
             }
             android.util.Log.i("FormulaireRenderer",
                 "Champ TAXON '${field.code}' → $diagDetails")
-            ac.post {
-                if (ac.isAttachedToWindow) {
-                    val adapter = fr.ariegenature.geonat.ui.saisie.createSpeciesAutocompleteAdapter(ctx, noms)
-                    ac.setAdapter(adapter)
-                }
+            if (ac.isAttachedToWindow) {
+                val adapter = fr.ariegenature.geonat.ui.saisie.createSpeciesAutocompleteAdapter(ctx, noms)
+                ac.setAdapter(adapter)
             }
-        }.start()
+        }
         // Sélection d'une suggestion : on résout le cd_nom via TaxRefCache et on le stocke.
         ac.setOnItemClickListener { _, _, _, _ ->
             val saisi = ac.text?.toString().orEmpty()

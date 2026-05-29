@@ -51,6 +51,16 @@ object MonitoringApi {
      *  un protocole par son [moduleCode] sans repasser les ~10 champs via Bundle args. */
     @Volatile private var dernierChargement: List<MonitoringModule> = emptyList()
 
+    /** Vide les caches mémoire process-wide (liste de modules + LabelResolver par module).
+     *  À appeler quand l'URL/login/mdp serveur changent — sinon on continue à servir des
+     *  modules et des résolutions de nomenclatures du serveur précédent. Le cache disque
+     *  ([MonitoringCache]) n'est pas touché : il est versionné par module_code et reste
+     *  valide tant que l'utilisateur ne change pas de serveur. */
+    fun invaliderCaches() {
+        dernierChargement = emptyList()
+        cacheResolvers.clear()
+    }
+
     fun moduleParCode(moduleCode: String): MonitoringModule? =
         dernierChargement.firstOrNull { it.moduleCode == moduleCode }
 

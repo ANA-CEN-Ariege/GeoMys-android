@@ -151,9 +151,18 @@ class ConfigGeoNatureFragment : Fragment() {
     }
 
     private fun sauvegarderChamps() {
+        // Snapshot des credentials AVANT modif pour détecter un changement d'identité serveur.
+        // Sans cette comparaison, les caches mémoire process-wide (auth token, id_nomenclature,
+        // id_table_location, id_role, LabelResolver…) continueraient à servir les valeurs de
+        // l'instance précédente — les envois partiraient ensuite avec des FK invalides.
+        val ancien = Triple(gnConfig.urlServeur, gnConfig.login, gnConfig.motDePasse)
         gnConfig.urlServeur = binding.etUrl.text.toString()
         gnConfig.login = binding.etLogin.text.toString()
         gnConfig.motDePasse = binding.etMotDePasse.text.toString()
+        val nouveau = Triple(gnConfig.urlServeur, gnConfig.login, gnConfig.motDePasse)
+        if (ancien != nouveau) {
+            fr.ariegenature.geonat.network.invaliderCachesSession()
+        }
         // idDataset / nomDataset sont positionnés via le spinner — pas via le champ texte.
         gnConfig.taxaListeId = binding.etTaxaListe.text.toString()
     }

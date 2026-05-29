@@ -173,7 +173,7 @@ class NouvelleVisiteFragment : Fragment() {
             }
         }
 
-        renderer = FormulaireRenderer(requireContext(), binding.llFormulaire)
+        renderer = FormulaireRenderer(requireContext(), binding.llFormulaire, viewLifecycleOwner.lifecycleScope)
         binding.btnSubmit.setOnClickListener { envoyerVisite() }
         // Le bouton de submit reste inactif tant que tous les champs obligatoires visibles
         // ne sont pas remplis. Le renderer notifie via setOnChangement à chaque édition

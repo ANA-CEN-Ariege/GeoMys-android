@@ -369,6 +369,19 @@ class NouvelleVisiteFragment : Fragment() {
             val notesEchecs = mutableListOf<String>()
             for ((idx, opts) in resultats) {
                 val f = nouveaux[idx]
+                val prop = visitSchema.properties[f.code]
+                // Diagnostic VISIBLE dans le bandeau debug pour le widget `dataset` : la
+                // requête exacte qui sera tirée + le nombre d'options reçues. Sert à
+                // déboguer le cas "le picker propose trop de jeux par rapport à la version
+                // web" — on voit immédiatement si le filtre `create=…` est bien appliqué.
+                if (prop != null && prop.typeWidget.equals("dataset", ignoreCase = true)) {
+                    val nb = opts?.size ?: -1
+                    ajouterDebug(
+                        "Dataset '${f.code}' : api=/api/${prop.apiUrl} → ${
+                            if (nb < 0) "ÉCHEC" else "$nb option(s)"
+                        }"
+                    )
+                }
                 if (opts == null) {
                     notesEchecs.add("${f.code} (fetch options échoué)")
                     continue

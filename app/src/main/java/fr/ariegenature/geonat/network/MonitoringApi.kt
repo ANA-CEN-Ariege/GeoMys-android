@@ -1415,14 +1415,21 @@ object MonitoringApi {
         val (token, _, cookies) = GeoNatureAuth.loginAvecCookies(base, config.login, config.motDePasse)
             ?: return@withContext fallbackDatasetCache()
         val url = URL("$base/api/$apiPath")
+        val estDataset = apiPath.startsWith("meta/datasets") ||
+            prop.typeWidget.equals("dataset", ignoreCase = true)
+        if (estDataset) android.util.Log.i("DatasetPicker", "GET $url")
         val conn = url.openConnection() as java.net.HttpURLConnection
         conn.connectTimeout = 15000
         conn.readTimeout = 15000
         conn.setRequestProperty("Accept", "application/json")
         if (token != null) conn.setRequestProperty("Authorization", "Bearer $token")
         if (cookies.isNotEmpty()) conn.setRequestProperty("Cookie", cookies)
-        if (conn.responseCode != 200) return@withContext fallbackDatasetCache()
+        val code = conn.responseCode
+        if (estDataset) android.util.Log.i("DatasetPicker", "→ HTTP $code")
+        if (code != 200) return@withContext fallbackDatasetCache()
         val text = conn.inputStream.bufferedReader().readText()
+        if (estDataset) android.util.Log.i("DatasetPicker",
+            "→ corps ${text.length} octets, début=${text.take(120)}")
         // Réponse soit array direct, soit objet contenant data_path → array.
         val array: JSONArray = try { JSONArray(text) } catch (_: Exception) {
             val obj = try { JSONObject(text) } catch (_: Exception) {

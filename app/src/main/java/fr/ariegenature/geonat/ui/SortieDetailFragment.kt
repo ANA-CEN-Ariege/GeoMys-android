@@ -25,6 +25,7 @@ import org.osmdroid.config.Configuration
 import org.osmdroid.util.BoundingBox
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.overlay.Marker
+import org.osmdroid.views.overlay.Polygon
 import org.osmdroid.views.overlay.Polyline
 import java.io.File
 import java.text.SimpleDateFormat
@@ -166,8 +167,33 @@ class SortieDetailFragment : Fragment() {
         val groupes = sortie.observations.groupBy {
             Pair((it.latitude * 1_000_000).toLong(), (it.longitude * 1_000_000).toLong())
         }
+        // Sommets de toutes les géométries ligne/polygone, pour étendre le cadrage final.
+        val geomPts = mutableListOf<GeoPoint>()
         for ((_, obsGroup) in groupes) {
             val rep = obsGroup.first()
+            // Géométrie du relevé (ligne / polygone) : redessinée à partir des sommets
+            // stockés, sinon on ne verrait que le centroïde (un simple point).
+            val sommets = parseCoordsGeom(rep.geometryCoordsJson)
+            when (rep.geometryType) {
+                "Polygon" -> if (sommets.size >= 3) {
+                    binding.map.overlays.add(Polygon(binding.map).apply {
+                        points = sommets
+                        fillPaint.color = 0x402196F3
+                        outlinePaint.color = 0xCC2196F3.toInt()
+                        outlinePaint.strokeWidth = 5f
+                    })
+                    geomPts += sommets
+                }
+                "LineString" -> if (sommets.size >= 2) {
+                    binding.map.overlays.add(Polyline(binding.map).apply {
+                        setPoints(sommets)
+                        outlinePaint.color = 0xCC2196F3.toInt()
+                        outlinePaint.strokeWidth = 5f
+                        outlinePaint.strokeCap = Paint.Cap.ROUND
+                    })
+                    geomPts += sommets
+                }
+            }
             val titre: String
             val contenu: String
             if (obsGroup.size == 1) {
@@ -202,7 +228,8 @@ class SortieDetailFragment : Fragment() {
         }
 
         val allPts = sortie.pointsParcours.map { GeoPoint(it.latitude, it.longitude) } +
-            sortie.observations.map { GeoPoint(it.latitude, it.longitude) }
+            sortie.observations.map { GeoPoint(it.latitude, it.longitude) } +
+            geomPts
 
         if (allPts.isEmpty()) {
             binding.map.controller.setCenter(GeoPoint(46.5, 2.5))
@@ -217,6 +244,17 @@ class SortieDetailFragment : Fragment() {
                 binding.map.post { binding.map.zoomToBoundingBox(box.increaseByScale(1.4f), false) }
             }
         }
+    }
+
+    /** Parse un geometryCoordsJson (`[[lon,lat], …]`) en liste de GeoPoint. */
+    private fun parseCoordsGeom(json: String?): List<GeoPoint> {
+        if (json.isNullOrEmpty()) return emptyList()
+        return try {
+            val arr = org.json.JSONArray(json)
+            (0 until arr.length()).mapNotNull { i ->
+                arr.optJSONArray(i)?.let { GeoPoint(it.getDouble(1), it.getDouble(0)) }
+            }
+        } catch (_: Exception) { emptyList() }
     }
 
     override fun onResume() { super.onResume(); binding.map.onResume() }

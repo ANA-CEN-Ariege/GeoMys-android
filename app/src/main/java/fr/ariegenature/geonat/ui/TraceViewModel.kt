@@ -96,6 +96,24 @@ class TraceViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /** Met à jour les sommets d'un relevé ligne/polygone : applique le nouveau
+     *  geometryCoordsJson et recentre lat/lon (centroïde) sur toutes les obs ciblées. */
+    fun mettreAJourGeometrieReleve(ids: Collection<String>, coordsJson: String, lat: Double, lon: Double) {
+        val list = _observations.value ?: return
+        var modifie = false
+        ids.forEach { id ->
+            val idx = list.indexOfFirst { it.id == id }
+            if (idx >= 0) {
+                list[idx] = list[idx].copy(geometryCoordsJson = coordsJson, latitude = lat, longitude = lon)
+                modifie = true
+            }
+        }
+        if (modifie) {
+            _observations.value = list
+            persisterBrouillon()
+        }
+    }
+
     /** Auto-save « au fil de l'eau » de la saisie en cours : à chaque modification des
      *  observations (mono ou multi-taxons), on écrit/met à jour la sortie courante dans
      *  [SortieStore] sous une id stable ([sortieEnEditionId]). Elle apparaît ainsi dans
@@ -138,6 +156,15 @@ class TraceViewModel(application: Application) : AndroidViewModel(application) {
     fun reinitialiser() {
         _observations.value = mutableListOf()
         locationTracker.reinitialiser()
+        sortieEnEditionId = null
+    }
+
+    /** Force la prochaine ouverture de l'écran trace à RECHARGER la sortie depuis le store
+     *  et à recadrer la carte dessus. À appeler à l'entrée depuis « Mes saisies » : sans ça,
+     *  rééditer une sortie déjà éditée dans la session laissait [sortieEnEditionId] inchangé,
+     *  donc la reprise (et le recadrage doitCentrerSurObs) était sautée → carte centrée sur
+     *  le GPS au lieu de la géométrie. */
+    fun forcerRepriseAuProchainEcran() {
         sortieEnEditionId = null
     }
 

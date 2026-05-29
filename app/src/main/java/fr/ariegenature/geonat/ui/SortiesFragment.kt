@@ -9,6 +9,7 @@ import android.view.ViewGroup
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
+import androidx.fragment.app.activityViewModels
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -28,6 +29,7 @@ class SortiesFragment : Fragment() {
     private lateinit var sortieStore: SortieStore
     private lateinit var adapter: SortieAdapter
     private var ongletCourant = 0
+    private val traceViewModel: TraceViewModel by activityViewModels()
 
     private val importLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
@@ -70,6 +72,9 @@ class SortiesFragment : Fragment() {
                 confirmerSuppression(sortie)
             },
             onEdit = { sortie ->
+                // Force le rechargement + recadrage sur la sortie, même si elle a déjà été
+                // éditée dans cette session (sinon la carte se centrerait sur le GPS).
+                traceViewModel.forcerRepriseAuProchainEcran()
                 val bundle = Bundle().apply { putString("sortieId", sortie.id) }
                 findNavController().navigate(R.id.action_sorties_to_trace, bundle)
             },

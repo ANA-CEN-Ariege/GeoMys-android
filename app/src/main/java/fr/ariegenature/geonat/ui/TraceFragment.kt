@@ -83,6 +83,20 @@ class TraceFragment : Fragment() {
     private var locationOverlay: MyLocationNewOverlay? = null
     private var tracePolyline: Polyline? = null
     private val observationMarkers = mutableMapOf<String, Marker>()
+    // Géométries (ligne/polygone) des relevés repris en édition : forme redessinée +
+    // sommets draggables (déplacement des points existants). Clé = identité stable du
+    // relevé (releveId, ou id de l'obs si mono). Sinon on ne verrait que le centroïde.
+    private val releveGeoms = mutableMapOf<String, GeomReleveEditable>()
+
+    /** Forme éditable d'un relevé : ses sommets, l'overlay polyline/polygone et les markers
+     *  draggables associés (1 par sommet). */
+    private class GeomReleveEditable(
+        val type: String,
+        val ids: List<String>,
+        val sommets: MutableList<GeoPoint>,
+        var overlay: org.osmdroid.views.overlay.Overlay,
+        val markers: MutableList<Marker> = mutableListOf(),
+    )
 
     private var enregistrerTrace = true
     private var envoiEnCours = false
@@ -394,6 +408,9 @@ class TraceFragment : Fragment() {
         val points = mutableListOf<GeoPoint>()
         traceViewModel.observations.value?.forEach {
             if (it.latitude != 0.0 || it.longitude != 0.0) points.add(GeoPoint(it.latitude, it.longitude))
+            // Inclut les sommets des géométries ligne/polygone pour cadrer sur la forme
+            // entière (sinon on cadre seulement sur le centroïde → polygone hors écran).
+            points.addAll(parseCoordsGeom(it.geometryCoordsJson))
         }
         traceViewModel.locationTracker.parcours.value?.forEach {
             if (it.latitude != 0.0 || it.longitude != 0.0) points.add(GeoPoint(it.latitude, it.longitude))
@@ -409,13 +426,27 @@ class TraceFragment : Fragment() {
             // toutes les espèces partagent le même point) → centrage simple. Sinon
             // zoomToBoundingBox sur une boîte d'aire nulle calcule un zoom aberrant et
             // projette la carte n'importe où (Alaska).
-            if (maxLat - minLat < 1e-4 && maxLon - minLon < 1e-4) {
+            val latSpan = maxLat - minLat
+            val lonSpan = maxLon - minLon
+            if (latSpan < 1e-4 && lonSpan < 1e-4) {
                 binding.map.controller.setZoom(18.0)
                 binding.map.controller.setCenter(GeoPoint((minLat + maxLat) / 2, (minLon + maxLon) / 2))
             } else {
-                // increaseByScale ajoute une marge pour ne pas coller les points aux bords.
-                val box = org.osmdroid.util.BoundingBox(maxLat, maxLon, minLat, minLon).increaseByScale(1.3f)
-                binding.map.zoomToBoundingBox(box, false)
+                // Une ligne ~horizontale/verticale donne une boîte d'aire nulle (un axe
+                // d'épaisseur ~0) → zoomToBoundingBox diverge. On garantit une épaisseur
+                // minimale (~50 m) sur l'axe plat.
+                val padLat = if (latSpan < 5e-4) 5e-4 else 0.0
+                val padLon = if (lonSpan < 5e-4) 5e-4 else 0.0
+                val box = org.osmdroid.util.BoundingBox(
+                    maxLat + padLat, maxLon + padLon, minLat - padLat, minLon - padLon,
+                )
+                // Marge en pixels = hauteur du bandeau de boutons du bas (qui recouvre la
+                // carte) + une marge de respiration, pour que la forme et ses extrémités
+                // ne collent pas au bord du bandeau et restent bien dans la partie utile.
+                val respiration = (32 * resources.displayMetrics.density).toInt()
+                val border = (_binding?.panneauControle?.height ?: 0)
+                    .coerceAtLeast((48 * resources.displayMetrics.density).toInt()) + respiration
+                binding.map.zoomToBoundingBox(box, false, border)
             }
         }
     }
@@ -509,13 +540,20 @@ class TraceFragment : Fragment() {
         updateModePositionnement()
     }
 
-    /** Met en surbrillance le bouton de mode actif (fond colorPrimary atténué). */
+    /** Met en surbrillance le bouton de mode actif. On teinte l'ovale `btn_map_bg`
+     *  (au lieu de setBackgroundColor qui en faisait un carré) : actif = fond colorPrimary
+     *  + icône blanche, inactif = fond blanc OPAQUE + icône colorPrimary (bien plus
+     *  visible que l'ancien blanc semi-transparent). */
     private fun mettreEnEvidenceBoutonMode() {
-        val actif = androidx.core.content.ContextCompat.getColor(requireContext(), R.color.colorPrimary)
-        val inactif = 0x80FFFFFF.toInt()
-        binding.btnModePoint.setBackgroundColor(if (modeGeom == ModeGeom.POINT) actif else inactif)
-        binding.btnModeLine.setBackgroundColor(if (modeGeom == ModeGeom.LINE) actif else inactif)
-        binding.btnModePolygon.setBackgroundColor(if (modeGeom == ModeGeom.POLYGON) actif else inactif)
+        val primaire = androidx.core.content.ContextCompat.getColor(requireContext(), R.color.colorPrimary)
+        val blanc = android.graphics.Color.WHITE
+        fun appliquer(btn: android.widget.ImageButton, estActif: Boolean) {
+            btn.backgroundTintList = android.content.res.ColorStateList.valueOf(if (estActif) primaire else blanc)
+            btn.imageTintList = android.content.res.ColorStateList.valueOf(if (estActif) blanc else primaire)
+        }
+        appliquer(binding.btnModePoint, modeGeom == ModeGeom.POINT)
+        appliquer(binding.btnModeLine, modeGeom == ModeGeom.LINE)
+        appliquer(binding.btnModePolygon, modeGeom == ModeGeom.POLYGON)
     }
 
     /** Retire l'overlay et les markers de sommets, vide la liste. */
@@ -685,8 +723,16 @@ class TraceFragment : Fragment() {
             observationMarkers.remove(id)
         }
         observations.forEach { obs ->
+            val aForme = (obs.geometryType == "Polygon" || obs.geometryType == "LineString") &&
+                !obs.geometryCoordsJson.isNullOrEmpty()
             val existant = observationMarkers[obs.id]
-            if (existant != null) {
+            if (aForme) {
+                // Relevé ligne/polygone : on n'affiche que la forme, pas le marker centroïde.
+                if (existant != null) {
+                    binding.map.overlays.remove(existant)
+                    observationMarkers.remove(obs.id)
+                }
+            } else if (existant != null) {
                 // Mise à jour de la position si elle a changé (déplacement de relevé).
                 val pos = existant.position
                 if (pos.latitude != obs.latitude || pos.longitude != obs.longitude) {
@@ -698,7 +744,143 @@ class TraceFragment : Fragment() {
                 binding.map.overlays.add(marker)
             }
         }
+        majGeometriesReleves(observations)
         binding.map.invalidate()
+    }
+
+    /** Identité stable d'un relevé (insensible aux changements de sommets). */
+    private fun cleReleve(obs: Observation): String =
+        obs.releveId?.takeIf { it.isNotEmpty() } ?: obs.id
+
+    /** Redessine + rend draggables les géométries ligne/polygone des relevés repris.
+     *  Idempotent : si la forme existe déjà (ex. retour de notre propre maj après un
+     *  drag), on resynchronise les positions sans tout recréer (évite flicker/interruption). */
+    private fun majGeometriesReleves(observations: List<Observation>) {
+        val parCle = observations
+            .filter { (it.geometryType == "Polygon" || it.geometryType == "LineString") && !it.geometryCoordsJson.isNullOrEmpty() }
+            .groupBy { cleReleve(it) }
+        // Retire les relevés disparus.
+        releveGeoms.keys.filter { it !in parCle }.forEach { cle ->
+            releveGeoms.remove(cle)?.let { g ->
+                binding.map.overlays.remove(g.overlay)
+                g.markers.forEach { binding.map.overlays.remove(it) }
+            }
+        }
+        parCle.forEach { (cle, obsReleve) ->
+            val rep = obsReleve.first()
+            val type = rep.geometryType!!
+            val sommets = parseCoordsGeom(rep.geometryCoordsJson)
+            if (type == "Polygon" && sommets.size < 3) return@forEach
+            if (type == "LineString" && sommets.size < 2) return@forEach
+            val existant = releveGeoms[cle]
+            if (existant != null && existant.type == type && existant.markers.size == sommets.size) {
+                // Resync (déjà dessiné) : on aligne sommets/markers sur le modèle.
+                sommets.forEachIndexed { i, pt ->
+                    existant.sommets[i] = pt
+                    existant.markers[i].position = pt
+                }
+                redessinerFormeReleve(existant)
+                return@forEach
+            }
+            // (Re)création complète.
+            existant?.let { g ->
+                binding.map.overlays.remove(g.overlay)
+                g.markers.forEach { binding.map.overlays.remove(it) }
+            }
+            releveGeoms[cle] = creerGeomReleveEditable(cle, type, obsReleve.map { it.id }, sommets)
+        }
+    }
+
+    /** Construit la forme (overlay) + les markers draggables d'un relevé repris. */
+    private fun creerGeomReleveEditable(
+        cle: String, type: String, ids: List<String>, sommetsInit: List<GeoPoint>,
+    ): GeomReleveEditable {
+        val sommets = sommetsInit.toMutableList()
+        val g = GeomReleveEditable(type, ids, sommets, construireFormeReleve(type, sommets, cle))
+        binding.map.overlays.add(0, g.overlay) // sous les markers
+        sommets.forEachIndexed { idx, pt ->
+            val marker = Marker(binding.map).apply {
+                position = pt
+                icon = androidx.core.content.ContextCompat.getDrawable(requireContext(), R.drawable.ic_pin_drop)
+                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                isDraggable = true
+                title = "Sommet ${idx + 1}"
+                setInfoWindow(null)
+                setOnMarkerClickListener { _, _ -> true } // pas de bulle au tap
+                setOnMarkerDragListener(object : Marker.OnMarkerDragListener {
+                    override fun onMarkerDragStart(marker: Marker) {}
+                    override fun onMarkerDrag(marker: Marker) {
+                        val i = g.markers.indexOf(marker)
+                        if (i in g.sommets.indices) {
+                            g.sommets[i] = marker.position
+                            redessinerFormeReleve(g) // live, sans toucher au modèle
+                        }
+                    }
+                    override fun onMarkerDragEnd(marker: Marker) {
+                        // Écrit la nouvelle forme + recentre le centroïde sur toutes les obs.
+                        val coordsJson = com.google.gson.Gson().toJson(
+                            g.sommets.map { doubleArrayOf(it.longitude, it.latitude) }
+                        )
+                        val lat = g.sommets.map { it.latitude }.average()
+                        val lon = g.sommets.map { it.longitude }.average()
+                        traceViewModel.mettreAJourGeometrieReleve(g.ids, coordsJson, lat, lon)
+                    }
+                })
+            }
+            binding.map.overlays.add(marker)
+            g.markers.add(marker)
+        }
+        binding.map.invalidate()
+        return g
+    }
+
+    /** Crée un overlay Polyline/Polygon bleu pour la forme d'un relevé, avec tap → liste obs. */
+    private fun construireFormeReleve(type: String, sommets: List<GeoPoint>, cle: String): org.osmdroid.views.overlay.Overlay {
+        val onTap = {
+            val obsReleve = traceViewModel.observations.value?.filter { cleReleve(it) == cle } ?: emptyList()
+            if (obsReleve.isNotEmpty()) montrerOptionsReleve(obsReleve)
+        }
+        return if (type == "LineString") {
+            Polyline(binding.map).apply {
+                setPoints(sommets.toList())
+                outlinePaint.color = 0xCC2196F3.toInt()
+                outlinePaint.strokeWidth = 5f
+                outlinePaint.strokeCap = Paint.Cap.ROUND
+                setOnClickListener { _, _, _ -> onTap(); true }
+            }
+        } else {
+            org.osmdroid.views.overlay.Polygon(binding.map).apply {
+                points = sommets.toList()
+                fillPaint.color = 0x402196F3
+                outlinePaint.color = 0xCC2196F3.toInt()
+                outlinePaint.strokeWidth = 5f
+                setOnClickListener { _, _, _ -> onTap(); true }
+            }
+        }
+    }
+
+    /** Repeint l'overlay d'un relevé à partir de g.sommets, sans recréer les markers
+     *  (utilisé en live pendant le drag d'un sommet). */
+    private fun redessinerFormeReleve(g: GeomReleveEditable) {
+        val cle = releveGeoms.entries.firstOrNull { it.value === g }?.key ?: return
+        binding.map.overlays.remove(g.overlay)
+        val nouveau = construireFormeReleve(g.type, g.sommets, cle)
+        // Réinsère sous le premier marker de sommet pour rester en-dessous.
+        val idx = binding.map.overlays.indexOfFirst { it in g.markers }
+        if (idx >= 0) binding.map.overlays.add(idx, nouveau) else binding.map.overlays.add(0, nouveau)
+        g.overlay = nouveau
+        binding.map.invalidate()
+    }
+
+    /** Parse un geometryCoordsJson (`[[lon,lat], …]`) en liste de GeoPoint. */
+    private fun parseCoordsGeom(json: String?): List<GeoPoint> {
+        if (json.isNullOrEmpty()) return emptyList()
+        return try {
+            val arr = org.json.JSONArray(json)
+            (0 until arr.length()).mapNotNull { i ->
+                arr.optJSONArray(i)?.let { GeoPoint(it.getDouble(1), it.getDouble(0)) }
+            }
+        } catch (_: Exception) { emptyList() }
     }
 
     private fun createObservationMarker(obs: Observation): Marker {
@@ -769,11 +951,9 @@ class TraceFragment : Fragment() {
                 }
                 findNavController().navigate(R.id.action_trace_to_saisie, bundle)
             }
-            .setNegativeButton("Déplacer") { _, _ ->
-                obsARepositionnerIds = observations.map { it.id }
-                updateModePositionnement()
-            }
-            .setNeutralButton("Fermer", null)
+            // Plus de bouton "Déplacer" : le point se drague directement sur la carte, et
+            // les sommets d'un polygone/ligne aussi.
+            .setNegativeButton("Fermer", null)
             .show()
     }
 
@@ -932,6 +1112,7 @@ class TraceFragment : Fragment() {
         super.onDestroyView()
         currentJob?.cancel()
         observationMarkers.clear()
+        releveGeoms.clear()
         tracePolyline = null
         _binding = null
     }

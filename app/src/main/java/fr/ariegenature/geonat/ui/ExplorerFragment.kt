@@ -57,6 +57,8 @@ class ExplorerFragment : Fragment() {
     private var locationListener: LocationListener? = null
     private var derniereLoc: Location? = null
     private var aCentreSurPosition = false
+    private var positionMarker: Marker? = null
+    private var iconePositionCache: BitmapDrawable? = null
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         Configuration.getInstance().userAgentValue = requireContext().packageName
@@ -113,6 +115,7 @@ class ExplorerFragment : Fragment() {
             aCentreSurPosition = true
             binding.map.controller.setZoom(12.0)
             binding.map.controller.setCenter(GeoPoint(lastLoc.latitude, lastLoc.longitude))
+            majMarqueurPosition(lastLoc)
         } else {
             // Pas de position en cache : on affiche le fallback (centre France), mais
             // demarrerLocalisation() recentrera dès la 1ère position reçue en direct.
@@ -129,6 +132,7 @@ class ExplorerFragment : Fragment() {
         locationListener = object : LocationListener {
             override fun onLocationChanged(loc: Location) {
                 derniereLoc = loc
+                majMarqueurPosition(loc)
                 // Recentre automatiquement sur la 1ère position reçue tant qu'on n'a
                 // pas encore centré sur une vraie position (carte sur le fallback).
                 if (!aCentreSurPosition) {
@@ -160,6 +164,41 @@ class ExplorerFragment : Fragment() {
     private fun arreterLocalisation() {
         val listener = locationListener ?: return
         try { locationManager?.removeUpdates(listener) } catch (_: Exception) {}
+    }
+
+    /** Affiche / déplace le marqueur "ma position" sur la carte. Réutilise un seul Marker
+     *  qu'on garde sous référence pour ne pas le recréer ni le supprimer au rechargement
+     *  des observations (cf. afficherMarkers). */
+    private fun majMarqueurPosition(loc: Location) {
+        val map = _binding?.map ?: return
+        val pt = GeoPoint(loc.latitude, loc.longitude)
+        val marker = positionMarker ?: Marker(map).also { m ->
+            m.icon = iconePosition()
+            m.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+            m.isFlat = true
+            m.setInfoWindow(null)
+            m.setOnMarkerClickListener { _, _ -> true } // pas d'action au tap
+            positionMarker = m
+            map.overlays.add(m)
+        }
+        marker.position = pt
+        map.invalidate()
+    }
+
+    /** Pastille "ma position" : disque bleu cerclé de blanc, style classique des cartes. */
+    private fun iconePosition(): BitmapDrawable {
+        iconePositionCache?.let { return it }
+        val dp = resources.displayMetrics.density
+        val taille = (20 * dp).toInt()
+        val bitmap = Bitmap.createBitmap(taille, taille, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        val c = taille / 2f
+        val bleu = ContextCompat.getColor(requireContext(), R.color.blue_poisson)
+        // Halo blanc
+        canvas.drawCircle(c, c, c - 1, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE })
+        // Disque bleu
+        canvas.drawCircle(c, c, c - (3 * dp), Paint(Paint.ANTI_ALIAS_FLAG).apply { color = bleu })
+        return BitmapDrawable(resources, bitmap).also { iconePositionCache = it }
     }
 
     private fun boutonsParTaxon(): Map<Taxon, com.google.android.material.button.MaterialButton> = mapOf(
@@ -318,7 +357,10 @@ class ExplorerFragment : Fragment() {
 
     private fun afficherMarkers(observations: List<ObsExplorer>) {
         val b = _binding ?: return
-        b.map.overlays.removeAll(b.map.overlays.filterIsInstance<Marker>().toSet())
+        // On retire les markers d'observations mais on préserve le marqueur "ma position".
+        b.map.overlays.removeAll(
+            b.map.overlays.filterIsInstance<Marker>().filter { it != positionMarker }.toSet()
+        )
 
         // Grouper par coordonnées arrondies à 3 décimales (≈ 110m) comme iOS cluster
         val groupes = observations.groupBy { "%.3f,%.3f".format(it.latitude, it.longitude) }
@@ -337,6 +379,8 @@ class ExplorerFragment : Fragment() {
             }
             b.map.overlays.add(marker)
         }
+        // Le marqueur "ma position" repasse au-dessus des observations.
+        positionMarker?.let { if (b.map.overlays.remove(it)) b.map.overlays.add(it) }
         b.map.invalidate()
     }
 
@@ -444,6 +488,9 @@ class ExplorerFragment : Fragment() {
         arreterLocalisation()
         locationManager = null
         locationListener = null
+        positionMarker = null
+        iconePositionCache?.bitmap?.recycle()
+        iconePositionCache = null
         sensorManager?.unregisterListener(sensorListener)
         sensorManager = null
         sensorListener = null

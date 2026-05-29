@@ -293,8 +293,14 @@ class SaisieObservationFragment : Fragment() {
         val parCdNom = TaxRefCache.entreesParCdNom()
         pendingObs.forEachIndexed { index, obs ->
             val row = inflater.inflate(R.layout.item_pending_obs, binding.llPendingObs, false)
-            row.findViewById<ImageView>(R.id.iv_taxon).setImageResource(taxonIcon(obs.taxon))
-            row.findViewById<TextView>(R.id.tv_espece).text = obs.espece
+            val tvEspece = row.findViewById<TextView>(R.id.tv_espece)
+            tvEspece.text = obs.espece
+            // Icône teintée dans la même couleur que le nom de l'espèce (suit le thème
+            // clair/sombre) au lieu de sa couleur native presque noire.
+            row.findViewById<ImageView>(R.id.iv_taxon).apply {
+                setImageResource(taxonIcon(obs.taxon))
+                setColorFilter(tvEspece.currentTextColor)
+            }
             // Nom scientifique sous le nom français (en italique via le layout). Affiché
             // seulement si l'espèce affichée n'est pas déjà le nom sci (= un nom FR a été choisi).
             row.findViewById<TextView>(R.id.tv_sci_nom).apply {

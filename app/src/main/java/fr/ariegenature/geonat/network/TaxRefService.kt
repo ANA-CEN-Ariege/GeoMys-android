@@ -19,27 +19,41 @@ object TaxRefService {
 
     suspend fun rechercher(nom: String, taxon: Taxon? = null, gnConfig: GeoNatureConfig? = null): Pair<TaxRefStatut, Boolean> =
         withContext(Dispatchers.IO) {
+            // Set des cd_nom autorisés pour le groupe sélectionné. Null si pas de groupe
+            // demandé OU si l'index par taxon n'a pas (encore) été synchronisé pour ce groupe
+            // — dans ce cas on reste permissif pour ne pas bloquer le user qui n'a pas sync.
+            val cdNomsAutorises: Set<Int>? = if (taxon != null) {
+                TaxRefCache.indexParTaxon(taxon)?.takeIf { it.isNotEmpty() }?.toHashSet()
+            } else null
+            fun appartientAuGroupe(cd: Int): Boolean = cdNomsAutorises?.contains(cd) ?: true
+
             // 1. Cache synchronisé depuis le serveur GeoNature (cd_nom autoritatif du serveur)
+            //    On valide l'appartenance au groupe avant d'accepter le match — sinon
+            //    "Tourterelle turque" matche même quand le user a sélectionné Mammifères.
             TaxRefCache.get(nom)?.let { entry ->
-                // Préfère le nom français de la clé matchée ; sinon n'importe quel nom
-                // français connu pour ce cd_nom (cas où la clé est le nom scientifique).
-                val nomFr = entry.nomFrOriginal ?: TaxRefCache.getVernaculaireParCdNom(entry.cdNom)
-                return@withContext Pair(TaxRefStatut.Trouve(entry.cdNom, entry.sciNom, nomFr), false)
+                if (appartientAuGroupe(entry.cdNom)) {
+                    val nomFr = entry.nomFrOriginal ?: TaxRefCache.getVernaculaireParCdNom(entry.cdNom)
+                    return@withContext Pair(TaxRefStatut.Trouve(entry.cdNom, entry.sciNom, nomFr), false)
+                }
             }
 
             // 2. Base embarquée TaxRefLocal
             val statutLocal = TaxRefLocal.rechercher(nom)
-            if (statutLocal is TaxRefStatut.Trouve) {
+            if (statutLocal is TaxRefStatut.Trouve && appartientAuGroupe(statutLocal.cdNom)) {
                 return@withContext Pair(statutLocal, false)
             }
 
-            // 3. API TaxRef GeoNature en direct (si configuré)
+            // 3. API TaxRef GeoNature en direct (si configuré) — filtre &regne déjà appliqué
+            //    côté URL, on revérifie tout de même contre l'index local pour rester cohérent.
             if (gnConfig != null && gnConfig.connexionConfiguree) {
                 rechercherViaGeoNature(nom, taxon, gnConfig)?.let { statut ->
-                    if (statut is TaxRefStatut.Trouve) {
+                    if (statut is TaxRefStatut.Trouve && appartientAuGroupe(statut.cdNom)) {
                         TaxRefCache.set(nom, statut.cdNom, statut.nomScientifique, statut.nomFrancais)
+                        return@withContext Pair(statut, true)
                     }
-                    return@withContext Pair(statut, true)
+                    if (statut !is TaxRefStatut.Trouve) {
+                        return@withContext Pair(statut, true)
+                    }
                 }
             }
 

@@ -53,11 +53,15 @@
         android:paddingBottom="60dp"
         android:paddingTop="60dp">
 
-        <!-- Logo -->
+        <!-- Logo : on pointe sur le foreground directement (webp simple) au lieu de
+             @mipmap/ic_launcher qui résout vers l'adaptive-icon XML. Inflater un
+             AdaptiveIconDrawable via android:src plante avec un NPE
+             `Application.getResources() == null` sur certains appareils (cf. l'issue
+             AOSP — même symptôme que le `<monochrome>` retiré précédemment). -->
         <ImageView
             android:layout_width="120dp"
             android:layout_height="120dp"
-            android:src="@mipmap/ic_launcher" />
+            android:src="@mipmap/ic_launcher_foreground" />
 
         <TextView
             android:layout_width="wrap_content"

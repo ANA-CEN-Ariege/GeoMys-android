@@ -122,10 +122,12 @@
         android:background="@android:color/transparent"
         android:scrollbars="none">
 
+        <!-- Pas de fond opaque ici : le panneau de config s'affiche carte cachée, donc on
+             laisse transparaître le windowBackground (dégradé bg_accueil) pour que le
+             formulaire ait exactement le fond par défaut de l'app. -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:background="@drawable/panel_bg"
             android:orientation="vertical"
             android:paddingHorizontal="16dp"
             android:paddingTop="16dp"
@@ -537,14 +539,14 @@
             android:gravity="center_vertical|end"
             android:orientation="horizontal">
 
-            <com.google.android.material.floatingactionbutton.FloatingActionButton
+            <ImageButton
                 android:id="@+id/btn_enregistrer_ici"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:background="@drawable/btn_circle_blue"
                 android:contentDescription="Enregistrer ici"
                 android:src="@drawable/ic_add"
-                app:backgroundTint="?attr/colorPrimary"
-                app:fabSize="normal" />
+                android:tint="@android:color/white" />
         </LinearLayout>
     </LinearLayout>
 

@@ -236,7 +236,6 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom"
-        android:background="@drawable/panel_bg"
         android:orientation="horizontal"
         android:paddingHorizontal="20dp"
         android:paddingVertical="16dp">
@@ -252,9 +251,10 @@
                 android:layout_width="52dp"
                 android:layout_height="52dp"
                 android:layout_gravity="center"
-                android:background="@drawable/btn_circle_white"
+                android:background="@drawable/btn_circle_green"
                 android:contentDescription="Parcours"
-                android:src="@drawable/ic_play" />
+                android:src="@drawable/ic_play"
+                android:tint="@android:color/white" />
         </FrameLayout>
 
         <!-- Case Observation -->
@@ -267,9 +267,10 @@
                 android:layout_width="48dp"
                 android:layout_height="48dp"
                 android:layout_gravity="center"
-                android:background="@drawable/btn_circle_white"
+                android:background="@drawable/btn_circle_blue"
                 android:contentDescription="Observation"
-                android:src="@drawable/ic_add" />
+                android:src="@drawable/ic_add"
+                android:tint="@android:color/white" />
         </FrameLayout>
 
         <!-- Case Liste avec badge -->
@@ -285,9 +286,10 @@
                     android:id="@+id/btn_liste"
                     android:layout_width="44dp"
                     android:layout_height="44dp"
-                    android:background="@drawable/btn_circle_white"
+                    android:background="@drawable/btn_circle_blue"
                     android:contentDescription="Liste"
-                    android:src="@drawable/ic_list" />
+                    android:src="@drawable/ic_list"
+                    android:tint="@android:color/white" />
                 <TextView
                     android:id="@+id/liste_badge"
                     android:layout_width="wrap_content"

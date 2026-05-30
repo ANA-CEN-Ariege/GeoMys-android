@@ -158,7 +158,7 @@ class FormulaireRenderer(
                     .firstOrNull { it.tag == cible }
                 if (bouton != null) rg.check(bouton.id) else rg.clearCheck()
             }
-            ViewType.DATE, ViewType.TIME -> (vue as TextView).apply {
+            ViewType.DATE, ViewType.TIME, ViewType.DATETIME -> (vue as TextView).apply {
                 val s = valeur?.toString().orEmpty()
                 tag = s
                 if (s.isNotEmpty()) { text = s; setTextColor(couleurValeur) }
@@ -323,6 +323,7 @@ class FormulaireRenderer(
             ViewType.NUMBER -> (v as EditText).text.toString().toIntOrNull()
             ViewType.DATE -> (v as TextView).tag as? String ?: ""
             ViewType.TIME -> (v as TextView).tag as? String ?: ""
+            ViewType.DATETIME -> (v as TextView).tag as? String ?: ""
             ViewType.TAXON -> {
                 // `tag` porte le cd_nom Int résolu via TaxRefCache lors du choix d'une
                 // suggestion. Null si l'utilisateur a tapé un texte qui n'a pas matché.
@@ -383,6 +384,7 @@ class FormulaireRenderer(
             )
             ViewType.DATE -> creerChampDate(field)
             ViewType.TIME -> creerChampTime(field)
+            ViewType.DATETIME -> creerChampDateTime(field)
             ViewType.TAXON -> creerChampTaxon(field)
             ViewType.SELECT -> creerSpinner(field)
             ViewType.RADIO -> creerChampRadio(field)
@@ -523,6 +525,59 @@ class FormulaireRenderer(
                 tv.setTextColor(couleurValeur)
                 notifierChangement()
             }, hInit, mInit, true).show()
+        }
+        return tv
+    }
+
+    /** Champ DATETIME : TextView cliquable qui enchaîne un DatePickerDialog puis un
+     *  TimePickerDialog. La valeur est stockée dans `tag` au format "yyyy-MM-dd HH:mm:ss"
+     *  (accepté par le backend GeoNature, cf. formatDateTime de gn_mobile_monitoring) et
+     *  affichée au format FR "dd/MM/yyyy HH:mm". */
+    private fun creerChampDateTime(field: EditableField): TextView {
+        val fmtAffichage = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.FRANCE)
+        val fmtStockage = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
+        val tv = TextView(ctx).apply {
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+            setPadding((8 * density).toInt(), (12 * density).toInt(), (8 * density).toInt(), (12 * density).toInt())
+            setBackgroundResource(fr.ariegenature.geonat.R.drawable.bg_carte_contour)
+            text = "Choisir date et heure…"
+            setTextColor(couleurSecondaire)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            )
+        }
+        // Pré-remplir : on accepte le séparateur ISO 'T' ou l'espace, avec ou sans secondes.
+        (field.value as? String)?.takeIf { it.isNotBlank() }?.let { brut ->
+            val normalise = brut.trim().replace('T', ' ')
+            val date = listOf("yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd HH:mm").firstNotNullOfOrNull { pat ->
+                runCatching { SimpleDateFormat(pat, Locale.US).parse(normalise) }.getOrNull()
+            }
+            if (date != null) {
+                tv.tag = fmtStockage.format(date)
+                tv.text = fmtAffichage.format(date)
+                tv.setTextColor(couleurValeur)
+            }
+        }
+        tv.setOnClickListener {
+            val cal = Calendar.getInstance()
+            (tv.tag as? String)?.let { iso ->
+                runCatching { cal.time = fmtStockage.parse(iso)!! }
+            }
+            DatePickerDialog(
+                ctx,
+                { _, y, mo, d ->
+                    cal.set(Calendar.YEAR, y); cal.set(Calendar.MONTH, mo); cal.set(Calendar.DAY_OF_MONTH, d)
+                    android.app.TimePickerDialog(ctx, { _, h, mi ->
+                        cal.set(Calendar.HOUR_OF_DAY, h); cal.set(Calendar.MINUTE, mi); cal.set(Calendar.SECOND, 0)
+                        tv.tag = fmtStockage.format(cal.time)
+                        tv.text = fmtAffichage.format(cal.time)
+                        tv.setTextColor(couleurValeur)
+                        notifierChangement()
+                    }, cal.get(Calendar.HOUR_OF_DAY), cal.get(Calendar.MINUTE), true).show()
+                },
+                cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH),
+            ).show()
         }
         return tv
     }

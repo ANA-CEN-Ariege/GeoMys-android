@@ -451,6 +451,11 @@ class ConfigGeoNatureFragment : Fragment() {
         TaxRefCache.vider()
         NomenclatureCache.vider()
         MonitoringCache.vider()
+        // MonitoringCache.vider() n'efface que le DISQUE. La liste des modules est aussi
+        // gardée en mémoire par MonitoringApi (dernierChargement), et countModulesEnCache()
+        // la renvoie en priorité — sans cette invalidation, le compteur de protocoles reste
+        // figé (ex. 12) après un « Vider le cache » / « Recharger les données ».
+        MonitoringApi.invaliderCaches()
     }
 
     private fun chargerToutesLesDonnees() {

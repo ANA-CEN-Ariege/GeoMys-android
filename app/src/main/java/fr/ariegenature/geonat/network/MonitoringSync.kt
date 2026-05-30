@@ -22,9 +22,12 @@ import kotlinx.coroutines.withContext
  *  GeoNature. La profondeur max [PROFONDEUR_MAX] sert de garde-fou contre les cycles. */
 object MonitoringSync {
 
-    /** Types reconnus comme "saisie" → la BFS ne descend pas dedans. Insensible à la casse.
-     *  Couvre les conventions OCCTAX (releve/occurrence/denombrement) et gn_module_monitoring
-     *  (visite/observation). Au pluriel pour matcher les variantes serveur ("observations"). */
+    /** Types reconnus comme "saisie" par NOMMAGE — repli quand le schéma serveur est
+     *  indisponible (la BFS de pré-chargement préfère désormais le signal `geometry_type` du
+     *  schéma, cf. `estSaisie` dans [synchroniserSuivis]). Encore utilisé tel quel par les
+     *  écrans qui affichent les boutons « + Nouveau X » à partir d'un simple nom de type.
+     *  Insensible à la casse. Couvre les conventions OCCTAX (releve/occurrence/denombrement)
+     *  et gn_module_monitoring (visite/observation), au pluriel pour les variantes serveur. */
     private val TYPES_SAISIE = setOf(
         "visite", "visites", "visit", "visits",
         "observation", "observations", "obs",
@@ -83,12 +86,21 @@ object MonitoringSync {
                 schema?.get("module")?.idListObserver?.takeIf { it > 0 }
                     ?.let { listesObserversAFetch.add(it) }
 
+                // Discriminateur structurel/saisie piloté par le SCHÉMA serveur : un objet
+                // structurel (sites_group, site, secteur, dalle…) porte une `geometry_type`,
+                // alors qu'un enregistrement (visite, observation) n'en a pas. On préfère ce
+                // signal serveur au nommage ; on ne retombe sur l'heuristique [estTypeSaisie]
+                // que si le type est absent du schéma (vieux protocole / schéma indisponible).
+                fun estSaisie(type: String): Boolean {
+                    val obj = schema?.get(type)
+                    return if (obj != null) obj.geometryType == null else estTypeSaisie(type)
+                }
                 // BFS sur l'arborescence STRUCTURELLE — on filtre les types de saisie pour
                 // ne pas précharger l'historique des visites/obs. Chaque "tâche" = (type, id)
                 // à charger via chargerObjet.
                 val visitees = HashSet<Pair<String, Int>>() // dédoublonne (type, id) si réfs croisés
                 var niveau: List<Pair<String, Int>> = enfantsParType
-                    .filterKeys { !estTypeSaisie(it) }
+                    .filterKeys { !estSaisie(it) }
                     .flatMap { (type, l) -> l.map { type to it.id } }
                     .filter { visitees.add(it) }
 
@@ -114,7 +126,7 @@ object MonitoringSync {
                             // si l'utilisateur les consulte (cache write-through prend le
                             // relais ensuite pour l'offline ultérieur).
                             for ((sousType, liste) in fiche.enfants) {
-                                if (estTypeSaisie(sousType)) continue
+                                if (estSaisie(sousType)) continue
                                 for (enfant in liste) {
                                     val cle = sousType to enfant.id
                                     if (visitees.add(cle)) prochain.add(cle)

@@ -25,7 +25,7 @@ fun mapperViewType(prop: fr.ariegenature.geonat.network.MonitoringApi.Monitoring
         "textarea", "observers-text" -> ViewType.TEXTAREA
         "number", "integer", "float", "decimal" -> ViewType.NUMBER
         "date" -> ViewType.DATE
-        "datetime" -> ViewType.DATE // POC : on ignore la composante heure
+        "datetime", "date-time", "timestamp" -> ViewType.DATETIME
         "time" -> ViewType.TIME
         "select" ->
             if (prop.multiple) ViewType.SELECT_MULTIPLE else ViewType.SELECT

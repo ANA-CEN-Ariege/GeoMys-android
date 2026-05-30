@@ -12,6 +12,10 @@ enum class ViewType {
     DATE,
     /** Sélecteur d'heure (TimePickerDialog Material). Valeur retournée : "HH:MM". */
     TIME,
+    /** Date + heure (widget serveur `datetime`). Enchaîne un DatePickerDialog puis un
+     *  TimePickerDialog. Valeur retournée : "yyyy-MM-dd HH:mm:ss" (format accepté par le
+     *  backend GeoNature, cf. formatDateTime de gn_mobile_monitoring). */
+    DATETIME,
     /** Autocomplete TaxRef pour saisir un cd_nom. AutoCompleteTextView branché sur le
      *  cache local TaxRef ; la valeur retournée est le `cd_nom` (Int) résolu via
      *  TaxRefCache, ou null si le texte ne matche aucun taxon. */

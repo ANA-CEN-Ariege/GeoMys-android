@@ -668,8 +668,8 @@ class NouvelleVisiteFragment : Fragment() {
     private fun typerPourField(f: EditableField, v: Any?): Any? {
         if (v == null) return null
         return when (f.viewType) {
-            ViewType.TEXT, ViewType.TEXTAREA, ViewType.DATE, ViewType.TIME, ViewType.SELECT,
-            ViewType.RADIO ->
+            ViewType.TEXT, ViewType.TEXTAREA, ViewType.DATE, ViewType.TIME, ViewType.DATETIME,
+            ViewType.SELECT, ViewType.RADIO ->
                 v.toString()
             ViewType.NUMBER, ViewType.TAXON -> when (v) {
                 is Int -> v

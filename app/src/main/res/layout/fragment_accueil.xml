@@ -157,7 +157,7 @@
                 android:layout_marginBottom="12dp"
                 android:backgroundTint="@color/green_85"
                 android:paddingVertical="16dp"
-                android:text="Suivis"
+                android:text="Monitoring"
                 android:textColor="@android:color/white"
                 android:textSize="15sp"
                 android:textAllCaps="false" />

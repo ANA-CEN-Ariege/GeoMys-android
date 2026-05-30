@@ -46,7 +46,7 @@ data class FilSegment(val type: String, val id: Int, val label: String)
  *  [moduleLabel] = libellé du protocole courant. */
 fun filRacineSuivis(moduleLabel: String): List<FilSegment> = listOf(
     FilSegment(FIL_TYPE_ACCUEIL, -1, "Accueil"),
-    FilSegment(FIL_TYPE_SUIVIS, -1, "Suivis"),
+    FilSegment(FIL_TYPE_SUIVIS, -1, "Monitoring"),
     FilSegment(FIL_TYPE_MODULE, -1, moduleLabel),
 )
 

@@ -26,7 +26,7 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Suivis"
+            android:text="Monitoring"
             android:textSize="22sp"
             android:textStyle="bold" />
 

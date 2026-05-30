@@ -42,7 +42,7 @@
     <fragment
         android:id="@+id/suivisFragment"
         android:name="fr.ariegenature.geonat.ui.SuivisFragment"
-        android:label="Suivis">
+        android:label="Monitoring">
         <action
             android:id="@+id/action_suivis_to_detail"
             app:destination="@id/suiviDetailFragment" />

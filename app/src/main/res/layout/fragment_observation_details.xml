@@ -258,6 +258,7 @@
             <ImageView
                 android:layout_width="18dp"
                 android:layout_height="18dp"
+                android:contentDescription="@null"
                 android:src="@drawable/ic_location_pin"
                 app:tint="@android:color/holo_red_dark" />
 

@@ -60,6 +60,15 @@ class ExplorerFragment : Fragment() {
     private var positionMarker: Marker? = null
     private var iconePositionCache: BitmapDrawable? = null
 
+    /** Demande de permission localisation : si accordée, on démarre l'écoute GPS en direct.
+     *  Sans ça, `requestLocationUpdates` lançait une SecurityException avalée → pas de GPS
+     *  et aucune invite pour l'utilisateur arrivant directement sur l'Explorer. */
+    private val permissionLauncher = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()
+    ) { resultats ->
+        if (resultats.values.any { it }) demarrerLocalisation()
+    }
+
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         Configuration.getInstance().userAgentValue = requireContext().packageName
         _binding = FragmentExplorerBinding.inflate(inflater, container, false)
@@ -151,6 +160,18 @@ class ExplorerFragment : Fragment() {
     private fun demarrerLocalisation() {
         val lm = locationManager ?: return
         val listener = locationListener ?: return
+        // Sans permission : on la demande (au lieu de partir en SecurityException muette).
+        // Le callback du launcher rappellera demarrerLocalisation() si elle est accordée.
+        val fine = android.Manifest.permission.ACCESS_FINE_LOCATION
+        val coarse = android.Manifest.permission.ACCESS_COARSE_LOCATION
+        val accordee = ContextCompat.checkSelfPermission(requireContext(), fine) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED ||
+            ContextCompat.checkSelfPermission(requireContext(), coarse) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (!accordee) {
+            permissionLauncher.launch(arrayOf(fine, coarse))
+            return
+        }
         try {
             if (lm.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
                 lm.requestLocationUpdates(LocationManager.GPS_PROVIDER, 2000L, 5f, listener)
@@ -488,6 +509,10 @@ class ExplorerFragment : Fragment() {
         arreterLocalisation()
         locationManager = null
         locationListener = null
+        // NE PAS faire `positionMarker.icon = null` ici : à ce stade la MapView est déjà
+        // détachée (mMapViewRepository == null) et Marker.setIcon(null) déréférence le
+        // repository → NPE. La carte étant détachée, plus aucun dessin n'a lieu, donc
+        // recycler directement le bitmap est sans risque.
         positionMarker = null
         iconePositionCache?.bitmap?.recycle()
         iconePositionCache = null

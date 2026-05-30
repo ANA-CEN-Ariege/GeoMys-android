@@ -870,15 +870,15 @@ class TraceFragment : Fragment() {
     }
 
     /** Repeint l'overlay d'un relevé à partir de g.sommets, sans recréer les markers
-     *  (utilisé en live pendant le drag d'un sommet). */
+     *  (utilisé en live pendant le drag d'un sommet). On mute les points de l'overlay
+     *  existant au lieu de le recréer : le type ne change jamais pour un relevé donné, et
+     *  recréer un Polygon/Polyline à chaque frame de drag (+ rescan O(n) des overlays)
+     *  provoquait du jank sur les formes à nombreux sommets. */
     private fun redessinerFormeReleve(g: GeomReleveEditable) {
-        val cle = releveGeoms.entries.firstOrNull { it.value === g }?.key ?: return
-        binding.map.overlays.remove(g.overlay)
-        val nouveau = construireFormeReleve(g.type, g.sommets, cle)
-        // Réinsère sous le premier marker de sommet pour rester en-dessous.
-        val idx = binding.map.overlays.indexOfFirst { it in g.markers }
-        if (idx >= 0) binding.map.overlays.add(idx, nouveau) else binding.map.overlays.add(0, nouveau)
-        g.overlay = nouveau
+        when (val o = g.overlay) {
+            is Polyline -> o.setPoints(g.sommets.toList())
+            is org.osmdroid.views.overlay.Polygon -> o.points = g.sommets.toList()
+        }
         binding.map.invalidate()
     }
 

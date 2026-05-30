@@ -31,6 +31,7 @@
             <ImageView
                 android:layout_width="14dp"
                 android:layout_height="14dp"
+                android:contentDescription="@null"
                 android:src="@drawable/ic_walk"
                 app:tint="?attr/colorControlNormal" />
 
@@ -46,6 +47,7 @@
             <ImageView
                 android:layout_width="14dp"
                 android:layout_height="14dp"
+                android:contentDescription="@null"
                 android:src="@drawable/oiseaux"
                 app:tint="?attr/colorControlNormal" />
 
@@ -61,6 +63,7 @@
             <ImageView
                 android:layout_width="14dp"
                 android:layout_height="14dp"
+                android:contentDescription="@null"
                 android:src="@drawable/ic_location_on"
                 app:tint="?attr/colorControlNormal" />
 

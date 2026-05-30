@@ -12,6 +12,7 @@
         android:id="@+id/iv_taxon_icon"
         android:layout_width="32dp"
         android:layout_height="32dp"
+        android:contentDescription="@null"
         android:src="@drawable/oiseaux" />
 
     <LinearLayout

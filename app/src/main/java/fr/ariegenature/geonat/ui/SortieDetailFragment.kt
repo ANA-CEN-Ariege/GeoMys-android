@@ -64,9 +64,10 @@ class SortieDetailFragment : Fragment() {
 
         // Carte plein écran, boutons à l'écart des barres système.
         binding.btnRetour.applyStatusBarMargin()
-        binding.btnFondCarte.applyStatusBarMargin()
-        binding.btnListeEspeces.applyStatusBarMargin()
-        binding.conteneurFabs.applyNavBarMargin()
+        // Envoyer/Partager en haut à droite → sous la status bar ; contrôles carte en bas
+        // à droite → au-dessus de la nav bar.
+        binding.conteneurActionsHaut.applyStatusBarMargin()
+        binding.conteneurCarte.applyNavBarMargin()
     }
 
     private fun setupButtons() {
@@ -174,26 +175,9 @@ class SortieDetailFragment : Fragment() {
             // Géométrie du relevé (ligne / polygone) : redessinée à partir des sommets
             // stockés, sinon on ne verrait que le centroïde (un simple point).
             val sommets = parseCoordsGeom(rep.geometryCoordsJson)
-            when (rep.geometryType) {
-                "Polygon" -> if (sommets.size >= 3) {
-                    binding.map.overlays.add(Polygon(binding.map).apply {
-                        points = sommets
-                        fillPaint.color = 0x402196F3
-                        outlinePaint.color = 0xCC2196F3.toInt()
-                        outlinePaint.strokeWidth = 5f
-                    })
-                    geomPts += sommets
-                }
-                "LineString" -> if (sommets.size >= 2) {
-                    binding.map.overlays.add(Polyline(binding.map).apply {
-                        setPoints(sommets)
-                        outlinePaint.color = 0xCC2196F3.toInt()
-                        outlinePaint.strokeWidth = 5f
-                        outlinePaint.strokeCap = Paint.Cap.ROUND
-                    })
-                    geomPts += sommets
-                }
-            }
+            val estPolygone = rep.geometryType == "Polygon" && sommets.size >= 3
+            val estLigne = rep.geometryType == "LineString" && sommets.size >= 2
+
             val titre: String
             val contenu: String
             if (obsGroup.size == 1) {
@@ -212,19 +196,52 @@ class SortieDetailFragment : Fragment() {
                     "• ${o.espece}$n$notes"
                 }
             }
-            val marker = Marker(binding.map).apply {
-                position = GeoPoint(rep.latitude, rep.longitude)
-                icon = markerIcon
-                title = titre
-                snippet = contenu
-                infoWindow = ObsInfoWindow(binding.map, titre, contenu)
-                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                setOnMarkerClickListener { m, _ ->
-                    m.showInfoWindow()
-                    true
+
+            when {
+                // Ligne / polygone : on dessine la forme et on rattache l'InfoWindow à un tap
+                // sur la forme elle-même. PAS de marker central — le centroïde n'a pas de sens
+                // pour une géométrie surfacique/linéaire et embrouille la lecture.
+                estPolygone || estLigne -> {
+                    val iw = ObsInfoWindow(binding.map, titre, contenu)
+                    val overlay = if (estPolygone) {
+                        Polygon(binding.map).apply {
+                            points = sommets
+                            fillPaint.color = 0x402196F3
+                            outlinePaint.color = 0xCC2196F3.toInt()
+                            outlinePaint.strokeWidth = 5f
+                            infoWindow = iw
+                            setOnClickListener { _, _, eventPos -> iw.open(this, eventPos, 0, 0); true }
+                        }
+                    } else {
+                        Polyline(binding.map).apply {
+                            setPoints(sommets)
+                            outlinePaint.color = 0xCC2196F3.toInt()
+                            outlinePaint.strokeWidth = 5f
+                            outlinePaint.strokeCap = Paint.Cap.ROUND
+                            infoWindow = iw
+                            setOnClickListener { _, _, eventPos -> iw.open(this, eventPos, 0, 0); true }
+                        }
+                    }
+                    binding.map.overlays.add(overlay)
+                    geomPts += sommets
+                }
+                // Point (ou géométrie absente) : marker classique cliquable.
+                else -> {
+                    val marker = Marker(binding.map).apply {
+                        position = GeoPoint(rep.latitude, rep.longitude)
+                        icon = markerIcon
+                        title = titre
+                        snippet = contenu
+                        infoWindow = ObsInfoWindow(binding.map, titre, contenu)
+                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                        setOnMarkerClickListener { m, _ ->
+                            m.showInfoWindow()
+                            true
+                        }
+                    }
+                    binding.map.overlays.add(marker)
                 }
             }
-            binding.map.overlays.add(marker)
         }
 
         val allPts = sortie.pointsParcours.map { GeoPoint(it.latitude, it.longitude) } +

@@ -10,7 +10,7 @@ Développée par l'[ANA - CEN Ariège](https://ariegenature.fr/).
 
 ### Saisie libre (OccTax)
 - **Suivi GPS** en arrière-plan via service foreground, tracé du parcours sur carte.
-- **Saisie multi-taxons** géolocalisée : un relevé peut contenir plusieurs occurrences (taxons, dénombrements, médias). Géométries point / ligne / polygone au doigt sur la carte. À la réédition d'une sortie, les lignes et polygones sont redessinés et leurs sommets restent **déplaçables** (un tap sur la forme ouvre la liste des espèces du relevé).
+- **Saisie multi-taxons** géolocalisée : un relevé peut contenir plusieurs occurrences (taxons, dénombrements, médias). Géométries point / ligne / polygone au doigt sur la carte. À la réédition d'une sortie, les lignes et polygones sont redessinés et leurs sommets restent **déplaçables** (un tap sur la forme ouvre la liste des espèces du relevé). Après validation d'un relevé, la carte repasse **directement en mode positionnement** pour enchaîner le relevé suivant.
 - **Saisie rapide mono-taxon** : ouverture instantanée, photo + taxon + envoi en quelques tap.
 - **Autocomplétion TaxRef** (noms vernaculaires et scientifiques) avec cache local.
 - **Export GPX** des sorties enregistrées.

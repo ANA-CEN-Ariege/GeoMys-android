@@ -195,6 +195,16 @@ class TraceFragment : Fragment() {
         demanderPermissions()
         applyWindowInsets()
 
+        // Enchaînement multi-taxons : si on revient d'un relevé tout juste validé (coche),
+        // SaisieObservationFragment a posé ce flag pour qu'on reparte directement en mode
+        // positionnement, prêt à placer le relevé suivant — comme un clic sur le bouton « + ».
+        val sv = findNavController().currentBackStackEntry?.savedStateHandle
+        if (sv?.remove<Boolean>("demarrerSaisieSuivante") == true) {
+            suivrePosition = false
+            modePositionnement = true
+            updateModePositionnement()
+        }
+
         // On masque LE WRAPPER (case poids 1) et non le bouton seul : sinon la case vide
         // continue de prendre sa part de largeur et les 2 boutons restants ne se
         // recentreraient pas. Le wrapper en GONE → poids retiré → + et Liste se partagent

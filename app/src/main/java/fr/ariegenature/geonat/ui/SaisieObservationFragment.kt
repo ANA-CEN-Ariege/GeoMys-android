@@ -743,6 +743,14 @@ class SaisieObservationFragment : Fragment() {
         // Le lot est déjà sauvé au fil de l'eau (cf. synchroniserBatch via rafraichirListe) ;
         // on resynchronise par sécurité puis on revient.
         synchroniserBatch()
+        // Enchaînement : si le relevé contient au moins une espèce, on demande à la carte de
+        // repasser directement en mode positionnement pour placer le relevé suivant, au lieu
+        // de retomber dans l'état neutre. Le flag est posé sur l'entrée TraceFragment (= écran
+        // précédent) et consommé dans son onViewCreated au retour.
+        if (pendingObs.isNotEmpty()) {
+            findNavController().previousBackStackEntry?.savedStateHandle
+                ?.set("demarrerSaisieSuivante", true)
+        }
         findNavController().navigateUp()
     }
 

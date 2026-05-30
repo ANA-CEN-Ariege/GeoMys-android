@@ -55,6 +55,10 @@ class CacheManagerFragment : Fragment() {
      *  retirer proprement avant d'en afficher d'autres (changement de protocole). */
     private val overlaysProtocole = mutableListOf<Overlay>()
     private var locationOverlay: MyLocationNewOverlay? = null
+    /** Protocoles accessibles à l'utilisateur courant (déjà filtrés CRUVED par
+     *  [MonitoringApi.chargerModules]). Chargés une fois au démarrage : sert à décider si le
+     *  bouton « Listes » s'affiche et à peupler le dialog sans re-fetch. */
+    private var modulesAccessibles: List<fr.ariegenature.geonat.network.MonitoringModule> = emptyList()
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         Configuration.getInstance().userAgentValue = requireContext().packageName
@@ -65,9 +69,8 @@ class CacheManagerFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         binding.btnRetour.applyStatusBarMargin()
-        // Le conteneur vertical à droite porte les 3 boutons d'action — un seul appel
-        // d'inset (au niveau du parent) suffit pour les décaler tous sous la status bar.
-        binding.conteneurActions.applyStatusBarMargin()
+        // Bouton « Supprimer » isolé en haut à droite — décalé sous la status bar.
+        binding.btnViderCache.applyStatusBarMargin()
         binding.tvTitre.applyStatusBarMargin()
         // Le panel bas est ancré sur le bord de l'écran : il doit garder un padding bottom
         // suffisant pour ne pas être occulté par la nav bar gestuelle / 3-boutons.
@@ -77,7 +80,8 @@ class CacheManagerFragment : Fragment() {
         binding.map.setMultiTouchControls(true)
         binding.map.minZoomLevel = 2.0
         binding.map.maxZoomLevel = ZOOM_MAX_DEFAUT.toDouble()
-        // Vue initiale : centre Ariège (couverture de l'usage principal de l'app).
+        // Vue initiale provisoire : centre Ariège, en attendant le premier point GPS
+        // (couverture de l'usage principal de l'app si la localisation est indisponible).
         binding.map.controller.setZoom(12.0)
         binding.map.controller.setCenter(GeoPoint(42.96, 1.43))
 
@@ -90,6 +94,18 @@ class CacheManagerFragment : Fragment() {
                 ContextCompat.getDrawable(requireContext(), R.drawable.ic_gps_blue_dot)?.toBitmap(),
                 ContextCompat.getDrawable(requireContext(), R.drawable.ic_gps_blue_dot)?.toBitmap(),
             )
+            // Dès le premier fix, recentrer la carte sur la position du téléphone à un zoom
+            // adapté au repérage. runOnFirstFix s'exécute hors thread UI → on repasse sur
+            // le main thread et on ne le fait qu'une fois (la vue peut avoir disparu).
+            runOnFirstFix {
+                val pos = myLocation ?: return@runOnFirstFix
+                binding.map.post {
+                    if (_binding == null) return@post
+                    binding.map.controller.setZoom(15.0)
+                    binding.map.controller.animateTo(pos)
+                    majInfos()
+                }
+            }
         }
         binding.map.overlays.add(locationOverlay)
 
@@ -100,9 +116,12 @@ class CacheManagerFragment : Fragment() {
             binding.map.invalidate()
             majInfos()
         }
+        binding.btnCentrer.setOnClickListener { recentrerSurPosition() }
         binding.btnViderCache.setOnClickListener { demanderViderCache() }
         binding.btnProtocole.setOnClickListener { afficherChoixProtocole() }
         binding.btnCharger.setOnClickListener { lancerTelechargement() }
+
+        chargerProtocolesAccessibles()
 
         // Met à jour les estimations à chaque mouvement de carte (zoom/pan). Pas de
         // throttling : l'estimation est purement locale (calcul de tuiles WebMercator,
@@ -217,30 +236,48 @@ class CacheManagerFragment : Fragment() {
         )
     }
 
-    /** Ouvre un dialog avec la liste des modules monitoring. À la sélection, on lance le
-     *  cadrage de la carte sur l'emprise des sites de ce protocole. La liste vient du même
-     *  endpoint que l'écran « Suivis » → réutilise le cache local quand le serveur est
-     *  injoignable. */
-    private fun afficherChoixProtocole() {
+    /** Recentre la carte sur la dernière position GPS connue du téléphone (zoom 15). Si
+     *  aucun point n'est encore disponible (GPS en cours d'acquisition / permission refusée),
+     *  on le signale plutôt que de bouger la carte au hasard. */
+    private fun recentrerSurPosition() {
+        val pos = locationOverlay?.myLocation
+        if (pos == null) {
+            android.widget.Toast.makeText(
+                requireContext(),
+                "Position GPS pas encore disponible",
+                android.widget.Toast.LENGTH_SHORT,
+            ).show()
+            return
+        }
+        binding.map.controller.setZoom(15.0)
+        binding.map.controller.animateTo(pos)
+        majInfos()
+    }
+
+    /** Charge en tâche de fond les protocoles accessibles à l'utilisateur (filtrés CRUVED
+     *  côté [MonitoringApi.chargerModules]). Le bouton « Listes » reste masqué tant qu'on n'a
+     *  pas au moins un protocole — inutile de l'afficher si l'utilisateur n'a droit à aucun. */
+    private fun chargerProtocolesAccessibles() {
         val config = GeoNatureConfig(requireContext())
         viewLifecycleOwner.lifecycleScope.launch {
             val modules = runCatching { MonitoringApi.chargerModules(config) }.getOrNull().orEmpty()
-            if (!isAdded) return@launch
-            if (modules.isEmpty()) {
-                android.widget.Toast.makeText(
-                    requireContext(),
-                    "Aucun protocole disponible (cache vide ou serveur injoignable)",
-                    android.widget.Toast.LENGTH_LONG,
-                ).show()
-                return@launch
-            }
-            val labels = modules.map { "${it.moduleLabel} (${it.moduleCode})" }.toTypedArray()
-            AlertDialog.Builder(requireContext())
-                .setTitle("Cibler un protocole")
-                .setItems(labels) { _, idx -> cadrerSurProtocole(modules[idx].moduleCode) }
-                .setNegativeButton("Annuler", null)
-                .show()
+            if (_binding == null) return@launch
+            modulesAccessibles = modules
+            binding.btnProtocole.visibility = if (modules.isEmpty()) View.GONE else View.VISIBLE
         }
+    }
+
+    /** Ouvre un dialog avec la liste des protocoles accessibles (déjà chargés au démarrage).
+     *  À la sélection, on cadre la carte sur l'emprise des sites de ce protocole. */
+    private fun afficherChoixProtocole() {
+        val modules = modulesAccessibles
+        if (modules.isEmpty()) return
+        val labels = modules.map { "${it.moduleLabel} (${it.moduleCode})" }.toTypedArray()
+        AlertDialog.Builder(requireContext())
+            .setTitle("Cibler un protocole")
+            .setItems(labels) { _, idx -> cadrerSurProtocole(modules[idx].moduleCode) }
+            .setNegativeButton("Annuler", null)
+            .show()
     }
 
     /** Calcule la BoundingBox englobant toutes les géométries des sites directs du protocole

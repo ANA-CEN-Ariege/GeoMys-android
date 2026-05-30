@@ -58,7 +58,7 @@ class CarteGeometrieFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         binding.btnRetour.applyStatusBarMargin()
-        binding.btnFondCarte.applyStatusBarMargin()
+        binding.btnFondCarte.applyNavBarMargin()
         binding.tvTitre.applyStatusBarMargin()
 
         val moduleCode = arguments?.getString("moduleCode") ?: return navUp()

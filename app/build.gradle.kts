@@ -10,8 +10,8 @@ android {
         applicationId = "fr.ariegenature.geonat"
         minSdk = 24
         targetSdk = 36
-        versionCode = 105
-        versionName = "0.9.79"
+        versionCode = 106
+        versionName = "0.9.80"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

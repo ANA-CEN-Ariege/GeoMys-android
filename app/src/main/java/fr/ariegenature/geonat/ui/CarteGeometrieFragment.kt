@@ -75,14 +75,24 @@ class CarteGeometrieFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        binding.btnRetour.applyStatusBarMargin()
+        binding.tvFil.applyStatusBarMargin()
         binding.btnFondCarte.applyNavBarMargin()
-        binding.tvTitre.applyStatusBarMargin()
+        // tvTitre est positionné sous le fil par garderMargeSousFil (fil.bottom inclut déjà
+        // la marge de status bar) — pas d'applyStatusBarMargin ici, sinon double comptage.
 
         val moduleCode = arguments?.getString("moduleCode") ?: return navUp()
         val objectType = arguments?.getString("objectType") ?: return navUp()
         val id = arguments?.getInt("id", -1)?.takeIf { it > 0 } ?: return navUp()
         val titre = arguments?.getString("titre").orEmpty()
+
+        // Fil d'Ariane "🏠 › Monitoring › Protocole [› Site]" reconstruit depuis l'argument
+        // `fil` propagé par l'écran appelant. Dernier segment = écran courant → non cliquable.
+        appliquerFilAriane(
+            binding.tvFil, findNavController(), moduleCode,
+            decoderFil(arguments?.getString("fil")), dernierCliquable = false,
+        )
+        // Le badge de titre suit la hauteur réelle du fil (descend si chemin multi-lignes).
+        garderMargeSousFil(binding.tvFil, binding.tvTitre)
 
         binding.tvTitre.text = titre
         binding.tvTitre.visibility = if (titre.isEmpty()) View.GONE else View.VISIBLE
@@ -104,7 +114,6 @@ class CarteGeometrieFragment : Fragment() {
         }
         binding.map.overlays.add(locationOverlay)
 
-        binding.btnRetour.setOnClickListener { findNavController().navigateUp() }
         binding.btnFondCarte.setOnClickListener {
             fondCarte = fondCarte.suivant()
             binding.map.setTileSource(tileSourcePour(fondCarte))

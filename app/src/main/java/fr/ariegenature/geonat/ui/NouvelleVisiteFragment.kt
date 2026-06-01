@@ -130,6 +130,8 @@ class NouvelleVisiteFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         binding.root.applySystemBarInsets(includeIme = true)
+        // Le contenu suit la hauteur réelle du fil (décalé plus bas si chemin multi-lignes).
+        garderContenuSousFil(binding.tvFil, binding.scrollContenu)
 
         // Mode édition : si on a un editUuid, on récupère la saisie de l'outbox pour
         // (a) restituer le contexte (moduleCode, parentObjectType, parentId, childObjectType)
@@ -174,7 +176,6 @@ class NouvelleVisiteFragment : Fragment() {
             }
         }
 
-        binding.btnRetour.setOnClickListener { findNavController().navigateUp() }
         binding.btnTerminer.setOnClickListener { findNavController().navigateUp() }
         // Mode "chaîne de saisies" : le parent est lui-même un type de saisie (visite) →
         // on enchaîne plusieurs obs sur la même visite. Le bouton "Terminer" est visible
@@ -234,12 +235,6 @@ class NouvelleVisiteFragment : Fragment() {
                 renderer.rendre(creerChampsDemo())
                 return@launch
             }
-            // Diagnostic général sur le schéma reçu — toujours utile en POC.
-            val recap = schema.entries.joinToString("\n") { (t, s) ->
-                "• $t : ${s.properties.size} prop, parent=${s.parentType ?: "-"}, enfants=${s.childrenTypes.ifEmpty { listOf("-") }}"
-            }
-            ajouterDebug("Schéma /config/$moduleCode reçu (${schema.size} type(s)) :\n$recap")
-
             // Type cible à créer : priorité au `childObjectType` reçu de l'écran appelant
             // (le bouton + d'une ligne sait quel type d'enfant créer selon le schéma —
             // visit pour un point, observation pour une visite, etc.). Fallback sur la
@@ -296,10 +291,6 @@ class NouvelleVisiteFragment : Fragment() {
             val viaDatasetLive = if (viaObjet == null && viaAutreObjet == null && viaDatasetLocal == null)
                 idListeViaDatasetLive(config, moduleCode) else null
             val idListePartage = viaObjet ?: viaAutreObjet ?: viaDatasetLocal ?: viaDatasetLive
-            ajouterDebug(
-                "idListTaxonomy : visit=$viaObjet, autres=$viaAutreObjet, " +
-                "datasetCache=$viaDatasetLocal, datasetLive=$viaDatasetLive → utilisé=$idListePartage"
-            )
             val champsAvecTaxon = if (idListePartage != null) champsAvecOptions.map { f ->
                 if (f.viewType == ViewType.TAXON && f.idListeTaxonomieRestreinte == null)
                     f.copy(idListeTaxonomieRestreinte = idListePartage)
@@ -351,7 +342,7 @@ class NouvelleVisiteFragment : Fragment() {
             champsCourants = champsFinaux
             if (construction.ignores.isNotEmpty()) {
                 val recapIgnores = construction.ignores.joinToString(", ") { "${it.first} (${it.second})" }
-                ajouterDebug("${construction.ignores.size} champ(s) non supporté(s) : $recapIgnores")
+                ajouterDebug("⚠ ${construction.ignores.size} champ(s) non supporté(s) : $recapIgnores")
             }
         }
     }

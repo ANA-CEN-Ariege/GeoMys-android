@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
@@ -9,20 +10,26 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
-    <!-- Bouton retour (haut gauche). Fond blanc + flèche agrandie et teintée du bleu du
-         thème pour bien ressortir sur la carte (même style que l'Explorer). -->
-    <ImageButton
-        android:id="@+id/btn_retour"
-        android:layout_width="44dp"
-        android:layout_height="44dp"
-        android:layout_gravity="top|start"
-        android:layout_margin="12dp"
-        android:background="@drawable/btn_circle_white"
-        android:contentDescription="Retour"
-        android:padding="9dp"
-        android:scaleType="fitCenter"
-        android:src="@drawable/ic_arrow_back"
-        app:tint="?attr/colorPrimary" />
+    <!-- Plus de flèche retour : fil d'Ariane flottant "🏠 › Monitoring › Protocole" en haut,
+         l'icône maison (cliquable) assure le retour comme sur les autres écrans monitoring. -->
+    <TextView
+        android:id="@+id/tv_fil"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top"
+        android:layout_marginTop="12dp"
+        android:layout_marginHorizontal="12dp"
+        android:background="@drawable/bg_fil_ariane"
+        android:backgroundTint="?attr/colorSurfaceVariant"
+        android:elevation="6dp"
+        android:paddingHorizontal="14dp"
+        android:paddingVertical="10dp"
+        android:textColor="?attr/colorOnSurfaceVariant"
+        android:textSize="13sp"
+        android:textStyle="bold"
+        android:visibility="gone"
+        tools:ignore="UnusedAttribute"
+        tools:visibility="visible" />
 
     <!-- Bouton fond de carte (bas droite). Même bouton que la carte de saisie multi-taxons
          (TraceFragment) : btn_map_bg. Remonté au-dessus de la barre système via applyNavBarMargin. -->
@@ -41,7 +48,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="top|center_horizontal"
-        android:layout_marginTop="16dp"
+        android:layout_marginTop="64dp"
         android:background="@drawable/badge_bg"
         android:paddingHorizontal="12dp"
         android:paddingVertical="6dp"

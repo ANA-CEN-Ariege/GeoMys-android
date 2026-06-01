@@ -120,12 +120,24 @@ app/src/main/java/fr/ariegenature/geonat/
 
 ```bash
 ./gradlew assembleDebug         # APK debug
-./gradlew test                  # tests unitaires
+./gradlew testDebugUnitTest     # tests unitaires (JVM, rapides)
 ./gradlew connectedAndroidTest  # tests instrumentés (device requis)
 ./gradlew lint                  # lint
 ```
 
 Requiert Android Studio Hedgehog+ et JDK 11.
+
+## Tests automatiques
+
+Batterie de tests unitaires JVM (`app/src/test/`), exécutée via `./gradlew testDebugUnitTest`
+(quelques secondes, sans émulateur). Couvre la logique pure et le parsing du schéma serveur :
+
+- **Évaluateurs du form renderer monitoring** : `HiddenExprTest`, `ValidationExprTest`, `ChangeRulesTest`.
+- **Mapping du schéma serveur** : `WidgetMappingTest` (`type_widget` → `ViewType`).
+- **Parsing / désérialisation** : `AdditionalFieldsParsingTest` (cache champs additionnels), `ExtraireNomHeuristiqueTest` (nom d'objet monitoring).
+- **Utilitaires** : `DateHeureDefautTest` (défauts date/heure), `FilArianeTest` (fil de navigation), `FondCarteTest` (rotation des fonds).
+
+Ces tests sont lancés avant chaque release.
 
 ## Releases
 

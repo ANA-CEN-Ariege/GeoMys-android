@@ -63,13 +63,15 @@ class SuiviDetailFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         binding.root.applySystemBarInsets(includeIme = true)
+        // Le contenu suit la hauteur réelle du fil (décalé plus bas si le chemin tient sur
+        // plusieurs lignes).
+        garderContenuSousFil(binding.tvFil, binding.scrollContenu)
 
         val moduleCode = arguments?.getString("moduleCode") ?: run {
             findNavController().navigateUp()
             return
         }
 
-        binding.btnRetour.setOnClickListener { findNavController().navigateUp() }
 
         binding.progressDetail.visibility = View.GONE
         val module = MonitoringApi.moduleParCode(moduleCode)

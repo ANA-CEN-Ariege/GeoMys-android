@@ -25,6 +25,7 @@ import android.text.method.LinkMovementMethod
 import android.text.style.ClickableSpan
 import android.text.style.ImageSpan
 import android.view.View
+import android.view.ViewGroup
 import android.widget.TextView
 import androidx.core.content.ContextCompat
 import androidx.core.os.bundleOf
@@ -45,6 +46,38 @@ import fr.ariegenature.geonat.R
 
 /** Séparateur d'affichage — chevron `›`, cohérent avec le fil des saisies en attente. */
 const val FIL_SEPARATEUR = " › "
+
+/** Décale le `paddingTop` de [contenu] (typiquement le ScrollView sous un fil d'Ariane
+ *  flottant) pour qu'il commence juste sous [fil], en suivant sa HAUTEUR RÉELLE. Quand le
+ *  fil passe sur plusieurs lignes (chemin long), le contenu descend d'autant au lieu d'être
+ *  recouvert. À appeler une fois après [appliquerFilAriane] : le listener resynchronise à
+ *  chaque relayout (changement de texte, rotation…). */
+fun garderContenuSousFil(fil: View, contenu: View, margeDp: Float = 12f) {
+    val marge = (margeDp * fil.resources.displayMetrics.density).toInt()
+    val l = contenu.paddingLeft
+    val r = contenu.paddingRight
+    val b = contenu.paddingBottom
+    fil.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+        if (fil.visibility != View.VISIBLE) return@addOnLayoutChangeListener
+        // fil et contenu partagent le même parent (FrameLayout), contenu en match_parent calé
+        // en haut → fil.bottom = exactement l'offset à donner au contenu.
+        val top = fil.bottom + marge
+        if (contenu.paddingTop != top) contenu.setPadding(l, top, r, b)
+    }
+}
+
+/** Variante « marge » de [garderContenuSousFil] pour un élément flottant positionné par
+ *  `topMargin` (ex. badge de titre centré sur une carte). Le déplace sous [fil] selon sa
+ *  hauteur réelle. */
+fun garderMargeSousFil(fil: View, cible: View, margeDp: Float = 12f) {
+    val marge = (margeDp * fil.resources.displayMetrics.density).toInt()
+    fil.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+        if (fil.visibility != View.VISIBLE) return@addOnLayoutChangeListener
+        val lp = cible.layoutParams as? ViewGroup.MarginLayoutParams ?: return@addOnLayoutChangeListener
+        val top = fil.bottom + marge
+        if (lp.topMargin != top) { lp.topMargin = top; cible.layoutParams = lp }
+    }
+}
 
 /** Marqueurs de [FilSegment.type] pour les niveaux racine fixes (la cible de leur clic
  *  ne dépend pas d'un id d'objet mais d'une destination fixe). Les segments objets, eux,

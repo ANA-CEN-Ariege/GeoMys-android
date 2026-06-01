@@ -65,11 +65,12 @@ class FicheObjetFragment : Fragment() {
         val objectType = arguments?.getString("objectType") ?: return navUp()
         val id = arguments?.getInt("id", -1)?.takeIf { it > 0 } ?: return navUp()
 
-        binding.btnRetour.setOnClickListener { findNavController().navigateUp() }
 
         filCourant = decoderFil(arguments?.getString("fil"))
         // Dernier segment = cet objet (non cliquable, on y est déjà) ; ancêtres cliquables.
         appliquerFilAriane(binding.tvFil, findNavController(), moduleCode, filCourant, dernierCliquable = false)
+        // Le contenu suit la hauteur réelle du fil (décalé plus bas si chemin multi-lignes).
+        garderContenuSousFil(binding.tvFil, binding.scrollContenu)
 
         chargerEtAfficher(moduleCode, objectType, id)
     }

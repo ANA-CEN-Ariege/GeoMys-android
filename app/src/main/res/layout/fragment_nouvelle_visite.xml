@@ -6,9 +6,10 @@
     android:layout_height="match_parent">
 
     <ScrollView
+        android:id="@+id/scroll_contenu"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:paddingTop="120dp"
+        android:paddingTop="64dp"
         android:clipToPadding="false">
 
         <LinearLayout
@@ -71,7 +72,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="top"
-        android:layout_marginTop="60dp"
+        android:layout_marginTop="12dp"
         android:layout_marginHorizontal="16dp"
         android:background="@drawable/bg_fil_ariane"
         android:backgroundTint="?attr/colorSurfaceVariant"
@@ -85,15 +86,5 @@
         tools:ignore="UnusedAttribute"
         tools:visibility="visible" />
 
-    <ImageButton
-        android:id="@+id/btn_retour"
-        android:layout_width="48dp"
-        android:layout_height="48dp"
-        android:layout_gravity="top|start"
-        android:layout_margin="8dp"
-        android:background="?attr/selectableItemBackgroundBorderless"
-        android:contentDescription="Retour"
-        android:elevation="8dp"
-        android:src="@drawable/ic_arrow_back"
-        app:tint="?attr/colorOnSurface" />
+    <!-- Plus de flèche retour : l'icône maison du fil d'Ariane assure le retour. -->
 </FrameLayout>

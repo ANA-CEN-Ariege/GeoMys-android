@@ -129,13 +129,13 @@ Requiert Android Studio Hedgehog+ et JDK 11.
 
 ## Tests automatiques
 
-Batterie de ~100 tests unitaires JVM (`app/src/test/`), exécutée via `./gradlew testDebugUnitTest`
+Batterie de ~120 tests unitaires JVM (`app/src/test/`), exécutée via `./gradlew testDebugUnitTest`
 (quelques secondes, sans émulateur). Couvre la logique pure, le parsing du schéma serveur et
 la construction des payloads :
 
 - **Évaluateurs du form renderer monitoring** : `HiddenExprTest`, `ValidationExprTest`, `ChangeRulesTest`.
-- **Mapping & parsing du schéma serveur** : `WidgetMappingTest` (`type_widget` → `ViewType`), `MonitoringApiParsingTest` (propriété /config, cruved, heuristiques nomenclature/taxref), `AdditionalFieldsParsingTest` (cache champs additionnels), `ExtraireNomHeuristiqueTest`.
-- **Payload serveur** : `ConstruireGeometrieTest` (GeoJSON Point/LineString/Polygon + fermeture d'anneau).
+- **Mapping & parsing du schéma serveur** : `WidgetMappingTest` (`type_widget` → `ViewType`), `MonitoringApiParsingTest` (propriété /config, cruved, heuristiques nomenclature/taxref), `SchemaFusionTest` (fusion blocs `generic`+`specific`), `SubstituerVariablesModuleTest` (placeholders `__MODULE.XXX`), `AdditionalFieldsParsingTest` (cache champs additionnels), `ExtraireNomHeuristiqueTest`.
+- **Payload serveur** : `ConstruireGeometrieTest` (GeoJSON Point/LineString/Polygon + fermeture d'anneau), `BuildOccurrenceTest` (occurrence OccTax : cd_nom, countings, résolution des id_nomenclature).
 - **Import/export & réseau** : `GpxUtilsTest` (round-trip GPX), `HumaniserErreurReseauTest` (messages d'erreur), `EstTypeSaisieTest`.
 - **Utilitaires** : `DateHeureDefautTest`, `FilArianeTest`, `FondCarteTest`.
 

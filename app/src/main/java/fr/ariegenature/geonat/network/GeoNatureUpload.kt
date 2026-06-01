@@ -367,7 +367,7 @@ object GeoNatureUpload {
             )
         }
 
-    private fun buildOccurrence(
+    internal fun buildOccurrence(
         obs: Observation,
         nomenclatures: Map<String, Map<String, Int>>,
         mediasParCounting: List<List<JSONObject>> = emptyList(),
@@ -542,7 +542,7 @@ object GeoNatureUpload {
     // ATTENTION ordre des étapes : les ids serveur passent en PREMIER. Sinon un id serveur
     // qui ressemble à un code interne (ex : Adulte a id=3 côté serveur, alors que notre code
     // interne "3" représente "juvénile") serait mal traduit et on enverrait Juvénile.
-    private fun resolverIdNomenclature(
+    internal fun resolverIdNomenclature(
         code: String,
         type: String,
         labels: Map<String, String>,

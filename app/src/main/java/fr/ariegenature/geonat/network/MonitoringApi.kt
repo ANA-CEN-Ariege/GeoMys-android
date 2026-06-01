@@ -906,7 +906,7 @@ object MonitoringApi {
      *  conservant son `type_widget` (parité avec mergeConfigurations de gn_mobile_monitoring).
      *  Ordre : champs generic d'abord, puis champs présents uniquement dans specific.
      *  Fallback sur `properties` (vieille forme) si les deux blocs sont absents. */
-    private fun parserPropertiesFusionnees(objSchema: JSONObject): Map<String, MonitoringPropertySchema> {
+    internal fun parserPropertiesFusionnees(objSchema: JSONObject): Map<String, MonitoringPropertySchema> {
         val generic = objSchema.optJSONObject("generic")
         val specific = objSchema.optJSONObject("specific")
         if (generic == null && specific == null) {
@@ -937,7 +937,7 @@ object MonitoringApi {
 
     /** Fusion shallow de deux config de champ : on copie d'abord les attributs `generic`,
      *  puis ceux de `specific` qui les surchargent un par un. */
-    private fun fusionnerChamp(generic: JSONObject?, specific: JSONObject?): JSONObject {
+    internal fun fusionnerChamp(generic: JSONObject?, specific: JSONObject?): JSONObject {
         val out = JSONObject()
         generic?.keys()?.forEach { k -> out.put(k, generic.get(k)) }
         specific?.keys()?.forEach { k -> out.put(k, specific.get(k)) }
@@ -1162,7 +1162,7 @@ object MonitoringApi {
      *  par leur valeur. La table de correspondance est construite depuis le bloc `custom`
      *  (clés `__MODULE.XXX`) — c'est exactement ce que fait substituteVariables côté
      *  gn_mobile_monitoring. No-op si aucun bloc `custom`. */
-    private fun substituerVariablesModule(racine: JSONObject) {
+    internal fun substituerVariablesModule(racine: JSONObject) {
         val custom = racine.optJSONObject("custom") ?: return
         val subs = mutableMapOf<String, String>()
         custom.keys().forEach { cle ->

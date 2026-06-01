@@ -116,100 +116,7 @@ object AdditionalFieldsApi {
                 obj.optJSONArray("data") ?: obj.optJSONArray("items")
                     ?: throw GNErreur.EnvoiEchoue(code, "additional_fields : format JSON inattendu")
             }
-                val result = mutableListOf<AdditionalFieldDef>()
-                for (i in 0 until array.length()) {
-                    val item = array.getJSONObject(i)
-                    val idField = item.optInt("id_field", -1).takeIf { it > 0 } ?: continue
-                    val fieldName = item.optString("field_name", "").ifEmpty { continue }
-                    val fieldLabel = item.optString("field_label", fieldName)
-                    // type_widget peut être renvoyé sous plusieurs formes selon la version GN :
-                    //   - JSONObject {widget_name: "select", ...}
-                    //   - String "select"
-                    //   - Absent (rare, on a alors WidgetType.INCONNU)
-                    val typeWidgetBrut = item.opt("type_widget")
-                    val widgetName = when (typeWidgetBrut) {
-                        is JSONObject -> typeWidgetBrut.optString("widget_name", "")
-                            .ifEmpty { typeWidgetBrut.optString("name", "") }
-                            .ifEmpty { typeWidgetBrut.optString("code_widget", "") }
-                        is String -> typeWidgetBrut
-                        else -> ""
-                    }
-                    val widget = when (widgetName.lowercase()) {
-                        "text" -> WidgetType.TEXT
-                        "textarea" -> WidgetType.TEXTAREA
-                        "number", "integer", "float" -> WidgetType.NUMBER
-                        "select", "radio", "datalist" -> WidgetType.SELECT
-                        "checkbox", "bool_checkbox", "bool" -> WidgetType.CHECKBOX
-                        "nomenclature" -> WidgetType.NOMENCLATURE
-                        else -> WidgetType.INCONNU
-                    }
-                    // Pour widget=nomenclature : essaie d'extraire le code_nomenclature_type
-                    // depuis plusieurs emplacements possibles (varie selon les versions GN).
-                    val codeNomType: String? = if (widget == WidgetType.NOMENCLATURE) {
-                        item.optString("code_nomenclature_type", "")
-                            .ifEmpty { item.optJSONObject("additional_attributes")?.optString("code_nomenclature_type", "") ?: "" }
-                            .ifEmpty {
-                                (typeWidgetBrut as? JSONObject)?.optString("code_nomenclature_type", "") ?: ""
-                            }
-                            .takeIf { it.isNotEmpty() }
-                    } else null
-                    val fieldValues = mutableListOf<String>()
-                    item.optJSONArray("field_values")?.let { arr ->
-                        for (j in 0 until arr.length()) {
-                            // Soit string nu, soit objet {value, label}.
-                            val v = arr.opt(j)
-                            when (v) {
-                                is String -> fieldValues.add(v)
-                                is JSONObject -> fieldValues.add(v.optString("label", v.optString("value", "")))
-                                else -> v?.toString()?.takeIf { it.isNotEmpty() }?.let { fieldValues.add(it) }
-                            }
-                        }
-                    }
-                    val objectsCode = mutableListOf<String>()
-                    item.optJSONArray("objects")?.let { arr ->
-                        for (j in 0 until arr.length()) {
-                            arr.optJSONObject(j)?.optString("code_object", "")
-                                ?.takeIf { it.isNotEmpty() }?.let(objectsCode::add)
-                        }
-                    }
-                    // Restrictions par dataset : tableau d'objets {id_dataset, ...} ou d'ids nus.
-                    val datasetsIds = mutableListOf<Int>()
-                    item.optJSONArray("datasets")?.let { arr ->
-                        for (j in 0 until arr.length()) {
-                            val v = arr.opt(j)
-                            when (v) {
-                                is Int -> datasetsIds.add(v)
-                                is Long -> datasetsIds.add(v.toInt())
-                                is JSONObject -> v.optInt("id_dataset", -1).takeIf { it > 0 }?.let(datasetsIds::add)
-                            }
-                        }
-                    }
-                    // Restriction par liste UsersHub de taxons.
-                    val idList = item.optInt("id_list", -1).takeIf { it > 0 }
-                    result.add(AdditionalFieldDef(
-                        idField = idField,
-                        fieldName = fieldName,
-                        fieldLabel = fieldLabel,
-                        widget = widget,
-                        fieldValues = fieldValues,
-                        required = item.optBoolean("required", false),
-                        description = item.optString("description", "")
-                            .takeIf { it.isNotEmpty() && it != "null" },
-                        // Le serveur GeoNature renvoie `default_value` sous plusieurs formes
-                        // selon le widget : String pour TEXT/TEXTAREA, Number pour NUMBER,
-                        // String/Number pour NOMENCLATURE (id_nomenclature), JSONArray pour
-                        // SELECT_MULTIPLE ou un objet {value,label} pour certains widgets.
-                        // `optString` retourne "null" littéral si la clé porte une valeur
-                        // null → on filtre. Pour les types complexes on essaie d'extraire
-                        // la "value" la plus probable.
-                        defaultValue = extraireDefautToutesClés(item, fieldName, widget.name),
-                        objectsCode = objectsCode,
-                        datasetsIds = datasetsIds,
-                        idList = idList,
-                        widgetServeur = widgetName,
-                        codeNomenclatureType = codeNomType,
-                    ))
-                }
+            val result = parserChamps(array)
             // Pour les widgets `nomenclature` : fetch parallèle des listes serveur
             // (/api/nomenclatures/nomenclature/<CODE>) pour résoudre id_nomenclature → label_fr.
             val codesNom = result.mapNotNull { it.codeNomenclatureType }.toSet()
@@ -242,7 +149,109 @@ object AdditionalFieldsApi {
      *  versions GeoNature et la migration gn_commons). Essaie également dans
      *  `additional_attributes` qui est l'enveloppe utilisée par certains widgets. Enfin,
      *  pour les widgets SELECT/RADIO/DATALIST, prend le premier `field_values[i].default==true`. */
-    private fun extraireDefautToutesClés(item: JSONObject, fieldName: String, widgetName: String): String? {
+    /** Parse le tableau JSON brut renvoyé par /api/gn_commons/additional_fields en
+     *  liste de [AdditionalFieldDef]. Gère les formes variables du serveur GeoNature :
+     *  type_widget objet vs string, field_values string vs {value,label}, objects[].code_object,
+     *  datasets en ids nus ou objets {id_dataset}. Pur (pas de réseau) → testable. */
+    internal fun parserChamps(array: JSONArray): List<AdditionalFieldDef> {
+        val result = mutableListOf<AdditionalFieldDef>()
+        for (i in 0 until array.length()) {
+            val item = array.getJSONObject(i)
+            val idField = item.optInt("id_field", -1).takeIf { it > 0 } ?: continue
+            val fieldName = item.optString("field_name", "").ifEmpty { continue }
+            val fieldLabel = item.optString("field_label", fieldName)
+            // type_widget peut être renvoyé sous plusieurs formes selon la version GN :
+            //   - JSONObject {widget_name: "select", ...}
+            //   - String "select"
+            //   - Absent (rare, on a alors WidgetType.INCONNU)
+            val typeWidgetBrut = item.opt("type_widget")
+            val widgetName = when (typeWidgetBrut) {
+                is JSONObject -> typeWidgetBrut.optString("widget_name", "")
+                    .ifEmpty { typeWidgetBrut.optString("name", "") }
+                    .ifEmpty { typeWidgetBrut.optString("code_widget", "") }
+                is String -> typeWidgetBrut
+                else -> ""
+            }
+            val widget = when (widgetName.lowercase()) {
+                "text" -> WidgetType.TEXT
+                "textarea" -> WidgetType.TEXTAREA
+                "number", "integer", "float" -> WidgetType.NUMBER
+                "select", "radio", "datalist" -> WidgetType.SELECT
+                "checkbox", "bool_checkbox", "bool" -> WidgetType.CHECKBOX
+                "nomenclature" -> WidgetType.NOMENCLATURE
+                else -> WidgetType.INCONNU
+            }
+            // Pour widget=nomenclature : essaie d'extraire le code_nomenclature_type
+            // depuis plusieurs emplacements possibles (varie selon les versions GN).
+            val codeNomType: String? = if (widget == WidgetType.NOMENCLATURE) {
+                item.optString("code_nomenclature_type", "")
+                    .ifEmpty { item.optJSONObject("additional_attributes")?.optString("code_nomenclature_type", "") ?: "" }
+                    .ifEmpty {
+                        (typeWidgetBrut as? JSONObject)?.optString("code_nomenclature_type", "") ?: ""
+                    }
+                    .takeIf { it.isNotEmpty() }
+            } else null
+            val fieldValues = mutableListOf<String>()
+            item.optJSONArray("field_values")?.let { arr ->
+                for (j in 0 until arr.length()) {
+                    // Soit string nu, soit objet {value, label}.
+                    val v = arr.opt(j)
+                    when (v) {
+                        is String -> fieldValues.add(v)
+                        is JSONObject -> fieldValues.add(v.optString("label", v.optString("value", "")))
+                        else -> v?.toString()?.takeIf { it.isNotEmpty() }?.let { fieldValues.add(it) }
+                    }
+                }
+            }
+            val objectsCode = mutableListOf<String>()
+            item.optJSONArray("objects")?.let { arr ->
+                for (j in 0 until arr.length()) {
+                    arr.optJSONObject(j)?.optString("code_object", "")
+                        ?.takeIf { it.isNotEmpty() }?.let(objectsCode::add)
+                }
+            }
+            // Restrictions par dataset : tableau d'objets {id_dataset, ...} ou d'ids nus.
+            val datasetsIds = mutableListOf<Int>()
+            item.optJSONArray("datasets")?.let { arr ->
+                for (j in 0 until arr.length()) {
+                    val v = arr.opt(j)
+                    when (v) {
+                        is Int -> datasetsIds.add(v)
+                        is Long -> datasetsIds.add(v.toInt())
+                        is JSONObject -> v.optInt("id_dataset", -1).takeIf { it > 0 }?.let(datasetsIds::add)
+                    }
+                }
+            }
+            // Restriction par liste UsersHub de taxons.
+            val idList = item.optInt("id_list", -1).takeIf { it > 0 }
+            result.add(AdditionalFieldDef(
+                idField = idField,
+                fieldName = fieldName,
+                fieldLabel = fieldLabel,
+                widget = widget,
+                fieldValues = fieldValues,
+                required = item.optBoolean("required", false),
+                description = item.optString("description", "")
+                    .takeIf { it.isNotEmpty() && it != "null" },
+                // Le serveur GeoNature renvoie `default_value` sous plusieurs formes
+                // selon le widget : String pour TEXT/TEXTAREA, Number pour NUMBER,
+                // String/Number pour NOMENCLATURE (id_nomenclature), JSONArray pour
+                // SELECT_MULTIPLE ou un objet {value,label} pour certains widgets.
+                // `optString` retourne "null" littéral si la clé porte une valeur
+                // null → on filtre. Pour les types complexes on essaie d'extraire
+                // la "value" la plus probable.
+                defaultValue = extraireDefautToutesClés(item, fieldName, widget.name),
+                objectsCode = objectsCode,
+                datasetsIds = datasetsIds,
+                idList = idList,
+                widgetServeur = widgetName,
+                codeNomenclatureType = codeNomType,
+            ))
+        }
+        return result
+    }
+
+    internal fun extraireDefautToutesClés(item: JSONObject, fieldName: String, widgetName: String): String? {
         // 1) Clés directes à la racine de l'item (toutes les variantes vues sur le terrain).
         val clésDirectes = listOf(
             "default_value", "value_default", "defaultValue", "value", "default"

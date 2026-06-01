@@ -36,6 +36,8 @@ android {
 
     testOptions {
         unitTests.isReturnDefaultValues = true
+        // Robolectric a besoin des ressources Android fusionnées pour démarrer un Context.
+        unitTests.isIncludeAndroidResources = true
     }
 }
 
@@ -59,6 +61,10 @@ dependencies {
     // défaut) : on fournit une vraie implémentation sur le classpath de test pour pouvoir
     // tester le parsing du schéma serveur et la construction des payloads JSON.
     testImplementation("org.json:json:20240303")
+    // Robolectric : exécute en JVM le code dépendant d'un Context Android (SharedPreferences,
+    // stores…). @Config(sdk=[34]) — SDK émulé indépendant du compileSdk.
+    testImplementation("org.robolectric:robolectric:4.14.1")
+    testImplementation("androidx.test:core:1.6.1")
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
 }

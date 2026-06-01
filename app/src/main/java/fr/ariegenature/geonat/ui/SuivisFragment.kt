@@ -122,11 +122,11 @@ class SuivisFragment : Fragment() {
             val ivPicto = row.findViewById<ImageView>(R.id.iv_picto)
             val tvPicto = row.findViewById<TextView>(R.id.tv_picto)
             val picto = m.modulePicto
-            if (picto != null && ressembleAUneImage(picto)) {
+            if (picto != null && PictoMonitoring.estImagePicto(picto)) {
                 ivPicto.visibility = View.VISIBLE
                 chargerImagePicto(ivPicto, urlAbsoluePicto(picto))
             } else {
-                val emoji = picto?.let { pictoFaEnEmoji(it) }
+                val emoji = picto?.let { PictoMonitoring.faEnEmoji(it) }
                 if (emoji != null) { tvPicto.text = emoji; tvPicto.visibility = View.VISIBLE }
             }
             row.findViewById<ImageButton>(R.id.btn_info).setOnClickListener {
@@ -152,18 +152,6 @@ class SuivisFragment : Fragment() {
             }
             binding.llModules.addView(row)
         }
-    }
-
-    /** Vrai si la chaîne ressemble à une URL ou un chemin vers une image plutôt qu'à un
-     *  identifiant FontAwesome. Heuristique simple : préfixe http(s)/protocole ou
-     *  chemin commençant par `/`, ou extension d'image connue. */
-    private fun ressembleAUneImage(picto: String): Boolean {
-        val s = picto.trim()
-        if (s.startsWith("http://", true) || s.startsWith("https://", true) ||
-            s.startsWith("//") || s.startsWith("/")) return true
-        val low = s.lowercase()
-        return low.endsWith(".png") || low.endsWith(".jpg") || low.endsWith(".jpeg")
-            || low.endsWith(".gif") || low.endsWith(".webp") || low.endsWith(".svg")
     }
 
     /** Construit l'URL absolue du picto à partir de la base serveur. Si la chaîne est
@@ -197,49 +185,6 @@ class SuivisFragment : Fragment() {
                 if (bmp != null) target.setImageBitmap(bmp)
                 else target.visibility = View.GONE
             }
-        }
-    }
-
-    /** Mappe un code FontAwesome déclaré dans `module_picto` vers un emoji unicode équivalent.
-     *  Couvre les codes les plus utilisés en gn_module_monitoring (faune/flore/géo). Fallback :
-     *  emoji "presse-papier" générique pour les codes non listés. Retourne null si pas de code. */
-    private fun pictoFaEnEmoji(picto: String): String? {
-        if (picto.isEmpty()) return null
-        return when (picto.lowercase().removePrefix("fa-").removePrefix("fas-").removePrefix("far-")) {
-            "puzzle-piece", "puzzle" -> "🧩"
-            "bird", "dove", "crow", "feather" -> "🐦"
-            "leaf", "seedling" -> "🌿"
-            "tree" -> "🌳"
-            "fish" -> "🐟"
-            "bug" -> "🐛"
-            "spider" -> "🕷️"
-            "paw" -> "🐾"
-            "frog" -> "🐸"
-            "snake" -> "🐍"
-            "horse" -> "🐎"
-            "cow" -> "🐄"
-            "dog" -> "🐕"
-            "cat" -> "🐈"
-            "deer" -> "🦌"
-            "rabbit" -> "🐇"
-            "mouse" -> "🐁"
-            "flower", "fan" -> "🌸"
-            "mountain" -> "⛰️"
-            "water", "tint", "droplet" -> "💧"
-            "map", "map-marker", "map-pin", "location-dot" -> "📍"
-            "binoculars" -> "🔭"
-            "camera" -> "📷"
-            "ear-listen", "headphones" -> "🎧"
-            "compass" -> "🧭"
-            "ruler", "ruler-combined" -> "📏"
-            "clipboard", "clipboard-list", "list", "list-ul" -> "📋"
-            "book" -> "📖"
-            "calendar", "calendar-days" -> "📅"
-            "globe", "earth", "globe-europe" -> "🌍"
-            "sun" -> "☀️"
-            "cloud" -> "☁️"
-            "user", "users" -> "👤"
-            else -> "📋"
         }
     }
 

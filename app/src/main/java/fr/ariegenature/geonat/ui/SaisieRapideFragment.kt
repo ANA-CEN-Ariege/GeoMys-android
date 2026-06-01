@@ -220,6 +220,12 @@ class SaisieRapideFragment : Fragment() {
         demanderPermissions()
         applyWindowInsets()
 
+        // Écran d'entrée du flux mono-taxons : mémorise le type pour que tous les écrans de
+        // saisie en aval affichent le même bandeau "🏠 › Saisie mono-taxons".
+        traceViewModel.typeSaisieLabel = getString(R.string.saisie_mono_taxons)
+        binding.bandeauSaisie.root.applyStatusBarMargin()
+        appliquerBandeauSaisie(binding.bandeauSaisie.root, findNavController(), traceViewModel.typeSaisieLabel)
+
         updateModeUI()
 
         // Le bouton retour système doit traverser showConfirmTerminer() pour libérer
@@ -236,6 +242,7 @@ class SaisieRapideFragment : Fragment() {
     // ─── Carte ────────────────────────────────────────────────────────────────
 
     private fun setupMap() {
+        fondCarte = chargerFondCarte(requireContext(), fondCarte)
         binding.map.setTileSource(tileSourcePour(fondCarte))
         binding.map.setMultiTouchControls(true)
         binding.map.controller.setZoom(15.0)
@@ -278,6 +285,7 @@ class SaisieRapideFragment : Fragment() {
             fondCarte = fondCarte.suivant()
             binding.map.setTileSource(tileSourcePour(fondCarte))
             binding.map.invalidate()
+            enregistrerFondCarte(requireContext(), fondCarte)
         }
 
         binding.compass.setOnClickListener {
@@ -815,6 +823,10 @@ class SaisieRapideFragment : Fragment() {
         // pour son état actif/inactif (rotation map ou non).
         binding.map.visibility           = if (modeActif) View.VISIBLE else View.GONE
         binding.llCarteControles.visibility = if (modeActif) View.VISIBLE else View.GONE
+        // Coche « Terminer » (haut droite) : utile seulement sur la carte (mode actif). En
+        // mode config (écran de sélection du taxon) elle ne sert à rien — on quitte par le
+        // bouton retour système — donc on la masque pour ne pas surcharger l'écran.
+        binding.btnRetour.visibility     = if (modeActif) View.VISIBLE else View.GONE
         if (modeActif) binding.compass.setActif(carteSuitBoussole)
         if (!modeActif) {
             snackJob?.cancel()

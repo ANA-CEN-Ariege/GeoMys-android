@@ -12,6 +12,7 @@ Développée par l'[ANA - CEN Ariège](https://ariegenature.fr/).
 - **Suivi GPS** en arrière-plan via service foreground, tracé du parcours sur carte.
 - **Saisie multi-taxons** géolocalisée : un relevé peut contenir plusieurs occurrences (taxons, dénombrements, médias). Géométries point / ligne / polygone au doigt sur la carte. À la réédition d'une sortie, les lignes et polygones sont redessinés et leurs sommets restent **déplaçables** (un tap sur la forme ouvre la liste des espèces du relevé). Après validation d'un relevé, la carte repasse **directement en mode positionnement** pour enchaîner le relevé suivant.
 - **Saisie rapide mono-taxon** : ouverture instantanée, photo + taxon + envoi en quelques tap.
+- **Bandeau de navigation** « 🏠 › Saisie mono-taxons / multi-taxons » présent sur tous les écrans de chaque flux de saisie (icône maison cliquable → retour à l'accueil), à l'image du fil d'Ariane des suivis.
 - **Autocomplétion TaxRef** (noms vernaculaires et scientifiques) avec cache local.
 - **Export GPX** des sorties enregistrées.
 - **Envoi GeoNature** : POST des relevés OccTax avec occurrences, médias et géométries.
@@ -39,6 +40,8 @@ Quatre fonds disponibles, basculables au tap :
 - **IGN Scan25**
 - **IGN Ortho** (orthophotos)
 
+Le dernier fond choisi est **mémorisé** et réappliqué à l'ouverture de n'importe quelle carte (préférence partagée entre tous les écrans).
+
 **Position courante & GPS externe** : la carte « Explorer » s'abonne au GPS en direct et se recentre automatiquement sur la position dès le premier point reçu (le bouton « Centrer » suit la position live). L'app lit le `LocationManager` standard d'Android : un récepteur externe (ex. **RTK** relayé par **SW Maps** en « position fictive » / mock location) est donc utilisé de façon transparente, sans configuration côté app.
 
 ## Configuration GeoNature
@@ -61,9 +64,9 @@ Un panneau **Données en cache** affiche en haut de la section le nombre de **pr
 - **Saisie multi-taxons** — relevé OccTax complet.
 - **Saisie mono-taxon** — saisie éclair.
 - **Suivis** — accès aux protocoles `gn_module_monitoring`.
-- Menu burger :
-  - **Mes saisies** — sorties GPX enregistrées.
-  - **Mes visites** — saisies monitoring en attente d'envoi.
+- Menu burger (**pastille rouge** sur le bouton dès qu'une saisie ou une visite reste à envoyer) :
+  - **Mes saisies** — sorties GPX enregistrées (pastille rouge si des saisies sont en attente d'envoi).
+  - **Mes visites** — saisies monitoring en attente d'envoi (pastille rouge si nécessaire).
   - **Explorer** — sorties passées sur carte.
   - **Cache Manager** — téléchargement de fonds offline.
 

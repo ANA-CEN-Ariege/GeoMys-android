@@ -12,6 +12,12 @@ import fr.ariegenature.geonat.store.SortieStore
 class TraceViewModel(application: Application) : AndroidViewModel(application) {
     val locationTracker = (application as GeoNatApplication).locationTracker
 
+    /** Libellé du type de saisie en cours ("Saisie mono-taxons" / "Saisie multi-taxons"),
+     *  positionné par l'écran d'entrée du flux (SaisieRapideFragment / TraceFragment) et lu
+     *  par tous les écrans de saisie pour afficher le bandeau "🏠 › <type>"
+     *  (cf. [appliquerBandeauSaisie]). Porté ici car partagé au niveau de l'Activity. */
+    var typeSaisieLabel: String = ""
+
     /** Store durable des sorties — sert à l'auto-save « au fil de l'eau » de la saisie en
      *  cours (cf. [persisterBrouillon]). */
     private val sortieStore = SortieStore(application)

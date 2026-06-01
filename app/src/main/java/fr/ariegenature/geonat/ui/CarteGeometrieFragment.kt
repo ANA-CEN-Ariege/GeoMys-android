@@ -69,6 +69,7 @@ class CarteGeometrieFragment : Fragment() {
         binding.tvTitre.text = titre
         binding.tvTitre.visibility = if (titre.isEmpty()) View.GONE else View.VISIBLE
 
+        fondCarte = chargerFondCarte(requireContext(), fondCarte)
         binding.map.setTileSource(tileSourcePour(fondCarte))
         binding.map.setMultiTouchControls(true)
 
@@ -90,6 +91,7 @@ class CarteGeometrieFragment : Fragment() {
             fondCarte = fondCarte.suivant()
             binding.map.setTileSource(tileSourcePour(fondCarte))
             binding.map.invalidate()
+            enregistrerFondCarte(requireContext(), fondCarte)
         }
 
         chargerEtAfficher(moduleCode, objectType, id)

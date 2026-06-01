@@ -135,6 +135,47 @@ fun appliquerFilAriane(
     tv.text = sb
 }
 
+/** Bandeau de navigation simplifié des écrans de SAISIE (mono / multi-taxons) :
+ *  "🏠 › <type de saisie>". Contrairement au fil d'Ariane des suivis, il n'a que deux
+ *  niveaux et un seul est cliquable : l'icône maison (retour à l'accueil). Le libellé du
+ *  type de saisie est le niveau courant, non cliquable.
+ *
+ *  [typeLabel] = "Saisie mono-taxons" ou "Saisie multi-taxons" (cf. R.string). Masque [tv]
+ *  si vide (état non initialisé, ex. restauration après mort du process). */
+fun appliquerBandeauSaisie(tv: TextView, nav: NavController, typeLabel: String) {
+    if (typeLabel.isEmpty()) {
+        tv.visibility = View.GONE
+        return
+    }
+    tv.visibility = View.VISIBLE
+    tv.movementMethod = LinkMovementMethod.getInstance()
+    val sb = SpannableStringBuilder()
+    val couleurLien = ContextCompat.getColor(tv.context, R.color.jaune_clair)
+    // Icône maison cliquable (même rendu que le fil des suivis) : placeholder espace remplacé
+    // par un ImageSpan teinté jaune clair.
+    sb.append(" ")
+    val drawable = ContextCompat.getDrawable(tv.context, R.drawable.ic_home)
+    if (drawable != null) {
+        val taille = (tv.textSize * 2.10f).toInt()
+        drawable.setBounds(0, 0, taille, taille)
+        drawable.setTint(couleurLien)
+        sb.setSpan(ImageSpan(drawable, ImageSpan.ALIGN_BOTTOM), 0, 1,
+            Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+    }
+    sb.setSpan(object : ClickableSpan() {
+        override fun onClick(widget: View) {
+            if (!nav.popBackStack(R.id.accueilFragment, false)) nav.navigate(R.id.accueilFragment)
+        }
+        override fun updateDrawState(ds: TextPaint) {
+            ds.color = couleurLien
+            ds.isUnderlineText = false
+        }
+    }, 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+    sb.append(FIL_SEPARATEUR)
+    sb.append(typeLabel)
+    tv.text = sb
+}
+
 /** Navigue vers le dernier segment de [cible] (= le niveau cliqué).
  *
  *  - Protocole (taille 1) : simple popBackStack vers sa fiche, unique dans la pile.

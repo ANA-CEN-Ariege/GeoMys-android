@@ -7,6 +7,7 @@ import android.view.ViewGroup
 import android.widget.ArrayAdapter
 import android.widget.Spinner
 import androidx.fragment.app.Fragment
+import androidx.fragment.app.activityViewModels
 import androidx.navigation.fragment.findNavController
 import fr.ariegenature.geonat.databinding.FragmentCaracterisationBinding
 import fr.ariegenature.geonat.model.Taxon
@@ -24,6 +25,7 @@ import com.google.gson.reflect.TypeToken
 class CaracterisationFragment : Fragment() {
     private var _binding: FragmentCaracterisationBinding? = null
     private val binding get() = _binding!!
+    private val traceViewModel: TraceViewModel by activityViewModels()
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         _binding = FragmentCaracterisationBinding.inflate(inflater, container, false)
@@ -33,6 +35,7 @@ class CaracterisationFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         binding.root.applySystemBarInsets(includeIme = true)
+        appliquerBandeauSaisie(binding.bandeauSaisie.root, findNavController(), traceViewModel.typeSaisieLabel)
 
         val a = arguments
         val taxon = runCatching { Taxon.valueOf(a?.getString("taxon") ?: "") }.getOrDefault(Taxon.OISEAU)

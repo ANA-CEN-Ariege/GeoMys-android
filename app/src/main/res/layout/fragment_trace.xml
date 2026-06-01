@@ -10,6 +10,15 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
+    <!-- Bandeau de navigation "🏠 › Saisie multi-taxons" (flottant, haut gauche). -->
+    <include
+        android:id="@+id/bandeau_saisie"
+        layout="@layout/view_bandeau_saisie"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        android:layout_margin="12dp" />
+
     <!-- Réticule de positionnement -->
     <FrameLayout
         android:id="@+id/reticule"

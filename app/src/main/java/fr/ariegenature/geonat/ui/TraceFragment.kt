@@ -195,6 +195,12 @@ class TraceFragment : Fragment() {
         demanderPermissions()
         applyWindowInsets()
 
+        // Écran d'entrée du flux multi-taxons : mémorise le type pour que tous les écrans de
+        // saisie en aval affichent le même bandeau "🏠 › Saisie multi-taxons".
+        traceViewModel.typeSaisieLabel = getString(R.string.saisie_multi_taxons)
+        binding.bandeauSaisie.root.applyStatusBarMargin()
+        appliquerBandeauSaisie(binding.bandeauSaisie.root, findNavController(), traceViewModel.typeSaisieLabel)
+
         // Enchaînement multi-taxons : si on revient d'un relevé tout juste validé (coche),
         // SaisieObservationFragment a posé ce flag pour qu'on reparte directement en mode
         // positionnement, prêt à placer le relevé suivant — comme un clic sur le bouton « + ».
@@ -223,6 +229,7 @@ class TraceFragment : Fragment() {
     }
 
     private fun setupMap() {
+        fondCarte = chargerFondCarte(requireContext(), fondCarte)
         binding.map.setTileSource(tileSourcePour(fondCarte))
         binding.map.setMultiTouchControls(true)
         binding.map.controller.setZoom(savedMapZoom)
@@ -337,6 +344,7 @@ class TraceFragment : Fragment() {
             fondCarte = fondCarte.suivant()
             binding.map.setTileSource(tileSourcePour(fondCarte))
             binding.map.invalidate()
+            enregistrerFondCarte(requireContext(), fondCarte)
         }
 
         binding.compass.setOnClickListener {

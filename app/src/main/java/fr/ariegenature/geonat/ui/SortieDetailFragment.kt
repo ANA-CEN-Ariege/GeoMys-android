@@ -76,6 +76,7 @@ class SortieDetailFragment : Fragment() {
             fondCarte = fondCarte.suivant()
             binding.map.setTileSource(tileSourcePour(fondCarte))
             binding.map.invalidate()
+            enregistrerFondCarte(requireContext(), fondCarte)
         }
         binding.btnExporter.setOnClickListener { exporterGpx() }
 
@@ -147,6 +148,7 @@ class SortieDetailFragment : Fragment() {
     }
 
     private fun setupMap() {
+        fondCarte = chargerFondCarte(requireContext(), fondCarte)
         binding.map.setTileSource(tileSourcePour(fondCarte))
         binding.map.setMultiTouchControls(true)
 

@@ -138,6 +138,7 @@ class SaisieObservationFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         binding.root.applySystemBarInsets(includeIme = true)
+        appliquerBandeauSaisie(binding.bandeauSaisie.root, findNavController(), traceViewModel.typeSaisieLabel)
         gnConfig = GeoNatureConfig(requireContext())
 
         val releveIdArg = arguments?.getString("releveId")

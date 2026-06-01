@@ -76,6 +76,7 @@ class CacheManagerFragment : Fragment() {
         // suffisant pour ne pas être occulté par la nav bar gestuelle / 3-boutons.
         binding.panelBas.applyNavBarInset(includeIme = true)
 
+        fondCarte = chargerFondCarte(requireContext(), fondCarte)
         binding.map.setTileSource(tileSourcePour(fondCarte))
         binding.map.setMultiTouchControls(true)
         binding.map.minZoomLevel = 2.0
@@ -114,6 +115,7 @@ class CacheManagerFragment : Fragment() {
             fondCarte = fondCarte.suivant()
             binding.map.setTileSource(tileSourcePour(fondCarte))
             binding.map.invalidate()
+            enregistrerFondCarte(requireContext(), fondCarte)
             majInfos()
         }
         binding.btnCentrer.setOnClickListener { recentrerSurPosition() }

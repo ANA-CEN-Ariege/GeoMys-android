@@ -23,4 +23,6 @@
     <color name="jaune_clair">#FFE082</color>
     <color name="white">#FFFFFFFF</color>
     <color name="black">#FF000000</color>
+    <!-- Rouge des pastilles « en attente d'envoi » (= @drawable/indicator_red). -->
+    <color name="rouge_pastille">#F44336</color>
 </resources>

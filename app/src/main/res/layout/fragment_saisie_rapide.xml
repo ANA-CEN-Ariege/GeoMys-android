@@ -11,6 +11,17 @@
         android:layout_height="match_parent"
         android:visibility="gone" />
 
+    <!-- Bandeau de navigation "🏠 › Saisie mono-taxons" (flottant, haut gauche). Reste
+         visible en mode config comme en mode carte ; le panneau de config décale son titre
+         (paddingTop) pour passer dessous. -->
+    <include
+        android:id="@+id/bandeau_saisie"
+        layout="@layout/view_bandeau_saisie"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        android:layout_margin="12dp" />
+
     <!-- Réticule (visible en mode actif) -->
     <FrameLayout
         android:id="@+id/reticule"
@@ -43,7 +54,9 @@
             android:background="@drawable/reticule_dot" />
     </FrameLayout>
 
-    <!-- Bouton terminer / quitter — petit cercle vert avec coche, en HAUT À DROITE. -->
+    <!-- Bouton terminer / quitter — petit cercle vert avec coche, en HAUT À DROITE.
+         Visible uniquement en mode actif (sur la carte) ; masqué en mode config (écran de
+         sélection du taxon) via updateModeUI() côté fragment. -->
     <ImageButton
         android:id="@+id/btn_retour"
         android:layout_width="32dp"
@@ -130,10 +143,10 @@
             android:layout_height="wrap_content"
             android:orientation="vertical"
             android:paddingHorizontal="16dp"
-            android:paddingTop="16dp"
+            android:paddingTop="60dp"
             android:paddingBottom="24dp">
 
-            <!-- Titre -->
+            <!-- Titre (décalé sous le bandeau de navigation flottant) -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"

@@ -5,6 +5,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.fragment.app.Fragment
+import androidx.fragment.app.activityViewModels
 import androidx.navigation.fragment.findNavController
 import com.google.gson.Gson
 import fr.ariegenature.geonat.R
@@ -22,6 +23,7 @@ import fr.ariegenature.geonat.ui.saisie.AdditionalFieldsRenderer
 class DetailsReleveFragment : Fragment() {
     private var _binding: FragmentDetailsReleveBinding? = null
     private val binding get() = _binding!!
+    private val traceViewModel: TraceViewModel by activityViewModels()
 
     private var defs: List<AdditionalFieldDef> = emptyList()
 
@@ -33,6 +35,7 @@ class DetailsReleveFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         binding.root.applySystemBarInsets(includeIme = true)
+        appliquerBandeauSaisie(binding.bandeauSaisie.root, findNavController(), traceViewModel.typeSaisieLabel)
 
         val args = arguments
         val gnConfig = GeoNatureConfig(requireContext())

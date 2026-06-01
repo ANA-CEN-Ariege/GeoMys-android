@@ -1,10 +1,14 @@
 package fr.ariegenature.geonat.ui
 
 import android.os.Bundle
+import android.text.SpannableStringBuilder
+import android.text.Spanned
+import android.text.style.ForegroundColorSpan
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.PopupMenu
+import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
 import androidx.navigation.fragment.findNavController
@@ -12,6 +16,8 @@ import fr.ariegenature.geonat.R
 import fr.ariegenature.geonat.databinding.FragmentAccueilBinding
 import fr.ariegenature.geonat.network.MonitoringApi
 import fr.ariegenature.geonat.store.GeoNatureConfig
+import fr.ariegenature.geonat.store.OutboxMonitoring
+import fr.ariegenature.geonat.store.SaisieEnAttente
 import fr.ariegenature.geonat.store.SortieStore
 
 class AccueilFragment : Fragment() {
@@ -32,7 +38,7 @@ class AccueilFragment : Fragment() {
         gnConfig = GeoNatureConfig(requireContext())
 
         // Insets : fond plein écran, boutons à l'écart des barres système.
-        binding.btnMenu.applyStatusBarMargin()
+        binding.menuContainer.applyStatusBarInset()
         binding.topRightContainer.applyStatusBarInset()
         binding.accueilContent.applySystemBarInsets()
 
@@ -64,6 +70,13 @@ class AccueilFragment : Fragment() {
                 // avant la première synchro). Cohérent avec la visibilité du bouton "Suivis".
                 menu.findItem(R.id.menu_mes_visites)?.isVisible =
                     MonitoringApi.countModulesEnCache() > 0
+                // Pastille rouge à côté des entrées dont des éléments restent à envoyer.
+                menu.findItem(R.id.menu_mes_sorties)?.let {
+                    it.title = titreAvecPastille(it.title, nbSaisiesEnAttente() > 0)
+                }
+                menu.findItem(R.id.menu_mes_visites)?.let {
+                    it.title = titreAvecPastille(it.title, nbVisitesEnAttente() > 0)
+                }
                 setOnMenuItemClickListener { item ->
                     when (item.itemId) {
                         R.id.menu_mes_sorties -> {
@@ -102,6 +115,37 @@ class AccueilFragment : Fragment() {
         updateGnIndicator()
         updateButtonState()
         updateSuivisVisibility()
+        updatePastilleMenu()
+    }
+
+    /** Pastille rouge sur le bouton menu dès qu'au moins une saisie OU une visite reste à
+     *  envoyer (le détail par entrée est affiché dans le menu déplié). */
+    private fun updatePastilleMenu() {
+        val enAttente = nbSaisiesEnAttente() > 0 || nbVisitesEnAttente() > 0
+        binding.pastilleMenu.visibility = if (enAttente) View.VISIBLE else View.GONE
+    }
+
+    /** Nombre de saisies OccTax (sorties) non encore envoyées — hors sorties importées. */
+    private fun nbSaisiesEnAttente(): Int =
+        sortieStore.charger().count { !it.envoyeGeoNature && !it.estImportee }
+
+    /** Nombre de saisies monitoring (visites + observations) en attente ou en erreur. */
+    private fun nbVisitesEnAttente(): Int =
+        OutboxMonitoring.tout().count {
+            it.etat == SaisieEnAttente.Etat.PENDING || it.etat == SaisieEnAttente.Etat.ERROR
+        }
+
+    /** Renvoie [titre] suffixé d'une pastille ronde rouge "●" quand [afficher] est vrai, pour
+     *  signaler des éléments en attente d'envoi sur une entrée du menu déplié. */
+    private fun titreAvecPastille(titre: CharSequence?, afficher: Boolean): CharSequence {
+        val base = titre ?: ""
+        if (!afficher) return base
+        val sb = SpannableStringBuilder(base).append("   ●")
+        sb.setSpan(
+            ForegroundColorSpan(ContextCompat.getColor(requireContext(), R.color.rouge_pastille)),
+            sb.length - 1, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE,
+        )
+        return sb
     }
 
     /** Affiche le bouton "Suivis" uniquement si l'utilisateur a au moins un protocole

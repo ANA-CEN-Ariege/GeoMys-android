@@ -78,6 +78,7 @@ class ExplorerFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         gnConfig = GeoNatureConfig(requireContext())
+        fondCarte = chargerFondCarte(requireContext(), fondCarte)
 
         setupMap()
         setupLocalisation()
@@ -301,6 +302,7 @@ class ExplorerFragment : Fragment() {
         fondCarte = fondCarte.suivant()
         binding.map.setTileSource(tileSourcePour(fondCarte))
         binding.map.invalidate()
+        enregistrerFondCarte(requireContext(), fondCarte)
     }
 
     private fun centrerSurPosition() {

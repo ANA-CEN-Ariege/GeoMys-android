@@ -5,16 +5,32 @@
     android:layout_height="match_parent"
     android:background="@drawable/bg_accueil">
 
-    <!-- Bouton menu en haut à gauche -->
-    <ImageButton
-        android:id="@+id/btn_menu"
-        android:layout_width="48dp"
-        android:layout_height="48dp"
+    <!-- Bouton menu en haut à gauche, avec pastille rouge en coin haut-droite quand des
+         saisies ou des visites sont en attente d'envoi. Même montage que top_right_container. -->
+    <FrameLayout
+        android:id="@+id/menu_container"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
         android:layout_gravity="top|start"
-        android:layout_margin="8dp"
-        android:background="?attr/selectableItemBackgroundBorderless"
-        android:contentDescription="Menu"
-        android:src="@drawable/ic_menu" />
+        android:padding="8dp">
+
+        <ImageButton
+            android:id="@+id/btn_menu"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Menu"
+            android:src="@drawable/ic_menu" />
+
+        <View
+            android:id="@+id/pastille_menu"
+            android:layout_width="10dp"
+            android:layout_height="10dp"
+            android:layout_gravity="top|end"
+            android:layout_margin="6dp"
+            android:background="@drawable/indicator_red"
+            android:visibility="gone" />
+    </FrameLayout>
 
     <!-- Bouton config en haut à droite -->
     <FrameLayout

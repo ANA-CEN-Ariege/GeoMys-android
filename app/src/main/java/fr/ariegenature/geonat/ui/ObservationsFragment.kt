@@ -60,6 +60,7 @@ class ObservationsFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         binding.root.applySystemBarInsets()
+        appliquerBandeauSaisie(binding.bandeauSaisie.root, findNavController(), traceViewModel.typeSaisieLabel)
 
         adapter = ReleveAdapter(
             onDelete = { releve -> demanderConfirmationSuppression(releve) },

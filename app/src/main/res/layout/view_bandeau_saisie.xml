@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Bandeau de navigation des écrans de saisie (mono / multi-taxons) : "🏠 › <type>".
+     Inclus dans chaque écran de saisie. Le rendu (icône maison cliquable + libellé) est
+     appliqué par fr.ariegenature.geonat.ui.appliquerBandeauSaisie. Même habillage arrondi
+     que le fil d'Ariane des suivis (bg_fil_ariane + colorSurfaceVariant). -->
+<TextView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/tv_bandeau_saisie"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:background="@drawable/bg_fil_ariane"
+    android:backgroundTint="?attr/colorSurfaceVariant"
+    android:elevation="6dp"
+    android:paddingHorizontal="14dp"
+    android:paddingVertical="10dp"
+    android:textColor="?attr/colorOnSurfaceVariant"
+    android:textSize="13sp"
+    android:textStyle="bold"
+    android:visibility="gone"
+    tools:ignore="UnusedAttribute"
+    tools:visibility="visible" />

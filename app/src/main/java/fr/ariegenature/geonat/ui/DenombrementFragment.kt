@@ -13,6 +13,7 @@ import android.widget.Spinner
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.fragment.app.Fragment
+import androidx.fragment.app.activityViewModels
 import androidx.navigation.fragment.findNavController
 import com.google.android.material.textfield.TextInputEditText
 import com.google.gson.Gson
@@ -35,6 +36,7 @@ import java.io.File
 class DenombrementFragment : Fragment() {
     private var _binding: FragmentDenombrementBinding? = null
     private val binding get() = _binding!!
+    private val traceViewModel: TraceViewModel by activityViewModels()
 
     private val gson = Gson()
     private val items = mutableListOf<Denombrement>()
@@ -76,6 +78,7 @@ class DenombrementFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         binding.root.applySystemBarInsets(includeIme = true)
+        appliquerBandeauSaisie(binding.bandeauSaisie.root, findNavController(), traceViewModel.typeSaisieLabel)
 
         val a = arguments
         taxon = runCatching { Taxon.valueOf(a?.getString("taxon") ?: "") }.getOrDefault(Taxon.OISEAU)

@@ -117,7 +117,10 @@ class SuiviDetailFragment : Fragment() {
             val schemaDeferred = async { runCatching { MonitoringApi.chargerSchemaProtocole(config, moduleCode) } }
             val enfantsRes = enfantsDeferred.await()
             val schemaRes = schemaDeferred.await()
-            if (!isAdded) return@launch
+            // La vue peut avoir été détruite pendant le chargement réseau (navigation vers
+            // une fiche enfant → onDestroyView, mais le fragment reste `isAdded` sur la pile).
+            // On teste donc _binding, pas isAdded, avant tout accès UI.
+            if (_binding == null) return@launch
             val enfants = enfantsRes.getOrElse { e ->
                 binding.tvNbSites.visibility = View.GONE
                 binding.tvErreurDetail.visibility = View.VISIBLE
@@ -134,6 +137,8 @@ class SuiviDetailFragment : Fragment() {
                 runCatching { MonitoringApi.chargerResolveurLabels(config, moduleCode, schema) }
                     .getOrNull() ?: MonitoringApi.LabelResolver()
             } else MonitoringApi.LabelResolver()
+            // chargerResolveurLabels est un point de suspension : re-vérifier la vue après.
+            if (_binding == null) return@launch
 
             // Re-derive le nom de chaque enfant via le nameField du schéma, puis tri
             // alphabétique sur ce nom. On ignore volontairement `schema.sorts` ici : les

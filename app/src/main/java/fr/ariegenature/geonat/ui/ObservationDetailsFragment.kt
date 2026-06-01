@@ -6,6 +6,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.ArrayAdapter
 import androidx.fragment.app.Fragment
+import androidx.fragment.app.activityViewModels
 import androidx.navigation.fragment.findNavController
 import fr.ariegenature.geonat.databinding.FragmentObservationDetailsBinding
 import fr.ariegenature.geonat.model.Taxon
@@ -15,6 +16,7 @@ import fr.ariegenature.geonat.store.NomValeur
 class ObservationDetailsFragment : Fragment() {
     private var _binding: FragmentObservationDetailsBinding? = null
     private val binding get() = _binding!!
+    private val traceViewModel: TraceViewModel by activityViewModels()
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         _binding = FragmentObservationDetailsBinding.inflate(inflater, container, false)
@@ -24,6 +26,7 @@ class ObservationDetailsFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         binding.root.applySystemBarInsets(includeIme = true)
+        appliquerBandeauSaisie(binding.bandeauSaisie.root, findNavController(), traceViewModel.typeSaisieLabel)
 
         val taxon         = runCatching { Taxon.valueOf(arguments?.getString("taxon") ?: "") }.getOrDefault(Taxon.OISEAU)
         val groupe2Inpn   = arguments?.getString("groupe2Inpn") ?: ""

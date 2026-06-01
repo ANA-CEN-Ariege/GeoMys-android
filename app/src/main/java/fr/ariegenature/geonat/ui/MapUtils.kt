@@ -1,11 +1,29 @@
 package fr.ariegenature.geonat.ui
 
+import android.content.Context
 import org.osmdroid.tileprovider.tilesource.OnlineTileSourceBase
 import org.osmdroid.tileprovider.tilesource.TileSourcePolicy
 import org.osmdroid.tileprovider.tilesource.XYTileSource
 import org.osmdroid.util.MapTileIndex
 
 enum class FondCarte { OSM, TOPO, SCAN25, ORTHO }
+
+private const val PREFS_FOND = "GeoNat_prefs"
+private const val KEY_FOND = "fond_carte"
+
+/** Charge le dernier fond de carte choisi par l'utilisateur (partagé entre toutes les cartes).
+ *  `defaut` n'est utilisé qu'à la toute première ouverture, avant tout choix. */
+fun chargerFondCarte(context: Context, defaut: FondCarte): FondCarte {
+    val nom = context.getSharedPreferences(PREFS_FOND, Context.MODE_PRIVATE)
+        .getString(KEY_FOND, null) ?: return defaut
+    return runCatching { FondCarte.valueOf(nom) }.getOrDefault(defaut)
+}
+
+/** Mémorise le fond de carte choisi pour qu'il soit réutilisé à la prochaine ouverture. */
+fun enregistrerFondCarte(context: Context, fond: FondCarte) {
+    context.getSharedPreferences(PREFS_FOND, Context.MODE_PRIVATE)
+        .edit().putString(KEY_FOND, fond.name).apply()
+}
 
 /** Policy permissive : autorise le bulk download (FLAG_NO_BULK désactivé) — nécessaire pour
  *  l'écran Cache Manager. Sur les autres écrans c'est neutre. Le respect des CGU OSM/IGN

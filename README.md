@@ -30,7 +30,7 @@ Développée par l'[ANA - CEN Ariège](https://ariegenature.fr/).
 ### Mode offline complet
 - **Outbox local** des saisies monitoring (visites + observations) : stockage JSON write-through, lien parent → enfant via UUID local quand le parent n'a pas encore d'id serveur.
 - **Envoi à la demande** uniquement (jamais automatique) — écran « Mes visites » avec un fil d'Ariane par groupe (`Site : Forêt de Foix › Station : Point Foix-Nord`), édition / suppression cascade / envoi par groupe.
-- **Cache des fonds de cartes** : écran « Cache Manager » qui télécharge une zone (jusqu'à 200 km², zoom 17) pour un usage terrain sans réseau. Plafond 1 Go avec purge LRU automatique. Cible un protocole pour cadrer + afficher les géométries de ses sites macro.
+- **Cache des fonds de cartes** : écran « Maps Manager » qui télécharge une zone (jusqu'à 200 km², zoom 17) pour un usage terrain sans réseau. Plafond 1 Go avec purge LRU automatique. Cible un protocole pour cadrer + afficher les géométries de ses sites macro.
 - **Cache des fiches monitoring** : modules, schémas, fiches d'objets et listes d'enfants conservés en local pour drill-down offline.
 
 ### Cartographie
@@ -68,7 +68,9 @@ Un panneau **Données en cache** affiche en haut de la section le nombre de **pr
   - **Mes saisies** — sorties GPX enregistrées (pastille rouge si des saisies sont en attente d'envoi).
   - **Mes visites** — saisies monitoring en attente d'envoi (pastille rouge si nécessaire).
   - **Explorer** — sorties passées sur carte.
-  - **Cache Manager** — téléchargement de fonds offline.
+  - **Maps Manager** — téléchargement de fonds offline.
+
+  Chacun de ces écrans (Mes saisies, Mes visites, Explorer, Maps Manager) affiche le bandeau de navigation « 🏠 › <écran> » (icône maison cliquable → retour à l'accueil), comme les écrans de saisie.
 
 ## Architecture
 
@@ -131,4 +133,7 @@ Les APK debug sont publiés sur la page [Releases](https://github.com/ANA-CEN-Ar
 
 ## Licence
 
-© ANA - CEN Ariège — usage interne.
+Ce projet est distribué sous licence **GNU General Public License v3.0** (GPLv3).
+Le texte complet de la licence est disponible dans le fichier [LICENSE](LICENSE).
+
+© ANA - CEN Ariège.

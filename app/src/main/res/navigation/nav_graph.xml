@@ -37,7 +37,7 @@
     <fragment
         android:id="@+id/cacheManagerFragment"
         android:name="fr.ariegenature.geonat.ui.CacheManagerFragment"
-        android:label="Cache Manager" />
+        android:label="Maps Manager" />
 
     <fragment
         android:id="@+id/suivisFragment"

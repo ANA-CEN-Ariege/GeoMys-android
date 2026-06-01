@@ -1,3 +1,21 @@
+/*
+ * GeoNat-Android — application Android de saisie naturaliste pour GeoNature.
+ * Copyright (C) 2026 ANA - CEN Ariège
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
 package fr.ariegenature.geonat.ui
 
 import android.app.AlertDialog
@@ -68,10 +86,12 @@ class CacheManagerFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        binding.btnRetour.applyStatusBarMargin()
         // Bouton « Supprimer » isolé en haut à droite — décalé sous la status bar.
         binding.btnViderCache.applyStatusBarMargin()
-        binding.tvTitre.applyStatusBarMargin()
+        // Le bandeau de navigation est en haut ; le titre est ancré dessous → seul le bandeau
+        // porte la marge de status bar (sinon le titre serait décalé deux fois).
+        binding.bandeauSaisie.root.applyStatusBarMargin()
+        appliquerBandeauNavigation(binding.bandeauSaisie.root, findNavController(), "Maps Manager")
         // Le panel bas est ancré sur le bord de l'écran : il doit garder un padding bottom
         // suffisant pour ne pas être occulté par la nav bar gestuelle / 3-boutons.
         binding.panelBas.applyNavBarInset(includeIme = true)
@@ -110,7 +130,6 @@ class CacheManagerFragment : Fragment() {
         }
         binding.map.overlays.add(locationOverlay)
 
-        binding.btnRetour.setOnClickListener { findNavController().navigateUp() }
         binding.btnFondCarte.setOnClickListener {
             fondCarte = fondCarte.suivant()
             binding.map.setTileSource(tileSourcePour(fondCarte))

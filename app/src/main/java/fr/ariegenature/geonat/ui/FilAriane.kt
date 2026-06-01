@@ -1,3 +1,21 @@
+/*
+ * GeoNat-Android — application Android de saisie naturaliste pour GeoNature.
+ * Copyright (C) 2026 ANA - CEN Ariège
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
 package fr.ariegenature.geonat.ui
 
 import android.text.SpannableStringBuilder
@@ -135,14 +153,14 @@ fun appliquerFilAriane(
     tv.text = sb
 }
 
-/** Bandeau de navigation simplifié des écrans de SAISIE (mono / multi-taxons) :
- *  "🏠 › <type de saisie>". Contrairement au fil d'Ariane des suivis, il n'a que deux
- *  niveaux et un seul est cliquable : l'icône maison (retour à l'accueil). Le libellé du
- *  type de saisie est le niveau courant, non cliquable.
+/** Bandeau de navigation simplifié des écrans accessibles depuis l'accueil (saisie mono /
+ *  multi-taxons, Mes saisies, Mes visites, Explorer, Maps Manager…) : "🏠 › <libellé écran>".
+ *  Contrairement au fil d'Ariane des suivis, il n'a que deux niveaux et un seul est cliquable :
+ *  l'icône maison (retour à l'accueil). Le libellé de l'écran est le niveau courant, non cliquable.
  *
- *  [typeLabel] = "Saisie mono-taxons" ou "Saisie multi-taxons" (cf. R.string). Masque [tv]
+ *  [typeLabel] = libellé de l'écran courant (ex. "Saisie mono-taxons", "Explorer"). Masque [tv]
  *  si vide (état non initialisé, ex. restauration après mort du process). */
-fun appliquerBandeauSaisie(tv: TextView, nav: NavController, typeLabel: String) {
+fun appliquerBandeauNavigation(tv: TextView, nav: NavController, typeLabel: String) {
     if (typeLabel.isEmpty()) {
         tv.visibility = View.GONE
         return

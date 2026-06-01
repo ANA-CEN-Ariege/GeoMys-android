@@ -1,3 +1,21 @@
+/*
+ * GeoNat-Android — application Android de saisie naturaliste pour GeoNature.
+ * Copyright (C) 2026 ANA - CEN Ariège
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
 package fr.ariegenature.geonat.ui
 
 import android.Manifest
@@ -199,7 +217,7 @@ class TraceFragment : Fragment() {
         // saisie en aval affichent le même bandeau "🏠 › Saisie multi-taxons".
         traceViewModel.typeSaisieLabel = getString(R.string.saisie_multi_taxons)
         binding.bandeauSaisie.root.applyStatusBarMargin()
-        appliquerBandeauSaisie(binding.bandeauSaisie.root, findNavController(), traceViewModel.typeSaisieLabel)
+        appliquerBandeauNavigation(binding.bandeauSaisie.root, findNavController(), traceViewModel.typeSaisieLabel)
 
         // Enchaînement multi-taxons : si on revient d'un relevé tout juste validé (coche),
         // SaisieObservationFragment a posé ce flag pour qu'on reparte directement en mode

@@ -107,6 +107,18 @@
             android:textColor="@color/white_70"
             android:textSize="15sp" />
 
+        <TextView
+            android:id="@+id/tv_licence"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:paddingHorizontal="8dp"
+            android:paddingVertical="4dp"
+            android:text="Logiciel libre — GNU GPL v3"
+            android:textColor="@color/jaune_clair"
+            android:textSize="12sp" />
+
         <View
             android:layout_width="0dp"
             android:layout_height="0dp"

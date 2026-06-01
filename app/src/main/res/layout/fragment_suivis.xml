@@ -4,24 +4,23 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
-    <ImageButton
-        android:id="@+id/btn_retour"
-        android:layout_width="48dp"
-        android:layout_height="48dp"
-        android:layout_gravity="top|start"
-        android:layout_margin="8dp"
-        android:background="?attr/selectableItemBackgroundBorderless"
-        android:contentDescription="Retour"
-        android:src="@drawable/ic_arrow_back"
-        app:tint="?attr/colorOnSurface" />
+    <!-- Plus de flèche retour : le bandeau de navigation "🏠 › Monitoring" (icône maison)
+         assure le retour à l'accueil. -->
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:orientation="vertical"
         android:paddingHorizontal="16dp"
-        android:paddingTop="64dp"
+        android:paddingTop="16dp"
         android:paddingBottom="16dp">
+
+        <include
+            android:id="@+id/bandeau_saisie"
+            layout="@layout/view_bandeau_saisie"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp" />
 
         <TextView
             android:layout_width="wrap_content"

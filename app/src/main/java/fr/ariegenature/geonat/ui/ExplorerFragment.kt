@@ -1,3 +1,21 @@
+/*
+ * GeoNat-Android — application Android de saisie naturaliste pour GeoNature.
+ * Copyright (C) 2026 ANA - CEN Ariège
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
 package fr.ariegenature.geonat.ui
 
 import android.graphics.Bitmap
@@ -84,14 +102,14 @@ class ExplorerFragment : Fragment() {
         setupLocalisation()
         setupCompass()
         setupFiltres()
-        binding.btnRetour.setOnClickListener { findNavController().navigateUp() }
         binding.btnFondCarte.setOnClickListener { toggleFondCarte() }
         binding.btnCentrer.setOnClickListener { centrerSurPosition() }
+        appliquerBandeauNavigation(binding.bandeauSaisie.root, findNavController(), "Explorer")
 
         // Carte plein écran, boutons à l'écart des barres système. Les marges XML
         // (12dp pour les boutons, 96dp pour la barre de filtres, 32dp pour les overlays)
         // sont conservées et cumulées avec les insets.
-        binding.btnRetour.applyStatusBarMargin()
+        binding.bandeauSaisie.root.applyStatusBarMargin()
         binding.barreFiltres.applyStatusBarMargin()
         binding.ctrlDroite.applyNavBarMargin()
         binding.tvCompteur.applyNavBarMargin()

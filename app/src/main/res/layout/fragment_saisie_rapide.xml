@@ -143,32 +143,12 @@
             android:layout_height="wrap_content"
             android:orientation="vertical"
             android:paddingHorizontal="16dp"
-            android:paddingTop="60dp"
+            android:paddingTop="84dp"
             android:paddingBottom="24dp">
 
-            <!-- Titre (décalé sous le bandeau de navigation flottant) -->
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="12dp"
-                android:gravity="center_vertical"
-                android:orientation="horizontal">
-
-                <ImageView
-                    android:layout_width="20dp"
-                    android:layout_height="20dp"
-                    android:layout_marginEnd="8dp"
-                    android:contentDescription="@null"
-                    android:src="@drawable/ic_send"
-                    app:tint="?attr/colorPrimary" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Saisie rapide multi-points"
-                    android:textSize="16sp"
-                    android:textStyle="bold" />
-            </LinearLayout>
+            <!-- Plus de titre « Saisie rapide multi-points » ni d'icône : le bandeau de
+                 navigation flottant "🏠 › Saisie mono-taxons" tient lieu d'en-tête. Le
+                 paddingTop dégage la ligne des groupes taxonomiques sous le bandeau. -->
 
             <!-- Sélecteur de taxon -->
             <HorizontalScrollView

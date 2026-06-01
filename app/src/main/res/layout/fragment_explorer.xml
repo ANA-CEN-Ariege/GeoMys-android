@@ -9,20 +9,16 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
-    <!-- Bouton retour (haut gauche). Fond blanc + flèche agrandie et teintée du bleu du
-         thème pour bien ressortir sur la carte. -->
-    <ImageButton
-        android:id="@+id/btn_retour"
-        android:layout_width="44dp"
-        android:layout_height="44dp"
+    <!-- Plus de flèche retour : le bandeau de navigation "🏠 › Explorer" (icône maison)
+         assure le retour à l'accueil. -->
+    <include
+        android:id="@+id/bandeau_saisie"
+        layout="@layout/view_bandeau_saisie"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
         android:layout_gravity="top|start"
-        android:layout_margin="12dp"
-        android:background="@drawable/btn_circle_white"
-        android:contentDescription="Retour"
-        android:padding="9dp"
-        android:scaleType="fitCenter"
-        android:src="@drawable/ic_arrow_back"
-        app:tint="?attr/colorPrimary" />
+        android:layout_marginStart="12dp"
+        android:layout_marginTop="14dp" />
 
     <!-- Filtres taxons (haut, sous le bouton retour) — ligne défilante horizontale -->
     <HorizontalScrollView

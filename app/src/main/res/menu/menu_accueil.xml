@@ -11,5 +11,5 @@
         android:title="Explorer" />
     <item
         android:id="@+id/menu_cache_manager"
-        android:title="Cache Manager" />
+        android:title="Maps Manager" />
 </menu>

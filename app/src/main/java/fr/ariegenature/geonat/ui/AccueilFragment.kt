@@ -1,3 +1,21 @@
+/*
+ * GeoNat-Android — application Android de saisie naturaliste pour GeoNature.
+ * Copyright (C) 2026 ANA - CEN Ariège
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
 package fr.ariegenature.geonat.ui
 
 import android.os.Bundle
@@ -8,6 +26,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.PopupMenu
+import androidx.appcompat.app.AlertDialog
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
@@ -43,6 +62,7 @@ class AccueilFragment : Fragment() {
         binding.accueilContent.applySystemBarInsets()
 
         binding.tvVersion.text = "v${versionName()}"
+        binding.tvLicence.setOnClickListener { afficherLicence() }
 
         val prefs = requireContext().getSharedPreferences("GeoNat_prefs", android.content.Context.MODE_PRIVATE)
         binding.switchTrace.isChecked = prefs.getBoolean("enregistrer_trace", true)
@@ -175,6 +195,36 @@ class AccueilFragment : Fragment() {
         val pm = requireContext().packageManager
         pm.getPackageInfo(pkg, 0).versionName ?: ""
     } catch (_: Exception) { "" }
+
+    /** Notice de licence GPLv3 (mention de garantie nulle + lien vers le texte complet),
+     *  affichée au tap sur le libellé « Logiciel libre — GNU GPL v3 ». Le bouton renvoie
+     *  vers le texte officiel de la licence sur gnu.org. */
+    private fun afficherLicence() {
+        AlertDialog.Builder(requireContext())
+            .setTitle("Licence")
+            .setMessage(
+                "GeoNat-Android v${versionName()}\n" +
+                "© 2026 ANA - CEN Ariège\n\n" +
+                "Ce programme est un logiciel libre : vous pouvez le redistribuer et/ou le " +
+                "modifier selon les termes de la GNU General Public License telle que publiée " +
+                "par la Free Software Foundation, en version 3 ou (à votre choix) toute version " +
+                "ultérieure.\n\n" +
+                "Ce programme est distribué dans l'espoir qu'il sera utile, mais SANS AUCUNE " +
+                "GARANTIE, sans même la garantie implicite de COMMERCIALISATION ou " +
+                "d'ADÉQUATION À UN USAGE PARTICULIER. Voir la GNU General Public License pour " +
+                "plus de détails."
+            )
+            .setPositiveButton("Texte complet") { _, _ ->
+                startActivity(
+                    android.content.Intent(
+                        android.content.Intent.ACTION_VIEW,
+                        android.net.Uri.parse("https://www.gnu.org/licenses/gpl-3.0.html"),
+                    )
+                )
+            }
+            .setNegativeButton("Fermer", null)
+            .show()
+    }
 
     override fun onDestroyView() {
         super.onDestroyView()

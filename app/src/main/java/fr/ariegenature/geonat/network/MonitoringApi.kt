@@ -469,7 +469,7 @@ object MonitoringApi {
     /** Aplatit le bloc `properties` d'un objet monitoring en `Map<String, String>`. Filtre les
      *  valeurs null/objets/tableaux : on garde uniquement les scalaires (string, number, bool)
      *  utiles à l'affichage. */
-    private fun aplatirProprietes(props: JSONObject?): Map<String, String> {
+    internal fun aplatirProprietes(props: JSONObject?): Map<String, String> {
         if (props == null) return emptyMap()
         val map = linkedMapOf<String, String>()
         val it = props.keys()
@@ -660,7 +660,7 @@ object MonitoringApi {
 
     /** Convertit un objet GeoJSON en libellé court pour affichage. Point → "lat°N/S, lon°E/W",
      *  Polygon/MultiPolygon → "Polygone (N sommets)", autres → le type GeoJSON brut. */
-    private fun formatGeometrie(geo: JSONObject?): String? {
+    internal fun formatGeometrie(geo: JSONObject?): String? {
         if (geo == null) return null
         val type = geo.optString("type", "").ifEmpty { return null }
         val coords = geo.opt("coordinates")

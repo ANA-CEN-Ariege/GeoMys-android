@@ -46,6 +46,7 @@ import fr.ariegenature.geonat.store.GeoNatureConfig
 import fr.ariegenature.geonat.store.NomenclatureCache
 import fr.ariegenature.geonat.store.TaxRefCache
 import fr.ariegenature.geonat.ui.saisie.AdditionalFieldsRenderer
+import fr.ariegenature.geonat.ui.saisie.ChampsTaxon
 import java.io.File
 
 /** Édition de la liste des dénombrements d'une PendingObs en saisie multi-taxons.
@@ -106,7 +107,7 @@ class DenombrementFragment : Fragment() {
 
         binding.tvEspece.text = espece
 
-        val (g, r) = groupesEtRegno(taxon, groupe2Inpn)
+        val (g, r) = ChampsTaxon.groupesEtRegno(taxon, groupe2Inpn)
         groupes = g
         regno = r
         sexeActif = sexeActifPourTaxon(taxon)
@@ -321,25 +322,6 @@ class DenombrementFragment : Fragment() {
         Taxon.FONGE, Taxon.PLANTE -> false
     }
 
-    private fun groupesEtRegno(taxon: Taxon, groupe2Inpn: String): Pair<Set<String>, String> = when (taxon) {
-        Taxon.PLANTE -> Pair(NomenclatureCache.groupesBotaniquesConnus(), "Plantae")
-        Taxon.FONGE -> Pair(NomenclatureCache.GROUPES_FONGE, "Fungi")
-        Taxon.MOLLUSQUE, Taxon.INVERTEBRES -> Pair(setOf("Animalia"), "Animalia")
-        else -> {
-            val g = groupe2Inpn.ifEmpty {
-                when (taxon) {
-                    Taxon.OISEAU    -> "Oiseaux"
-                    Taxon.MAMMIFERE -> "Mammifères"
-                    Taxon.REPTILE   -> "Reptiles"
-                    Taxon.BATRACIEN -> "Amphibiens"
-                    Taxon.POISSON   -> "Poissons"
-                    Taxon.INSECTE   -> "Insectes"
-                    else            -> ""
-                }
-            }
-            Pair(setOf(g), NomenclatureCache.regno(pourGroupe = g))
-        }
-    }
 
     private fun setupSpinner(
         spinner: Spinner, type: String, current: String,

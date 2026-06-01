@@ -34,6 +34,7 @@ import fr.ariegenature.geonat.store.GeoNatureConfig
 import fr.ariegenature.geonat.store.NomenclatureCache
 import fr.ariegenature.geonat.store.TaxRefCache
 import fr.ariegenature.geonat.ui.saisie.AdditionalFieldsRenderer
+import fr.ariegenature.geonat.ui.saisie.ChampsTaxon
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 
@@ -92,12 +93,12 @@ class CaracterisationFragment : Fragment() {
         binding.tvLabelAddOccurrence.visibility = if (defsOcc.isNotEmpty()) View.VISIBLE else View.GONE
         AdditionalFieldsRenderer.rendre(binding.llAddOccurrence, defsOcc, valeursOcc)
 
-        val champs = champsActifsCaracterisation(taxon)
+        val champs = ChampsTaxon.champsCaracterisation(taxon)
         binding.layoutEtaBio.visibility       = if ("ETA_BIO"          in champs) View.VISIBLE else View.GONE
         binding.layoutComportement.visibility = if ("OCC_COMPORTEMENT" in champs) View.VISIBLE else View.GONE
         binding.layoutStatutBio.visibility    = if ("STATUT_BIO"       in champs) View.VISIBLE else View.GONE
 
-        val (groupes, regno) = groupesEtRegno(taxon, groupe2Inpn)
+        val (groupes, regno) = ChampsTaxon.groupesEtRegno(taxon, groupe2Inpn)
 
         setupSpinner(binding.spinnerStatutObs,    "STATUT_OBS", statutObs,    groupes, regno,
             listOf("Non renseigné","Présent","Non observé","Présence probable","Non recherché"),
@@ -144,39 +145,6 @@ class CaracterisationFragment : Fragment() {
             val gsonOut = Gson()
             sv.set("addOccJson", gsonOut.toJson(AdditionalFieldsRenderer.collecter(binding.llAddOccurrence)))
             findNavController().navigateUp()
-        }
-    }
-
-    private fun champsActifsCaracterisation(taxon: Taxon): Set<String> = when (taxon) {
-        Taxon.OISEAU    -> setOf("METH_OBS","STATUT_BIO","ETA_BIO","PREUVE_EXIST","OCC_COMPORTEMENT","METH_DETERMIN")
-        Taxon.MAMMIFERE -> setOf("METH_OBS","ETA_BIO","PREUVE_EXIST","OCC_COMPORTEMENT","METH_DETERMIN")
-        Taxon.REPTILE,
-        Taxon.BATRACIEN,
-        Taxon.POISSON,
-        Taxon.INSECTE,
-        Taxon.MOLLUSQUE,
-        Taxon.INVERTEBRES -> setOf("METH_OBS","ETA_BIO","PREUVE_EXIST","METH_DETERMIN")
-        Taxon.FONGE       -> setOf("METH_OBS","PREUVE_EXIST","METH_DETERMIN")
-        Taxon.PLANTE      -> setOf("METH_OBS","PREUVE_EXIST","METH_DETERMIN")
-    }
-
-    private fun groupesEtRegno(taxon: Taxon, groupe2Inpn: String): Pair<Set<String>, String> = when (taxon) {
-        Taxon.PLANTE -> Pair(NomenclatureCache.groupesBotaniquesConnus(), "Plantae")
-        Taxon.FONGE  -> Pair(NomenclatureCache.GROUPES_FONGE, "Fungi")
-        Taxon.MOLLUSQUE, Taxon.INVERTEBRES -> Pair(setOf("Animalia"), "Animalia")
-        else -> {
-            val g = groupe2Inpn.ifEmpty {
-                when (taxon) {
-                    Taxon.OISEAU    -> "Oiseaux"
-                    Taxon.MAMMIFERE -> "Mammifères"
-                    Taxon.REPTILE   -> "Reptiles"
-                    Taxon.BATRACIEN -> "Amphibiens"
-                    Taxon.POISSON   -> "Poissons"
-                    Taxon.INSECTE   -> "Insectes"
-                    else            -> ""
-                }
-            }
-            Pair(setOf(g), NomenclatureCache.regno(pourGroupe = g))
         }
     }
 

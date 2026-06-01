@@ -484,7 +484,7 @@ object GeoNatureUpload {
         }
     }
 
-    private fun jsonDepuisMap(map: Map<String, String>): JSONObject = JSONObject().apply {
+    internal fun jsonDepuisMap(map: Map<String, String>): JSONObject = JSONObject().apply {
         for ((k, v) in map) {
             if (v.isEmpty()) continue
             when {

@@ -129,14 +129,16 @@ Requiert Android Studio Hedgehog+ et JDK 11.
 
 ## Tests automatiques
 
-Batterie de ~120 tests unitaires JVM (`app/src/test/`), exécutée via `./gradlew testDebugUnitTest`
+Batterie de ~150 tests unitaires JVM (`app/src/test/`), exécutée via `./gradlew testDebugUnitTest`
 (quelques secondes, sans émulateur). Couvre la logique pure, le parsing du schéma serveur et
 la construction des payloads :
 
 - **Évaluateurs du form renderer monitoring** : `HiddenExprTest`, `ValidationExprTest`, `ChangeRulesTest`.
 - **Mapping & parsing du schéma serveur** : `WidgetMappingTest` (`type_widget` → `ViewType`), `MonitoringApiParsingTest` (propriété /config, cruved, heuristiques nomenclature/taxref), `SchemaFusionTest` (fusion blocs `generic`+`specific`), `SubstituerVariablesModuleTest` (placeholders `__MODULE.XXX`), `AdditionalFieldsParsingTest` (cache champs additionnels), `ExtraireNomHeuristiqueTest`.
-- **Payload serveur** : `ConstruireGeometrieTest` (GeoJSON Point/LineString/Polygon + fermeture d'anneau), `BuildOccurrenceTest` (occurrence OccTax : cd_nom, countings, résolution des id_nomenclature).
+- **Payload serveur** : `ConstruireGeometrieTest` (GeoJSON Point/LineString/Polygon + fermeture d'anneau), `BuildOccurrenceTest` (occurrence OccTax : cd_nom, countings, résolution des id_nomenclature), `JsonDepuisMapTest` (typage des champs additionnels).
+- **Lecture des objets serveur** : `AplatirProprietesTest` (properties → Map), `FormatGeometrieTest` (résumé lisible de géométrie).
 - **Import/export & réseau** : `GpxUtilsTest` (round-trip GPX), `HumaniserErreurReseauTest` (messages d'erreur), `EstTypeSaisieTest`.
+- **Logique d'affichage par taxon** : `ChampsTaxonTest` (champs visibles + groupes/regno, factorisé dans `ChampsTaxon`).
 - **Utilitaires** : `DateHeureDefautTest`, `FilArianeTest`, `FondCarteTest`.
 
 > Le parsing serveur s'appuie sur `org.json`, seulement stubbé dans l'`android.jar` de test :

@@ -406,6 +406,20 @@ class NouvelleVisiteFragment : Fragment() {
                 )
             }
         }
+        // Défaut « date du jour / heure actuelle » pour les champs date/heure restés vides
+        // après application des défauts serveur ci-dessus. Le serveur garde donc la priorité ;
+        // on ne fait que pré-remplir ce qu'il laisse vide. En édition, ces valeurs seront
+        // écrasées par les valeurs saisies (cf. valeursPreremplies côté caller).
+        nouveaux.forEachIndexed { idx, f ->
+            if (f.value != null) return@forEachIndexed
+            val defaut = when (f.viewType) {
+                ViewType.DATE -> fr.ariegenature.geonat.util.DateHeureDefaut.dateDuJour()
+                ViewType.TIME -> fr.ariegenature.geonat.util.DateHeureDefaut.heureActuelle()
+                ViewType.DATETIME -> fr.ariegenature.geonat.util.DateHeureDefaut.dateHeureActuelle()
+                else -> return@forEachIndexed
+            }
+            nouveaux[idx] = f.copy(value = defaut)
+        }
         // Pré-sélection de l'utilisateur connecté dans les champs observers (typeWidget ∈
         // {observers, datalist} avec type_util=user, OU nom de propriété "observers" / "observer").
         val idRole = config.idRoleUtilisateur.takeIf { it > 0 }
@@ -754,7 +768,10 @@ class NouvelleVisiteFragment : Fragment() {
     /** Démo en dur, utilisée comme fallback quand le serveur ne renvoie pas de schéma de visite
      *  exploitable. Permet de toujours voir le renderer marcher pendant le POC. */
     private fun creerChampsDemo(): List<EditableField> = listOf(
-        EditableField("visit_date_min", ViewType.DATE, "Date de visite", obligatoire = true),
+        EditableField(
+            "visit_date_min", ViewType.DATE, "Date de visite", obligatoire = true,
+            value = fr.ariegenature.geonat.util.DateHeureDefaut.dateDuJour(),
+        ),
         EditableField("nb_observateurs", ViewType.NUMBER, "Nombre d'observateurs"),
         EditableField(
             "conditions_meteo", ViewType.SELECT, "Conditions météo",

@@ -46,10 +46,25 @@ object AdditionalFieldsRenderer {
         defs.forEach { def ->
             // Filet : si la valeur saisie ou le défaut serveur est la chaîne "null", on traite
             // comme absent (sinon le champ s'affiche pré-rempli avec "null", déroutant).
-            val brut = valeurs?.get(def.fieldName) ?: def.defaultValue ?: ""
+            // Sans valeur saisie ni défaut serveur, les champs date/heure prennent par défaut
+            // la date du jour / l'heure actuelle (le serveur reste prioritaire via defaultValue).
+            val brut = valeurs?.get(def.fieldName)
+                ?: def.defaultValue
+                ?: defautDateHeurePour(def.widgetServeur)
+                ?: ""
             val valeur = if (brut == "null") "" else brut
             container.addView(buildWidget(ctx, def, valeur))
         }
+    }
+
+    /** Défaut date/heure pour les widgets serveur `date`/`time`/`datetime` des champs
+     *  additionnels (rendus en champ texte) : date du jour, heure actuelle, ou les deux.
+     *  Renvoie null pour les autres widgets (pas de pré-remplissage). */
+    private fun defautDateHeurePour(widgetServeur: String): String? = when (widgetServeur.lowercase()) {
+        "date" -> fr.ariegenature.geonat.util.DateHeureDefaut.dateDuJour()
+        "time" -> fr.ariegenature.geonat.util.DateHeureDefaut.heureActuelle()
+        "datetime", "date-time", "timestamp" -> fr.ariegenature.geonat.util.DateHeureDefaut.dateHeureActuelle()
+        else -> null
     }
 
     /** Lit les valeurs courantes dans les widgets du container, indexées par field_name. */

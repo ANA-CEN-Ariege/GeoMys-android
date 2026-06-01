@@ -448,7 +448,7 @@ object GeoNatureUpload {
      *    referme automatiquement si le dernier sommet diffère du premier et on wrappe
      *    dans le tableau supplémentaire requis par le format GeoJSON Polygon
      *    (`[[[lon,lat], …]]`). */
-    private fun construireGeometrie(
+    internal fun construireGeometrie(
         type: String?,
         coordsJson: String?,
         lat: Double,

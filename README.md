@@ -129,13 +129,18 @@ Requiert Android Studio Hedgehog+ et JDK 11.
 
 ## Tests automatiques
 
-Batterie de tests unitaires JVM (`app/src/test/`), exécutée via `./gradlew testDebugUnitTest`
-(quelques secondes, sans émulateur). Couvre la logique pure et le parsing du schéma serveur :
+Batterie de ~100 tests unitaires JVM (`app/src/test/`), exécutée via `./gradlew testDebugUnitTest`
+(quelques secondes, sans émulateur). Couvre la logique pure, le parsing du schéma serveur et
+la construction des payloads :
 
 - **Évaluateurs du form renderer monitoring** : `HiddenExprTest`, `ValidationExprTest`, `ChangeRulesTest`.
-- **Mapping du schéma serveur** : `WidgetMappingTest` (`type_widget` → `ViewType`).
-- **Parsing / désérialisation** : `AdditionalFieldsParsingTest` (cache champs additionnels), `ExtraireNomHeuristiqueTest` (nom d'objet monitoring).
-- **Utilitaires** : `DateHeureDefautTest` (défauts date/heure), `FilArianeTest` (fil de navigation), `FondCarteTest` (rotation des fonds).
+- **Mapping & parsing du schéma serveur** : `WidgetMappingTest` (`type_widget` → `ViewType`), `MonitoringApiParsingTest` (propriété /config, cruved, heuristiques nomenclature/taxref), `AdditionalFieldsParsingTest` (cache champs additionnels), `ExtraireNomHeuristiqueTest`.
+- **Payload serveur** : `ConstruireGeometrieTest` (GeoJSON Point/LineString/Polygon + fermeture d'anneau).
+- **Import/export & réseau** : `GpxUtilsTest` (round-trip GPX), `HumaniserErreurReseauTest` (messages d'erreur), `EstTypeSaisieTest`.
+- **Utilitaires** : `DateHeureDefautTest`, `FilArianeTest`, `FondCarteTest`.
+
+> Le parsing serveur s'appuie sur `org.json`, seulement stubbé dans l'`android.jar` de test :
+> une vraie implémentation est fournie côté test via `testImplementation("org.json:json:…")`.
 
 Ces tests sont lancés avant chaque release.
 

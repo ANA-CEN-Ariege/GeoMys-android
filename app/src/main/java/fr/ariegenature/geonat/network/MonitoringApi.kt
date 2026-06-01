@@ -960,7 +960,7 @@ object MonitoringApi {
      *  tolérant sur l'absence de `type_widget` (parité gn_mobile_monitoring : un champ
      *  specific est toujours inclus, avec un widget inféré à partir de `type_util` ou
      *  défaut `text`). */
-    private fun parserUnePropriete(
+    internal fun parserUnePropriete(
         nom: String,
         v: JSONObject,
         enSpecific: Boolean = false,
@@ -1121,7 +1121,7 @@ object MonitoringApi {
      *  Number ou String numérique ; on normalise la clé en MAJUSCULE pour éviter les surprises
      *  selon les versions de backend. Retourne null si le bloc est absent ou non-objet (cas
      *  rétrocompat où on garde le module visible). */
-    private fun parserCruved(obj: JSONObject?): Map<String, Int>? {
+    internal fun parserCruved(obj: JSONObject?): Map<String, Int>? {
         if (obj == null) return null
         val map = mutableMapOf<String, Int>()
         val it = obj.keys()
@@ -1140,7 +1140,7 @@ object MonitoringApi {
     /** Infère le code mnémonique d'un type de nomenclature quand il n'est pas explicite :
      *  depuis l'api (`.../nomenclatures/nomenclature/STADE_VIE`) ou le nom du champ
      *  (`id_nomenclature_stade_vie` → `stade_vie`). Renvoie null si rien d'exploitable. */
-    private fun infererCodeNomenclature(nom: String, api: String?): String? {
+    internal fun infererCodeNomenclature(nom: String, api: String?): String? {
         if (api != null && api.contains("nomenclatures/nomenclature/")) {
             api.substringAfterLast('/').takeIf { it.isNotEmpty() }?.let { return it }
         }
@@ -1151,7 +1151,7 @@ object MonitoringApi {
     }
 
     /** Extrait l'id de liste taxonomique d'une api `taxref/allnamebylist/<id>`. */
-    private fun extraireIdListeAllnamebylist(api: String): Int? {
+    internal fun extraireIdListeAllnamebylist(api: String): Int? {
         if (!api.contains("allnamebylist/")) return null
         val parts = api.split('/')
         val idx = parts.indexOf("allnamebylist")

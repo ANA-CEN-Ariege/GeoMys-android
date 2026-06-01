@@ -10,8 +10,8 @@ android {
         applicationId = "fr.ariegenature.geonat"
         minSdk = 24
         targetSdk = 36
-        versionCode = 112
-        versionName = "0.9.86"
+        versionCode = 113
+        versionName = "0.9.87"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -55,6 +55,10 @@ dependencies {
     implementation(libs.fragment.ktx)
     implementation(libs.activity.ktx)
     testImplementation(libs.junit)
+    // org.json est seulement stubbé dans l'android.jar de test (renvoie des valeurs par
+    // défaut) : on fournit une vraie implémentation sur le classpath de test pour pouvoir
+    // tester le parsing du schéma serveur et la construction des payloads JSON.
+    testImplementation("org.json:json:20240303")
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
 }

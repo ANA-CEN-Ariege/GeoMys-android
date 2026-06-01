@@ -10,8 +10,8 @@ android {
         applicationId = "fr.ariegenature.geonat"
         minSdk = 24
         targetSdk = 36
-        versionCode = 114
-        versionName = "0.9.88"
+        versionCode = 115
+        versionName = "0.9.89"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -65,6 +65,9 @@ dependencies {
     // stores…). @Config(sdk=[34]) — SDK émulé indépendant du compileSdk.
     testImplementation("org.robolectric:robolectric:4.14.1")
     testImplementation("androidx.test:core:1.6.1")
+    // MockWebServer : teste les flux réseau (auth, GET/POST GeoNature) sans serveur réel,
+    // en pointant l'URL de base sur le serveur mock local.
+    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
 }

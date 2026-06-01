@@ -129,24 +129,26 @@ Requiert Android Studio Hedgehog+ et JDK 11.
 
 ## Tests automatiques
 
-Batterie de ~210 tests unitaires JVM (`app/src/test/`), exécutée via `./gradlew testDebugUnitTest`
-(quelques secondes, sans émulateur). Couvre la logique pure, le parsing du schéma serveur et
-la construction des payloads :
+Batterie de ~230 tests unitaires JVM (`app/src/test/`), exécutée via `./gradlew testDebugUnitTest`
+(quelques secondes, sans émulateur). Couvre la logique pure, le parsing du schéma serveur,
+la construction des payloads et les flux réseau (MockWebServer) :
 
 - **Évaluateurs du form renderer monitoring** : `HiddenExprTest`, `ValidationExprTest`, `ChangeRulesTest`.
 - **Mapping & parsing du schéma serveur** : `WidgetMappingTest` (`type_widget` → `ViewType`), `MonitoringApiParsingTest` (propriété /config, cruved, heuristiques nomenclature/taxref), `SchemaFusionTest` (fusion blocs `generic`+`specific`), `SubstituerVariablesModuleTest` (placeholders `__MODULE.XXX`), `AdditionalFieldsParsingTest` (cache champs additionnels), `AdditionalFieldsServerParsingTest` (JSON brut `/additional_fields`), `AdditionalFieldVisibiliteTest` (déclenchement « Détails du relevé » : niveau objet + dataset/liste), `ExtraireNomHeuristiqueTest`.
 - **Payload serveur** : `ConstruireGeometrieTest` (GeoJSON Point/LineString/Polygon + fermeture d'anneau), `BuildOccurrenceTest` (occurrence OccTax : cd_nom, countings, résolution des id_nomenclature), `JsonDepuisMapTest` (typage des champs additionnels).
-- **Lecture des objets serveur** : `AplatirProprietesTest` (properties → Map), `FormatGeometrieTest` (résumé lisible de géométrie).
+- **Lecture des objets serveur** : `AplatirProprietesTest` (properties → Map), `FormatGeometrieTest` (résumé lisible de géométrie), `MonitoringCacheLabelTest` (résolution offline des labels objet/type depuis le cache).
 - **Import/export & réseau** : `GpxUtilsTest` (round-trip GPX), `HumaniserErreurReseauTest` (messages d'erreur), `EstTypeSaisieTest`.
 - **Logique d'affichage par taxon** : `ChampsTaxonTest` (champs visibles + groupes/regno, factorisé dans `ChampsTaxon`).
 - **Champs additionnels — détail** : `ExtraireDefautTest` (valeur par défaut serveur multi-formes), `PictoMonitoringTest` (picto protocole URL/image vs FontAwesome→emoji, factorisé dans `PictoMonitoring`).
 - **Utilitaires** : `DateHeureDefautTest`, `FilArianeTest`, `FondCarteTest`.
+- **Flux réseau (MockWebServer)** : `GeoNatureAuthTest` (auth /api/auth/login : token, id_role, cookies), `AdditionalFieldsChargerTest` (auth + GET additional_fields, 404→vide), `ChargerModulesTest` (liste protocoles + filtrage CRUVED, 403/404→vide), `GeoNatureUploadEnvoyerTest` (flux d'envoi OccTax complet : POST relevé → occurrence(s), multi-taxons, rollback sur échec, relevé orphelin).
 - **Stockage / persistance (Robolectric)** : `SortieStoreTest` (sorties OccTax), `OutboxMonitoringTest` (file d'attente monitoring, compteur en attente, cascade), `FondCartePersistanceTest` (fond de carte mémorisé), `GeoNatureConfigTest` (config + état connexion), `NomenclatureCacheTest` (filtrage des valeurs par groupe/regno + défauts), `TaxRefCacheTest` (appartenance cd_nom→listes, comptes par groupe), `GroupesEtRegnoPlanteTest` (branche PLANTE dépendante du cache TaxRef).
 
 > Le parsing serveur s'appuie sur `org.json`, seulement stubbé dans l'`android.jar` de test :
 > une vraie implémentation est fournie côté test via `testImplementation("org.json:json:…")`.
 > Les tests de stockage tournent sous **Robolectric** (`@Config(sdk=[34])`) pour disposer d'un
-> vrai `Context`/SharedPreferences en JVM.
+> vrai `Context`/SharedPreferences en JVM. Les flux réseau utilisent **MockWebServer** : l'URL
+> de base pointe sur un serveur local, sans dépendance à une instance GeoNature réelle.
 
 Ces tests sont lancés avant chaque release.
 

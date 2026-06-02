@@ -121,6 +121,12 @@ object GeoNatureUpload {
 
             val datasetId = config.idDataset.trim().toIntOrNull()?.takeIf { it > 0 }
                 ?: throw GNErreur.EnvoiEchoue(0, "id_dataset invalide : \"${config.idDataset}\"")
+            // Garde : un id_dataset absent du serveur courant (typiquement hérité d'un autre
+            // serveur après changement d'URL) provoque une violation de clé étrangère côté
+            // GeoNature → 500 opaque. On le détecte ici pour remonter un message clair plutôt
+            // qu'une « Erreur serveur (HTTP 500) ». Si le cache datasets est vide, datasetValide
+            // renvoie true (on ne bloque pas faute de pouvoir trancher).
+            if (!config.datasetValide) throw GNErreur.DatasetInvalide(datasetId)
 
             val dateFmt = SimpleDateFormat("yyyy-MM-dd", Locale.US)
             val heureFmt = SimpleDateFormat("HH:mm", Locale.US)

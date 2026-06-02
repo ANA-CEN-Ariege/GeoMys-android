@@ -57,6 +57,17 @@
             android:layout_margin="8dp"
             android:background="@drawable/indicator_green"
             android:visibility="gone" />
+
+        <!-- Pastille rouge : config incomplète/invalide (mutuellement exclusive avec le point
+             vert ci-dessus). Invite l'utilisateur à compléter la config GeoNature. -->
+        <View
+            android:id="@+id/pastille_config"
+            android:layout_width="10dp"
+            android:layout_height="10dp"
+            android:layout_gravity="top|end"
+            android:layout_margin="8dp"
+            android:background="@drawable/indicator_red"
+            android:visibility="gone" />
     </FrameLayout>
 
     <!-- Contenu principal centré -->

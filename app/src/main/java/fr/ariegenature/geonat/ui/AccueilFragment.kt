@@ -148,6 +148,7 @@ class AccueilFragment : Fragment() {
         updateGnIndicator()
         updateButtonState()
         updateSuivisVisibility()
+        updateSaisieButtonsState()
         updatePastilleMenu()
     }
 
@@ -199,8 +200,31 @@ class AccueilFragment : Fragment() {
         // badge supprimé avec le bouton Mes sorties
     }
 
+    /** Indicateurs d'état de la config sur le bouton « Paramètres » : point vert quand la
+     *  saisie est réellement possible, pastille rouge (mutuellement exclusive) sinon. */
     private fun updateGnIndicator() {
-        binding.indicateurGn.visibility = if (gnConfig.estConfiguree) View.VISIBLE else View.GONE
+        val valide = gnConfig.saisieOcctaxValide
+        binding.indicateurGn.visibility = if (valide) View.VISIBLE else View.GONE
+        binding.pastilleConfig.visibility = if (valide) View.GONE else View.VISIBLE
+    }
+
+    /** Active/désactive les boutons de saisie selon la validité de la config (sans les masquer) :
+     *  multi & mono-taxons sont toujours affichés mais grisés tant que la config OCCTAX n'est pas
+     *  valide (cache vide ou jeu de données / liste / observateur fantôme). Le bouton Monitoring
+     *  suit sa propre visibilité (droits sur ≥1 protocole, cf. [updateSuivisVisibility]) et est lui
+     *  aussi grisé tant que la config n'est pas valide. */
+    private fun updateSaisieButtonsState() {
+        val valide = gnConfig.saisieOcctaxValide
+        setBoutonActif(binding.btnNouveauSortie, valide)
+        setBoutonActif(binding.btnSaisieRapide, valide)
+        setBoutonActif(binding.btnSuivis, valide)
+    }
+
+    /** Grise visuellement un bouton à fond teinté fixe (le `backgroundTint` ne réagit pas à
+     *  `isEnabled`), en plus de bloquer le clic. */
+    private fun setBoutonActif(bouton: View, actif: Boolean) {
+        bouton.isEnabled = actif
+        bouton.alpha = if (actif) 1f else 0.4f
     }
 
     private fun versionName(): String = try {

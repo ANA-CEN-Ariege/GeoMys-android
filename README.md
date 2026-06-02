@@ -67,6 +67,14 @@ Volontairement hors périmètre à ce stade. Aucune n'est un bug : les fonctionn
 
 Le bouton **Tester** vérifie la connexion et charge automatiquement les datasets et listes disponibles. Le bouton **Synchroniser** télécharge le cache TaxRef + nomenclatures + (pour le monitoring) modules / schémas / listes / fiches.
 
+**Garde de cohérence config (écran d'accueil).** On ne peut démarrer une saisie que si la configuration est **complète et cohérente avec le serveur courant** : connexion renseignée **et** jeu de données, liste de taxons et observateur par défaut **réellement présents dans les caches** du serveur (et non hérités d'un autre serveur, ce qui provoquait un `HTTP 500` opaque côté GeoNature — violation de clé étrangère). Tant que ce n'est pas le cas :
+
+- une **pastille rouge** s'affiche sur le bouton ⚙️ *Paramètres* (le point vert n'apparaît qu'une fois la config valide) ;
+- les boutons **Saisie multi-taxons** et **mono-taxons** restent visibles mais **grisés/désactivés** (cache pas encore synchronisé, ou sélection devenue invalide) ;
+- le bouton **Monitoring** n'apparaît que si l'utilisateur a des droits sur ≥ 1 protocole, et est lui aussi **désactivé** tant que la config n'est pas valide.
+
+À l'envoi, si le jeu de données configuré est absent du serveur, l'erreur remontée est explicite (« jeu de données introuvable sur ce serveur ») au lieu d'une « erreur serveur ».
+
 Un panneau **Données en cache** affiche en haut de la section le nombre de **protocoles**, **nomenclatures** et **taxons** actuellement disponibles localement. Pour les taxons, un bouton **Détails** ouvre un dialog qui liste les groupes taxonomiques (Oiseaux, Mammifères, …) avec leur effectif filtré sur la liste sélectionnée — un tap sur un groupe affiche la liste détaillée des taxons.
 
 ## Écran d'accueil

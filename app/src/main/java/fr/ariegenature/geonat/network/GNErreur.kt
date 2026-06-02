@@ -23,12 +23,19 @@ sealed class GNErreur(message: String) : Exception(message) {
     class AuthEchouee(val code: Int) : GNErreur("Authentification refusée (HTTP $code)")
     class EnvoiEchoue(val code: Int, val msg: String) : GNErreur("Envoi échoué HTTP $code : $msg")
     class AucuneObservationCompatible : GNErreur("Aucune observation n'a de cd_nom résolu.")
+    /** Le jeu de données configuré n'existe pas sur le serveur ciblé (id absent du cache
+     *  datasets). Détecté avant l'envoi pour éviter le 500 opaque (FK invalide). */
+    class DatasetInvalide(val id: Int) : GNErreur("Jeu de données $id introuvable sur ce serveur")
 }
 
 /** Convertit une exception réseau (typiquement [GNErreur.EnvoiEchoue] ou [GNErreur.AuthEchouee])
  *  en message lisible par l'utilisateur final. Le code HTTP brut reste en parenthèses pour
  *  le support technique. */
 fun humaniserErreurReseau(e: Throwable): String {
+    if (e is GNErreur.DatasetInvalide) {
+        return "Le jeu de données configuré (id ${e.id}) n'existe pas sur ce serveur.\n\n" +
+            "Ouvre la config GeoNature et sélectionne un jeu de données valide."
+    }
     val code = when (e) {
         is GNErreur.EnvoiEchoue -> e.code
         is GNErreur.AuthEchouee -> e.code

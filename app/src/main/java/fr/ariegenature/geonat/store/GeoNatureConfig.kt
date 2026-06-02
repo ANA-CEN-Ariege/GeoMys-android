@@ -116,4 +116,61 @@ class GeoNatureConfig(context: Context) {
 
     val estConfiguree: Boolean
         get() = connexionConfiguree && idDataset.trim().isNotEmpty()
+
+    /** Le jeu de données configuré existe-t-il dans le cache des datasets du serveur courant ?
+     *  Un id_dataset hérité d'un autre serveur (ex. après changement d'URL) part en clé
+     *  étrangère invalide → 500 opaque côté GeoNature au lieu d'une vraie erreur de validation.
+     *  Si le cache est vide (datasets jamais synchronisés), on ne peut pas trancher → on
+     *  considère valide pour ne pas bloquer à tort un utilisateur en cours de configuration. */
+    val datasetValide: Boolean
+        get() {
+            val id = idDataset.trim().toIntOrNull()?.takeIf { it > 0 } ?: return false
+            val json = datasetsCacheJson.takeIf { it.isNotEmpty() } ?: return true
+            return try {
+                val arr = org.json.JSONArray(json)
+                (0 until arr.length()).any { arr.getJSONObject(it).optInt("id", -1) == id }
+            } catch (_: Exception) {
+                true
+            }
+        }
+
+    /** Config complète ET cohérente avec le serveur courant : pré-requis pour démarrer ou
+     *  envoyer une saisie (connexion + jeu de données réellement présent côté serveur). */
+    val saisiePossible: Boolean
+        get() = estConfiguree && datasetValide
+
+    /** Un id est-il présent dans un cache JSON (liste d'objets) sous la clé [champ] ?
+     *  Renvoie false si le cache est vide/illisible OU si l'id est absent — interprétation
+     *  STRICTE (à l'inverse de [datasetValide], permissif) : sert à n'AUTORISER une saisie que
+     *  lorsqu'on a la preuve que la sélection existe sur le serveur courant. */
+    private fun idPresentDansCache(json: String, id: Int?, champ: String): Boolean {
+        if (id == null || id <= 0) return false
+        val j = json.takeIf { it.isNotEmpty() } ?: return false
+        return try {
+            val arr = org.json.JSONArray(j)
+            (0 until arr.length()).any { arr.getJSONObject(it).optInt(champ, -1) == id }
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    /** Le jeu de données sélectionné est présent dans le cache datasets du serveur courant. */
+    val datasetPresentDansCache: Boolean
+        get() = idPresentDansCache(datasetsCacheJson, idDataset.trim().toIntOrNull(), "id")
+
+    /** La liste de taxons sélectionnée est présente dans le cache des listes. */
+    val listePresenteDansCache: Boolean
+        get() = idPresentDansCache(listesCacheJson, taxaListeId.trim().toIntOrNull(), "id")
+
+    /** L'observateur (déterminateur) par défaut est présent dans le cache des observateurs. */
+    val observateurPresentDansCache: Boolean
+        get() = idPresentDansCache(observateursCacheJson, observateurDefautId.trim().toIntOrNull(), "idRole")
+
+    /** Saisie OCCTAX (multi/mono) réellement réalisable : connexion configurée ET les trois
+     *  sélections (jeu de données, liste de taxons, observateur par défaut) sont chargées dans
+     *  les caches du serveur courant. Faux tant que les caches sont vides (rien synchronisé) ou
+     *  qu'une sélection est fantôme — pilote l'activation des boutons de saisie sur l'accueil. */
+    val saisieOcctaxValide: Boolean
+        get() = connexionConfiguree && datasetPresentDansCache &&
+            listePresenteDansCache && observateurPresentDansCache
 }

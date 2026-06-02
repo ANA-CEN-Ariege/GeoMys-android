@@ -73,4 +73,69 @@ class GeoNatureConfigTest {
     fun id_role_defaut_moins_un() {
         assertEquals(-1, config().idRoleUtilisateur)
     }
+
+    @Test
+    fun dataset_valide_vrai_si_cache_vide() {
+        // Cache datasets absent → on ne peut pas trancher : ne pas bloquer.
+        val c = config()
+        c.idDataset = "416"
+        assertTrue("cache vide → considéré valide", c.datasetValide)
+    }
+
+    @Test
+    fun dataset_valide_faux_si_id_absent_du_cache() {
+        val c = config()
+        c.datasetsCacheJson = """[{"id":5,"nom":"A"},{"id":12,"nom":"B"}]"""
+        c.idDataset = "416"
+        assertFalse("416 absent du cache → invalide", c.datasetValide)
+        c.idDataset = "12"
+        assertTrue("12 présent dans le cache → valide", c.datasetValide)
+    }
+
+    @Test
+    fun saisie_possible_exige_dataset_present_sur_le_serveur() {
+        val c = config()
+        c.urlServeur = "https://x"; c.login = "u"; c.motDePasse = "p"
+        c.datasetsCacheJson = """[{"id":5,"nom":"A"}]"""
+        c.idDataset = "416"
+        assertFalse("dataset fantôme → saisie interdite", c.saisiePossible)
+        c.idDataset = "5"
+        assertTrue("dataset présent → saisie autorisée", c.saisiePossible)
+    }
+
+    /** Configuration OCCTAX complète et cohérente avec les caches du serveur courant. */
+    private fun configValideOcctax() = config().apply {
+        urlServeur = "https://x"; login = "u"; motDePasse = "p"
+        datasetsCacheJson = """[{"id":5,"nom":"A"}]"""
+        listesCacheJson = """[{"id":100,"nom":"L"}]"""
+        observateursCacheJson = """[{"idRole":3,"nomComplet":"Alice"}]"""
+        idDataset = "5"; taxaListeId = "100"; observateurDefautId = "3"
+    }
+
+    @Test
+    fun saisie_occtax_valide_quand_tout_present_dans_les_caches() {
+        assertTrue(configValideOcctax().saisieOcctaxValide)
+    }
+
+    @Test
+    fun saisie_occtax_invalide_si_cache_vide() {
+        // Sélections renseignées mais aucun cache → on n'a pas la preuve qu'elles existent.
+        val c = config()
+        c.urlServeur = "https://x"; c.login = "u"; c.motDePasse = "p"
+        c.idDataset = "5"; c.taxaListeId = "100"; c.observateurDefautId = "3"
+        assertFalse("caches vides → non valide", c.saisieOcctaxValide)
+    }
+
+    @Test
+    fun saisie_occtax_invalide_si_une_selection_fantome() {
+        configValideOcctax().apply { idDataset = "999" }.let {
+            assertFalse("dataset fantôme", it.saisieOcctaxValide)
+        }
+        configValideOcctax().apply { taxaListeId = "999" }.let {
+            assertFalse("liste fantôme", it.saisieOcctaxValide)
+        }
+        configValideOcctax().apply { observateurDefautId = "999" }.let {
+            assertFalse("observateur fantôme", it.saisieOcctaxValide)
+        }
+    }
 }

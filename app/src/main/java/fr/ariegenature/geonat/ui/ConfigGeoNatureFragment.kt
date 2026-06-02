@@ -59,6 +59,11 @@ class ConfigGeoNatureFragment : Fragment() {
     private val observateurs = mutableListOf<GeoNatureObservateur>()
     private val gson = Gson()
 
+    /** Vrai après un « Vider le cache » et jusqu'au prochain rechargement : on repart d'une
+     *  ardoise vierge, donc le rechargement ne doit PAS ré-appliquer d'auto-défaut (liste unique,
+     *  observateur = utilisateur connecté). L'utilisateur re-choisit explicitement ses 3 sélections. */
+    private var selectionsReinitialisees = false
+
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         _binding = FragmentConfigGeonatureBinding.inflate(inflater, container, false)
         return binding.root
@@ -130,6 +135,10 @@ class ConfigGeoNatureFragment : Fragment() {
 
         binding.btnViderCache.setOnClickListener {
             viderTousLesCaches()
+            // « Vider le cache » est un reset explicite : on efface aussi les 3 sélections OCCTAX
+            // (jeu de données / liste / observateur) et leurs caches, pour repartir avec des
+            // champs select vierges. Sans ça, le rechargement ré-appliquait les anciennes valeurs.
+            reinitialiserSelectionsOcctax()
             updateCacheInfo()
             updateAvertissementListe()
             updateStatusIndicator()
@@ -349,7 +358,8 @@ class ConfigGeoNatureFragment : Fragment() {
         val idx = listes.indexOfFirst { it.id == currentId }
         if (idx >= 0) {
             binding.acListes.setText(noms[idx], false)
-        } else if (result.size == 1) {
+        } else if (result.size == 1 && !selectionsReinitialisees) {
+            // Auto-sélection de l'unique liste — sauf juste après un reset, où l'on laisse vide.
             binding.acListes.setText(noms[0], false)
             gnConfig.taxaListeId = result[0].id.toString()
             binding.etTaxaListe.setText(gnConfig.taxaListeId)
@@ -399,6 +409,9 @@ class ConfigGeoNatureFragment : Fragment() {
         val currentId = gnConfig.observateurDefautId.toIntOrNull()
         var idx = observateurs.indexOfFirst { it.idRole == currentId }
         if (idx < 0) {
+            // Présélection de l'utilisateur connecté comme observateur par défaut — y compris
+            // après un « Vider le cache » : contrairement au dataset et à la liste (laissés
+            // vierges), l'observateur retombe toujours sur celui qui saisit.
             val idRoleConnecte = gnConfig.idRoleUtilisateur.takeIf { it > 0 }
             if (idRoleConnecte != null) {
                 idx = observateurs.indexOfFirst { it.idRole == idRoleConnecte }
@@ -465,6 +478,33 @@ class ConfigGeoNatureFragment : Fragment() {
      *  "Recharger les données". Ne touche pas aux JSON SharedPreferences (datasets / listes /
      *  observateurs / additional_fields) : ils sont réécrits naturellement par les fonctions
      *  de chargement à la prochaine sync, et préservés en cas d'échec d'une étape. */
+    /** Réinitialise les 3 sélections OCCTAX (jeu de données, liste, observateur) : valeurs
+     *  persistées, caches JSON et champs affichés. Arme [selectionsReinitialisees] pour que le
+     *  prochain rechargement n'auto-sélectionne aucun défaut. Appelé par « Vider le cache ». */
+    private fun reinitialiserSelectionsOcctax() {
+        gnConfig.idDataset = ""
+        gnConfig.nomDataset = ""
+        gnConfig.taxaListeId = ""
+        gnConfig.observateurDefautId = ""
+        gnConfig.observateurDefautNom = ""
+        gnConfig.datasetsCacheJson = ""
+        gnConfig.listesCacheJson = ""
+        gnConfig.observateursCacheJson = ""
+        gnConfig.additionalFieldsOcctaxJson = ""
+        datasets.clear()
+        listes.clear()
+        observateurs.clear()
+        // Vide les champs affichés et lève une éventuelle restriction de liste imposée par un
+        // ancien dataset (réactive le contrôle des listes).
+        binding.acDatasets.setText("", false)
+        binding.acListes.setText("", false)
+        binding.acObservateurs.setText("", false)
+        binding.etTaxaListe.setText("")
+        binding.acListes.isEnabled = true
+        binding.tvErreurListes.visibility = View.GONE
+        selectionsReinitialisees = true
+    }
+
     private fun viderTousLesCaches() {
         TaxRefCache.vider()
         NomenclatureCache.vider()
@@ -537,6 +577,10 @@ class ConfigGeoNatureFragment : Fragment() {
             if (nbModulesOk == 0 && !msgSuivis.startsWith("Aucun")) {
                 etapesEnEchec += "Suivis (${msgSuivis.take(80)})"
             }
+
+            // Rechargement terminé : on a redonné à l'utilisateur l'occasion de choisir ses
+            // sélections (aucun auto-défaut n'a été appliqué). On désarme le mode reset.
+            selectionsReinitialisees = false
 
             binding.progressSync.visibility = View.GONE
             binding.btnChargerDonnees.isEnabled = true

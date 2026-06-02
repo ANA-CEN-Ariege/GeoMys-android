@@ -101,6 +101,14 @@ data class Observation(
     var additionalFieldsOccurrence: Map<String, String> = emptyMap(),
     /** Champs additionnels OCCTAX_DENOMBREMENT pour le counting #0. */
     var additionalFieldsCounting0: Map<String, String> = emptyMap(),
+    // ── Override par relevé (édités via « Détails du relevé »), partagés entre toutes les obs
+    //    d'un même releveId. null = on retombe sur les valeurs par défaut de la config / du login. ──
+    /** Jeu de données du relevé. null → `config.idDataset`. */
+    var idDatasetReleve: Int? = null,
+    /** Observateur du relevé (→ `observers`). null → utilisateur connecté. */
+    var observateurReleveId: Int? = null,
+    /** Libellé de l'observateur du relevé (affichage). */
+    var observateurReleveNom: String? = null,
 )
 
 data class Sortie(

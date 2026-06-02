@@ -163,7 +163,13 @@ object TaxRefCache {
         sauvegarder(cache)
     }
 
+    /** Nombre de CLÉS de noms en cache (un cd_nom a plusieurs clés : nom scientifique +
+     *  vernaculaires). Sert aux tests « cache non vide » ; PAS au comptage de taxons affiché. */
     val count: Int get() = charger().size
+
+    /** Nombre de taxons UNIQUES (cd_nom distincts) — c'est ce qu'on affiche à l'utilisateur,
+     *  cohérent avec le détail par liste (où chaque ligne compte des cd_nom). */
+    val nbTaxonsUniques: Int get() = entreesParCdNom().size
 
     fun toutesLesEntrees(): Map<String, TaxRefEntry> = charger()
 
@@ -269,6 +275,17 @@ object TaxRefCache {
             if (idListe in listes) cdStr.toIntOrNull()?.let(result::add)
         }
         return result.also { memCdNomsDansListe = idListe to it }
+    }
+
+    /** id_liste → nombre de cd_nom (taxons uniques) du cache appartenant à cette liste. Sert au
+     *  panneau « Détails » qui présente le contenu du cache regroupé par liste. Vide si aucune
+     *  appartenance n'a été synchronisée. */
+    fun comptesParListe(): Map<Int, Int> {
+        val comptes = HashMap<Int, Int>()
+        for ((_, listes) in chargerListesParCdNom()) {
+            for (l in listes) comptes[l] = (comptes[l] ?: 0) + 1
+        }
+        return comptes
     }
 
     /** Clés (noms normalisés) servant de suggestions à l'autocomplete taxon.

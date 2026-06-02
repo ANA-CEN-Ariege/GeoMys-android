@@ -99,6 +99,27 @@ object MonitoringApi {
         } catch (_: Exception) { 0 }
     }
 
+    /** `id_list_taxonomy` (au niveau module) des protocoles présents dans le cache — déjà filtrés
+     *  CRUVED par [chargerModules]. Sert au panneau « Détails » à compter les taxons rattachés à
+     *  des listes de protocoles. Pas d'appel réseau (mémoire puis cache disque). */
+    fun listesTaxonomieProtocolesEnCache(): Set<Int> {
+        if (dernierChargement.isNotEmpty()) {
+            return dernierChargement.mapNotNull { it.idListTaxonomy }.toSet()
+        }
+        val json = MonitoringCache.getJson(MonitoringCache.keyModules()) ?: return emptySet()
+        return try {
+            val arr = runCatching { JSONArray(json) }.getOrNull()
+                ?: JSONObject(json).let { o ->
+                    o.optJSONArray("data") ?: o.optJSONArray("items") ?: o.optJSONArray("modules")
+                } ?: return emptySet()
+            val ids = HashSet<Int>()
+            for (i in 0 until arr.length()) {
+                arr.optJSONObject(i)?.optInt("id_list_taxonomy", -1)?.takeIf { it > 0 }?.let(ids::add)
+            }
+            ids
+        } catch (_: Exception) { emptySet() }
+    }
+
     /** Résout le `module_label` (libellé humain) d'un protocole à partir de son code, en
      *  cherchant d'abord la cache mémoire puis le cache disque modules. Retourne null si
      *  le code n'est pas dans le cache (cas d'un protocole jamais visité). Pas d'appel

@@ -158,7 +158,7 @@ class ConfigGeoNatureFragment : Fragment() {
             binding.llSectionDonnees.visibility = View.GONE
         }
 
-        binding.btnTaxonsParGroupe.setOnClickListener { montrerTaxonsParGroupe() }
+        binding.btnTaxonsParGroupe.setOnClickListener { montrerTaxonsParListe() }
 
         binding.fabValider.setOnClickListener {
             sauvegarderChamps()
@@ -518,18 +518,33 @@ class ConfigGeoNatureFragment : Fragment() {
     }
 
     /** Depuis le sync exhaustif, le cache contient toutes les listes serveur — l'utilisateur
-     *  peut donc switcher de liste hors-réseau sans re-sync. On affiche tout de même un
-     *  avertissement si la liste actuellement sélectionnée n'est pas couverte par le cache
-     *  (cas où le serveur a ajouté une liste depuis la dernière synchro). */
+     *  peut donc switcher de liste hors-réseau sans re-sync. On affiche un avertissement sous
+     *  le champ si la liste sélectionnée :
+     *   - n'est pas couverte par le cache (ajoutée côté serveur depuis la dernière synchro), OU
+     *   - est bien synchronisée mais ne contient **aucun taxon** (la saisie n'aura rien à proposer). */
     private fun updateAvertissementListe() {
         val configuree = binding.etTaxaListe.text?.toString()?.trim()?.toIntOrNull()
         val listesCache = TaxRefCache.listesSynchronisees
         val cacheNonVide = TaxRefCache.count > 0
-        val absente = configuree != null && cacheNonVide && listesCache.isNotEmpty() && configuree !in listesCache
-        binding.tvAvertissementListe.visibility = if (absente) View.VISIBLE else View.GONE
-        if (absente) {
-            binding.tvAvertissementListe.text =
-                "⚠ La liste $configuree n'est pas dans le cache (${listesCache.size} listes synchronisées). Resynchroniser pour l'ajouter."
+        // (texte, estAvertissement) ; estAvertissement=false → simple info (nb de taxons).
+        val (message, avertissement) = when {
+            configuree == null || !cacheNonVide || listesCache.isEmpty() -> null to false
+            configuree !in listesCache ->
+                "⚠ La liste $configuree n'est pas dans le cache (${listesCache.size} listes synchronisées). Resynchroniser pour l'ajouter." to true
+            else -> {
+                val n = TaxRefCache.cdNomsDansListe(configuree).size
+                if (n == 0)
+                    "⚠ La liste $configuree ne contient aucun taxon — la saisie n'aura rien à proposer. Vérifier la liste côté serveur." to true
+                else
+                    "Liste $configuree : $n taxon${if (n > 1) "s" else ""} en cache." to false
+            }
+        }
+        binding.tvAvertissementListe.visibility = if (message != null) View.VISIBLE else View.GONE
+        if (message != null) {
+            binding.tvAvertissementListe.text = message
+            binding.tvAvertissementListe.setTextColor(
+                if (avertissement) 0xFFE65100.toInt() else couleurSurOnSurface(requireContext())
+            )
         }
     }
 
@@ -553,16 +568,15 @@ class ConfigGeoNatureFragment : Fragment() {
     }
 
     private fun updateCacheInfo() {
-        val nbTaxons = TaxRefCache.count
+        // Taxons UNIQUES (cd_nom distincts) — et non le nombre de clés de noms (un taxon a
+        // plusieurs clés : scientifique + vernaculaires), sinon le total affiché (ex. 230) ne
+        // correspond pas à la somme du détail par liste.
+        val nbTaxons = TaxRefCache.nbTaxonsUniques
         val nbNomenclatures = NomenclatureCache.count
         val nbProtocoles = MonitoringApi.countModulesEnCache()
 
         binding.tvCountProtocoles.text = nbProtocoles.toString()
         binding.tvCountNomenclatures.text = nbNomenclatures.toString()
-        // Compte brut du cache TaxRef (toutes listes serveur confondues, tous groupes inclus).
-        // Le filtre par liste sélectionnée n'est pas appliqué ici : il vaut au moment de la
-        // saisie, pas pour mesurer la taille du cache. Il est en revanche reflété dans le
-        // dialog "Par groupe" qui montre les effectifs filtrés sur la liste courante.
         binding.tvCountTaxons.text = nbTaxons.toString()
 
         binding.btnTaxonsParGroupe.isEnabled = nbTaxons > 0
@@ -573,35 +587,52 @@ class ConfigGeoNatureFragment : Fragment() {
      *  sur la liste sélectionnée le cas échéant). Un tap sur un groupe ouvre la liste
      *  détaillée de ses taxons via [TaxonsListeFragment]. Groupes vides masqués pour ne
      *  pas afficher des entrées inutiles. */
-    private fun montrerTaxonsParGroupe() {
-        val idListeFiltre = gnConfig.taxaListeId.trim().toIntOrNull()
-        val groupes = listOf(
-            "Oiseaux" to Taxon.OISEAU,
-            "Mammifères" to Taxon.MAMMIFERE,
-            "Reptiles" to Taxon.REPTILE,
-            "Amphibiens" to Taxon.BATRACIEN,
-            "Poissons" to Taxon.POISSON,
-            "Insectes" to Taxon.INSECTE,
-            "Fonge" to Taxon.FONGE,
-            "Mollusques" to Taxon.MOLLUSQUE,
-            "Invertébrés" to Taxon.INVERTEBRES,
-            "Plantes" to Taxon.PLANTE,
-        ).map { (label, t) ->
-            Triple(label, t, TaxRefCache.indexParTaxon(t, idListeFiltre)?.size ?: 0)
-        }.filter { it.third > 0 }
-
-        if (groupes.isEmpty()) {
-            android.widget.Toast.makeText(requireContext(), "Aucun taxon en cache", android.widget.Toast.LENGTH_SHORT).show()
+    /** « Détails » du panneau cache : présente TOUT le cache de taxons regroupé **par liste**
+     *  (indépendamment de la liste sélectionnée). Chaque ligne = une liste présente dans le cache
+     *  avec son nombre de taxons ; un tap ouvre la liste détaillée de ses taxons. */
+    private fun montrerTaxonsParListe() {
+        val comptes = TaxRefCache.comptesParListe() // id_liste -> nb taxons
+        if (comptes.isEmpty()) {
+            android.widget.Toast.makeText(
+                requireContext(),
+                "Aucun taxon en cache (ou appartenance aux listes non synchronisée).",
+                android.widget.Toast.LENGTH_LONG,
+            ).show()
             return
         }
-        val items = groupes.map { "${it.first} (${it.third})" }.toTypedArray()
+        // Noms des listes depuis le cache JSON (fallback « Liste <id> »).
+        val nomsListes: Map<Int, String> = try {
+            val t = object : TypeToken<List<GeoNatureListe>>() {}.type
+            (gson.fromJson<List<GeoNatureListe>>(gnConfig.listesCacheJson, t) ?: emptyList())
+                .associate { it.id to it.nom }
+        } catch (_: Exception) { emptyMap() }
+
+        // Listes rattachées à des protocoles monitoring (id_list_taxonomy, filtré CRUVED) +
+        // nombre de taxons UNIQUES couverts par ces listes (union, pas de double comptage).
+        val listesProtocoles = MonitoringApi.listesTaxonomieProtocolesEnCache()
+        val cdNomsProtocoles = listesProtocoles.flatMap { TaxRefCache.cdNomsDansListe(it) }.toSet()
+
+        val lignes = comptes.entries.sortedByDescending { it.value }
+        val items = lignes.map { (id, n) ->
+            val nom = nomsListes[id] ?: "Liste $id"
+            val marqueProto = if (id in listesProtocoles) " · protocole" else ""
+            "$nom ($id) — $n taxon${if (n > 1) "s" else ""}$marqueProto"
+        }.toTypedArray()
+        val titre = buildString {
+            append("Taxons par liste")
+            if (cdNomsProtocoles.isNotEmpty())
+                append(" — ${cdNomsProtocoles.size} via protocoles")
+        }
         AlertDialog.Builder(requireContext())
-            .setTitle(if (idListeFiltre != null) "Taxons par groupe (liste $idListeFiltre)" else "Taxons par groupe")
+            .setTitle(titre)
             .setItems(items) { _, which ->
-                val (_, taxon, _) = groupes[which]
+                val id = lignes[which].key
                 findNavController().navigate(
                     R.id.action_config_to_taxons,
-                    Bundle().apply { putString("taxonName", taxon.name) },
+                    Bundle().apply {
+                        putInt("idListe", id)
+                        putString("nomListe", nomsListes[id] ?: "Liste $id")
+                    },
                 )
             }
             .setNegativeButton("Fermer", null)

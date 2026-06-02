@@ -180,8 +180,14 @@ object GeoNatureUpload {
                 // groupe (toutes les obs d'un même releveId portent la même copie — édition côté
                 // CaracterisationFragment).
                 val additionalReleve = jsonDepuisMap(groupe.first().additionalFieldsReleve)
+                // Override par relevé (saisis via « Détails du relevé »), sinon valeurs par défaut :
+                //  - jeu de données : obs.idDatasetReleve sinon le dataset de la config ;
+                //  - observateur : obs.observateurReleveId sinon l'utilisateur connecté (id_digitiser
+                //    reste l'auteur de la saisie côté app).
+                val datasetGroupe = groupe.first().idDatasetReleve?.takeIf { it > 0 } ?: datasetId
+                val observerGroupe = groupe.first().observateurReleveId?.takeIf { it > 0 } ?: idRole
                 val properties = JSONObject().apply {
-                    put("id_dataset", datasetId)
+                    put("id_dataset", datasetGroupe)
                     put("date_min", dateFmt.format(dateMin))
                     put("date_max", dateFmt.format(dateMax))
                     put("hour_min", heureFmt.format(dateMin))
@@ -189,10 +195,8 @@ object GeoNatureUpload {
                     put("additional_fields", additionalReleve)
                     put("meta_device_entry", "mobile")
                     put("t_occurrences_occtax", JSONArray())
-                    if (idRole != null) {
-                        put("id_digitiser", idRole)
-                        put("observers", JSONArray().put(idRole))
-                    }
+                    if (idRole != null) put("id_digitiser", idRole)
+                    if (observerGroupe != null) put("observers", JSONArray().put(observerGroupe))
                 }
 
                 // Construction de la géométrie selon le type stocké côté Observation.

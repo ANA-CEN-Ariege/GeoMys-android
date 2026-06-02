@@ -79,10 +79,20 @@ object GeoNatureSync {
         val idsViaDatasets: Set<Int> = try {
             GeoNatureBrowse.chargerDatasets(config).mapNotNull { it.idTaxaList }.toSet()
         } catch (_: Exception) { emptySet() }
+        // + les listes taxonomiques des protocoles monitoring (`id_list_taxonomy`), pour les
+        // mêmes raisons que les datasets : un protocole peut pointer une liste « privée » non
+        // publiée dans /biblistes, et son champ TAXON serait alors vide hors-ligne. chargerModules
+        // est DÉJÀ filtré par CRUVED → on ne récupère que les listes des protocoles auxquels
+        // l'utilisateur a droit. Best-effort : pas de monitoring ou erreur → on ignore.
+        val idsViaProtocoles: Set<Int> = try {
+            MonitoringApi.chargerModules(config).mapNotNull { it.idListTaxonomy }.toSet()
+        } catch (_: Exception) { emptySet() }
         val idsBiblistes = biblistes.map { it.id }.toSet()
         val listesAFetcher = biblistes.toMutableList()
-        idsViaDatasets.forEach { id ->
-            if (id !in idsBiblistes) listesAFetcher.add(GeoNatureListe(id, "Liste $id (via dataset)"))
+        // Évite d'ajouter deux fois la même liste « privée » référencée par un dataset ET un protocole.
+        val dejaPrevues = idsBiblistes.toMutableSet()
+        (idsViaDatasets + idsViaProtocoles).forEach { id ->
+            if (dejaPrevues.add(id)) listesAFetcher.add(GeoNatureListe(id, "Liste $id (via dataset/protocole)"))
         }
         if (listesAFetcher.isEmpty()) {
             return@withContext Pair(0, "Aucune liste de taxons trouvée sur le serveur (/api/taxhub/api/biblistes).")

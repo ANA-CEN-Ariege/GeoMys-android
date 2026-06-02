@@ -77,7 +77,11 @@ Le bouton **Tester** vérifie la connexion et charge automatiquement les dataset
 
 À l'envoi, si le jeu de données configuré est absent du serveur, l'erreur remontée est explicite (« jeu de données introuvable sur ce serveur ») au lieu d'une « erreur serveur ».
 
-Un panneau **Données en cache** affiche en haut de la section le nombre de **protocoles**, **nomenclatures** et **taxons** actuellement disponibles localement. Pour les taxons, un bouton **Détails** ouvre un dialog qui liste les groupes taxonomiques (Oiseaux, Mammifères, …) avec leur effectif filtré sur la liste sélectionnée — un tap sur un groupe affiche la liste détaillée des taxons.
+Un panneau **Données en cache** affiche en haut de la section le nombre de **protocoles**, **nomenclatures** et **taxons** (taxons *uniques*, c.-à-d. `cd_nom` distincts) actuellement disponibles localement. Pour les taxons, un bouton **Détails** ouvre un dialog listant **tout le cache regroupé par liste** : chaque liste avec son nombre de taxons (les listes rattachées à un protocole sont marquées « · protocole », et le titre rappelle le nombre de taxons couverts par des listes de protocoles) — un tap ouvre la liste détaillée des taxons de cette liste. Sous le champ **Liste**, une ligne d'info indique le nombre de taxons de la liste sélectionnée, ou un avertissement si elle est absente du cache **ou vide** (aucun taxon).
+
+Le chargement récupère les taxons de **toutes les listes publiques** (`/biblistes`), des **listes imposées par les datasets**, et des **listes taxonomiques des protocoles** auxquels l'utilisateur a accès (filtré CRUVED) — y compris des listes « privées » non publiées. À la saisie, l'autocomplétion d'espèce est **strictement limitée à la liste sélectionnée** : une liste vide ne propose donc rien (plus de repli sur des suggestions embarquées).
+
+Dans la saisie OccTax (multi et mono-taxons), le bouton **Détails** du relevé permet en outre d'**éditer le jeu de données et l'observateur** du relevé (en plus des éventuels champs additionnels) ; ces choix s'appliquent à toutes les observations de la session.
 
 ## Écran d'accueil
 

@@ -559,6 +559,11 @@ object TaxRefLocal {
         // Tous les `suggestionsPour` filtreront via cet ensemble — c'est ce qui rend
         // l'autocomplete fidèle à la liste sélectionnée même avec un cache exhaustif.
         val cdNomsDansListe: Set<Int>? = idListeFiltre?.let { TaxRefCache.cdNomsDansListe(it) }
+        // Quand une liste est sélectionnée, l'autocomplete doit STRICTEMENT s'y tenir : un
+        // résultat filtré vide (liste vide / taxon hors liste) doit rester vide. On ne doit donc
+        // PAS retomber sur les suggestions embarquées en dur (getSuggestions), qui ignorent la
+        // liste — sinon une liste à 0 taxon proposerait quand même des espèces (bug).
+        val filtreListeActif = idListeFiltre != null
 
         fun suggestionsPour(cdNomsBrut: Collection<Int>): List<String> {
             val cdNoms = if (cdNomsDansListe == null) cdNomsBrut
@@ -595,6 +600,9 @@ object TaxRefLocal {
         }
 
         if (groupes2.isEmpty()) {
+            // Cache de groupes non disponible : on ne peut pas honorer la liste → si une liste
+            // est sélectionnée, on renvoie vide plutôt que des suggestions embarquées hors liste.
+            if (filtreListeActif) return emptyList()
             // Fallback données embarquées pour les groupes de base
             return if (scientifique) {
                 getSuggestions(taxon).mapNotNull { nom ->
@@ -683,13 +691,14 @@ object TaxRefLocal {
                     else            -> "Oiseaux"
                 }
                 val res = filtrerParGroup2(setOf(groupeCible))
-                if (res.isNotEmpty()) res
-                else if (scientifique) {
-                    getSuggestions(taxon).mapNotNull { nom ->
+                when {
+                    res.isNotEmpty() -> res
+                    // Liste sélectionnée : pas de repli embarqué — on respecte la liste à la lettre.
+                    filtreListeActif -> emptyList()
+                    scientifique -> getSuggestions(taxon).mapNotNull { nom ->
                         noms[TaxRefCache.normaliser(nom)]?.let { sciNoms[it] }
                     }.distinct().sorted()
-                } else {
-                    getSuggestions(taxon)
+                    else -> getSuggestions(taxon)
                 }
             }
         }

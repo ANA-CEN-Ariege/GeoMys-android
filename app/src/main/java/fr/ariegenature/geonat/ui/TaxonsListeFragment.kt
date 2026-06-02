@@ -46,16 +46,23 @@ class TaxonsListeFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         
-        val taxonName = arguments?.getString("taxonName") ?: return
-        val taxon = try { Taxon.valueOf(taxonName) } catch (_: Exception) { null }
-
-        // Filtre par la liste sélectionnée pour rester cohérent avec ce que la saisie propose.
-        val idListeFiltre = GeoNatureConfig(requireContext()).taxaListeId.trim().toIntOrNull()
-        val cdNoms = taxon?.let { TaxRefCache.indexParTaxon(it, idListeFiltre) } ?: emptyList()
         val allEntries = TaxRefCache.entreesParCdNom()
+        // Deux modes :
+        //  - idListe > 0 : tous les taxons d'une liste donnée (depuis « Détails → par liste ») ;
+        //  - sinon taxonName : un groupe taxonomique, filtré par la liste configurée (parcours historique).
+        val idListe = arguments?.getInt("idListe", -1)?.takeIf { it > 0 }
+        val (titre, cdNoms) = if (idListe != null) {
+            val nom = arguments?.getString("nomListe")?.takeIf { it.isNotEmpty() } ?: "Liste $idListe"
+            nom to TaxRefCache.cdNomsDansListe(idListe).toList()
+        } else {
+            val taxonName = arguments?.getString("taxonName") ?: return
+            val taxon = try { Taxon.valueOf(taxonName) } catch (_: Exception) { null }
+            val idListeFiltre = GeoNatureConfig(requireContext()).taxaListeId.trim().toIntOrNull()
+            taxonName to (taxon?.let { TaxRefCache.indexParTaxon(it, idListeFiltre) } ?: emptyList())
+        }
         val entries = cdNoms.mapNotNull { allEntries[it] }.sortedBy { it.nomFrOriginal ?: it.sciNom }
 
-        binding.tvTitre.text = "$taxonName (${entries.size})"
+        binding.tvTitre.text = "$titre (${entries.size})"
         binding.btnRetour.setOnClickListener { findNavController().navigateUp() }
 
         binding.rvTaxons.layoutManager = LinearLayoutManager(requireContext())

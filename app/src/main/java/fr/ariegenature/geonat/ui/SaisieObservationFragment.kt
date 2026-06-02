@@ -114,6 +114,12 @@ class SaisieObservationFragment : Fragment() {
      *  et propagés sur chaque PendingObs au moment de l'enregistrement. */
     private var additionalFieldsReleveSession: Map<String, String> = emptyMap()
 
+    /** Override du relevé édités via « Détails du relevé » (jeu de données + observateur),
+     *  communs à toutes les obs de la session. null = valeur par défaut (config / login). */
+    private var idDatasetReleveSession: Int? = null
+    private var idObservateurReleveSession: Int? = null
+    private var nomObservateurReleveSession: String? = null
+
     /** Géométrie du relevé courant : "Point" (défaut), "LineString", "Polygon". Null = Point.
      *  Partagée par toutes les obs (un relevé = une géométrie + N occurrences). */
     private var geometryTypeSession: String? = null
@@ -186,6 +192,9 @@ class SaisieObservationFragment : Fragment() {
                 // Toutes les obs d'un même relevé partagent les mêmes champs additionnels
                 // niveau RELEVE et la même géométrie — on prend la première comme source.
                 additionalFieldsReleveSession = premier.additionalFieldsReleve
+                idDatasetReleveSession = premier.idDatasetReleve
+                idObservateurReleveSession = premier.observateurReleveId
+                nomObservateurReleveSession = premier.observateurReleveNom
                 geometryTypeSession = premier.geometryType
                 geometryCoordsJsonSession = premier.geometryCoordsJson
                 obsRelevExistants.forEach { obsExistante ->
@@ -375,17 +384,25 @@ class SaisieObservationFragment : Fragment() {
         defs: List<fr.ariegenature.geonat.network.AdditionalFieldDef>,
     ) {
         val infos = buildList {
-            add("Jeu de données" to gnConfig.nomDataset.ifEmpty { gnConfig.idDataset })
-            add("Observateur" to gnConfig.observateurDefautNom.ifEmpty {
-                gnConfig.nomUtilisateur.ifEmpty { gnConfig.login }
-            })
             add("Position" to "%.5f, %.5f".format(latitude, longitude))
             geometryTypeSession?.takeIf { it.isNotEmpty() && it != "Point" }?.let {
                 add("Géométrie" to it)
             }
         }
-        ouvrirDialogDetailsReleve(requireContext(), infos, defs, additionalFieldsReleveSession) {
-            additionalFieldsReleveSession = it
+        val datasets = datasetsPourDetailsReleve(gnConfig)
+        val observateurs = observateursPourDetailsReleve(gnConfig)
+        val idDsInitial = idDatasetReleveSession ?: gnConfig.idDataset.toIntOrNull()
+        val idObsInitial = idObservateurReleveSession
+            ?: gnConfig.observateurDefautId.toIntOrNull()
+            ?: gnConfig.idRoleUtilisateur.takeIf { it > 0 }
+        ouvrirDialogDetailsReleve(
+            requireContext(), infos, datasets, idDsInitial, observateurs, idObsInitial,
+            defs, additionalFieldsReleveSession,
+        ) { res ->
+            idDatasetReleveSession = res.idDataset
+            idObservateurReleveSession = res.idObservateur
+            nomObservateurReleveSession = res.nomObservateur
+            additionalFieldsReleveSession = res.additionnels
         }
     }
 
@@ -767,6 +784,9 @@ class SaisieObservationFragment : Fragment() {
                 determinateur             = obs.determinateur.ifEmpty { null },
                 mediaUrisCounting0        = obs.mediaUrisCounting0,
                 additionalFieldsReleve    = additionalFieldsReleveSession,
+                idDatasetReleve           = idDatasetReleveSession,
+                observateurReleveId       = idObservateurReleveSession,
+                observateurReleveNom      = nomObservateurReleveSession,
                 geometryType              = geometryTypeSession,
                 geometryCoordsJson        = geometryCoordsJsonSession,
                 additionalFieldsOccurrence = obs.additionalFieldsOccurrence,

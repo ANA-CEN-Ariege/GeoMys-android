@@ -116,6 +116,12 @@ class SaisieRapideFragment : Fragment() {
     private var additionalFieldsReleve: Map<String, String> = emptyMap()
     private var additionalFieldsOccurrence: Map<String, String> = emptyMap()
 
+    /** Override du relevé édités via « Détails du relevé » (jeu de données + observateur).
+     *  null = valeur par défaut (config / login). Communs à toutes les obs de la session mono. */
+    private var idDatasetReleveSession: Int? = null
+    private var idObservateurReleveSession: Int? = null
+    private var nomObservateurReleveSession: String? = null
+
     // Détails par défaut — dénombrement (counting #0 + éventuels countings additionnels)
     private var sexe = ""
     private var stadeVie = ""
@@ -491,23 +497,29 @@ class SaisieRapideFragment : Fragment() {
         binding.btnCaracterisationDefaut.setOnClickListener { ouvrirCaracterisationDefaut() }
         binding.btnDenombrementDefaut.setOnClickListener { ouvrirDenombrementDefaut() }
 
-        // Bouton "Détails du relevé" : visible seulement si le serveur déclare des champs
-        // additionnels OCCTAX_RELEVE. Ouvre le même dialog éditable qu'en multi-taxons ;
-        // les valeurs sont communes à toutes les obs de la session.
-        val defsReleve = fr.ariegenature.geonat.ui.saisie.AdditionalFieldsRenderer
-            .fromJson(gnConfig.additionalFieldsOcctaxJson)
-            .filter { it.appliqueA(fr.ariegenature.geonat.network.AdditionalFieldsObject.RELEVE) }
-            .filter { it.visiblePour(gnConfig.idDataset.toIntOrNull(), emptyList()) }
-        binding.btnDetailsReleve.visibility = if (defsReleve.isEmpty()) View.GONE else View.VISIBLE
+        // Bouton "Détails du relevé" : TOUJOURS visible — le dialog permet d'éditer le jeu de
+        // données et l'observateur du relevé (+ les éventuels champs additionnels OCCTAX_RELEVE).
+        // Les valeurs sont communes à toutes les obs de la session.
+        binding.btnDetailsReleve.visibility = View.VISIBLE
         binding.btnDetailsReleve.setOnClickListener {
-            val infos = listOf(
-                "Jeu de données" to gnConfig.nomDataset.ifEmpty { gnConfig.idDataset },
-                "Observateur" to gnConfig.observateurDefautNom.ifEmpty {
-                    gnConfig.nomUtilisateur.ifEmpty { gnConfig.login }
-                },
-            )
-            ouvrirDialogDetailsReleve(requireContext(), infos, defsReleve, additionalFieldsReleve) {
-                additionalFieldsReleve = it
+            val defsReleve = fr.ariegenature.geonat.ui.saisie.AdditionalFieldsRenderer
+                .fromJson(gnConfig.additionalFieldsOcctaxJson)
+                .filter { it.appliqueA(fr.ariegenature.geonat.network.AdditionalFieldsObject.RELEVE) }
+                .filter { it.visiblePour(gnConfig.idDataset.toIntOrNull(), emptyList()) }
+            val datasets = datasetsPourDetailsReleve(gnConfig)
+            val observateurs = observateursPourDetailsReleve(gnConfig)
+            val idDsInitial = idDatasetReleveSession ?: gnConfig.idDataset.toIntOrNull()
+            val idObsInitial = idObservateurReleveSession
+                ?: gnConfig.observateurDefautId.toIntOrNull()
+                ?: gnConfig.idRoleUtilisateur.takeIf { it > 0 }
+            ouvrirDialogDetailsReleve(
+                requireContext(), emptyList(), datasets, idDsInitial, observateurs, idObsInitial,
+                defsReleve, additionalFieldsReleve,
+            ) { res ->
+                idDatasetReleveSession = res.idDataset
+                idObservateurReleveSession = res.idObservateur
+                nomObservateurReleveSession = res.nomObservateur
+                additionalFieldsReleve = res.additionnels
             }
         }
 
@@ -806,6 +818,9 @@ class SaisieRapideFragment : Fragment() {
             mediaUrisCounting0          = mediaUrisCounting0,
             additionalFieldsCounting0   = additionalFieldsCounting0,
             additionalFieldsReleve      = additionalFieldsReleve,
+            idDatasetReleve             = idDatasetReleveSession,
+            observateurReleveId         = idObservateurReleveSession,
+            observateurReleveNom        = nomObservateurReleveSession,
             additionalFieldsOccurrence  = additionalFieldsOccurrence,
             denombrementsAdditionnels   = denombrementsAdditionnels,
         )

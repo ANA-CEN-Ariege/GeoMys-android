@@ -19,27 +19,69 @@
 package fr.ariegenature.geonat.ui
 
 import android.content.Context
+import android.widget.ArrayAdapter
+import android.widget.AutoCompleteTextView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 import fr.ariegenature.geonat.network.AdditionalFieldDef
+import fr.ariegenature.geonat.network.GeoNatureDataset
+import fr.ariegenature.geonat.network.GeoNatureObservateur
+import fr.ariegenature.geonat.store.GeoNatureConfig
 import fr.ariegenature.geonat.ui.saisie.AdditionalFieldsRenderer
+
+private val gsonDetailsReleve = Gson()
+
+/** Jeux de données proposables dans « Détails du relevé » : actifs + rattachés OCCTAX (ou sans
+ *  module déclaré), lus depuis le cache local. Couples (id, "nom (id)") pour le dropdown. */
+fun datasetsPourDetailsReleve(config: GeoNatureConfig): List<Pair<Int, String>> =
+    try {
+        val t = object : TypeToken<List<GeoNatureDataset>>() {}.type
+        val l: List<GeoNatureDataset> = gsonDetailsReleve.fromJson(config.datasetsCacheJson, t) ?: emptyList()
+        l.filter { it.actif && (it.moduleCodes.isEmpty() || "OCCTAX" in it.moduleCodes) }
+            .map { it.id to "${it.nom} (${it.id})" }
+    } catch (_: Exception) { emptyList() }
+
+/** Observateurs proposables dans « Détails du relevé », depuis le cache local. */
+fun observateursPourDetailsReleve(config: GeoNatureConfig): List<Pair<Int, String>> =
+    try {
+        val t = object : TypeToken<List<GeoNatureObservateur>>() {}.type
+        val l: List<GeoNatureObservateur> = gsonDetailsReleve.fromJson(config.observateursCacheJson, t) ?: emptyList()
+        l.map { it.idRole to it.nomComplet }
+    } catch (_: Exception) { emptyList() }
+
+/** Résultat du dialog « Détails du relevé » : les sélections éditables (jeu de données,
+ *  observateur) + les champs additionnels OCCTAX_RELEVE collectés. */
+data class DetailsReleveResult(
+    val idDataset: Int?,
+    val idObservateur: Int?,
+    val nomObservateur: String?,
+    val additionnels: Map<String, String>,
+)
 
 /** Dialog "Détails du relevé" partagé par la saisie multi-taxons ([SaisieObservationFragment])
  *  et mono-taxons ([SaisieRapideFragment]).
  *
- *  Affiche d'abord des lignes d'info en lecture seule ([infos] : jeu de données, observateur,
- *  position…), puis les champs additionnels niveau OCCTAX_RELEVE ([defs]) **éditables** (pas un
- *  simple affichage des valeurs). Sur "Valider", [onValider] reçoit les valeurs collectées.
+ *  Le **jeu de données** et l'**observateur** sont **éditables** (listes déroulantes alimentées
+ *  par les caches du serveur), pré-sélectionnés sur les valeurs courantes. Suivent d'éventuelles
+ *  lignes d'info en lecture seule ([infos] : position, géométrie…) puis les champs additionnels
+ *  niveau OCCTAX_RELEVE ([defs]) éditables. Sur "Valider", [onValider] reçoit le [DetailsReleveResult].
  *
- *  Si [defs] est vide, le dialog se résume à l'en-tête et n'a qu'un bouton "Fermer". */
+ *  [datasets] / [observateurs] : couples (id, libellé) proposés dans les dropdowns. Si une liste
+ *  est vide (cache non chargé), le champ retombe en ligne d'info lecture seule. */
 fun ouvrirDialogDetailsReleve(
     ctx: Context,
     infos: List<Pair<String, String>>,
+    datasets: List<Pair<Int, String>>,
+    idDatasetInitial: Int?,
+    observateurs: List<Pair<Int, String>>,
+    idObservateurInitial: Int?,
     defs: List<AdditionalFieldDef>,
     valeursInitiales: Map<String, String>,
-    onValider: (Map<String, String>) -> Unit,
+    onValider: (DetailsReleveResult) -> Unit,
 ) {
     val density = ctx.resources.displayMetrics.density
     val pad = (16 * density).toInt()
@@ -48,30 +90,60 @@ fun ouvrirDialogDetailsReleve(
         setPadding(pad, pad / 2, pad, pad / 2)
     }
 
-    // En-tête : infos lecture seule du relevé.
-    infos.forEach { (label, valeur) ->
-        if (valeur.isBlank()) return@forEach
+    fun titre(t: String) = TextView(ctx).apply {
+        text = t
+        textSize = 12f
+        setTextColor(couleurSecondaire(ctx))
+        setPadding(0, (8 * density).toInt(), 0, 0)
+    }
+
+    fun ligneLecture(label: String, valeur: String) {
         racine.addView(TextView(ctx).apply {
-            text = label
-            textSize = 12f
-            setTextColor(couleurSecondaire(ctx))
+            text = label; textSize = 12f; setTextColor(couleurSecondaire(ctx))
         })
         racine.addView(TextView(ctx).apply {
-            text = valeur
-            textSize = 15f
+            text = valeur; textSize = 15f
             setPadding(0, 0, 0, (8 * density).toInt())
         })
     }
 
-    // Conteneur des champs additionnels éditables — peut rester vide si rien déclaré côté serveur.
+    // Sélecteur déroulant (jeu de données / observateur) : renvoie un getter de l'id choisi.
+    // Si [options] est vide, on n'affiche pas de dropdown mais une simple ligne lecture seule.
+    fun selecteur(label: String, options: List<Pair<Int, String>>, idInitial: Int?): () -> Pair<Int, String>? {
+        if (options.isEmpty()) {
+            val lab = options.firstOrNull { it.first == idInitial }?.second ?: (idInitial?.toString() ?: "—")
+            ligneLecture(label, lab)
+            return { idInitial?.let { id -> id to lab } }
+        }
+        racine.addView(titre(label))
+        val labels = options.map { it.second }
+        val champ = AutoCompleteTextView(ctx).apply {
+            setAdapter(ArrayAdapter(ctx, android.R.layout.simple_dropdown_item_1line, labels))
+            threshold = 1
+            isSingleLine = true
+            // Clic = ré-ouvre la liste complète pour changer facilement.
+            setOnClickListener { showDropDown() }
+            val idx = options.indexOfFirst { it.first == idInitial }
+            if (idx >= 0) setText(labels[idx], false)
+            setPadding(0, 0, 0, (8 * density).toInt())
+        }
+        racine.addView(champ)
+        return {
+            val txt = champ.text?.toString().orEmpty()
+            options.firstOrNull { it.second == txt } ?: options.firstOrNull { it.first == idInitial }
+        }
+    }
+
+    val getDataset = selecteur("Jeu de données", datasets, idDatasetInitial)
+    val getObservateur = selecteur("Observateur", observateurs, idObservateurInitial)
+
+    // Infos lecture seule restantes (position, géométrie…).
+    infos.forEach { (label, valeur) -> if (valeur.isNotBlank()) ligneLecture(label, valeur) }
+
+    // Champs additionnels éditables — éventuels.
     val containerAdd = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
     if (defs.isNotEmpty()) {
-        racine.addView(TextView(ctx).apply {
-            text = "Champs additionnels"
-            textSize = 12f
-            setTextColor(couleurSecondaire(ctx))
-            setPadding(0, (8 * density).toInt(), 0, 0)
-        })
+        racine.addView(titre("Champs additionnels"))
         AdditionalFieldsRenderer.rendre(containerAdd, defs, valeursInitiales)
         racine.addView(containerAdd)
     }
@@ -80,9 +152,18 @@ fun ouvrirDialogDetailsReleve(
     MaterialAlertDialogBuilder(ctx)
         .setTitle("Détails du relevé")
         .setView(scroll)
-        .setPositiveButton(if (defs.isEmpty()) "Fermer" else "Valider") { _, _ ->
-            if (defs.isNotEmpty()) onValider(AdditionalFieldsRenderer.collecter(containerAdd))
+        .setPositiveButton("Valider") { _, _ ->
+            val ds = getDataset()
+            val obs = getObservateur()
+            onValider(
+                DetailsReleveResult(
+                    idDataset = ds?.first,
+                    idObservateur = obs?.first,
+                    nomObservateur = obs?.second,
+                    additionnels = if (defs.isNotEmpty()) AdditionalFieldsRenderer.collecter(containerAdd) else valeursInitiales,
+                )
+            )
         }
-        .apply { if (defs.isNotEmpty()) setNegativeButton("Annuler", null) }
+        .setNegativeButton("Annuler", null)
         .show()
 }

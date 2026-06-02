@@ -2,6 +2,10 @@
 
 Application Android de terrain pour la saisie naturaliste connectée à un serveur [GeoNature](https://github.com/PnX-SI/GeoNature). Ce guide couvre la prise en main et l'utilisation au quotidien.
 
+<p align="center">
+  <img src="Images/accueil.jpg" alt="Écran d'accueil de GeoNat" width="300">
+</p>
+
 ---
 
 ## 1. Installation

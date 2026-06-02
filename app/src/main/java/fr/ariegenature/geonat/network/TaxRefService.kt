@@ -18,7 +18,6 @@
 
 package fr.ariegenature.geonat.network
 
-import fr.ariegenature.geonat.TaxRefLocal
 import fr.ariegenature.geonat.model.Taxon
 import fr.ariegenature.geonat.store.GeoNatureConfig
 import fr.ariegenature.geonat.store.TaxRefCache
@@ -55,13 +54,7 @@ object TaxRefService {
                 }
             }
 
-            // 2. Base embarquée TaxRefLocal
-            val statutLocal = TaxRefLocal.rechercher(nom)
-            if (statutLocal is TaxRefStatut.Trouve && appartientAuGroupe(statutLocal.cdNom)) {
-                return@withContext Pair(statutLocal, false)
-            }
-
-            // 3. API TaxRef GeoNature en direct (si configuré) — filtre &regne déjà appliqué
+            // 2. API TaxRef GeoNature en direct (si configuré) — filtre &regne déjà appliqué
             //    côté URL, on revérifie tout de même contre l'index local pour rester cohérent.
             if (gnConfig != null && gnConfig.connexionConfiguree) {
                 rechercherViaGeoNature(nom, taxon, gnConfig)?.let { statut ->

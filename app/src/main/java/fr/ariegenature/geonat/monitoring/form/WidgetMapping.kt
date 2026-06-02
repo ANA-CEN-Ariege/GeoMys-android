@@ -71,8 +71,10 @@ fun mapperViewType(prop: fr.ariegenature.geonat.network.MonitoringApi.Monitoring
         "medias" -> ViewType.MEDIA
         // Non portés nativement, mais on dégrade gracieusement en TEXT pour ne pas perdre
         // le champ — l'utilisateur saisira en clair plutôt que de voir le champ disparaître :
-        //   geometry  → picker carte (hors périmètre actuel monitoring) ;
-        //   min_max   → couple de NumberPicker côte à côte (à porter quand un protocole l'utilise).
+        //   geometry  → picker carte (hors périmètre actuel monitoring).
+        // NB : il n'existe pas de type_widget `min_max` en gn_module_monitoring — une fourchette
+        // est déclarée comme deux propriétés `integer`/`number` distinctes (ex. `altitude_min` +
+        // `altitude_max`), déjà rendues nativement en NUMBER ci-dessus.
         // Parité gn_mobile_monitoring : `default: return 'TextField'`.
         else -> ViewType.TEXT
     }

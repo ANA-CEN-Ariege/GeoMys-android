@@ -44,6 +44,16 @@ Le dernier fond choisi est **mémorisé** et réappliqué à l'ouverture de n'im
 
 **Position courante & GPS externe** : la carte « Explorer » s'abonne au GPS en direct et se recentre automatiquement sur la position dès le premier point reçu (le bouton « Centrer » suit la position live). L'app lit le `LocationManager` standard d'Android : un récepteur externe (ex. **RTK** relayé par **SW Maps** en « position fictive » / mock location) est donc utilisé de façon transparente, sans configuration côté app.
 
+## Limitations connues
+
+Volontairement hors périmètre à ce stade. Aucune n'est un bug : les fonctionnalités absentes dégradent proprement (un champ non porté reste éditable en texte plutôt que de disparaître), et le périmètre cible du monitoring reste **consultation + visites + saisies sur sites existants** — pas de création de sites.
+
+- **Saisie de géométrie au formulaire monitoring (widget `geometry`)** — non portée. Les champs de type `geometry` (dessin d'un point / ligne / polygone sur carte, p. ex. pour créer un site ou tracer un transect) sont **dégradés en champ texte**. La *consultation* des géométries de sites existants, elle, est pleinement supportée (carte interactive, « Maps Manager »). Cohérent avec le périmètre « sites existants ».
+- **Médias : une seule photo par objet** — l'upload vers `gn_commons` est en MVP *single-file* (OccTax comme monitoring). La pièce jointe multi-fichiers n'est pas encore implémentée.
+- **Datalists TaxHub** — seules les listes alimentées par une application `GeoNature` sont chargées dynamiquement ; les datalists pointant vers **TaxHub** ne sont pas encore récupérées.
+- **Dictée vocale en français uniquement** — la reconnaissance vocale (saisie OccTax) n'expose pas de choix de langue.
+- **Pas de tests instrumentés UI** — la couverture automatique est solide côté logique (parsing schéma, payloads, flux réseau, offline) mais il n'y a pas de tests d'interface / fragments / services de localisation ; la validation de ces parcours reste manuelle.
+
 ## Configuration GeoNature
 
 Écran de configuration (icône engrenage en haut à droite) :

@@ -20,7 +20,7 @@ package fr.ariegenature.geonat.monitoring.form
 
 /** Type de widget d'un champ de formulaire dynamique gn_module_monitoring.
  *  POC volontairement minimaliste — on étend au fil de l'eau quand on rencontre des protocoles
- *  qui ont besoin de plus (NOMENCLATURE_TYPE, OBSERVERS, MEDIA, MIN_MAX, RADIO, CHECKBOX…).
+ *  qui ont besoin de plus (NOMENCLATURE_TYPE, OBSERVERS, MEDIA, RADIO, CHECKBOX…).
  *  Mapping de référence depuis le `type_widget` déclaré dans `/api/monitorings/config/<code>`
  *  fait dans [WidgetMapping.kt]. */
 enum class ViewType {

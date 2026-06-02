@@ -227,16 +227,6 @@
             </LinearLayout>
 
             <TextView
-                android:id="@+id/tv_avertissement_liste"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="6dp"
-                android:textColor="@android:color/holo_orange_dark"
-                android:textSize="13sp"
-                android:textStyle="bold"
-                android:visibility="gone" />
-
-            <TextView
                 android:id="@+id/tv_tax_ref_version"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
@@ -336,6 +326,18 @@
                 android:layout_marginTop="4dp"
                 android:textColor="@android:color/holo_red_dark"
                 android:textSize="12sp"
+                android:visibility="gone" />
+
+            <!-- Info/avertissement sur la liste sélectionnée (nb de taxons, ou liste absente/vide).
+                 Couleur réglée dynamiquement (info vs avertissement) côté fragment. -->
+            <TextView
+                android:id="@+id/tv_avertissement_liste"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:textColor="@android:color/holo_orange_dark"
+                android:textSize="13sp"
+                android:textStyle="bold"
                 android:visibility="gone" />
 
             <!-- Observateur par défaut -->

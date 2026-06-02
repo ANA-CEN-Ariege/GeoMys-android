@@ -448,7 +448,21 @@ class FormulaireRenderer(
                 setLines(minLines)
                 gravity = android.view.Gravity.TOP or android.view.Gravity.START
             }
-            field.value?.toString()?.takeIf { it.isNotEmpty() && it != "null" }?.let { setText(it) }
+            val defautInitial = field.value?.toString()?.takeIf { it.isNotEmpty() && it != "null" }
+            defautInitial?.let { setText(it) }
+            // NUMBER pré-rempli avec un défaut serveur (typiquement "0") : on traite ce défaut
+            // comme une valeur « fantôme ». Au focus, s'il est encore intact, on le vide pour
+            // saisir une autre valeur directement ; si le champ est laissé vide, on le restaure
+            // au blur — le défaut reste donc la valeur par défaut sans gêner la frappe.
+            if (field.viewType == ViewType.NUMBER && defautInitial != null) {
+                setOnFocusChangeListener { _, hasFocus ->
+                    if (hasFocus) {
+                        if (text?.toString() == defautInitial) setText("")
+                    } else if (text.isNullOrEmpty()) {
+                        setText(defautInitial)
+                    }
+                }
+            }
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,

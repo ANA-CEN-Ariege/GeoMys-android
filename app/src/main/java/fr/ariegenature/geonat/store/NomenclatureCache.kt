@@ -31,8 +31,10 @@ object NomenclatureCache {
     private const val KEY_DEFAUTS = "nom_defauts_v1"
     private lateinit var prefs: SharedPreferences
     private val gson = Gson()
-    private var mem: Map<String, List<NomValeur>>? = null
-    private var memDefauts: Map<String, String>? = null
+    // @Volatile : écrits par le thread de sync, lus par le thread UI à la saisie (visibilité
+    // inter-thread de la référence, cohérent avec TaxRefCache).
+    @Volatile private var mem: Map<String, List<NomValeur>>? = null
+    @Volatile private var memDefauts: Map<String, String>? = null
 
     // Valeurs group2_inpn correspondant aux poissons dans TaxRef v16 et v17 (même liste iOS)
     val GROUP2_POISSONS: Set<String> = setOf(

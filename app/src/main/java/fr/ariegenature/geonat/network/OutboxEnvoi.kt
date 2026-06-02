@@ -22,6 +22,8 @@ import fr.ariegenature.geonat.store.GeoNatureConfig
 import fr.ariegenature.geonat.store.OutboxMonitoring
 import fr.ariegenature.geonat.store.SaisieEnAttente
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 /** Orchestrateur de l'envoi des saisies monitoring en attente.
@@ -43,6 +45,11 @@ import kotlinx.coroutines.withContext
 object OutboxEnvoi {
 
     data class Resultat(val succes: Int, val echecs: Int, val messages: List<String>)
+
+    /** Sérialise les envois : sans ça, deux déclenchements concurrents (« Envoyer tout » +
+     *  « Envoyer ce groupe », double-tap, relance) pourraient traiter la même saisie en
+     *  parallèle (transition PENDING→SENDING non atomique) et créer des doublons côté serveur. */
+    private val mutexEnvoi = Mutex()
 
     /** Envoie un sous-ensemble de la file : la saisie [uuidRacine] + tous ses descendants
      *  locaux. Délègue à [envoyerSelection]. Utilisé par le bouton "Envoyer ce groupe"
@@ -72,9 +79,10 @@ object OutboxEnvoi {
         uuidsACibler: Set<String>?,
         progression: (envoyees: Int, total: Int, message: String) -> Unit,
     ): Resultat = withContext(Dispatchers.IO) {
+        mutexEnvoi.withLock {
         val initiales = OutboxMonitoring.enAttente()
             .filter { uuidsACibler == null || it.uuid in uuidsACibler }
-        if (initiales.isEmpty()) return@withContext Resultat(0, 0, emptyList())
+        if (initiales.isEmpty()) return@withLock Resultat(0, 0, emptyList())
 
         val total = initiales.size
         var envoyees = 0
@@ -158,6 +166,7 @@ object OutboxEnvoi {
         // au tour précédent, donc plus besoin de garder l'entrée parent.
         OutboxMonitoring.purgerSent()
         Resultat(succes, echecs, messages)
+        }
     }
 
     /** Envoie une saisie isolée. Lit les valeurs depuis valeursJson, reconstitue la Map

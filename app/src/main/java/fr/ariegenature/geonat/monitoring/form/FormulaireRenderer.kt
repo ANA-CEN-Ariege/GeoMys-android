@@ -305,12 +305,9 @@ class FormulaireRenderer(
                         notifierChangement()
                     }
                 })
-                // DATE et SELECT_MULTIPLE reposent sur des TextView dont la valeur change via
-                // un dialog/picker — on hooke leur invalidation via le ChangeListener du tag.
-                is TextView -> v.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
-                    override fun onViewAttachedToWindow(v: View) {}
-                    override fun onViewDetachedFromWindow(v: View) {}
-                })
+                // DATE / TIME / DATETIME / SELECT_MULTIPLE : TextView cliquables dont la valeur
+                // change via leur propre dialog/picker, qui appelle déjà notifierChangement().
+                // Aucun listener à attacher ici (l'ancien hook TextView était inopérant).
             }
         }
     }
@@ -651,23 +648,30 @@ class FormulaireRenderer(
         // Le rattachement au lifecycle annule automatiquement le scan si la View est détruite
         // pendant le calcul (rotation, back) — plus de race contre une vue déjà détachée.
         val idListeRestreinte = field.idListeTaxonomieRestreinte
+        val hintInitial = ac.hint
         scope.launch {
-            val (noms, diagDetails) = withContext(Dispatchers.Default) {
+            val (noms, listeVide, diagDetails) = withContext(Dispatchers.Default) {
                 // Index memoizé côté TaxRefCache : pas de re-matérialisation des 15-50k
                 // entrées à chaque rendu d'un champ TAXON (cf. audit B5).
-                val resultat = fr.ariegenature.geonat.store.TaxRefCache.nomsSuggestion(idListeRestreinte)
-                val diag = if (idListeRestreinte != null) {
-                    "liste=$idListeRestreinte, ${resultat.size} suggestions"
-                } else {
-                    "liste=null (toutes), ${resultat.size} suggestions"
+                val restreint = fr.ariegenature.geonat.store.TaxRefCache.nomsSuggestion(idListeRestreinte)
+                // Une liste taxonomique est imposée par le protocole mais AUCUN taxon n'en est en
+                // cache (liste non synchronisée). On NE propose PAS d'autres espèces (elles seraient
+                // hors de la liste autorisée) : on laisse vide et on invite à recharger les données.
+                val listeVide = idListeRestreinte != null && restreint.isEmpty()
+                val diag = when {
+                    listeVide -> "liste=$idListeRestreinte VIDE en cache (non synchronisée) — champ laissé vide"
+                    idListeRestreinte != null -> "liste=$idListeRestreinte, ${restreint.size} suggestions"
+                    else -> "liste=null (toutes), ${restreint.size} suggestions"
                 }
-                resultat to diag
+                Triple(restreint, listeVide, diag)
             }
             android.util.Log.i("FormulaireRenderer",
                 "Champ TAXON '${field.code}' → $diagDetails")
             if (ac.isAttachedToWindow) {
                 val adapter = fr.ariegenature.geonat.ui.saisie.createSpeciesAutocompleteAdapter(ctx, noms)
                 ac.setAdapter(adapter)
+                ac.hint = if (listeVide)
+                    "Liste du protocole absente du cache — Recharger les données" else hintInitial
             }
         }
         // Sélection d'une suggestion : on résout le cd_nom via TaxRefCache et on le stocke.

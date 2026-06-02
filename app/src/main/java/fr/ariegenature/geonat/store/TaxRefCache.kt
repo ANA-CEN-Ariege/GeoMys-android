@@ -130,13 +130,17 @@ object TaxRefCache {
 
     private fun ecrireFichier(nom: String, contenu: String) {
         try {
-            // Écriture atomique : tmp + rename. Évite un fichier tronqué si le
-            // process est tué pendant la sauvegarde.
+            // Écriture atomique : tmp + rename (qui écrase la cible). On NE supprime PAS la
+            // cible avant le rename — sinon un kill entre delete et rename laisserait l'ancien
+            // cache PERDU (pas seulement non mis à jour). delete + retry seulement si le rename
+            // direct échoue (certains FS refusent l'écrasement).
             val cible = fichier(nom)
             val tmp = File(dir, "$nom.tmp")
             tmp.writeText(contenu)
-            if (cible.exists()) cible.delete()
-            tmp.renameTo(cible)
+            if (!tmp.renameTo(cible)) {
+                if (cible.exists()) cible.delete()
+                tmp.renameTo(cible)
+            }
         } catch (_: Exception) {}
     }
 

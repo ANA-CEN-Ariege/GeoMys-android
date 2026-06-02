@@ -71,6 +71,10 @@ class AccueilFragment : Fragment() {
         }
 
         binding.btnNouveauSortie.setOnClickListener {
+            // Nouvelle saisie : on repart d'une ardoise vierge — sinon les observations de la
+            // sortie précédente (encore dans le ViewModel partagé de l'activité) s'afficheraient
+            // sur la carte. La reprise depuis « Mes saisies » passe par un autre chemin (sortieId).
+            traceViewModel.reinitialiser()
             findNavController().navigate(R.id.action_accueil_to_trace)
         }
 
@@ -78,6 +82,7 @@ class AccueilFragment : Fragment() {
             // Saisie mono-taxons : si le serveur déclare des champs additionnels OCCTAX_RELEVE,
             // on intercale d'abord l'écran "Détails du relevé" (mode mono : ses valeurs
             // deviennent le défaut de session, commun à toutes les obs enregistrées ensuite).
+            traceViewModel.reinitialiser()
             traceViewModel.typeSaisieLabel = getString(R.string.saisie_mono_taxons)
             val aDesChampsReleve = fr.ariegenature.geonat.ui.saisie.AdditionalFieldsRenderer
                 .aDesChampsReleve(gnConfig.additionalFieldsOcctaxJson, gnConfig.idDataset.toIntOrNull())

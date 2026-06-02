@@ -1629,8 +1629,16 @@ object MonitoringApi {
             // seulement si rien trouvé (instances anciennes sans la relation).
             if (!properties.has("id_dataset")) {
                 val idDatasetModule = trouverDatasetPourModule(config, moduleCode)
-                val idDataset = idDatasetModule
-                    ?: config.idDataset.trim().toIntOrNull()?.takeIf { it > 0 }
+                // Fallback OCCTAX seulement s'il est réellement présent sur le serveur courant
+                // (sinon FK invalide → 500 opaque). On trace l'usage du fallback pour diagnostic :
+                // le dataset OCCTAX n'est pas forcément rattaché au protocole (risque de 403 CRUVED).
+                val fallbackOcctax = config.idDataset.trim().toIntOrNull()
+                    ?.takeIf { it > 0 && config.datasetAcceptablePourEnvoi(it) }
+                val idDataset = idDatasetModule ?: fallbackOcctax
+                if (idDatasetModule == null && fallbackOcctax != null) {
+                    android.util.Log.w("MonitoringApi",
+                        "id_dataset du module '$moduleCode' introuvable → fallback dataset OCCTAX $fallbackOcctax (peut être hors-protocole)")
+                }
                 if (idDataset != null) properties.put("id_dataset", idDataset)
             }
             // `visit_date_max` est en général NOT NULL en DB. Si le formulaire ne l'a pas
@@ -1667,36 +1675,43 @@ object MonitoringApi {
 
             val urlStr = "$base/api/monitorings/object/$moduleCode/$objectType"
             val bodyStr = body.toString()
-            android.util.Log.i("MonitoringApi", "POST $urlStr\n  body=$bodyStr")
-            val conn = URL(urlStr).openConnection() as java.net.HttpURLConnection
-            conn.requestMethod = "POST"
-            conn.doOutput = true
-            conn.connectTimeout = 20000
-            conn.readTimeout = 20000
-            conn.setRequestProperty("Content-Type", "application/json")
-            conn.setRequestProperty("Accept", "application/json")
-            if (token != null) conn.setRequestProperty("Authorization", "Bearer $token")
-            if (cookies.isNotEmpty()) conn.setRequestProperty("Cookie", cookies)
-            conn.outputStream.use { it.write(bodyStr.toByteArray(Charsets.UTF_8)) }
-
-            val code = conn.responseCode
-            if (code !in 200..299) {
-                val erreur = try {
-                    conn.errorStream?.bufferedReader()?.readText()
-                } catch (_: Exception) { null }
-                android.util.Log.w("MonitoringApi", "POST $urlStr → HTTP $code\n  réponse=$erreur")
-                throw GNErreur.EnvoiEchoue(code, erreur?.take(500) ?: "pas de message")
+            // Payload loggé seulement en debug : il contient des données métier (observateurs,
+            // commentaires, géoloc) qu'on ne veut pas exposer en clair dans logcat en production.
+            if (fr.ariegenature.geonat.BuildConfig.DEBUG) {
+                android.util.Log.i("MonitoringApi", "POST $urlStr\n  body=$bodyStr")
             }
-            val text = conn.inputStream.bufferedReader().readText()
-            val obj = JSONObject(text)
-            // L'API retourne le nouvel objet créé sous forme GeoJSON Feature. L'id se trouve
-            // soit à la racine, soit dans `properties`, soit dans `id_<type>` du payload.
-            val idCree = obj.optInt("id", -1)
-                .takeIf { it > 0 }
-                ?: obj.optJSONObject("properties")?.optInt("id", -1)?.takeIf { it > 0 }
-                ?: obj.optJSONObject("properties")?.optInt("id_$objectType", -1)?.takeIf { it > 0 }
-                ?: 0
-            idCree
+            val conn = URL(urlStr).openConnection() as java.net.HttpURLConnection
+            try {
+                conn.requestMethod = "POST"
+                conn.doOutput = true
+                conn.connectTimeout = 20000
+                conn.readTimeout = 20000
+                conn.setRequestProperty("Content-Type", "application/json")
+                conn.setRequestProperty("Accept", "application/json")
+                if (token != null) conn.setRequestProperty("Authorization", "Bearer $token")
+                if (cookies.isNotEmpty()) conn.setRequestProperty("Cookie", cookies)
+                conn.outputStream.use { it.write(bodyStr.toByteArray(Charsets.UTF_8)) }
+
+                val code = conn.responseCode
+                if (code !in 200..299) {
+                    val erreur = try {
+                        conn.errorStream?.bufferedReader()?.readText()
+                    } catch (_: Exception) { null }
+                    android.util.Log.w("MonitoringApi", "POST $urlStr → HTTP $code\n  réponse=$erreur")
+                    throw GNErreur.EnvoiEchoue(code, erreur?.take(500) ?: "pas de message")
+                }
+                val text = conn.inputStream.bufferedReader().readText()
+                val obj = JSONObject(text)
+                // L'API retourne le nouvel objet créé sous forme GeoJSON Feature. L'id se trouve
+                // soit à la racine, soit dans `properties`, soit dans `id_<type>` du payload.
+                obj.optInt("id", -1)
+                    .takeIf { it > 0 }
+                    ?: obj.optJSONObject("properties")?.optInt("id", -1)?.takeIf { it > 0 }
+                    ?: obj.optJSONObject("properties")?.optInt("id_$objectType", -1)?.takeIf { it > 0 }
+                    ?: 0
+            } finally {
+                conn.disconnect()
+            }
         }
     }
 

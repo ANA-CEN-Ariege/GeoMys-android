@@ -55,11 +55,15 @@ object MonitoringCache {
      *  pendant la sauvegarde (cohérent avec TaxRefCache). */
     fun setJson(name: String, json: String) {
         try {
+            // Rename atomique (écrase la cible) ; delete + retry seulement si l'écrasement direct
+            // échoue, pour ne pas perdre l'ancien fichier sur un kill entre delete et rename.
             val cible = fichier(name)
             val tmp = File(dir, "$name.tmp")
             tmp.writeText(json)
-            if (cible.exists()) cible.delete()
-            tmp.renameTo(cible)
+            if (!tmp.renameTo(cible)) {
+                if (cible.exists()) cible.delete()
+                tmp.renameTo(cible)
+            }
         } catch (_: Exception) {}
     }
 

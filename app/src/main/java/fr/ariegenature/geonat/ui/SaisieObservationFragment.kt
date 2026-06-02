@@ -56,6 +56,8 @@ class SaisieObservationFragment : Fragment() {
     private val binding get() = _binding!!
 
     private val micPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        // La popup système peut revenir après destruction de la vue → garde isAdded.
+        if (!isAdded || !::speech.isInitialized) return@registerForActivityResult
         if (granted) speech.demarrerEcoute()
         else Toast.makeText(requireContext(), "Permission micro refusée", Toast.LENGTH_SHORT).show()
     }
@@ -472,10 +474,32 @@ class SaisieObservationFragment : Fragment() {
 
     override fun onViewStateRestored(savedInstanceState: Bundle?) {
         super.onViewStateRestored(savedInstanceState)
+        // Restaure les overrides « Détails du relevé » après rotation / process-death.
+        savedInstanceState?.let { st ->
+            if (st.containsKey("rs_ds")) idDatasetReleveSession = st.getInt("rs_ds")
+            if (st.containsKey("rs_obs")) idObservateurReleveSession = st.getInt("rs_obs")
+            st.getString("rs_obsnom")?.let { nomObservateurReleveSession = it }
+            st.getString("rs_add")?.let { json ->
+                additionalFieldsReleveSession = try {
+                    com.google.gson.Gson().fromJson(
+                        json, object : com.google.gson.reflect.TypeToken<Map<String, String>>() {}.type,
+                    ) ?: additionalFieldsReleveSession
+                } catch (_: Exception) { additionalFieldsReleveSession }
+            }
+        }
         // Filet de sécurité : on consomme aussi ici au cas où onResume serait trop tardif
         // pour certains cas de figure du cycle de vie Navigation. consommerString supprime
         // la clé après l'avoir appliquée, donc pas de double-application.
         consommerResultatsSousEcrans()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        idDatasetReleveSession?.let { outState.putInt("rs_ds", it) }
+        idObservateurReleveSession?.let { outState.putInt("rs_obs", it) }
+        nomObservateurReleveSession?.let { outState.putString("rs_obsnom", it) }
+        if (additionalFieldsReleveSession.isNotEmpty())
+            outState.putString("rs_add", com.google.gson.Gson().toJson(additionalFieldsReleveSession))
     }
 
     private fun consommerResultatsSousEcrans() {

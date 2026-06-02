@@ -763,31 +763,36 @@ class TraceFragment : Fragment() {
     }
 
     private fun updateMarkers(observations: List<Observation>) {
-        val currentIds = observations.map { it.id }.toSet()
-        val toRemove = observationMarkers.keys.filter { it !in currentIds }
-        toRemove.forEach { id ->
-            observationMarkers[id]?.let { binding.map.overlays.remove(it) }
-            observationMarkers.remove(id)
+        // UN SEUL marqueur par RELEVÉ (point) — clé = identité du relevé. Les obs d'un même
+        // releveId partagent exactement le même point ; dessiner N marqueurs superposés (1 par
+        // taxon) faisait apparaître « plusieurs points au même endroit » qui se déplaçaient
+        // ensemble au drag. Les relevés ligne/polygone n'ont pas de marqueur (forme via
+        // majGeometriesReleves), ils sont donc exclus ici.
+        val pointReleves = observations
+            .filter {
+                !((it.geometryType == "Polygon" || it.geometryType == "LineString") &&
+                    !it.geometryCoordsJson.isNullOrEmpty())
+            }
+            .groupBy { cleReleve(it) }
+        // Retire les marqueurs des relevés disparus (ou devenus ligne/polygone).
+        observationMarkers.keys.filter { it !in pointReleves.keys }.forEach { cle ->
+            observationMarkers[cle]?.let { binding.map.overlays.remove(it) }
+            observationMarkers.remove(cle)
         }
-        observations.forEach { obs ->
-            val aForme = (obs.geometryType == "Polygon" || obs.geometryType == "LineString") &&
-                !obs.geometryCoordsJson.isNullOrEmpty()
-            val existant = observationMarkers[obs.id]
-            if (aForme) {
-                // Relevé ligne/polygone : on n'affiche que la forme, pas le marker centroïde.
-                if (existant != null) {
-                    binding.map.overlays.remove(existant)
-                    observationMarkers.remove(obs.id)
-                }
-            } else if (existant != null) {
-                // Mise à jour de la position si elle a changé (déplacement de relevé).
+        pointReleves.forEach { (cle, obsReleve) ->
+            val rep = obsReleve.first()
+            val titre = if (obsReleve.size > 1) "${obsReleve.size} espèces" else rep.espece
+            val existant = observationMarkers[cle]
+            if (existant != null) {
+                existant.title = titre
                 val pos = existant.position
-                if (pos.latitude != obs.latitude || pos.longitude != obs.longitude) {
-                    existant.position = GeoPoint(obs.latitude, obs.longitude)
+                if (pos.latitude != rep.latitude || pos.longitude != rep.longitude) {
+                    existant.position = GeoPoint(rep.latitude, rep.longitude)
                 }
             } else {
-                val marker = createObservationMarker(obs)
-                observationMarkers[obs.id] = marker
+                val marker = createObservationMarker(rep)
+                marker.title = titre
+                observationMarkers[cle] = marker
                 binding.map.overlays.add(marker)
             }
         }

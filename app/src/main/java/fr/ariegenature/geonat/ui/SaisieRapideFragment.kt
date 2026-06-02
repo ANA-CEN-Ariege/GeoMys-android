@@ -211,6 +211,8 @@ class SaisieRapideFragment : Fragment() {
     }
 
     private val micPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        // La popup système peut revenir après destruction de la vue → garde isAdded.
+        if (!isAdded || !::speech.isInitialized) return@registerForActivityResult
         if (granted) speech.demarrerEcoute()
         else Toast.makeText(requireContext(), "Permission micro refusée", Toast.LENGTH_SHORT).show()
     }
@@ -225,6 +227,18 @@ class SaisieRapideFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
         sortieStore = SortieStore(requireContext())
         gnConfig = GeoNatureConfig(requireContext())
+        // Restaure les overrides « Détails du relevé » après rotation / process-death (sinon le
+        // jeu de données / observateur choisis seraient silencieusement réinitialisés).
+        savedInstanceState?.let { st ->
+            if (st.containsKey("rs_ds")) idDatasetReleveSession = st.getInt("rs_ds")
+            if (st.containsKey("rs_obs")) idObservateurReleveSession = st.getInt("rs_obs")
+            st.getString("rs_obsnom")?.let { nomObservateurReleveSession = it }
+            st.getString("rs_add")?.let { json ->
+                additionalFieldsReleve = try {
+                    Gson().fromJson(json, object : TypeToken<Map<String, String>>() {}.type) ?: additionalFieldsReleve
+                } catch (_: Exception) { additionalFieldsReleve }
+            }
+        }
 
         // Champs additionnels niveau RELEVE saisis une seule fois en amont via DetailsReleveFragment
         // (écran intercalé à l'entrée de la saisie mono-taxons). Ces valeurs deviennent le défaut
@@ -1055,6 +1069,15 @@ class SaisieRapideFragment : Fragment() {
         geomagneticReady = false
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        // Overrides « Détails du relevé » — survivent à la rotation / process-death.
+        idDatasetReleveSession?.let { outState.putInt("rs_ds", it) }
+        idObservateurReleveSession?.let { outState.putInt("rs_obs", it) }
+        nomObservateurReleveSession?.let { outState.putString("rs_obsnom", it) }
+        if (additionalFieldsReleve.isNotEmpty()) outState.putString("rs_add", Gson().toJson(additionalFieldsReleve))
+    }
+
     override fun onDestroyView() {
         super.onDestroyView()
         snackJob?.cancel()
@@ -1144,7 +1167,7 @@ class SaisieRapideFragment : Fragment() {
         androidx.appcompat.app.AlertDialog.Builder(requireContext())
             .setTitle(if (success) "GeoNature" else getString(R.string.erreur_envoi))
             .setMessage(msg)
-            .setPositiveButton("OK") { _, _ -> findNavController().navigateUp() }
+            .setPositiveButton("OK") { _, _ -> if (isAdded) findNavController().navigateUp() }
             .show()
     }
 }

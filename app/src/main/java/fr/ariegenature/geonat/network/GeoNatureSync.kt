@@ -224,10 +224,10 @@ object GeoNatureSync {
         // Champ legacy conservé pour compatibilité ascendante du SharedPreferences.
         TaxRefCache.listeSynchroniseeId = config.taxaListeId.trim().ifEmpty { listesSynchronisees.firstOrNull()?.toString() ?: "" }
 
-        // Stocker les comptes par groupe — clé = group2_inpn exact
-        val comptes = TaxRefCache.comptesGroupes.toMutableMap()
-        for ((k, v) in comptesTousGroupes) if (v > 0) comptes[k] = v
-        TaxRefCache.comptesGroupes = comptes
+        // Stocker les comptes par groupe — clé = group2_inpn exact. On REMPLACE intégralement
+        // (pas de fusion sur l'existant) : sinon un groupe disparu du serveur garderait son ancien
+        // compte fantôme quand la sync est relancée sans purge préalable.
+        TaxRefCache.comptesGroupes = comptesTousGroupes.filterValues { it > 0 }
         verifierVersionTaxRef(config)?.let { TaxRefCache.versionSauvegardee = it }
 
         val nbO  = comptesTousGroupes["Oiseaux"] ?: 0

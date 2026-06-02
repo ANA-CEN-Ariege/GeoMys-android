@@ -242,11 +242,13 @@ object GeoNatureUpload {
                 val code1 = conn1.responseCode
                 if (code1 !in 200..299) {
                     val bodyErr = try { (conn1.errorStream ?: conn1.inputStream)?.bufferedReader()?.readText() } catch (_: Exception) { null }
+                    conn1.disconnect()
                     dernierCodeErreur = code1
                     derniereErreur = parseErreur(code1, bodyErr)
                     continue
                 }
                 val resp1Text = try { conn1.inputStream.bufferedReader().readText() } catch (_: Exception) { "" }
+                conn1.disconnect() // réponse relevé consommée — libère la connexion (lot multi-taxons).
                 val resp1 = try { JSONObject(resp1Text) } catch (_: Exception) {
                     derniereErreur = "Réponse relevé non-JSON"
                     continue
@@ -352,6 +354,7 @@ object GeoNatureUpload {
                         dernierCodeErreur = code2
                         derniereErreur = parseErreur(code2, bodyErr)
                     }
+                    conn2.disconnect() // libère la connexion à chaque occurrence (lot multi-taxons).
                 }
 
                 // Rollback : si aucune occurrence n'a abouti, on supprime le relevé côté
@@ -772,6 +775,8 @@ object GeoNatureUpload {
         } catch (e: Exception) {
             android.util.Log.e(TAG_MEDIA, "Exception upload média", e)
             Pair(null, "Exception : ${e.message}")
+        } finally {
+            conn.disconnect() // libère la connexion à chaque média (lot multi-photos).
         }
     }
 

@@ -65,7 +65,9 @@ Volontairement hors périmètre à ce stade. Aucune n'est un bug : les fonctionn
 | Jeu de données | Sélection dans la liste ou saisie de l'`id_dataset` |
 | Liste de taxons | Liste TaxHub pour l'autocomplétion OccTax (`id_liste`) |
 
-Le bouton **Tester** vérifie la connexion et charge automatiquement les datasets et listes disponibles. Le bouton **Synchroniser** télécharge le cache TaxRef + nomenclatures + (pour le monitoring) modules / schémas / listes / fiches.
+Le bouton **Tester** vérifie la connexion et charge automatiquement les datasets et listes disponibles. Le bouton **Recharger les données** télécharge le cache TaxRef + nomenclatures + datasets/listes/observateurs/champs additionnels + (pour le monitoring) modules / schémas / listes / fiches.
+
+**Chargement en arrière-plan.** « Recharger les données » s'exécute dans un **service au premier plan** (`foregroundServiceType=dataSync`, notification de progression) : il **continue même si l'utilisateur quitte l'écran, met le téléphone en veille ou passe l'app en arrière-plan** — la synchro complète (souvent longue à cause de TaxRef) n'est plus interrompue. En revenant sur l'écran Config pendant l'opération, on retrouve la progression en cours ; le résultat (et un éventuel récapitulatif d'étapes en échec) s'affiche à la fin.
 
 **Garde de cohérence config (écran d'accueil).** On ne peut démarrer une saisie que si la configuration est **complète et cohérente avec le serveur courant** : connexion renseignée **et** jeu de données, liste de taxons et observateur par défaut **réellement présents dans les caches** du serveur (et non hérités d'un autre serveur, ce qui provoquait un `HTTP 500` opaque côté GeoNature — violation de clé étrangère). Tant que ce n'est pas le cas :
 

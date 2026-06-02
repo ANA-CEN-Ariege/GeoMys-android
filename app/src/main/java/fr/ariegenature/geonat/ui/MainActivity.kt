@@ -64,6 +64,16 @@ class MainActivity : AppCompatActivity() {
         ).apply {
             description = "Suivi GPS en arrière-plan pendant une sortie"
         }
-        getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+        val canalSync = NotificationChannel(
+            fr.ariegenature.geonat.sync.SyncForegroundService.CHANNEL_ID,
+            "Synchronisation",
+            NotificationManager.IMPORTANCE_LOW
+        ).apply {
+            description = "Chargement des données GeoNature en arrière-plan"
+        }
+        getSystemService(NotificationManager::class.java).apply {
+            createNotificationChannel(channel)
+            createNotificationChannel(canalSync)
+        }
     }
 }

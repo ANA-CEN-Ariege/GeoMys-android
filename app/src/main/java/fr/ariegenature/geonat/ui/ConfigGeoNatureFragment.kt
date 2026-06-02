@@ -18,6 +18,7 @@
 
 package fr.ariegenature.geonat.ui
 
+import android.os.Build
 import android.os.Bundle
 import android.text.Editable
 import android.text.TextWatcher
@@ -25,6 +26,8 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ArrayAdapter
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
@@ -32,22 +35,20 @@ import androidx.appcompat.app.AlertDialog
 import fr.ariegenature.geonat.R
 import fr.ariegenature.geonat.databinding.FragmentConfigGeonatureBinding
 import fr.ariegenature.geonat.model.Taxon
-import fr.ariegenature.geonat.network.AdditionalFieldsApi
 import fr.ariegenature.geonat.network.GeoNatureAuth
-import fr.ariegenature.geonat.network.GeoNatureBrowse
 import fr.ariegenature.geonat.network.GeoNatureDataset
 import fr.ariegenature.geonat.network.GeoNatureListe
 import fr.ariegenature.geonat.network.GeoNatureObservateur
 import fr.ariegenature.geonat.network.GeoNatureSync
 import fr.ariegenature.geonat.network.MonitoringApi
-import fr.ariegenature.geonat.network.MonitoringSync
+import fr.ariegenature.geonat.network.SyncRunner
 import fr.ariegenature.geonat.store.GeoNatureConfig
 import fr.ariegenature.geonat.store.MonitoringCache
 import fr.ariegenature.geonat.store.NomenclatureCache
 import fr.ariegenature.geonat.store.TaxRefCache
+import fr.ariegenature.geonat.sync.SyncForegroundService
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
-import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 
 class ConfigGeoNatureFragment : Fragment() {
@@ -63,6 +64,11 @@ class ConfigGeoNatureFragment : Fragment() {
      *  ardoise vierge, donc le rechargement ne doit PAS ré-appliquer d'auto-défaut (liste unique,
      *  observateur = utilisateur connecté). L'utilisateur re-choisit explicitement ses 3 sélections. */
     private var selectionsReinitialisees = false
+
+    /** Demande de permission POST_NOTIFICATIONS (Android 13+) pour la notification du service de
+     *  synchro. Enregistré à la construction du fragment (avant STARTED), comme l'exige l'API. */
+    private val demandeNotif =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* best-effort */ }
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         _binding = FragmentConfigGeonatureBinding.inflate(inflater, container, false)
@@ -82,6 +88,10 @@ class ConfigGeoNatureFragment : Fragment() {
         // Restaure les spinners (datasets/listes/observateurs) depuis le cache local
         // si déjà chargés lors d'une session précédente.
         restaurerCaches()
+
+        // Reflète une éventuelle synchro en cours/terminée tournant dans le service de fond
+        // (si l'utilisateur revient sur l'écran pendant ou après un « Recharger les données »).
+        observerSyncEnArrierePlan()
 
         // État initial des sections selon la présence de données en cache.
         // - Cache TaxRef non vide → l'utilisateur a déjà chargé : on montre tout
@@ -219,29 +229,6 @@ class ConfigGeoNatureFragment : Fragment() {
 
     /** Retourne null si OK, sinon un message d'erreur — exploité par chargerToutesLesDonnees
      *  pour agréger les étapes en échec dans l'avertissement final. */
-    private suspend fun chargerDatasets(): String? {
-        binding.progressDatasets.visibility = View.VISIBLE
-        return try {
-            val result = GeoNatureBrowse.chargerDatasets(gnConfig)
-            if (result.isNotEmpty()) {
-                peuplerSpinnerDatasets(result)
-                gnConfig.datasetsCacheJson = gson.toJson(result)
-                binding.tvErreurDatasets.visibility = View.GONE
-                null
-            } else {
-                binding.tvErreurDatasets.visibility = View.VISIBLE
-                binding.tvErreurDatasets.text = "Aucun jeu de données accessible"
-                "Aucun jeu de données"
-            }
-        } catch (e: Exception) {
-            binding.tvErreurDatasets.visibility = View.VISIBLE
-            binding.tvErreurDatasets.text = e.message
-            e.message ?: "Erreur datasets"
-        } finally {
-            binding.progressDatasets.visibility = View.GONE
-        }
-    }
-
     private fun peuplerSpinnerDatasets(result: List<GeoNatureDataset>) {
         // Mémorise TOUS les datasets (utilisés par les écrans monitoring pour résoudre
         // un id_dataset précis selon le protocole). Mais ne propose à l'écran de config
@@ -314,26 +301,6 @@ class ConfigGeoNatureFragment : Fragment() {
         }
     }
 
-    private suspend fun chargerListes(): String? {
-        binding.tvErreurListes.visibility = View.GONE
-        return try {
-            val result = GeoNatureBrowse.chargerListesTaxons(gnConfig)
-            if (result.isNotEmpty()) {
-                peuplerSpinnerListes(result)
-                gnConfig.listesCacheJson = gson.toJson(result)
-                null
-            } else {
-                binding.tvErreurListes.visibility = View.VISIBLE
-                binding.tvErreurListes.text = "Aucune liste de taxons trouvée sur ce serveur"
-                "Aucune liste de taxons"
-            }
-        } catch (e: Exception) {
-            binding.tvErreurListes.visibility = View.VISIBLE
-            binding.tvErreurListes.text = e.message
-            e.message ?: "Erreur listes"
-        }
-    }
-
     private fun peuplerSpinnerListes(result: List<GeoNatureListe>) {
         listes.clear()
         listes.addAll(result)
@@ -363,26 +330,6 @@ class ConfigGeoNatureFragment : Fragment() {
             binding.acListes.setText(noms[0], false)
             gnConfig.taxaListeId = result[0].id.toString()
             binding.etTaxaListe.setText(gnConfig.taxaListeId)
-        }
-    }
-
-    private suspend fun chargerObservateurs(): String? {
-        binding.tvErreurObservateurs.visibility = View.GONE
-        return try {
-            val result = GeoNatureBrowse.chargerObservateurs(gnConfig)
-            if (result.isNotEmpty()) {
-                peuplerSpinnerObservateurs(result)
-                gnConfig.observateursCacheJson = gson.toJson(result)
-                null
-            } else {
-                binding.tvErreurObservateurs.visibility = View.VISIBLE
-                binding.tvErreurObservateurs.text = "Aucun observateur retourné par /api/users/roles"
-                "Aucun observateur"
-            }
-        } catch (e: Exception) {
-            binding.tvErreurObservateurs.visibility = View.VISIBLE
-            binding.tvErreurObservateurs.text = e.message
-            e.message ?: "Erreur observateurs"
         }
     }
 
@@ -450,34 +397,6 @@ class ConfigGeoNatureFragment : Fragment() {
         }
     }
 
-    private suspend fun chargerAdditionalFields(): String? {
-        return try {
-            val result = AdditionalFieldsApi.charger(gnConfig, "OCCTAX")
-            if (result.isNotEmpty()) {
-                gnConfig.additionalFieldsOcctaxJson = gson.toJson(result)
-            } else if (gnConfig.additionalFieldsOcctaxJson.isEmpty()) {
-                gnConfig.additionalFieldsOcctaxJson = "[]"
-            }
-            null
-        } catch (e: Exception) {
-            e.message ?: "Erreur champs additionnels"
-        }
-    }
-
-    /** Charge tout depuis le serveur en une action unique :
-     *  - datasets, listes, observateurs, additional_fields (parallèle, sucès/échec tracké)
-     *  - sync TaxRef exhaustif (toutes les biblistes)
-     *  - sync nomenclatures (+ defaults par module)
-     *  - sync Suivis (modules + schémas + arborescence structurelle)
-     *
-     *  Si une ou plusieurs étapes échouent (même partiellement), un bandeau d'avertissement
-     *  liste les étapes en échec à la fin pour que l'utilisateur sache que le chargement
-     *  n'a pas été complet et qu'il peut relancer. */
-    /** Purge les trois caches locaux (TaxRef, nomenclatures, monitoring) en une opération.
-     *  Centralisé pour rester cohérent entre le bouton "Vider le cache" et le démarrage d'un
-     *  "Recharger les données". Ne touche pas aux JSON SharedPreferences (datasets / listes /
-     *  observateurs / additional_fields) : ils sont réécrits naturellement par les fonctions
-     *  de chargement à la prochaine sync, et préservés en cas d'échec d'une étape. */
     /** Réinitialise les 3 sélections OCCTAX (jeu de données, liste, observateur) : valeurs
      *  persistées, caches JSON et champs affichés. Arme [selectionsReinitialisees] pour que le
      *  prochain rechargement n'auto-sélectionne aucun défaut. Appelé par « Vider le cache ». */
@@ -505,6 +424,9 @@ class ConfigGeoNatureFragment : Fragment() {
         selectionsReinitialisees = true
     }
 
+    /** Purge les trois caches locaux (TaxRef, nomenclatures, monitoring) en une opération.
+     *  Utilisé par le bouton « Vider le cache ». Le rechargement, lui, purge via [SyncRunner].
+     *  Ne touche pas aux JSON SharedPreferences (datasets / listes / observateurs). */
     private fun viderTousLesCaches() {
         TaxRefCache.vider()
         NomenclatureCache.vider()
@@ -516,105 +438,82 @@ class ConfigGeoNatureFragment : Fragment() {
         MonitoringApi.invaliderCaches()
     }
 
+    /** Lance le chargement complet des données dans un **service au premier plan**
+     *  ([SyncForegroundService]) : il CONTINUE même si l'utilisateur quitte l'écran, met le
+     *  téléphone en veille ou passe l'app en arrière-plan. L'écran se contente de démarrer le
+     *  service ; la progression et le résultat sont reflétés par l'observateur de
+     *  [SyncRunner.etat] (cf. [observerSyncEnArrierePlan]). Les caches sont purgés puis réécrits
+     *  par [SyncRunner] ; le re-peuplement des spinners se fait à la fin via [restaurerCaches]. */
     private fun chargerToutesLesDonnees() {
+        demanderPermissionNotifSiBesoin()
+        // Purge un éventuel état terminal résiduel pour ne pas le rejouer en bandeau.
+        SyncRunner.accuserReception()
         binding.btnChargerDonnees.isEnabled = false
         binding.btnTesterConnexion.isEnabled = false
         binding.progressSync.visibility = View.VISIBLE
-        binding.tvSyncResultat.visibility = View.GONE
+        binding.tvSyncResultat.visibility = View.VISIBLE
+        binding.tvSyncResultat.text = "Démarrage de la synchronisation…"
+        binding.tvSyncResultat.setTextColor(couleurSurOnSurface(requireContext()))
+        SyncForegroundService.start(requireContext())
+    }
 
-        // Purge des caches AVANT chargement : "Recharger" doit repartir d'une ardoise propre
-        // côté local, sinon on garde des entrées orphelines (taxons d'une ancienne liste, nomenc-
-        // latures d'un module retiré côté serveur, etc.) qui faussent les compteurs et la saisie.
-        viderTousLesCaches()
-        updateCacheInfo()
-
-        viewLifecycleOwner.lifecycleScope.launch {
-            // Étapes 1-4 en parallèle (indépendantes, rapides). Chacune retourne null si OK,
-            // sinon un message d'erreur synthétique. On agrège les échecs pour l'avertissement.
-            val etapesEnEchec = mutableListOf<String>()
-            kotlinx.coroutines.coroutineScope {
-                val ds = async { chargerDatasets() }
-                val li = async { chargerListes() }
-                val obs = async { chargerObservateurs() }
-                val add = async { chargerAdditionalFields() }
-                listOf(
-                    "Jeux de données" to ds.await(),
-                    "Listes de taxons" to li.await(),
-                    "Observateurs" to obs.await(),
-                    "Champs additionnels" to add.await(),
-                ).forEach { (nom, err) ->
-                    if (err != null) etapesEnEchec += "$nom ($err)"
-                }
-            }
-
-            // Étape 5 : TaxRef exhaustif.
-            val (nbTaxons, msgTaxRef) = GeoNatureSync.synchroniserTaxRef(gnConfig) { fait, listeIdx, listesTotales ->
-                activity?.runOnUiThread {
+    /** Reflète l'état de la synchro de fond ([SyncRunner.etat]) dans l'UI de l'écran de config :
+     *  bandeau de progression pendant, résumé + re-peuplement des spinners à la fin. Lifecycle-
+     *  aware : si l'utilisateur quitte puis revient sur l'écran pendant une synchro, il retrouve
+     *  la progression en cours ; un état terminal manqué est rejoué à son retour. */
+    private fun observerSyncEnArrierePlan() {
+        SyncRunner.etat.observe(viewLifecycleOwner) { etat ->
+            if (etat == null) return@observe
+            when {
+                etat.enCours -> {
+                    binding.btnChargerDonnees.isEnabled = false
+                    binding.btnTesterConnexion.isEnabled = false
+                    binding.progressSync.visibility = View.VISIBLE
                     binding.tvSyncResultat.visibility = View.VISIBLE
-                    binding.tvSyncResultat.text = when {
-                        listesTotales == 0 -> "Récupération des listes de taxons…"
-                        else -> "Liste $listeIdx/$listesTotales — $fait taxons cumulés…"
-                    }
+                    binding.tvSyncResultat.text = etat.texte
+                    binding.tvSyncResultat.setTextColor(couleurSurOnSurface(requireContext()))
+                    updateCacheInfo()
                 }
-            }
-            if (nbTaxons == 0) etapesEnEchec += "TaxRef (${msgTaxRef.take(80)})"
-
-            // Étape 6 : nomenclatures + defaults par module.
-            val (nbNom, msgNom) = GeoNatureSync.synchroniserNomenclatures(gnConfig)
-            if (nbNom == 0) etapesEnEchec += "Nomenclatures ($msgNom)"
-
-            // Étape 7 : pré-chargement module Suivis (best-effort, ne plante pas l'app).
-            val (nbModulesOk, msgSuivis) = MonitoringSync.synchroniserSuivis(gnConfig) { moduleIdx, modulesTotaux, objets ->
-                activity?.runOnUiThread {
-                    binding.tvSyncResultat.text = when {
-                        modulesTotaux == 0 -> "Récupération des protocoles Suivis…"
-                        else -> "Suivis : protocole $moduleIdx/$modulesTotaux — $objets objets en cache…"
-                    }
-                }
-            }
-            // Le sync Suivis renvoie "Aucun module monitoring exposé" si l'instance n'a pas
-            // gn_module_monitoring — ce n'est pas une erreur, on ne le compte pas en échec.
-            if (nbModulesOk == 0 && !msgSuivis.startsWith("Aucun")) {
-                etapesEnEchec += "Suivis (${msgSuivis.take(80)})"
-            }
-
-            // Rechargement terminé : on a redonné à l'utilisateur l'occasion de choisir ses
-            // sélections (aucun auto-défaut n'a été appliqué). On désarme le mode reset.
-            selectionsReinitialisees = false
-
-            binding.progressSync.visibility = View.GONE
-            binding.btnChargerDonnees.isEnabled = true
-            binding.btnTesterConnexion.isEnabled = true
-            binding.tvSyncResultat.visibility = View.VISIBLE
-            binding.tvSyncResultat.text = buildString {
-                if (etapesEnEchec.isNotEmpty()) {
-                    append("⚠ Chargement incomplet — étape(s) en échec :\n")
-                    etapesEnEchec.forEach { append("  • $it\n") }
-                    append("Vous pouvez relancer « Recharger les données ».\n\n")
-                }
-                append(msgTaxRef)
-                if (nbTaxons > 0 && nbNom == 0) append("\n⚠ Nomenclatures : $msgNom")
-                if (nbModulesOk > 0 || msgSuivis.startsWith("Aucun")) append("\nSuivis : $msgSuivis")
-            }
-            binding.tvSyncResultat.setTextColor(
-                // Étape en échec → orange Material (colorSecondary du thème night), sinon
-                // texte standard sur surface. Évite #333333 invisible sur le fond accueil.
-                if (etapesEnEchec.isNotEmpty())
-                    com.google.android.material.color.MaterialColors.getColor(
-                        binding.tvSyncResultat, com.google.android.material.R.attr.colorSecondary, 0xFFE65100.toInt(),
+                etat.termine -> {
+                    // Re-peuple les spinners depuis les caches fraîchement écrits AVANT de
+                    // désarmer le mode reset (sinon la liste unique se ré-auto-sélectionnerait).
+                    restaurerCaches()
+                    selectionsReinitialisees = false
+                    binding.progressSync.visibility = View.GONE
+                    binding.btnChargerDonnees.isEnabled = true
+                    binding.btnTesterConnexion.isEnabled = true
+                    binding.tvSyncResultat.visibility = View.VISIBLE
+                    binding.tvSyncResultat.text = etat.resume ?: etat.texte
+                    binding.tvSyncResultat.setTextColor(
+                        if (!etat.succes)
+                            com.google.android.material.color.MaterialColors.getColor(
+                                binding.tvSyncResultat, com.google.android.material.R.attr.colorSecondary, 0xFFE65100.toInt(),
+                            )
+                        else couleurSurOnSurface(requireContext())
                     )
-                else couleurSurOnSurface(requireContext())
-            )
-            updateCacheInfo()
-            updateAvertissementListe()
-            updateStatusIndicator()
-
-            // Chargement effectif → on bascule en état "Données". Idempotent si on est
-            // déjà dans cet état (rechargement utilisateur).
-            if (nbTaxons > 0) {
-                binding.llSectionDonnees.visibility = View.VISIBLE
-                binding.btnChargerDonnees.text = "Recharger les données"
+                    updateCacheInfo()
+                    updateAvertissementListe()
+                    updateStatusIndicator()
+                    if (TaxRefCache.count > 0) {
+                        binding.llSectionDonnees.visibility = View.VISIBLE
+                        binding.btnChargerDonnees.text = "Recharger les données"
+                    }
+                    // Consomme l'état terminal pour ne pas le rejouer à chaque réouverture.
+                    SyncRunner.accuserReception()
+                }
             }
+        }
+    }
+
+    /** Demande POST_NOTIFICATIONS (Android 13+) au moment de lancer une synchro : la notification
+     *  du service au premier plan ne s'affiche pas sans elle. Best-effort — le refus n'empêche
+     *  pas la synchro de tourner, seul l'affichage de la notification est perdu. */
+    private fun demanderPermissionNotifSiBesoin() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(requireContext(), android.Manifest.permission.POST_NOTIFICATIONS)
+            != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            demandeNotif.launch(android.Manifest.permission.POST_NOTIFICATIONS)
         }
     }
 

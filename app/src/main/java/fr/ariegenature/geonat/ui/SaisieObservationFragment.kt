@@ -395,9 +395,12 @@ class SaisieObservationFragment : Fragment() {
         val idObsInitial = idObservateurReleveSession
             ?: gnConfig.observateurDefautId.toIntOrNull()
             ?: gnConfig.idRoleUtilisateur.takeIf { it > 0 }
+        val nomDsInitial = gnConfig.nomDataset.takeIf { it.isNotEmpty() }
+        val nomObsInitial = nomObservateurReleveSession
+            ?: gnConfig.observateurDefautNom.ifEmpty { gnConfig.nomUtilisateur.ifEmpty { gnConfig.login } }
         ouvrirDialogDetailsReleve(
-            requireContext(), infos, datasets, idDsInitial, observateurs, idObsInitial,
-            defs, additionalFieldsReleveSession,
+            requireContext(), infos, datasets, idDsInitial, nomDsInitial,
+            observateurs, idObsInitial, nomObsInitial, defs, additionalFieldsReleveSession,
         ) { res ->
             idDatasetReleveSession = res.idDataset
             idObservateurReleveSession = res.idObservateur

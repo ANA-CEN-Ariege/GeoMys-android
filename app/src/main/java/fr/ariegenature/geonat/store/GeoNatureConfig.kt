@@ -158,6 +158,15 @@ class GeoNatureConfig(context: Context) {
     val datasetPresentDansCache: Boolean
         get() = idPresentDansCache(datasetsCacheJson, idDataset.trim().toIntOrNull(), "id")
 
+    /** Le jeu de données [id] est-il acceptable pour un envoi ? Permissif si le cache datasets est
+     *  vide (on ne peut pas trancher → on n'empêche pas l'envoi), strict sinon. Sert à valider un
+     *  override de relevé (« Détails du relevé ») AVANT le POST, pour éviter le 500 opaque sur FK
+     *  invalide — même garde que [datasetValide], mais pour un id arbitraire. */
+    fun datasetAcceptablePourEnvoi(id: Int): Boolean {
+        if (datasetsCacheJson.isEmpty()) return true
+        return idPresentDansCache(datasetsCacheJson, id, "id")
+    }
+
     /** La liste de taxons sélectionnée est présente dans le cache des listes. */
     val listePresenteDansCache: Boolean
         get() = idPresentDansCache(listesCacheJson, taxaListeId.trim().toIntOrNull(), "id")

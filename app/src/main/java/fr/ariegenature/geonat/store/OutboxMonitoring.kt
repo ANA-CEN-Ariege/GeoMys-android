@@ -107,11 +107,22 @@ object OutboxMonitoring {
         try {
             val tmp = File(fichier.parentFile, fichier.name + ".tmp")
             tmp.writeText(gson.toJson(liste))
-            if (fichier.exists()) fichier.delete()
-            val ok = tmp.renameTo(fichier)
-            mem = liste
-            android.util.Log.i("OutboxMonitoring",
-                "sauvegarder OK (${liste.size} entrées, rename=$ok, path=${fichier.absolutePath})")
+            // rename atomique (écrase la cible). Si le rename échoue, on retombe sur une copie
+            // explicite ; la mémoire n'est mise à jour QU'APRÈS une persistance disque confirmée,
+            // sinon on risquerait de perdre silencieusement des saisies (mem ≠ disque).
+            var ok = tmp.renameTo(fichier)
+            if (!ok) {
+                if (fichier.exists()) fichier.delete()
+                ok = tmp.renameTo(fichier)
+            }
+            if (ok) {
+                mem = liste
+                android.util.Log.i("OutboxMonitoring",
+                    "sauvegarder OK (${liste.size} entrées, path=${fichier.absolutePath})")
+            } else {
+                android.util.Log.w("OutboxMonitoring",
+                    "sauvegarder ECHEC rename — mémoire NON mise à jour (disque conservé)")
+            }
         } catch (e: Exception) {
             android.util.Log.w("OutboxMonitoring", "sauvegarder ECHEC : ${e.message}", e)
         }

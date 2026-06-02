@@ -75,6 +75,16 @@ class GeoNatureConfigTest {
     }
 
     @Test
+    fun dataset_acceptable_pour_envoi_override() {
+        val c = config()
+        // Cache vide → permissif (on ne bloque pas l'envoi faute de pouvoir trancher).
+        assertTrue(c.datasetAcceptablePourEnvoi(416))
+        c.datasetsCacheJson = """[{"id":5,"nom":"A"},{"id":12,"nom":"B"}]"""
+        assertTrue("dataset présent → accepté", c.datasetAcceptablePourEnvoi(12))
+        assertFalse("dataset fantôme → refusé", c.datasetAcceptablePourEnvoi(416))
+    }
+
+    @Test
     fun dataset_valide_vrai_si_cache_vide() {
         // Cache datasets absent → on ne peut pas trancher : ne pas bloquer.
         val c = config()

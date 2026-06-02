@@ -185,6 +185,15 @@ object GeoNatureUpload {
                 //  - observateur : obs.observateurReleveId sinon l'utilisateur connecté (id_digitiser
                 //    reste l'auteur de la saisie côté app).
                 val datasetGroupe = groupe.first().idDatasetReleve?.takeIf { it > 0 } ?: datasetId
+                // Garde sur l'override de relevé : un jeu de données choisi dans « Détails du
+                // relevé » mais absent du serveur courant part en FK invalide → 500 opaque. On le
+                // détecte ici (comme la garde globale config.datasetValide) et on saute le groupe
+                // avec un message clair plutôt qu'une « erreur serveur ».
+                if (!config.datasetAcceptablePourEnvoi(datasetGroupe)) {
+                    dernierCodeErreur = 0
+                    derniereErreur = "Jeu de données $datasetGroupe (choisi dans « Détails du relevé ») introuvable sur ce serveur."
+                    continue
+                }
                 val observerGroupe = groupe.first().observateurReleveId?.takeIf { it > 0 } ?: idRole
                 val properties = JSONObject().apply {
                     put("id_dataset", datasetGroupe)

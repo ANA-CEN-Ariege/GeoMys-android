@@ -56,10 +56,9 @@ object SyncRunner {
     private val _etat = MutableLiveData(Etat(enCours = false, texte = ""))
     val etat: LiveData<Etat> = _etat
 
-    /** Vrai tant qu'une synchro est en cours — évite d'en lancer deux en parallèle. */
-    @Volatile
-    var actif = false
-        private set
+    /** Vrai tant qu'une synchro est en cours — garde atomique contre un double lancement. */
+    private val enCours = java.util.concurrent.atomic.AtomicBoolean(false)
+    val actif: Boolean get() = enCours.get()
 
     private val gson = Gson()
 
@@ -71,8 +70,8 @@ object SyncRunner {
      *  est déjà en cours, retourne immédiatement. Ne lève pas — les échecs d'étape sont agrégés
      *  dans l'[Etat] terminal. */
     suspend fun executer(context: Context) {
-        if (actif) return
-        actif = true
+        // Garde atomique : un seul executer() à la fois, même appelé concurremment.
+        if (!enCours.compareAndSet(false, true)) return
         try {
             val config = GeoNatureConfig(context.applicationContext)
             publier("Préparation…")
@@ -168,7 +167,7 @@ object SyncRunner {
                     resume = "Synchronisation interrompue : ${e.message ?: e.javaClass.simpleName}")
             )
         } finally {
-            actif = false
+            enCours.set(false)
         }
     }
 

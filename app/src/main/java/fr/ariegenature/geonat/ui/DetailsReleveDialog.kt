@@ -77,8 +77,10 @@ fun ouvrirDialogDetailsReleve(
     infos: List<Pair<String, String>>,
     datasets: List<Pair<Int, String>>,
     idDatasetInitial: Int?,
+    nomDatasetInitial: String?,
     observateurs: List<Pair<Int, String>>,
     idObservateurInitial: Int?,
+    nomObservateurInitial: String?,
     defs: List<AdditionalFieldDef>,
     valeursInitiales: Map<String, String>,
     onValider: (DetailsReleveResult) -> Unit,
@@ -108,12 +110,25 @@ fun ouvrirDialogDetailsReleve(
     }
 
     // Sélecteur déroulant (jeu de données / observateur) : renvoie un getter de l'id choisi.
-    // Si [options] est vide, on n'affiche pas de dropdown mais une simple ligne lecture seule.
-    fun selecteur(label: String, options: List<Pair<Int, String>>, idInitial: Int?): () -> Pair<Int, String>? {
+    // Si [options] est vide (cache non chargé), on retombe en ligne lecture seule. Le getter ne
+    // renvoie JAMAIS null ni l'id-en-texte quand une sélection initiale existe : il conserve la
+    // valeur courante (id + vrai libellé) pour ne pas l'effacer à la validation.
+    fun selecteur(
+        label: String,
+        options: List<Pair<Int, String>>,
+        idInitial: Int?,
+        nomInitial: String?,
+    ): () -> Pair<Int, String>? {
+        // Libellé de l'initial : depuis les options si présent, sinon le nom fourni, sinon l'id.
+        val labelInitial = options.firstOrNull { it.first == idInitial }?.second
+            ?: nomInitial?.takeIf { it.isNotBlank() }
+            ?: idInitial?.toString()
+        // Repli sur la sélection initiale (id + meilleur libellé connu), jamais null/id-texte.
+        fun initialOuNull(): Pair<Int, String>? = idInitial?.let { id -> id to (labelInitial ?: id.toString()) }
+
         if (options.isEmpty()) {
-            val lab = options.firstOrNull { it.first == idInitial }?.second ?: (idInitial?.toString() ?: "—")
-            ligneLecture(label, lab)
-            return { idInitial?.let { id -> id to lab } }
+            ligneLecture(label, labelInitial ?: "—")
+            return ::initialOuNull
         }
         racine.addView(titre(label))
         val labels = options.map { it.second }
@@ -124,18 +139,21 @@ fun ouvrirDialogDetailsReleve(
             // Clic = ré-ouvre la liste complète pour changer facilement.
             setOnClickListener { showDropDown() }
             val idx = options.indexOfFirst { it.first == idInitial }
+            // Affiche la sélection initiale même si elle n'est pas (ou plus) dans les options.
             if (idx >= 0) setText(labels[idx], false)
+            else labelInitial?.let { setText(it, false) }
             setPadding(0, 0, 0, (8 * density).toInt())
         }
         racine.addView(champ)
         return {
             val txt = champ.text?.toString().orEmpty()
-            options.firstOrNull { it.second == txt } ?: options.firstOrNull { it.first == idInitial }
+            // Match exact d'un libellé d'option ; sinon on garde la sélection initiale.
+            options.firstOrNull { it.second == txt } ?: initialOuNull()
         }
     }
 
-    val getDataset = selecteur("Jeu de données", datasets, idDatasetInitial)
-    val getObservateur = selecteur("Observateur", observateurs, idObservateurInitial)
+    val getDataset = selecteur("Jeu de données", datasets, idDatasetInitial, nomDatasetInitial)
+    val getObservateur = selecteur("Observateur", observateurs, idObservateurInitial, nomObservateurInitial)
 
     // Infos lecture seule restantes (position, géométrie…).
     infos.forEach { (label, valeur) -> if (valeur.isNotBlank()) ligneLecture(label, valeur) }

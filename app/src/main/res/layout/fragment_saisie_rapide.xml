@@ -326,14 +326,41 @@
                 </LinearLayout>
             </HorizontalScrollView>
 
-            <!-- Switch nom scientifique -->
-            <com.google.android.material.materialswitch.MaterialSwitch
-                android:id="@+id/switch_nom_sci"
-                android:layout_width="wrap_content"
+            <!-- Switch nom scientifique + bouton Détails sur la même ligne (même disposition
+                 qu'en multi-taxons). Chain horizontale spread_inside : switch ancré à start,
+                 bouton à end. Le bouton "Détails" édite les champs additionnels OCCTAX_RELEVE
+                 communs à toutes les obs de la session — masqué si le serveur n'en déclare aucun. -->
+            <androidx.constraintlayout.widget.ConstraintLayout
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="6dp"
-                android:text="Nom scientifique"
-                android:textSize="13sp" />
+                android:layout_marginBottom="6dp">
+
+                <com.google.android.material.materialswitch.MaterialSwitch
+                    android:id="@+id/switch_nom_sci"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Nom scientifique"
+                    android:textSize="13sp"
+                    app:layout_constraintBottom_toBottomOf="parent"
+                    app:layout_constraintEnd_toStartOf="@id/btn_details_releve"
+                    app:layout_constraintHorizontal_chainStyle="spread_inside"
+                    app:layout_constraintStart_toStartOf="parent"
+                    app:layout_constraintTop_toTopOf="parent" />
+
+                <Button
+                    android:id="@+id/btn_details_releve"
+                    style="@style/Widget.GeoNat.Button.OutlinedButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:minHeight="36dp"
+                    android:paddingHorizontal="16dp"
+                    android:text="Détails"
+                    android:visibility="gone"
+                    app:layout_constraintBottom_toBottomOf="parent"
+                    app:layout_constraintEnd_toEndOf="parent"
+                    app:layout_constraintStart_toEndOf="@id/switch_nom_sci"
+                    app:layout_constraintTop_toTopOf="parent" />
+            </androidx.constraintlayout.widget.ConstraintLayout>
 
             <!-- Espèce (optionnel) -->
             <com.google.android.material.textfield.TextInputLayout

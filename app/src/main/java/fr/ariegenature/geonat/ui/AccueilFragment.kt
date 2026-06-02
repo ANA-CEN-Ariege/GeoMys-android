@@ -75,7 +75,20 @@ class AccueilFragment : Fragment() {
         }
 
         binding.btnSaisieRapide.setOnClickListener {
-            findNavController().navigate(R.id.action_accueil_to_saisie_rapide)
+            // Saisie mono-taxons : si le serveur déclare des champs additionnels OCCTAX_RELEVE,
+            // on intercale d'abord l'écran "Détails du relevé" (mode mono : ses valeurs
+            // deviennent le défaut de session, commun à toutes les obs enregistrées ensuite).
+            traceViewModel.typeSaisieLabel = getString(R.string.saisie_mono_taxons)
+            val aDesChampsReleve = fr.ariegenature.geonat.ui.saisie.AdditionalFieldsRenderer
+                .aDesChampsReleve(gnConfig.additionalFieldsOcctaxJson, gnConfig.idDataset.toIntOrNull())
+            if (aDesChampsReleve) {
+                findNavController().navigate(
+                    R.id.action_accueil_to_details_releve,
+                    Bundle().apply { putBoolean("mono", true) },
+                )
+            } else {
+                findNavController().navigate(R.id.action_accueil_to_saisie_rapide)
+            }
         }
 
         binding.btnSuivis.setOnClickListener {

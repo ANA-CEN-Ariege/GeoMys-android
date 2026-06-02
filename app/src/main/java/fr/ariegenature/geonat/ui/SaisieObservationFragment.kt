@@ -374,63 +374,19 @@ class SaisieObservationFragment : Fragment() {
     private fun ouvrirDetailsReleve(
         defs: List<fr.ariegenature.geonat.network.AdditionalFieldDef>,
     ) {
-        val ctx = requireContext()
-        val pad = (16 * resources.displayMetrics.density).toInt()
-        val racine = android.widget.LinearLayout(ctx).apply {
-            orientation = android.widget.LinearLayout.VERTICAL
-            setPadding(pad, pad / 2, pad, pad / 2)
-        }
-
-        // En-tête : infos lecture seule du relevé (toujours présentes).
-        fun ligneInfo(label: String, valeur: String) {
-            if (valeur.isBlank()) return
-            racine.addView(android.widget.TextView(ctx).apply {
-                text = label
-                textSize = 12f
-                setTextColor(couleurSecondaire(ctx))
+        val infos = buildList {
+            add("Jeu de données" to gnConfig.nomDataset.ifEmpty { gnConfig.idDataset })
+            add("Observateur" to gnConfig.observateurDefautNom.ifEmpty {
+                gnConfig.nomUtilisateur.ifEmpty { gnConfig.login }
             })
-            racine.addView(android.widget.TextView(ctx).apply {
-                text = valeur
-                textSize = 15f
-                setPadding(0, 0, 0, (8 * resources.displayMetrics.density).toInt())
-            })
-        }
-        ligneInfo("Jeu de données", gnConfig.nomDataset.ifEmpty { gnConfig.idDataset })
-        ligneInfo(
-            "Observateur",
-            gnConfig.observateurDefautNom.ifEmpty { gnConfig.nomUtilisateur.ifEmpty { gnConfig.login } },
-        )
-        ligneInfo("Position", "%.5f, %.5f".format(latitude, longitude))
-        geometryTypeSession?.takeIf { it.isNotEmpty() && it != "Point" }?.let {
-            ligneInfo("Géométrie", it)
-        }
-
-        // Conteneur des champs additionnels — peut rester vide si rien déclaré côté serveur.
-        val containerAdd = android.widget.LinearLayout(ctx).apply {
-            orientation = android.widget.LinearLayout.VERTICAL
-        }
-        if (defs.isNotEmpty()) {
-            racine.addView(android.widget.TextView(ctx).apply {
-                text = "Champs additionnels"
-                textSize = 12f
-                setTextColor(couleurSecondaire(ctx))
-                setPadding(0, (8 * resources.displayMetrics.density).toInt(), 0, 0)
-            })
-            AdditionalFieldsRenderer.rendre(containerAdd, defs, additionalFieldsReleveSession)
-            racine.addView(containerAdd)
-        }
-
-        val scroll = android.widget.ScrollView(ctx).apply { addView(racine) }
-        com.google.android.material.dialog.MaterialAlertDialogBuilder(ctx)
-            .setTitle("Détails du relevé")
-            .setView(scroll)
-            .setPositiveButton(if (defs.isEmpty()) "Fermer" else "Valider") { _, _ ->
-                if (defs.isNotEmpty()) {
-                    additionalFieldsReleveSession = AdditionalFieldsRenderer.collecter(containerAdd)
-                }
+            add("Position" to "%.5f, %.5f".format(latitude, longitude))
+            geometryTypeSession?.takeIf { it.isNotEmpty() && it != "Point" }?.let {
+                add("Géométrie" to it)
             }
-            .apply { if (defs.isNotEmpty()) setNegativeButton("Annuler", null) }
-            .show()
+        }
+        ouvrirDialogDetailsReleve(requireContext(), infos, defs, additionalFieldsReleveSession) {
+            additionalFieldsReleveSession = it
+        }
     }
 
     private fun ouvrirCaracterisation(index: Int) {

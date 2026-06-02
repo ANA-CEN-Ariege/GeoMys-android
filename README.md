@@ -11,7 +11,7 @@ Développée par l'[ANA - CEN Ariège](https://ariegenature.fr/).
 ### Saisie libre (OccTax)
 - **Suivi GPS** en arrière-plan via service foreground, tracé du parcours sur carte.
 - **Saisie multi-taxons** géolocalisée : un relevé peut contenir plusieurs occurrences (taxons, dénombrements, médias). Géométries point / ligne / polygone au doigt sur la carte. À la réédition d'une sortie, les lignes et polygones sont redessinés et leurs sommets restent **déplaçables** (un tap sur la forme ouvre la liste des espèces du relevé). Après validation d'un relevé, la carte repasse **directement en mode positionnement** pour enchaîner le relevé suivant.
-- **Saisie rapide mono-taxon** : ouverture instantanée, photo + taxon + envoi en quelques tap.
+- **Saisie rapide mono-taxon** : ouverture instantanée, photo + taxon + envoi en quelques tap. Si le serveur déclare des **champs additionnels de relevé** (OCCTAX_RELEVE), l'écran « Détails du relevé » est intercalé une fois à l'entrée de la saisie (comme en multi-taxons) : ces valeurs sont saisies une seule fois et appliquées à toutes les observations de la session (chacune devenant un relevé séparé côté serveur). Elles restent **éditables** ensuite via le bouton « Détails du relevé » du panneau de configuration (même dialog qu'en multi-taxons).
 - **Bandeau de navigation** « 🏠 › Saisie mono-taxons / multi-taxons » présent sur tous les écrans de chaque flux de saisie (icône maison cliquable → retour à l'accueil), à l'image du fil d'Ariane des suivis.
 - **Autocomplétion TaxRef** (noms vernaculaires et scientifiques) avec cache local.
 - **Export GPX** des sorties enregistrées.

@@ -80,7 +80,20 @@ class DetailsReleveFragment : Fragment() {
                 binding.tvErreur.text = "Champ(s) obligatoire(s) manquant(s) : ${manquants.joinToString(", ")}"
                 return@setOnClickListener
             }
-            // Transmet les valeurs + GPS + géométrie reçus à SaisieObservationFragment via le bundle.
+            // popUpTo + inclusive : on retire cet écran de la backstack pour que le retour
+            // depuis la saisie ramène directement à l'écran précédent (carte/accueil) et non
+            // aux détails.
+            val navOpts = androidx.navigation.NavOptions.Builder()
+                .setPopUpTo(R.id.detailsReleveFragment, true)
+                .build()
+            // Mode mono-taxons : pas d'étape de positionnement préalable. Les valeurs saisies
+            // deviennent le défaut de session de SaisieRapideFragment, commun à toutes les obs.
+            if (args?.getBoolean("mono", false) == true) {
+                val bundleMono = Bundle().apply { putString("addReleveJson", Gson().toJson(valeurs)) }
+                findNavController().navigate(R.id.action_details_releve_to_saisie_rapide, bundleMono, navOpts)
+                return@setOnClickListener
+            }
+            // Multi-taxons : transmet les valeurs + GPS + géométrie reçus à SaisieObservationFragment.
             val bundleSuite = Bundle().apply {
                 putDouble("latitude",  args?.getDouble("latitude", 0.0) ?: 0.0)
                 putDouble("longitude", args?.getDouble("longitude", 0.0) ?: 0.0)
@@ -88,11 +101,6 @@ class DetailsReleveFragment : Fragment() {
                 args?.getString("geometryType")?.let { putString("geometryType", it) }
                 args?.getString("geometryCoordsJson")?.let { putString("geometryCoordsJson", it) }
             }
-            // popUpTo + inclusive : on retire cet écran de la backstack pour que le retour
-            // depuis la saisie d'espèces ramène directement à la carte (et non aux détails).
-            val navOpts = androidx.navigation.NavOptions.Builder()
-                .setPopUpTo(R.id.detailsReleveFragment, true)
-                .build()
             findNavController().navigate(R.id.action_details_releve_to_saisie, bundleSuite, navOpts)
         }
     }

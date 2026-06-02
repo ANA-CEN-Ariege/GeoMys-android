@@ -50,6 +50,14 @@ object AdditionalFieldsRenderer {
         } catch (_: Exception) { emptyList() }
     }
 
+    /** Vrai si le serveur déclare au moins un champ additionnel niveau OCCTAX_RELEVE visible
+     *  pour le dataset courant. Sert à décider d'intercaler l'écran "Détails du relevé" avant
+     *  la saisie (multi-taxons comme mono-taxons). */
+    fun aDesChampsReleve(additionalFieldsOcctaxJson: String, idDataset: Int?): Boolean =
+        fromJson(additionalFieldsOcctaxJson)
+            .filter { it.appliqueA(fr.ariegenature.geonat.network.AdditionalFieldsObject.RELEVE) }
+            .any { it.visiblePour(idDataset, emptyList()) }
+
     /** Vide le container et rend tous les champs définis dans `defs`.
      *  Les valeurs courantes sont lues depuis `valeurs` (Map<field_name, valeur stringifiée>).
      *  Tolère un `valeurs == null` (cas Gson : champ absent du JSON désérialisé). */

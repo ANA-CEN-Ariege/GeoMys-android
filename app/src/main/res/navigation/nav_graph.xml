@@ -24,6 +24,9 @@
             android:id="@+id/action_accueil_to_saisie_rapide"
             app:destination="@id/saisieRapideFragment" />
         <action
+            android:id="@+id/action_accueil_to_details_releve"
+            app:destination="@id/detailsReleveFragment" />
+        <action
             android:id="@+id/action_accueil_to_suivis"
             app:destination="@id/suivisFragment" />
         <action
@@ -216,6 +219,9 @@
         <action
             android:id="@+id/action_details_releve_to_saisie"
             app:destination="@id/saisieObservationFragment" />
+        <action
+            android:id="@+id/action_details_releve_to_saisie_rapide"
+            app:destination="@id/saisieRapideFragment" />
     </fragment>
 
     <fragment

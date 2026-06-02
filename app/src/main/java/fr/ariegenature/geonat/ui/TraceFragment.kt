@@ -336,7 +336,20 @@ class TraceFragment : Fragment() {
         }
 
         binding.btnObservation.setOnLongClickListener {
-            findNavController().navigate(R.id.action_trace_to_saisie_rapide)
+            // Saisie mono-taxons : si le serveur déclare des champs additionnels OCCTAX_RELEVE,
+            // on intercale d'abord l'écran "Détails du relevé" (mode mono : ses valeurs
+            // deviennent le défaut de session, commun à toutes les obs enregistrées ensuite).
+            traceViewModel.typeSaisieLabel = getString(R.string.saisie_mono_taxons)
+            val aDesChampsReleve = fr.ariegenature.geonat.ui.saisie.AdditionalFieldsRenderer
+                .aDesChampsReleve(gnConfig.additionalFieldsOcctaxJson, gnConfig.idDataset.toIntOrNull())
+            if (aDesChampsReleve) {
+                findNavController().navigate(
+                    R.id.action_trace_to_details_releve,
+                    Bundle().apply { putBoolean("mono", true) },
+                )
+            } else {
+                findNavController().navigate(R.id.action_trace_to_saisie_rapide)
+            }
             true
         }
 
@@ -405,9 +418,7 @@ class TraceFragment : Fragment() {
                 // courant, on intercale l'écran "Détails du relevé" : il valide les champs
                 // required avant de passer à la saisie des espèces.
                 val aDesChampsReleve = fr.ariegenature.geonat.ui.saisie.AdditionalFieldsRenderer
-                    .fromJson(gnConfig.additionalFieldsOcctaxJson)
-                    .filter { it.appliqueA(fr.ariegenature.geonat.network.AdditionalFieldsObject.RELEVE) }
-                    .any { it.visiblePour(gnConfig.idDataset.toIntOrNull(), emptyList()) }
+                    .aDesChampsReleve(gnConfig.additionalFieldsOcctaxJson, gnConfig.idDataset.toIntOrNull())
                 val cible = if (aDesChampsReleve) R.id.action_trace_to_details_releve
                             else R.id.action_trace_to_saisie
                 findNavController().navigate(cible, bundle)

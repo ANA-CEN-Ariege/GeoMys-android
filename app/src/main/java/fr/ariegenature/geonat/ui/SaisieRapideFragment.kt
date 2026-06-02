@@ -220,6 +220,16 @@ class SaisieRapideFragment : Fragment() {
         sortieStore = SortieStore(requireContext())
         gnConfig = GeoNatureConfig(requireContext())
 
+        // Champs additionnels niveau RELEVE saisis une seule fois en amont via DetailsReleveFragment
+        // (écran intercalé à l'entrée de la saisie mono-taxons). Ces valeurs deviennent le défaut
+        // de session : chaque obs enregistrée — un relevé séparé côté serveur — les porte à l'identique.
+        arguments?.getString("addReleveJson")?.let { json ->
+            val mapType = object : TypeToken<Map<String, String>>() {}.type
+            additionalFieldsReleve = try {
+                Gson().fromJson<Map<String, String>?>(json, mapType) ?: emptyMap()
+            } catch (_: Exception) { emptyMap() }
+        }
+
         speech = SpeechToTextHelper(this, binding.tilEspece, binding.etEspece, micPermissionLauncher)
         taxrefLookup = TaxRefLookupController(
             scope = viewLifecycleOwner.lifecycleScope,
@@ -480,6 +490,26 @@ class SaisieRapideFragment : Fragment() {
 
         binding.btnCaracterisationDefaut.setOnClickListener { ouvrirCaracterisationDefaut() }
         binding.btnDenombrementDefaut.setOnClickListener { ouvrirDenombrementDefaut() }
+
+        // Bouton "Détails du relevé" : visible seulement si le serveur déclare des champs
+        // additionnels OCCTAX_RELEVE. Ouvre le même dialog éditable qu'en multi-taxons ;
+        // les valeurs sont communes à toutes les obs de la session.
+        val defsReleve = fr.ariegenature.geonat.ui.saisie.AdditionalFieldsRenderer
+            .fromJson(gnConfig.additionalFieldsOcctaxJson)
+            .filter { it.appliqueA(fr.ariegenature.geonat.network.AdditionalFieldsObject.RELEVE) }
+            .filter { it.visiblePour(gnConfig.idDataset.toIntOrNull(), emptyList()) }
+        binding.btnDetailsReleve.visibility = if (defsReleve.isEmpty()) View.GONE else View.VISIBLE
+        binding.btnDetailsReleve.setOnClickListener {
+            val infos = listOf(
+                "Jeu de données" to gnConfig.nomDataset.ifEmpty { gnConfig.idDataset },
+                "Observateur" to gnConfig.observateurDefautNom.ifEmpty {
+                    gnConfig.nomUtilisateur.ifEmpty { gnConfig.login }
+                },
+            )
+            ouvrirDialogDetailsReleve(requireContext(), infos, defsReleve, additionalFieldsReleve) {
+                additionalFieldsReleve = it
+            }
+        }
 
         binding.btnDemarrer.setOnClickListener { demarrer() }
         binding.btnAnnulerSaisie.setOnClickListener {

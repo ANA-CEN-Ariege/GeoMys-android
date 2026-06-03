@@ -80,8 +80,14 @@ class SortieDetailFragment : Fragment() {
         setupMap()
         setupButtons()
 
+        // Bandeau de navigation "🏠 › Détail de la sortie" (cohérent avec les autres écrans
+        // de saisie ; l'icône maison ramène à l'accueil, le retour système à la liste).
+        appliquerBandeauNavigation(
+            binding.bandeauSaisie.root, findNavController(), getString(R.string.detail_sortie)
+        )
+
         // Carte plein écran, boutons à l'écart des barres système.
-        binding.btnRetour.applyStatusBarMargin()
+        binding.bandeauSaisie.root.applyStatusBarMargin()
         // Envoyer/Partager en haut à droite → sous la status bar ; contrôles carte en bas
         // à droite → au-dessus de la nav bar.
         binding.conteneurActionsHaut.applyStatusBarMargin()
@@ -89,7 +95,6 @@ class SortieDetailFragment : Fragment() {
     }
 
     private fun setupButtons() {
-        binding.btnRetour.setOnClickListener { findNavController().navigateUp() }
         binding.btnFondCarte.setOnClickListener {
             fondCarte = fondCarte.suivant()
             binding.map.setTileSource(tileSourcePour(fondCarte))

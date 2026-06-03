@@ -4,6 +4,7 @@
     <string name="saisie_mono_taxons">Saisie mono-taxons</string>
     <string name="nouvelle_sortie">Nouvelle sortie</string>
     <string name="mes_sorties">Mes saisies</string>
+    <string name="detail_sortie">Détail de la sortie</string>
     <string name="terminer_sortie">Terminer la sortie</string>
     <string name="enregistrer_quitter">Enregistrer et quitter</string>
     <string name="enregistrer_envoyer_gn">Enregistrer et envoyer à GeoNature</string>

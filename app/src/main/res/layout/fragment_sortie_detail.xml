@@ -33,20 +33,16 @@
             android:textSize="16sp" />
     </LinearLayout>
 
-    <!-- Bouton retour (haut gauche). Fond blanc + flèche agrandie et teintée du bleu du
-         thème pour bien ressortir sur la carte. -->
-    <ImageButton
-        android:id="@+id/btn_retour"
-        android:layout_width="44dp"
-        android:layout_height="44dp"
+    <!-- Bandeau de navigation "🏠 › Détail de la sortie" (flottant, haut gauche), comme les
+         autres écrans de saisie. L'icône maison ramène à l'accueil ; le retour à la liste
+         se fait par le retour système. -->
+    <include
+        android:id="@+id/bandeau_saisie"
+        layout="@layout/view_bandeau_saisie"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
         android:layout_gravity="top|start"
-        android:layout_margin="12dp"
-        android:background="@drawable/btn_circle_white"
-        android:contentDescription="Retour"
-        android:padding="9dp"
-        android:scaleType="fitCenter"
-        android:src="@drawable/ic_arrow_back"
-        app:tint="?attr/colorPrimary" />
+        android:layout_margin="12dp" />
 
     <!-- Actions (haut droite) : Envoyer vers GeoNature + Partager (GPX), boutons ronds.
          Envoyer = cercle bleu plein (action principale) ; Partager = cercle blanc, icône

@@ -13,7 +13,24 @@
       "Bash(python3 -c ' *)",
       "Bash(git push *)",
       "Bash(git tag *)",
-      "Bash(gh api *)"
+      "Bash(gh api *)",
+      "Bash(./gradlew :app:compileDebugKotlin)",
+      "Bash(gh search *)",
+      "Bash(./gradlew :app:assembleDebug)",
+      "Bash(./gradlew assembleDebug lint --no-daemon -q)",
+      "Bash(./gradlew assembleDebug --no-daemon -q)",
+      "Bash(unzip -p /Users/claude/Developpements/GeoMys-Android/app/build/outputs/apk/debug/app-debug.apk AndroidManifest.xml)",
+      "Bash(git fetch *)",
+      "Bash(git pull *)",
+      "Bash(./gradlew :app:assembleDebug -q)",
+      "Bash(./gradlew :app:compileDebugKotlin -q)",
+      "Bash(/Users/claude/Library/Android/sdk/platform-tools/adb shell *)",
+      "Bash(./gradlew :app:testDebugUnitTest -q)",
+      "Bash(echo \"EXIT=$?\")",
+      "Bash(./gradlew testDebugUnitTest assembleDebug)",
+      "Bash(gh release create v0.9.86 app/build/outputs/apk/debug/app-debug.apk --title v0.9.86 --notes ' *)",
+      "Bash(gh release *)",
+      "Bash(./gradlew testDebugUnitTest)"
     ]
   }
 }

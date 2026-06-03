@@ -22,5 +22,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "GeoNat"
+rootProject.name = "GeoMys"
 include(":app")

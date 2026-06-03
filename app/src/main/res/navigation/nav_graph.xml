@@ -6,8 +6,8 @@
 
     <fragment
         android:id="@+id/accueilFragment"
-        android:name="fr.ariegenature.geonat.ui.AccueilFragment"
-        android:label="GeoNat">
+        android:name="fr.ariegenature.geomys.ui.AccueilFragment"
+        android:label="GeoMys">
         <action
             android:id="@+id/action_accueil_to_trace"
             app:destination="@id/traceFragment" />
@@ -39,12 +39,12 @@
 
     <fragment
         android:id="@+id/cacheManagerFragment"
-        android:name="fr.ariegenature.geonat.ui.CacheManagerFragment"
+        android:name="fr.ariegenature.geomys.ui.CacheManagerFragment"
         android:label="Maps Manager" />
 
     <fragment
         android:id="@+id/suivisFragment"
-        android:name="fr.ariegenature.geonat.ui.SuivisFragment"
+        android:name="fr.ariegenature.geomys.ui.SuivisFragment"
         android:label="Monitoring">
         <action
             android:id="@+id/action_suivis_to_detail"
@@ -59,7 +59,7 @@
 
     <fragment
         android:id="@+id/saisiesEnAttenteFragment"
-        android:name="fr.ariegenature.geonat.ui.SaisiesEnAttenteFragment"
+        android:name="fr.ariegenature.geomys.ui.SaisiesEnAttenteFragment"
         android:label="Saisies en attente">
         <action
             android:id="@+id/action_attente_to_edition"
@@ -68,7 +68,7 @@
 
     <fragment
         android:id="@+id/suiviDetailFragment"
-        android:name="fr.ariegenature.geonat.ui.SuiviDetailFragment"
+        android:name="fr.ariegenature.geomys.ui.SuiviDetailFragment"
         android:label="Détail protocole">
         <argument
             android:name="moduleCode"
@@ -86,7 +86,7 @@
 
     <fragment
         android:id="@+id/ficheObjetFragment"
-        android:name="fr.ariegenature.geonat.ui.FicheObjetFragment"
+        android:name="fr.ariegenature.geomys.ui.FicheObjetFragment"
         android:label="Fiche">
         <argument
             android:name="moduleCode"
@@ -114,7 +114,7 @@
 
     <fragment
         android:id="@+id/nouvelleVisiteFragment"
-        android:name="fr.ariegenature.geonat.ui.NouvelleVisiteFragment"
+        android:name="fr.ariegenature.geomys.ui.NouvelleVisiteFragment"
         android:label="Nouvelle visite">
         <action
             android:id="@+id/action_nouvelle_visite_to_fiche"
@@ -157,7 +157,7 @@
 
     <fragment
         android:id="@+id/carteGeometrieFragment"
-        android:name="fr.ariegenature.geonat.ui.CarteGeometrieFragment"
+        android:name="fr.ariegenature.geomys.ui.CarteGeometrieFragment"
         android:label="Carte">
         <argument
             android:name="moduleCode"
@@ -192,7 +192,7 @@
 
     <fragment
         android:id="@+id/traceFragment"
-        android:name="fr.ariegenature.geonat.ui.TraceFragment"
+        android:name="fr.ariegenature.geomys.ui.TraceFragment"
         android:label="Sortie">
         <argument
             android:name="sortieId"
@@ -214,7 +214,7 @@
 
     <fragment
         android:id="@+id/detailsReleveFragment"
-        android:name="fr.ariegenature.geonat.ui.DetailsReleveFragment"
+        android:name="fr.ariegenature.geomys.ui.DetailsReleveFragment"
         android:label="Détails du relevé">
         <action
             android:id="@+id/action_details_releve_to_saisie"
@@ -226,7 +226,7 @@
 
     <fragment
         android:id="@+id/saisieObservationFragment"
-        android:name="fr.ariegenature.geonat.ui.SaisieObservationFragment"
+        android:name="fr.ariegenature.geomys.ui.SaisieObservationFragment"
         android:label="Nouveau relevé">
         <action
             android:id="@+id/action_saisie_to_details"
@@ -241,17 +241,17 @@
 
     <fragment
         android:id="@+id/caracterisationFragment"
-        android:name="fr.ariegenature.geonat.ui.CaracterisationFragment"
+        android:name="fr.ariegenature.geomys.ui.CaracterisationFragment"
         android:label="Caractérisation" />
 
     <fragment
         android:id="@+id/denombrementFragment"
-        android:name="fr.ariegenature.geonat.ui.DenombrementFragment"
+        android:name="fr.ariegenature.geomys.ui.DenombrementFragment"
         android:label="Dénombrement" />
 
     <fragment
         android:id="@+id/saisieRapideFragment"
-        android:name="fr.ariegenature.geonat.ui.SaisieRapideFragment"
+        android:name="fr.ariegenature.geomys.ui.SaisieRapideFragment"
         android:label="Saisie rapide">
         <action
             android:id="@+id/action_saisieRapide_to_caracterisation"
@@ -266,12 +266,12 @@
 
     <fragment
         android:id="@+id/observationDetailsFragment"
-        android:name="fr.ariegenature.geonat.ui.ObservationDetailsFragment"
+        android:name="fr.ariegenature.geomys.ui.ObservationDetailsFragment"
         android:label="Détails" />
 
     <fragment
         android:id="@+id/observationsFragment"
-        android:name="fr.ariegenature.geonat.ui.ObservationsFragment"
+        android:name="fr.ariegenature.geomys.ui.ObservationsFragment"
         android:label="Observations">
         <action
             android:id="@+id/action_observations_to_saisie"
@@ -280,7 +280,7 @@
 
     <fragment
         android:id="@+id/sortiesFragment"
-        android:name="fr.ariegenature.geonat.ui.SortiesFragment"
+        android:name="fr.ariegenature.geomys.ui.SortiesFragment"
         android:label="Mes saisies">
         <action
             android:id="@+id/action_sorties_to_detail"
@@ -292,7 +292,7 @@
 
     <fragment
         android:id="@+id/sortieDetailFragment"
-        android:name="fr.ariegenature.geonat.ui.SortieDetailFragment"
+        android:name="fr.ariegenature.geomys.ui.SortieDetailFragment"
         android:label="Sortie">
         <argument
             android:name="sortieId"
@@ -301,7 +301,7 @@
 
     <fragment
         android:id="@+id/configGeoNatureFragment"
-        android:name="fr.ariegenature.geonat.ui.ConfigGeoNatureFragment"
+        android:name="fr.ariegenature.geomys.ui.ConfigGeoNatureFragment"
         android:label="GeoNature">
         <action
             android:id="@+id/action_config_to_taxons"
@@ -310,7 +310,7 @@
 
     <fragment
         android:id="@+id/taxonsListeFragment"
-        android:name="fr.ariegenature.geonat.ui.TaxonsListeFragment"
+        android:name="fr.ariegenature.geomys.ui.TaxonsListeFragment"
         android:label="Taxons">
         <argument
             android:name="taxonName"
@@ -319,6 +319,6 @@
 
     <fragment
         android:id="@+id/explorerFragment"
-        android:name="fr.ariegenature.geonat.ui.ExplorerFragment"
+        android:name="fr.ariegenature.geomys.ui.ExplorerFragment"
         android:label="Explorer" />
 </navigation>

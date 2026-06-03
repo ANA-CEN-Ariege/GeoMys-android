@@ -47,7 +47,7 @@
 
             <Button
                 android:id="@+id/btn_ajouter"
-                style="@style/Widget.GeoNat.Button.TextButton"
+                style="@style/Widget.GeoMys.Button.TextButton"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="16dp"

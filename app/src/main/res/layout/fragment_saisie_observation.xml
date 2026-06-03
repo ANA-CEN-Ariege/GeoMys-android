@@ -45,7 +45,7 @@
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btn_taxon_oiseau"
-                    style="@style/Widget.GeoNat.Button.TextButton"
+                    style="@style/Widget.GeoMys.Button.TextButton"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:insetTop="0dp"
@@ -61,7 +61,7 @@
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btn_taxon_mammifere"
-                    style="@style/Widget.GeoNat.Button.TextButton"
+                    style="@style/Widget.GeoMys.Button.TextButton"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:insetTop="0dp"
@@ -77,7 +77,7 @@
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btn_taxon_reptile"
-                    style="@style/Widget.GeoNat.Button.TextButton"
+                    style="@style/Widget.GeoMys.Button.TextButton"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:insetTop="0dp"
@@ -93,7 +93,7 @@
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btn_taxon_batracien"
-                    style="@style/Widget.GeoNat.Button.TextButton"
+                    style="@style/Widget.GeoMys.Button.TextButton"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:insetTop="0dp"
@@ -109,7 +109,7 @@
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btn_taxon_mollusque"
-                    style="@style/Widget.GeoNat.Button.TextButton"
+                    style="@style/Widget.GeoMys.Button.TextButton"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:insetTop="0dp"
@@ -125,7 +125,7 @@
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btn_taxon_poisson"
-                    style="@style/Widget.GeoNat.Button.TextButton"
+                    style="@style/Widget.GeoMys.Button.TextButton"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:insetTop="0dp"
@@ -141,7 +141,7 @@
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btn_taxon_insecte"
-                    style="@style/Widget.GeoNat.Button.TextButton"
+                    style="@style/Widget.GeoMys.Button.TextButton"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:insetTop="0dp"
@@ -157,7 +157,7 @@
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btn_taxon_invertebres"
-                    style="@style/Widget.GeoNat.Button.TextButton"
+                    style="@style/Widget.GeoMys.Button.TextButton"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:insetTop="0dp"
@@ -173,7 +173,7 @@
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btn_taxon_plante"
-                    style="@style/Widget.GeoNat.Button.TextButton"
+                    style="@style/Widget.GeoMys.Button.TextButton"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:insetTop="0dp"
@@ -189,7 +189,7 @@
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btn_taxon_fonge"
-                    style="@style/Widget.GeoNat.Button.TextButton"
+                    style="@style/Widget.GeoMys.Button.TextButton"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:insetTop="0dp"
@@ -231,7 +231,7 @@
 
             <Button
                 android:id="@+id/btn_details_releve"
-                style="@style/Widget.GeoNat.Button.OutlinedButton"
+                style="@style/Widget.GeoMys.Button.OutlinedButton"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:minHeight="36dp"

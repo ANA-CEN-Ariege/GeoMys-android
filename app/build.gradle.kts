@@ -3,11 +3,11 @@ plugins {
 }
 
 android {
-    namespace = "fr.ariegenature.geonat"
+    namespace = "fr.ariegenature.geomys"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "fr.ariegenature.geonat"
+        applicationId = "fr.ariegenature.geomys"
         minSdk = 24
         targetSdk = 36
         versionCode = 130

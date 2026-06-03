@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">GeoNat</string>
+    <string name="app_name">GeoMys</string>
     <string name="saisie_multi_taxons">Saisie multi-taxons</string>
     <string name="saisie_mono_taxons">Saisie mono-taxons</string>
     <string name="nouvelle_sortie">Nouvelle sortie</string>

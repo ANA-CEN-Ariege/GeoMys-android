@@ -32,7 +32,7 @@
 
         <Button
             android:id="@+id/btn_fermer"
-            style="@style/Widget.GeoNat.Button.TextButton"
+            style="@style/Widget.GeoMys.Button.TextButton"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="Fermer" />
@@ -86,7 +86,7 @@
 
         <Button
             android:id="@+id/btn_effacer_tout"
-            style="@style/Widget.GeoNat.Button.TextButton"
+            style="@style/Widget.GeoMys.Button.TextButton"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"

@@ -1,4 +1,4 @@
-# GeoNat Android
+# GeoMys Android
 
 Application Android de terrain pour la saisie naturaliste connectée à un serveur [GeoNature](https://github.com/PnX-SI/GeoNature) — observations libres (OccTax) **et** suivis protocolés (gn_module_monitoring), en ligne comme hors-ligne.
 
@@ -99,8 +99,8 @@ Dans la saisie OccTax (multi et mono-taxons), le bouton **Détails** du relevé 
 ## Architecture
 
 ```
-app/src/main/java/fr/ariegenature/geonat/
-├── GeoNatApplication.kt    # Init osmdroid, caches, outbox
+app/src/main/java/fr/ariegenature/geomys/
+├── GeoMysApplication.kt    # Init osmdroid, caches, outbox
 ├── TaxRefLocal.kt          # TaxRef embarqué (faune)
 ├── model/                  # Sortie, Observation, Taxon
 ├── network/                # GeoNatureUpload, MonitoringApi, OutboxEnvoi,
@@ -178,7 +178,7 @@ Ces tests sont lancés avant chaque release.
 
 ## Releases
 
-Les APK debug sont publiés sur la page [Releases](https://github.com/ANA-CEN-Ariege/GeoNat-android/releases) à chaque version (`v0.X.Y`).
+Les APK debug sont publiés sur la page [Releases](https://github.com/ANA-CEN-Ariege/GeoMys-android/releases) à chaque version (`v0.X.Y`).
 
 ## Licence
 

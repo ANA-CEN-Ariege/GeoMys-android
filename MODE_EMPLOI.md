@@ -1,16 +1,16 @@
-# GeoNat — Mode d'emploi
+# GeoMys — Mode d'emploi
 
 Application Android de terrain pour la saisie naturaliste connectée à un serveur [GeoNature](https://github.com/PnX-SI/GeoNature). Ce guide couvre la prise en main et l'utilisation au quotidien.
 
 <p align="center">
-  <img src="Images/accueil.jpg" alt="Écran d'accueil de GeoNat" width="300">
+  <img src="Images/accueil.jpg" alt="Écran d'accueil de GeoMys" width="300">
 </p>
 
 ---
 
 ## 1. Installation
 
-1. Télécharger la dernière version (`app-debug.apk`) depuis la page [Releases GitHub](https://github.com/ANA-CEN-Ariege/GeoNat-android/releases).
+1. Télécharger la dernière version (`app-debug.apk`) depuis la page [Releases GitHub](https://github.com/ANA-CEN-Ariege/GeoMys-android/releases).
 2. Sur Android, autoriser l'installation depuis des sources inconnues si demandé.
 3. Ouvrir le fichier APK et installer.
 
@@ -289,12 +289,12 @@ Retour à **Configuration** → modifier URL / identifiants → **Connexion** �
 
 ## Releases & versions
 
-Chaque version est publiée sur la page [Releases GitHub](https://github.com/ANA-CEN-Ariege/GeoNat-android/releases) avec un APK debug attaché. La version installée est visible dans **Configuration** (en bas de l'écran).
+Chaque version est publiée sur la page [Releases GitHub](https://github.com/ANA-CEN-Ariege/GeoMys-android/releases) avec un APK debug attaché. La version installée est visible dans **Configuration** (en bas de l'écran).
 
 ---
 
 ## Support
 
-Pour signaler un bug ou demander une évolution : ouvrir une issue sur [le dépôt GitHub](https://github.com/ANA-CEN-Ariege/GeoNat-android/issues).
+Pour signaler un bug ou demander une évolution : ouvrir une issue sur [le dépôt GitHub](https://github.com/ANA-CEN-Ariege/GeoMys-android/issues).
 
 © ANA - CEN Ariège

@@ -154,7 +154,7 @@
 
         <Button
             android:id="@+id/btn_ajouter_photo"
-            style="@style/Widget.GeoNat.Button.TextButton"
+            style="@style/Widget.GeoMys.Button.TextButton"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
@@ -162,7 +162,7 @@
 
         <Button
             android:id="@+id/btn_ajouter_audio"
-            style="@style/Widget.GeoNat.Button.TextButton"
+            style="@style/Widget.GeoMys.Button.TextButton"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"

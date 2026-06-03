@@ -80,7 +80,7 @@
         android:paddingBottom="60dp"
         android:paddingTop="60dp">
 
-        <!-- Logo : on utilise @drawable/logo_geonat (PNG avec fond transparent), généré
+        <!-- Logo : on utilise @drawable/logo_geomys (PNG avec fond transparent), généré
              à partir du foreground d'icône adaptative en supprimant son carré blanc opaque.
              Le @mipmap/ic_launcher_foreground d'origine contient un fond blanc plein qui
              apparaissait comme un carré derrière le logo. Inflater @mipmap/ic_launcher
@@ -90,15 +90,15 @@
         <ImageView
             android:layout_width="120dp"
             android:layout_height="120dp"
-            android:contentDescription="Logo GeoNat"
-            android:src="@drawable/logo_geonat" />
+            android:contentDescription="Logo GeoMys"
+            android:src="@drawable/logo_geomys" />
 
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
             android:fontFamily="sans-serif-medium"
-            android:text="GeoNat"
+            android:text="GeoMys"
             android:textColor="@android:color/white"
             android:textSize="32sp" />
 

@@ -107,7 +107,7 @@
             android:src="@drawable/ic_location_on" />
 
         <!-- Boussole (toggle rotation carte) — espacement vertical visuel = 12dp. -->
-        <fr.ariegenature.geonat.ui.CompassView
+        <fr.ariegenature.geomys.ui.CompassView
             android:id="@+id/compass"
             android:layout_width="44dp"
             android:layout_height="44dp"
@@ -166,7 +166,7 @@
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btn_taxon_oiseau"
-                        style="@style/Widget.GeoNat.Button.TextButton"
+                        style="@style/Widget.GeoMys.Button.TextButton"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:insetTop="0dp"
@@ -182,7 +182,7 @@
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btn_taxon_mammifere"
-                        style="@style/Widget.GeoNat.Button.TextButton"
+                        style="@style/Widget.GeoMys.Button.TextButton"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:insetTop="0dp"
@@ -198,7 +198,7 @@
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btn_taxon_reptile"
-                        style="@style/Widget.GeoNat.Button.TextButton"
+                        style="@style/Widget.GeoMys.Button.TextButton"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:insetTop="0dp"
@@ -214,7 +214,7 @@
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btn_taxon_batracien"
-                        style="@style/Widget.GeoNat.Button.TextButton"
+                        style="@style/Widget.GeoMys.Button.TextButton"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:insetTop="0dp"
@@ -230,7 +230,7 @@
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btn_taxon_mollusque"
-                        style="@style/Widget.GeoNat.Button.TextButton"
+                        style="@style/Widget.GeoMys.Button.TextButton"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:insetTop="0dp"
@@ -246,7 +246,7 @@
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btn_taxon_poisson"
-                        style="@style/Widget.GeoNat.Button.TextButton"
+                        style="@style/Widget.GeoMys.Button.TextButton"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:insetTop="0dp"
@@ -262,7 +262,7 @@
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btn_taxon_insecte"
-                        style="@style/Widget.GeoNat.Button.TextButton"
+                        style="@style/Widget.GeoMys.Button.TextButton"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:insetTop="0dp"
@@ -278,7 +278,7 @@
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btn_taxon_invertebres"
-                        style="@style/Widget.GeoNat.Button.TextButton"
+                        style="@style/Widget.GeoMys.Button.TextButton"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:insetTop="0dp"
@@ -294,7 +294,7 @@
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btn_taxon_plante"
-                        style="@style/Widget.GeoNat.Button.TextButton"
+                        style="@style/Widget.GeoMys.Button.TextButton"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:insetTop="0dp"
@@ -310,7 +310,7 @@
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btn_taxon_fonge"
-                        style="@style/Widget.GeoNat.Button.TextButton"
+                        style="@style/Widget.GeoMys.Button.TextButton"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:insetTop="0dp"
@@ -349,7 +349,7 @@
 
                 <Button
                     android:id="@+id/btn_details_releve"
-                    style="@style/Widget.GeoNat.Button.OutlinedButton"
+                    style="@style/Widget.GeoMys.Button.OutlinedButton"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:minHeight="36dp"
@@ -404,7 +404,7 @@
 
                 <Button
                     android:id="@+id/btn_caracterisation_defaut"
-                    style="@style/Widget.GeoNat.Button.OutlinedButton"
+                    style="@style/Widget.GeoMys.Button.OutlinedButton"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_marginEnd="4dp"
@@ -413,7 +413,7 @@
 
                 <Button
                     android:id="@+id/btn_denombrement_defaut"
-                    style="@style/Widget.GeoNat.Button.OutlinedButton"
+                    style="@style/Widget.GeoMys.Button.OutlinedButton"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_marginStart="4dp"
@@ -439,7 +439,7 @@
 
                 <Button
                     android:id="@+id/btn_annuler_saisie"
-                    style="@style/Widget.GeoNat.Button.OutlinedButton"
+                    style="@style/Widget.GeoMys.Button.OutlinedButton"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginEnd="8dp"
@@ -509,7 +509,7 @@
 
             <Button
                 android:id="@+id/btn_modifier_params"
-                style="@style/Widget.GeoNat.Button.TextButton"
+                style="@style/Widget.GeoMys.Button.TextButton"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Modifier" />
@@ -546,7 +546,7 @@
 
             <Button
                 android:id="@+id/btn_snack_modifier"
-                style="@style/Widget.GeoNat.Button.TextButton"
+                style="@style/Widget.GeoMys.Button.TextButton"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Modifier"

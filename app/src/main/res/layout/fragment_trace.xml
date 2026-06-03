@@ -149,7 +149,7 @@
             android:src="@drawable/ic_location_on" />
 
         <!-- Boussole (toggle rotation carte). -->
-        <fr.ariegenature.geonat.ui.CompassView
+        <fr.ariegenature.geomys.ui.CompassView
             android:id="@+id/compass"
             android:layout_width="44dp"
             android:layout_height="44dp"
@@ -331,7 +331,7 @@
 
         <Button
             android:id="@+id/btn_annuler_position"
-            style="@style/Widget.GeoNat.Button.TextButton"
+            style="@style/Widget.GeoMys.Button.TextButton"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:backgroundTint="@android:color/darker_gray"
@@ -344,7 +344,7 @@
              à la position courante du réticule et l'ajoute à la géométrie en cours. -->
         <Button
             android:id="@+id/btn_ajouter_sommet"
-            style="@style/Widget.GeoNat.Button.OutlinedButton"
+            style="@style/Widget.GeoMys.Button.OutlinedButton"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginEnd="8dp"

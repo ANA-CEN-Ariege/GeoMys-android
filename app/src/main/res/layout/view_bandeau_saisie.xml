@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Bandeau de navigation des écrans de saisie (mono / multi-taxons) : "🏠 › <type>".
      Inclus dans chaque écran de saisie. Le rendu (icône maison cliquable + libellé) est
-     appliqué par fr.ariegenature.geonat.ui.appliquerBandeauSaisie. Même habillage arrondi
+     appliqué par fr.ariegenature.geomys.ui.appliquerBandeauSaisie. Même habillage arrondi
      que le fil d'Ariane des suivis (bg_fil_ariane + colorSurfaceVariant). -->
 <TextView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"

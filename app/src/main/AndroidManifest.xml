@@ -17,7 +17,7 @@
     <uses-permission android:name="android.permission.VIBRATE" />
 
     <application
-        android:name=".GeoNatApplication"
+        android:name=".GeoMysApplication"
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
@@ -26,7 +26,7 @@
         android:networkSecurityConfig="@xml/network_security_config"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.GeoNat">
+        android:theme="@style/Theme.GeoMys">
 
         <activity
             android:name=".ui.MainActivity"

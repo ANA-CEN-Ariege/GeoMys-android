@@ -35,12 +35,12 @@
 }
 # Modèles désérialisés par réflexion (cf. audit B2). On garde le constructeur et
 # les champs : R8 ne doit ni les renommer ni les supprimer.
--keep class fr.ariegenature.geonat.network.GeoNatureDataset { *; }
--keep class fr.ariegenature.geonat.network.GeoNatureListe { *; }
--keep class fr.ariegenature.geonat.network.GeoNatureObservateur { *; }
--keep class fr.ariegenature.geonat.network.AdditionalFieldDef { *; }
--keep class fr.ariegenature.geonat.store.SaisieEnAttente { *; }
--keep class fr.ariegenature.geonat.store.TaxRefEntry { *; }
--keep class fr.ariegenature.geonat.store.NomValeur { *; }
--keep class fr.ariegenature.geonat.model.Denombrement { *; }
--keep class fr.ariegenature.geonat.model.Sortie { *; }
+-keep class fr.ariegenature.geomys.network.GeoNatureDataset { *; }
+-keep class fr.ariegenature.geomys.network.GeoNatureListe { *; }
+-keep class fr.ariegenature.geomys.network.GeoNatureObservateur { *; }
+-keep class fr.ariegenature.geomys.network.AdditionalFieldDef { *; }
+-keep class fr.ariegenature.geomys.store.SaisieEnAttente { *; }
+-keep class fr.ariegenature.geomys.store.TaxRefEntry { *; }
+-keep class fr.ariegenature.geomys.store.NomValeur { *; }
+-keep class fr.ariegenature.geomys.model.Denombrement { *; }
+-keep class fr.ariegenature.geomys.model.Sortie { *; }

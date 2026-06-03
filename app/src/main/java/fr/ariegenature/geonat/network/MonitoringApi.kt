@@ -428,6 +428,18 @@ object MonitoringApi {
                 "user" -> users[valeur]
                 "nomenclature" -> prop.nomenclatureType?.let { nomenclatures[it]?.get(valeur) }
                 "dataset" -> datasets[valeur]
+                // Champ taxon (ex. `cd_nom`, type_util "taxonomy") : la valeur est un cd_nom.
+                // On le résout en nom scientifique via le cache TaxRef (avec le vernaculaire
+                // entre parenthèses s'il est connu), à l'image du web qui affiche `nom_vern,lb_nom`.
+                // runCatching : si le cache TaxRef n'est pas initialisé/chargé, on retombe sur le
+                // formatage brut (= numéro) côté appelant plutôt que de planter.
+                "taxonomy" -> runCatching {
+                    val cd = valeur.toIntOrNull() ?: return null
+                    val sci = fr.ariegenature.geonat.store.TaxRefCache.entreesParCdNom()[cd]?.sciNom
+                        ?: return null
+                    val vern = fr.ariegenature.geonat.store.TaxRefCache.getVernaculaireParCdNom(cd)
+                    if (vern != null) "$sci ($vern)" else sci
+                }.getOrNull()
                 else -> null
             }
         }
@@ -902,7 +914,38 @@ object MonitoringApi {
                 keyValue = prop.keyValue ?: "id_dataset",
             )
         }
-        if (prop.apiUrl != null) return prop
+        if (prop.apiUrl != null) {
+            // Widget `nomenclature` : l'api est dérivé (`nomenclatures/nomenclature/<TYPE>`) mais
+            // le schéma ne fournit JAMAIS keyLabel/keyValue. L'endpoint GeoNature renvoie des items
+            // `{id_nomenclature, cd_nomenclature, label_default, label_fr, …}` → valeur=id_nomenclature,
+            // libellé=label_default. Sans ça chargerOptionsDatalist renvoyait null → « fetch options
+            // échoué » (cas id_nomenclature_statut_obs du protocole Chevêches).
+            if (prop.apiUrl.contains("nomenclatures/nomenclature/") &&
+                (prop.keyLabel == null || prop.keyValue == null)
+            ) {
+                return prop.copy(
+                    keyValue = prop.keyValue ?: "id_nomenclature",
+                    keyLabel = prop.keyLabel ?: "label_default",
+                )
+            }
+            // Un datalist `monitorings/list/<module>/<type>?fields=ID&fields=NOM` (ex. id_base_site
+            // du protocole Chevêches) déclare un `api` mais souvent PAS de keyLabel/keyValue : on
+            // les dérive des `fields=` de l'URL (champ `id_*` = valeur, l'autre = libellé). Sans ça
+            // chargerOptionsDatalist renvoyait null → « fetch options échoué ».
+            if (prop.keyLabel == null || prop.keyValue == null) {
+                val fields = Regex("""fields=([^&]+)""").findAll(prop.apiUrl)
+                    .map { java.net.URLDecoder.decode(it.groupValues[1], "UTF-8") }.toList()
+                if (fields.size >= 2) {
+                    val idField = fields.firstOrNull { it.startsWith("id_") || it == "id" }
+                    val labelField = fields.firstOrNull { it != idField }
+                    return prop.copy(
+                        keyValue = prop.keyValue ?: idField ?: fields[0],
+                        keyLabel = prop.keyLabel ?: labelField ?: fields[1],
+                    )
+                }
+            }
+            return prop
+        }
         val (api, kLabel, kValue) = when (prop.typeWidget.lowercase()) {
             "observers" -> Triple(
                 idListObserver?.let { "users/menu/$it" } ?: return prop,
@@ -1507,7 +1550,10 @@ object MonitoringApi {
             conn.setRequestProperty("Content-Type", "application/json")
             conn.outputStream.use { it.write(postBody.toByteArray(Charsets.UTF_8)) }
         }
-        if (conn.responseCode != 200) return@withContext fallbackDatasetCache()
+        val httpCode = conn.responseCode
+        if (httpCode != 200) {
+            return@withContext fallbackDatasetCache()
+        }
         val text = conn.inputStream.bufferedReader().readText()
         // Réponse soit array direct, soit objet contenant data_path → array.
         val array: JSONArray = try { JSONArray(text) } catch (_: Exception) {

@@ -89,7 +89,7 @@ Dans la saisie OccTax (multi et mono-taxons), le bouton **Détails** du relevé 
 - **Saisie mono-taxon** — saisie éclair.
 - **Suivis** — accès aux protocoles `gn_module_monitoring`.
 - Menu burger (**pastille rouge** sur le bouton dès qu'une saisie ou une visite reste à envoyer) :
-  - **Mes saisies** — sorties GPX enregistrées (pastille rouge si des saisies sont en attente d'envoi).
+  - **Mes saisies** — sorties GPX enregistrées (pastille rouge si des saisies sont en attente d'envoi). Chaque saisie en attente offre un bouton **Envoyer** (à côté d'Éditer/Supprimer) pour la transmettre individuellement au serveur.
   - **Mes visites** — saisies monitoring en attente d'envoi (pastille rouge si nécessaire).
   - **Explorer** — sorties passées sur carte.
   - **Maps Manager** — téléchargement de fonds offline.

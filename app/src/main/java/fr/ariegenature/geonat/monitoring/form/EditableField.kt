@@ -92,4 +92,10 @@ data class EditableField(
      *  visite). Lu depuis `schema_dot_table` du schéma serveur, résolu en id_table_location
      *  via /api/gn_commons/get_id_table_location/<schema_dot_table> au moment de l'upload. */
     val schemaDotTable: String? = null,
+    /** Masque le champ dans le formulaire tout en conservant sa valeur (pré-sélectionnée via
+     *  [value]) dans le payload. Utilisé quand une datalist n'expose qu'une seule option
+     *  (ex. un protocole rattaché à un unique jeu de données) : un sélecteur à choix unique
+     *  est inutile, on auto-sélectionne et on masque. [lireValeurs] collecte quand même la
+     *  valeur (il itère toutes les vues, pas seulement les visibles). */
+    val masque: Boolean = false,
 )

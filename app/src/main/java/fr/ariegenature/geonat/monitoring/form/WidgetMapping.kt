@@ -121,9 +121,15 @@ fun construireFormulaire(schemaObjet: MonitoringApi.MonitoringSchemaObjet): Form
         resultat
     }
     // Exclusions techniques + cas spécifique sites_group (id_inventor inexistant pour ce type).
-    val exclus = if (schemaObjet.type == "sites_group")
+    var exclus = if (schemaObjet.type == "sites_group")
         CHAMPS_EXCLUS_FORMULAIRE + "id_inventor"
     else CHAMPS_EXCLUS_FORMULAIRE
+    // `nb_observations` n'est un compteur calculé QUE si l'objet a des observations-enfants
+    // (children_types non vide) : le serveur le remplit alors automatiquement. Quand l'objet
+    // n'a aucun enfant (ex. protocole Chevêches : la visite porte directement le nombre de
+    // contacts), c'est un vrai champ de saisie — comme sur le web. On le ré-inclut donc dans
+    // ce cas (parité web, qui l'affiche éditable).
+    if (schemaObjet.childrenTypes.isEmpty()) exclus = exclus - "nb_observations"
     val fields = mutableListOf<EditableField>()
     val ignores = mutableListOf<Pair<String, String>>()
     ordre.forEach { nom ->
@@ -165,5 +171,9 @@ fun construireFormulaire(schemaObjet: MonitoringApi.MonitoringSchemaObjet): Form
             )
         )
     }
-    return FormulaireConstruction(fields, ignores)
+    // Les champs « Médias » sont toujours rejetés en fin de formulaire (l'ajout de photos vient
+    // après la saisie des données), quel que soit leur rang dans display_properties / le schéma.
+    // partition conserve l'ordre relatif au sein de chaque groupe.
+    val (medias, autres) = fields.partition { it.viewType == ViewType.MEDIA }
+    return FormulaireConstruction(autres + medias, ignores)
 }

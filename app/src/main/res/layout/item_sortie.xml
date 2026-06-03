@@ -78,6 +78,16 @@
     </LinearLayout>
 
     <ImageButton
+        android:id="@+id/btn_envoyer"
+        android:layout_width="36dp"
+        android:layout_height="36dp"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:contentDescription="Envoyer au serveur"
+        android:src="@drawable/ic_send"
+        android:visibility="gone"
+        app:tint="@color/colorSecondary" />
+
+    <ImageButton
         android:id="@+id/btn_editer"
         android:layout_width="36dp"
         android:layout_height="36dp"

@@ -28,6 +28,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
+import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -36,7 +37,11 @@ import fr.ariegenature.geonat.databinding.FragmentSortiesBinding
 import fr.ariegenature.geonat.databinding.ItemSortieBinding
 import fr.ariegenature.geonat.gpx.importerGPX
 import fr.ariegenature.geonat.model.Sortie
+import fr.ariegenature.geonat.network.GeoNatureUpload
+import fr.ariegenature.geonat.network.humaniserErreurReseau
+import fr.ariegenature.geonat.store.GeoNatureConfig
 import fr.ariegenature.geonat.store.SortieStore
+import kotlinx.coroutines.launch
 import com.google.android.material.tabs.TabLayout
 import java.text.SimpleDateFormat
 import java.util.*
@@ -97,6 +102,7 @@ class SortiesFragment : Fragment() {
                 val bundle = Bundle().apply { putString("sortieId", sortie.id) }
                 findNavController().navigate(R.id.action_sorties_to_trace, bundle)
             },
+            onEnvoyer = { sortie -> envoyerSortie(sortie) },
         )
 
         binding.recyclerView.layoutManager = LinearLayoutManager(requireContext())
@@ -175,6 +181,56 @@ class SortiesFragment : Fragment() {
             .show()
     }
 
+    /** Envoie une seule sortie vers GeoNature (bouton "Envoyer" de la ligne). Bloque l'UI le
+     *  temps de l'envoi, marque la sortie comme envoyée en cas de succès et rafraîchit la liste. */
+    private fun envoyerSortie(sortie: Sortie) {
+        val gnConfig = GeoNatureConfig(requireContext())
+        if (!gnConfig.connexionConfiguree) {
+            AlertDialog.Builder(requireContext())
+                .setTitle("Configuration requise")
+                .setMessage("La connexion GeoNature n'est pas configurée. Ouvre la configuration (⚙️) avant d'envoyer.")
+                .setPositiveButton("OK", null)
+                .show()
+            return
+        }
+        val dialogEnvoi = AlertDialog.Builder(requireContext())
+            .setTitle("Envoi en cours…")
+            .setMessage("Envoi de la saisie vers GeoNature.")
+            .setCancelable(false)
+            .show()
+        viewLifecycleOwner.lifecycleScope.launch {
+            try {
+                val res = GeoNatureUpload.envoyer(sortie, gnConfig)
+                sortieStore.marquerEnvoyee(sortie.id)
+                if (!isAdded) return@launch
+                refreshList()
+                val msg = buildString {
+                    append("${res.nbCrees}/${res.nbTotal} relevé")
+                    if (res.nbTotal > 1) append("s")
+                    append(" créé")
+                    if (res.nbCrees > 1) append("s")
+                    append(" sur GeoNature")
+                    if (res.mediasOK > 0) append("\n${res.mediasOK} média(s) uploadé(s)")
+                    if (res.mediasKO > 0) append("\n⚠ ${res.mediasKO} média(s) échoué(s)")
+                    if (res.relevesOrphelins.isNotEmpty())
+                        append("\n⚠ ${res.relevesOrphelins.size} relevé(s) vide(s) côté GeoNature à supprimer manuellement.")
+                }
+                AlertDialog.Builder(requireContext())
+                    .setTitle("GeoNature").setMessage(msg).setPositiveButton("OK", null).show()
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                if (!isAdded) return@launch
+                AlertDialog.Builder(requireContext())
+                    .setTitle("Erreur d'envoi")
+                    .setMessage(humaniserErreurReseau(e))
+                    .setPositiveButton("OK", null).show()
+            } finally {
+                runCatching { dialogEnvoi.dismiss() }
+            }
+        }
+    }
+
     private fun lancerImport() {
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             type = "*/*"
@@ -202,6 +258,7 @@ class SortieAdapter(
     private val onClick: (Sortie) -> Unit,
     private val onDelete: (Sortie) -> Unit,
     private val onEdit: (Sortie) -> Unit = {},
+    private val onEnvoyer: (Sortie) -> Unit = {},
 ) : RecyclerView.Adapter<SortieAdapter.ViewHolder>() {
     private var items: List<Sortie> = emptyList()
     private val fmt = SimpleDateFormat("dd MMM yyyy HH:mm", Locale.getDefault())
@@ -233,6 +290,11 @@ class SortieAdapter(
             val peutEditer = !sortie.envoyeGeoNature && !sortie.estImportee
             btnEditer.visibility = if (peutEditer) android.view.View.VISIBLE else android.view.View.GONE
             btnEditer.setOnClickListener { onEdit(sortie) }
+            // Bouton "Envoyer au serveur" : même conditions que l'édition (non envoyée, non
+            // importée) ET au moins une obs déterminée (cd_nom résolu) — sinon rien à envoyer.
+            val peutEnvoyer = peutEditer && sortie.observations.any { it.cdNom != null }
+            btnEnvoyer.visibility = if (peutEnvoyer) android.view.View.VISIBLE else android.view.View.GONE
+            btnEnvoyer.setOnClickListener { onEnvoyer(sortie) }
         }
     }
 

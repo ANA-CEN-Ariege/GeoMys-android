@@ -383,7 +383,24 @@ class NouvelleVisiteFragment : Fragment() {
                     continue
                 }
                 optionsParIdx[idx] = opts
-                nouveaux[idx] = f.copy(values = opts.map { o -> PropertyValue(o.value, o.label) })
+                val valeurs = opts.map { o -> PropertyValue(o.value, o.label) }
+                // Sélecteur à choix unique = inutile : pour les champs `dataset`/`observers`
+                // n'exposant qu'une seule option, on auto-sélectionne cette valeur et on masque
+                // le champ (la valeur reste dans le payload via lireValeurs). Limité à ces deux
+                // widgets : une nomenclature à valeur unique reste affichée (l'utilisateur doit
+                // pouvoir la voir/confirmer).
+                val widget = visitSchema.properties[f.code]?.typeWidget?.lowercase()
+                val masquable = widget == "dataset" || widget == "observers"
+                if (masquable && opts.size == 1) {
+                    val uniq = opts.first().value
+                    nouveaux[idx] = f.copy(
+                        values = valeurs,
+                        value = if (f.viewType == ViewType.SELECT_MULTIPLE) listOf(uniq) else uniq,
+                        masque = true,
+                    )
+                } else {
+                    nouveaux[idx] = f.copy(values = valeurs)
+                }
             }
             if (notesEchecs.isNotEmpty()) {
                 ajouterDebug("⚠ Datalists non chargées : ${notesEchecs.joinToString(", ")}")

@@ -115,6 +115,9 @@ class FormulaireRenderer(
             val (rowView, editable) = creerLigne(field)
             vuesParCode[field.code] = editable
             wrappersParCode[field.code] = rowView
+            // Champ auto-sélectionné à valeur unique (cf. EditableField.masque) : masqué de l'UI
+            // mais sa valeur reste dans le payload (lireValeurs itère toutes les vues).
+            if (field.masque) rowView.visibility = View.GONE
             parent.addView(rowView)
         }
         // Évaluation initiale + listeners sur tous les éditables pour ré-évaluer en live.

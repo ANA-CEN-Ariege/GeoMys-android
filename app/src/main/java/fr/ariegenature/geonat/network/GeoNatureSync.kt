@@ -26,6 +26,11 @@ import fr.ariegenature.geonat.store.TaxRefCache
 import fr.ariegenature.geonat.store.TaxRefEntry
 import fr.ariegenature.geonat.store.TaxrefRestriction
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -50,6 +55,76 @@ object GeoNatureSync {
             } catch (e: Exception) { null }
         }
 
+    /** Nombre de listes TaxRef téléchargées en parallèle (concurrence bornée pour ne pas
+     *  saturer le serveur ni les sockets). C'est le levier principal de rapidité de la synchro. */
+    private const val LISTES_EN_PARALLELE = 6
+
+    /** Un taxon brut renvoyé par /api/taxhub/api/taxref, avant agrégation dans le cache. */
+    private class ItemTaxon(
+        val cdNom: Int, val lbNom: String, val nomVernRaw: String,
+        val group2: String, val group1: String, val regne: String,
+        val listesSupplementaires: List<Int>,
+    )
+
+    /** Résultat du téléchargement (toutes pages) d'UNE liste de taxons. */
+    private class ResultatListe(val idListe: Int, val ok: Boolean, val items: List<ItemTaxon>)
+
+    /** Télécharge tous les taxons d'une liste (paginé). Ne touche AUCUN état partagé → peut
+     *  tourner en parallèle ; l'agrégation est faite ensuite séquentiellement par l'appelant. */
+    private suspend fun fetchListeTaxons(base: String, idListe: Int, pageSize: Int): ResultatListe =
+        withContext(Dispatchers.IO) {
+            val items = mutableListOf<ItemTaxon>()
+            var ok = false
+            var page = 1
+            while (true) {
+                val conn = URL("$base/api/taxhub/api/taxref?orderby=cd_nom&fields=listes&id_liste=$idListe&limit=$pageSize&page=$page")
+                    .openConnection() as java.net.HttpURLConnection
+                try {
+                    conn.connectTimeout = 60000
+                    conn.readTimeout = 60000
+                    conn.setRequestProperty("Accept", "application/json")
+                    if (conn.responseCode != 200) break
+                    ok = true
+                    val text = conn.inputStream.bufferedReader().readText()
+                    val array: JSONArray = try {
+                        val obj = JSONObject(text)
+                        obj.optJSONArray("items") ?: obj.optJSONArray("data") ?: obj.optJSONArray("results") ?: JSONArray(text)
+                    } catch (_: Exception) {
+                        try { JSONArray(text) } catch (_: Exception) { break }
+                    }
+                    if (array.length() == 0) break
+                    for (i in 0 until array.length()) {
+                        val item = array.getJSONObject(i)
+                        val cdNom = item.optInt("cd_nom", -1).takeIf { it > 0 } ?: continue
+                        val lbNom = item.optString("lb_nom", "").takeIf { it.isNotEmpty() } ?: continue
+                        val listesSup = mutableListOf<Int>()
+                        item.optJSONArray("listes")?.let { arr ->
+                            for (j in 0 until arr.length()) {
+                                arr.optJSONObject(j)?.optInt("id_liste", -1)?.takeIf { it > 0 }?.let(listesSup::add)
+                            }
+                        }
+                        items.add(
+                            ItemTaxon(
+                                cdNom, lbNom,
+                                if (item.isNull("nom_vern")) "" else item.optString("nom_vern", ""),
+                                if (item.isNull("group2_inpn")) "" else item.optString("group2_inpn", ""),
+                                if (item.isNull("group1_inpn")) "" else item.optString("group1_inpn", ""),
+                                if (item.isNull("regne")) "" else item.optString("regne", ""),
+                                listesSup,
+                            )
+                        )
+                    }
+                    if (array.length() < pageSize) break
+                    page++
+                } catch (_: Exception) {
+                    break
+                } finally {
+                    conn.disconnect()
+                }
+            }
+            ResultatListe(idListe, ok, items)
+        }
+
     /** Sync exhaustif : itère sur **toutes** les biblistes du serveur pour permettre à
      *  l'utilisateur de changer la liste/dataset sélectionnés hors-réseau sans perdre les
      *  taxons associés. Le cache `listesParCdNom` se construit naturellement par agrégation
@@ -59,6 +134,9 @@ object GeoNatureSync {
      *  le démarrage (pendant le fetch des biblistes), 1..N pendant l'itération. */
     suspend fun synchroniserTaxRef(
         config: GeoNatureConfig,
+        /** id_list_taxonomy des protocoles accessibles (déjà filtrés CRUVED), fournis par
+         *  l'appelant pour éviter un appel `chargerModules` redondant ici. Vide = aucun. */
+        protocolListIds: Set<Int> = emptySet(),
         progression: (Int, Int, Int) -> Unit
     ): Pair<Int, String> = withContext(Dispatchers.IO) {
         val base = config.urlServeur.trim().trimEnd('/')
@@ -66,27 +144,42 @@ object GeoNatureSync {
 
         progression(0, 0, 0)
 
-        // 1) Récupère la liste de toutes les biblistes — délégué à GeoNatureBrowse.
-        val biblistes: List<GeoNatureListe> = try {
-            GeoNatureBrowse.chargerListesTaxons(config)
-        } catch (e: Exception) {
-            return@withContext Pair(0, "Impossible de récupérer les listes de taxons : ${e.message}")
+        val gsonSync = com.google.gson.Gson()
+        // 1) Biblistes : on RÉUTILISE celles déjà chargées par SyncRunner (écrites dans
+        // config.listesCacheJson juste avant cette étape) au lieu de refaire le même appel réseau.
+        // Fallback réseau si le cache est vide (appel hors séquence SyncRunner).
+        val biblistes: List<GeoNatureListe> = run {
+            val depuisCache = config.listesCacheJson.takeIf { it.isNotEmpty() }?.let { json ->
+                try {
+                    gsonSync.fromJson<List<GeoNatureListe>>(
+                        json, object : com.google.gson.reflect.TypeToken<List<GeoNatureListe>>() {}.type,
+                    )?.takeIf { it.isNotEmpty() }
+                } catch (_: Exception) { null }
+            }
+            depuisCache ?: try {
+                GeoNatureBrowse.chargerListesTaxons(config)
+            } catch (e: Exception) {
+                return@withContext Pair(0, "Impossible de récupérer les listes de taxons : ${e.message}")
+            }
         }
         // Récupère aussi les `id_taxa_list` référencés par les datasets : certains serveurs
-        // les attachent à des listes "privées" non listées dans /biblistes. Sans cette
-        // fusion, la liste imposée par le dataset déclenche l'avertissement "non dans le
-        // cache" et l'utilisateur ne peut pas la débloquer en rechargeant.
-        val idsViaDatasets: Set<Int> = try {
-            GeoNatureBrowse.chargerDatasets(config).mapNotNull { it.idTaxaList }.toSet()
-        } catch (_: Exception) { emptySet() }
-        // + les listes taxonomiques des protocoles monitoring (`id_list_taxonomy`), pour les
-        // mêmes raisons que les datasets : un protocole peut pointer une liste « privée » non
-        // publiée dans /biblistes, et son champ TAXON serait alors vide hors-ligne. chargerModules
-        // est DÉJÀ filtré par CRUVED → on ne récupère que les listes des protocoles auxquels
-        // l'utilisateur a droit. Best-effort : pas de monitoring ou erreur → on ignore.
-        val idsViaProtocoles: Set<Int> = try {
-            MonitoringApi.chargerModules(config).mapNotNull { it.idListTaxonomy }.toSet()
-        } catch (_: Exception) { emptySet() }
+        // les attachent à des listes "privées" non listées dans /biblistes. Réutilise le cache
+        // datasets déjà écrit par SyncRunner ; fallback réseau si vide.
+        val idsViaDatasets: Set<Int> = run {
+            val datasets = config.datasetsCacheJson.takeIf { it.isNotEmpty() }?.let { json ->
+                try {
+                    gsonSync.fromJson<List<GeoNatureDataset>>(
+                        json, object : com.google.gson.reflect.TypeToken<List<GeoNatureDataset>>() {}.type,
+                    )
+                } catch (_: Exception) { null }
+            } ?: try { GeoNatureBrowse.chargerDatasets(config) } catch (_: Exception) { emptyList() }
+            datasets.mapNotNull { it.idTaxaList }.toSet()
+        }
+        // + les listes taxonomiques des protocoles monitoring (`id_list_taxonomy`) : un protocole
+        // peut pointer une liste « privée » non publiée dans /biblistes, sinon son champ TAXON
+        // serait vide hors-ligne. Fournies par l'appelant (déjà filtrées CRUVED) — pas de
+        // chargerModules ici, pour éviter une course avec la synchro Suivis lancée en parallèle.
+        val idsViaProtocoles: Set<Int> = protocolListIds
         val idsBiblistes = biblistes.map { it.id }.toSet()
         val listesAFetcher = biblistes.toMutableList()
         // Évite d'ajouter deux fois la même liste « privée » référencée par un dataset ET un protocole.
@@ -112,95 +205,49 @@ object GeoNatureSync {
         val listesSynchronisees = mutableListOf<Int>()
         val listesEnEchec = mutableListOf<Int>()
 
-        for ((listeIdx, liste) in listesAFetcher.withIndex()) {
-            progression(entrees.size, listeIdx + 1, listesAFetcher.size)
-            var pagesRecues = 0
-            // Devient true dès qu'un appel HTTP 200 a réussi — même si la liste est vide
-            // côté serveur. Sans ça, une liste valide mais sans taxons ne serait pas
-            // marquée comme synchronisée et l'avertissement "pas dans le cache" persisterait.
-            var httpOkAuMoinsUneFois = false
-            var page = 1
-            while (true) {
-                try {
-                    val url = URL("$base/api/taxhub/api/taxref?orderby=cd_nom&fields=listes&id_liste=${liste.id}&limit=$pageSize&page=$page")
-                    val conn = url.openConnection() as java.net.HttpURLConnection
-                    conn.connectTimeout = 60000
-                    conn.readTimeout = 60000
-                    conn.setRequestProperty("Accept", "application/json")
-                    val code = conn.responseCode
-                    if (code != 200) {
-                        if (!httpOkAuMoinsUneFois) listesEnEchec.add(liste.id)
-                        break
+        // Téléchargement PARALLÈLE des listes (concurrence bornée) — c'est le poste le plus
+        // lourd de la synchro. Chaque liste est récupérée indépendamment, sans état partagé.
+        val semaphore = Semaphore(LISTES_EN_PARALLELE)
+        val faites = java.util.concurrent.atomic.AtomicInteger(0)
+        val taxonsCumules = java.util.concurrent.atomic.AtomicInteger(0)
+        val resultats = coroutineScope {
+            listesAFetcher.map { liste ->
+                async {
+                    semaphore.withPermit {
+                        val res = fetchListeTaxons(base, liste.id, pageSize)
+                        val cumul = taxonsCumules.addAndGet(res.items.size)
+                        progression(cumul, faites.incrementAndGet(), listesAFetcher.size)
+                        res
                     }
-                    httpOkAuMoinsUneFois = true
-                    val text = conn.inputStream.bufferedReader().readText()
-                    val array: JSONArray = try {
-                        val obj = JSONObject(text)
-                        obj.optJSONArray("items") ?: obj.optJSONArray("data") ?: obj.optJSONArray("results") ?: JSONArray(text)
-                    } catch (_: Exception) {
-                        try { JSONArray(text) } catch (_: Exception) { break }
-                    }
-
-                    if (array.length() == 0) break
-                    pagesRecues++
-
-                    for (i in 0 until array.length()) {
-                        val item = array.getJSONObject(i)
-                        val cdNom = item.optInt("cd_nom", -1).takeIf { it > 0 } ?: continue
-                        val lbNom = item.optString("lb_nom", "").takeIf { it.isNotEmpty() } ?: continue
-                        // JSONObject.optString retourne la chaîne littérale "null" quand la valeur
-                        // JSON est null — il faut tester isNull() au préalable, sinon ça pollue
-                        // les compteurs (un cd_nom avec group1=null finirait dans le groupe "null").
-                        val nomVernRaw = if (item.isNull("nom_vern")) "" else item.optString("nom_vern", "")
-                        val groupe  = if (item.isNull("group2_inpn")) "" else item.optString("group2_inpn", "")
-                        val groupe1 = if (item.isNull("group1_inpn")) "" else item.optString("group1_inpn", "")
-                        val regne   = if (item.isNull("regne"))       "" else item.optString("regne", "")
-
-                        // Une entrée par clé — alignement iOS. La clé pour un nom vernaculaire
-                        // pointe sur une entrée avec nomFrOriginal = ce nom français spécifique ;
-                        // la clé pour le nom scientifique pointe sur une entrée avec nomFrOriginal = null.
-                        for (partie in nomVernRaw.split(",")) {
-                            val vernNettoye = TaxRefCache.nettoyerSuffixeArticle(partie.trim())
-                            if (vernNettoye.isEmpty()) continue
-                            val cle = TaxRefCache.normaliser(vernNettoye)
-                            if (cle.isNotEmpty()) entrees[cle] = TaxRefEntry(cdNom, lbNom, vernNettoye)
-                        }
-                        val cleSci = TaxRefCache.normaliser(lbNom)
-                        if (cleSci.isNotEmpty()) entrees[cleSci] = TaxRefEntry(cdNom, lbNom, null)
-
-                        if (groupe.isNotEmpty()) {
-                            groupeMap[cdNom] = groupe
-                            // Évite de compter un cd_nom deux fois s'il apparaît dans plusieurs listes.
-                            if (cdNomsDejaComptes.add(cdNom)) {
-                                comptesTousGroupes[groupe] = (comptesTousGroupes[groupe] ?: 0) + 1
-                            }
-                        }
-                        if (groupe1.isNotEmpty()) groupe1Map[cdNom] = groupe1
-                        if (regne.isNotEmpty()) regneMap[cdNom] = regne
-                        // Appartenance aux listes UsersHub. Le champ `listes` retourné est
-                        // censé contenir TOUTES les listes du cd_nom (pas seulement celle filtrée),
-                        // mais on a observé des incohérences serveur → on ajoute systématiquement
-                        // l'id de la liste courante en filet de sécurité.
-                        val setListes = listesParCdNom.getOrPut(cdNom) { mutableSetOf() }
-                        setListes.add(liste.id)
-                        item.optJSONArray("listes")?.let { arr ->
-                            for (j in 0 until arr.length()) {
-                                arr.optJSONObject(j)?.optInt("id_liste", -1)
-                                    ?.takeIf { it > 0 }?.let(setListes::add)
-                            }
-                        }
-                    }
-
-                    if (array.length() < pageSize) break
-                    page++
-                } catch (e: Exception) {
-                    if (!httpOkAuMoinsUneFois) listesEnEchec.add(liste.id)
-                    break
                 }
+            }.awaitAll()
+        }
+
+        // Fusion SÉQUENTIELLE (ordre des listes préservé par awaitAll) → mêmes invariants que
+        // l'ancienne boucle série : dernier écrit gagne pour un nom partagé, comptage dédupliqué.
+        for (res in resultats) {
+            if (res.ok) listesSynchronisees.add(res.idListe) else listesEnEchec.add(res.idListe)
+            for (item in res.items) {
+                for (partie in item.nomVernRaw.split(",")) {
+                    val vernNettoye = TaxRefCache.nettoyerSuffixeArticle(partie.trim())
+                    if (vernNettoye.isEmpty()) continue
+                    val cle = TaxRefCache.normaliser(vernNettoye)
+                    if (cle.isNotEmpty()) entrees[cle] = TaxRefEntry(item.cdNom, item.lbNom, vernNettoye)
+                }
+                val cleSci = TaxRefCache.normaliser(item.lbNom)
+                if (cleSci.isNotEmpty()) entrees[cleSci] = TaxRefEntry(item.cdNom, item.lbNom, null)
+                if (item.group2.isNotEmpty()) {
+                    groupeMap[item.cdNom] = item.group2
+                    if (cdNomsDejaComptes.add(item.cdNom)) {
+                        comptesTousGroupes[item.group2] = (comptesTousGroupes[item.group2] ?: 0) + 1
+                    }
+                }
+                if (item.group1.isNotEmpty()) groupe1Map[item.cdNom] = item.group1
+                if (item.regne.isNotEmpty()) regneMap[item.cdNom] = item.regne
+                val setListes = listesParCdNom.getOrPut(item.cdNom) { mutableSetOf() }
+                setListes.add(res.idListe)
+                item.listesSupplementaires.forEach(setListes::add)
             }
-            // Liste considérée synchronisée si on a obtenu au moins un HTTP 200, peu importe
-            // le nombre de taxons ramenés (une liste vide est valide côté serveur).
-            if (httpOkAuMoinsUneFois) listesSynchronisees.add(liste.id)
         }
 
         if (entrees.isEmpty()) {

@@ -65,6 +65,10 @@ class ConfigGeoNatureFragment : Fragment() {
      *  observateur = utilisateur connecté). L'utilisateur re-choisit explicitement ses 3 sélections. */
     private var selectionsReinitialisees = false
 
+    /** Debounce du recalcul déclenché par la saisie manuelle de l'id de liste (évite le jank).
+     *  Sur viewLifecycleOwner.lifecycleScope → annulé automatiquement à la destruction de la vue. */
+    private var avertissementListeJob: kotlinx.coroutines.Job? = null
+
     /** Demande de permission POST_NOTIFICATIONS (Android 13+) pour la notification du service de
      *  synchro. Enregistré à la construction du fragment (avant STARTED), comme l'exige l'API. */
     private val demandeNotif =
@@ -112,10 +116,16 @@ class ConfigGeoNatureFragment : Fragment() {
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
             override fun afterTextChanged(s: Editable?) {
                 gnConfig.taxaListeId = s?.toString() ?: ""
-                updateAvertissementListe()
-                // Re-render les compteurs par groupe : intersection avec la nouvelle liste.
-                updateCacheInfo()
-                updateStatusIndicator()
+                // Recalcul DEBOUNCÉ : updateAvertissementListe lit cdNomsDansListe (parcours du
+                // cache) et updateCacheInfo relit les caches — le faire à chaque frappe sur le
+                // thread UI provoquait du jank lors de la saisie manuelle de l'id de liste.
+                avertissementListeJob?.cancel()
+                avertissementListeJob = viewLifecycleOwner.lifecycleScope.launch {
+                    kotlinx.coroutines.delay(300)
+                    updateAvertissementListe()
+                    updateCacheInfo()
+                    updateStatusIndicator()
+                }
             }
         })
 

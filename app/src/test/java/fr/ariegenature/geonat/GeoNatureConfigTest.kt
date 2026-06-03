@@ -23,6 +23,7 @@ import fr.ariegenature.geonat.store.GeoNatureConfig
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -34,6 +35,13 @@ import org.robolectric.annotation.Config
 class GeoNatureConfigTest {
 
     private fun config() = GeoNatureConfig(ApplicationProvider.getApplicationContext())
+
+    @Before
+    fun resetMotDePasseMemoire() {
+        // Sous Robolectric le Keystore est absent → le mot de passe est gardé en mémoire
+        // (companion process-wide), ce qui fuirait d'un test à l'autre. On repart propre.
+        config().motDePasse = ""
+    }
 
     @Test
     fun setters_getters_roundtrip() {

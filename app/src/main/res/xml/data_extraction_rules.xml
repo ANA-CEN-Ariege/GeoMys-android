@@ -1,19 +1,13 @@
-<?xml version="1.0" encoding="utf-8"?><!--
-   Sample data extraction rules file; uncomment and customize as necessary.
-   See https://developer.android.com/about/versions/12/backup-restore#xml-changes
-   for details.
--->
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Règles d'extraction (Android API 31+). On EXCLUT les identifiants chiffrés (gn_secure) de la
+     sauvegarde cloud ET du transfert d'appareil : la clé maître reste dans l'Android Keystore,
+     donc le blob chiffré serait inutilisable ailleurs (et planterait EncryptedSharedPreferences).
+     URL/login (gn_config) restent inclus pour la commodité ; le mot de passe est re-saisi. -->
 <data-extraction-rules>
     <cloud-backup>
-        <!-- TODO: Use <include> and <exclude> to control what is backed up.
-        <include .../>
-        <exclude .../>
-        -->
+        <exclude domain="sharedpref" path="gn_secure.xml" />
     </cloud-backup>
-    <!--
     <device-transfer>
-        <include .../>
-        <exclude .../>
+        <exclude domain="sharedpref" path="gn_secure.xml" />
     </device-transfer>
-    -->
 </data-extraction-rules>

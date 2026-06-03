@@ -86,9 +86,17 @@ object SyncRunner {
             val echecs = mutableListOf<String>()
 
             // Étapes 1-4 en parallèle (indépendantes, rapides). Chaque lambda écrit son cache
-            // JSON et renvoie un message d'échec ou null.
+            // JSON et renvoie un message d'échec ou null. On charge AUSSI ici les modules
+            // monitoring (une fois) pour en extraire les listes taxonomiques de protocoles, et les
+            // passer à TaxRef — ça évite un chargerModules concurrent quand on lancera TaxRef et
+            // Suivis en parallèle juste après.
             publier("Jeux de données, listes, observateurs…")
+            var protocolListIds: Set<Int> = emptySet()
             coroutineScope {
+                val mod = async {
+                    try { MonitoringApi.chargerModules(config).mapNotNull { it.idListTaxonomy }.toSet() }
+                    catch (_: Exception) { emptySet() }
+                }
                 val ds = async {
                     try {
                         val r = GeoNatureBrowse.chargerDatasets(config)
@@ -124,29 +132,36 @@ object SyncRunner {
                     "Observateurs" to obs.await(),
                     "Champs additionnels" to add.await(),
                 ).forEach { (nom, err) -> if (err != null) echecs += "$nom ($err)" }
+                protocolListIds = mod.await()
             }
 
-            // Étape 5 : TaxRef exhaustif (toutes les biblistes).
-            val (nbTaxons, msgTaxRef) = GeoNatureSync.synchroniserTaxRef(config) { fait, listeIdx, listesTotales ->
-                publier(
-                    if (listesTotales == 0) "Récupération des listes de taxons…"
-                    else "Liste $listeIdx/$listesTotales — $fait taxons cumulés…"
-                )
+            // Étapes 5-7 EN PARALLÈLE : caches indépendants (TaxRef / nomenclatures / monitoring),
+            // et seul Suivis charge les modules → pas de course. On masque ainsi la durée des
+            // étapes courtes (nomenclatures, Suivis) sous l'étape longue (TaxRef), qui pilote seule
+            // le bandeau de progression (sinon les textes des 3 étapes clignoteraient).
+            var nbTaxons = 0
+            var msgTaxRef = ""
+            var nbNom = 0
+            var msgNom = ""
+            var nbModulesOk = 0
+            var msgSuivis = ""
+            coroutineScope {
+                val taxJob = async {
+                    GeoNatureSync.synchroniserTaxRef(config, protocolListIds) { fait, listeIdx, listesTotales ->
+                        publier(
+                            if (listesTotales == 0) "Récupération des taxons…"
+                            else "Liste $listeIdx/$listesTotales — $fait taxons cumulés…"
+                        )
+                    }
+                }
+                val nomJob = async { GeoNatureSync.synchroniserNomenclatures(config) }
+                val suiviJob = async { MonitoringSync.synchroniserSuivis(config) { _, _, _ -> } }
+                taxJob.await().let { (n, m) -> nbTaxons = n; msgTaxRef = m }
+                nomJob.await().let { (n, m) -> nbNom = n; msgNom = m }
+                suiviJob.await().let { (n, m) -> nbModulesOk = n; msgSuivis = m }
             }
             if (nbTaxons == 0) echecs += "TaxRef (${msgTaxRef.take(80)})"
-
-            // Étape 6 : nomenclatures + defaults par module.
-            publier("Nomenclatures…")
-            val (nbNom, msgNom) = GeoNatureSync.synchroniserNomenclatures(config)
             if (nbNom == 0) echecs += "Nomenclatures ($msgNom)"
-
-            // Étape 7 : pré-chargement module Suivis (best-effort).
-            val (nbModulesOk, msgSuivis) = MonitoringSync.synchroniserSuivis(config) { moduleIdx, modulesTotaux, objets ->
-                publier(
-                    if (modulesTotaux == 0) "Récupération des protocoles Suivis…"
-                    else "Suivis : protocole $moduleIdx/$modulesTotaux — $objets objets en cache…"
-                )
-            }
             // "Aucun module monitoring exposé" n'est pas une erreur (instance sans monitoring).
             if (nbModulesOk == 0 && !msgSuivis.startsWith("Aucun")) echecs += "Suivis (${msgSuivis.take(80)})"
 

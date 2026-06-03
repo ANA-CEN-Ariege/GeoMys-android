@@ -19,6 +19,7 @@
 package fr.ariegenature.geonat.store
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
@@ -26,7 +27,9 @@ import androidx.security.crypto.MasterKey
 class GeoNatureConfig(context: Context) {
     private val prefs = context.getSharedPreferences("gn_config", Context.MODE_PRIVATE)
 
-    private val encryptedPrefs = try {
+    // Prefs chiffrées pour le mot de passe (clé maître dans l'Android Keystore). null si le
+    // Keystore est indisponible → on NE persiste PAS le mot de passe en clair (cf. [motDePasse]).
+    private val securePrefs: SharedPreferences? = try {
         val masterKey = MasterKey.Builder(context)
             .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
             .build()
@@ -36,10 +39,16 @@ class GeoNatureConfig(context: Context) {
             EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
         )
     } catch (e: Exception) {
-        // Fallback non chiffré : le mot de passe sera en clair. On le signale
-        // explicitement pour ne pas masquer un problème silencieux côté Keystore.
-        Log.w("GeoNatureConfig", "EncryptedSharedPreferences indisponible — fallback non chiffré", e)
-        prefs
+        Log.w("GeoNatureConfig", "EncryptedSharedPreferences indisponible — mot de passe gardé en mémoire seulement", e)
+        null
+    }
+
+    init {
+        // Hygiène : si le chiffrement est (re)disponible, on purge un éventuel mot de passe en
+        // clair laissé dans gn_config par une ancienne version en fallback.
+        if (securePrefs != null && prefs.contains("gn_mdp")) {
+            prefs.edit().remove("gn_mdp").apply()
+        }
     }
 
     var urlServeur: String
@@ -50,9 +59,16 @@ class GeoNatureConfig(context: Context) {
         get() = prefs.getString("gn_login", "") ?: ""
         set(v) = prefs.edit().putString("gn_login", v).apply()
 
+    /** Mot de passe. Chiffré sur disque si le Keystore est dispo ; sinon gardé EN MÉMOIRE
+     *  seulement (jamais en clair sur disque) — perdu au redémarrage du process, l'utilisateur
+     *  le re-saisit. [motDePasseMemoire] est process-wide car [GeoNatureConfig] est ré-instancié. */
     var motDePasse: String
-        get() = encryptedPrefs.getString("gn_mdp", "") ?: ""
-        set(v) = encryptedPrefs.edit().putString("gn_mdp", v).apply()
+        get() = securePrefs?.getString("gn_mdp", "")?.takeIf { it.isNotEmpty() }
+            ?: motDePasseMemoire ?: ""
+        set(v) {
+            if (securePrefs != null) securePrefs.edit().putString("gn_mdp", v).apply()
+            else motDePasseMemoire = v.takeIf { it.isNotEmpty() }
+        }
 
     var idDataset: String
         get() = prefs.getString("gn_dataset", "") ?: ""
@@ -182,4 +198,11 @@ class GeoNatureConfig(context: Context) {
     val saisieOcctaxValide: Boolean
         get() = connexionConfiguree && datasetPresentDansCache &&
             listePresenteDansCache && observateurPresentDansCache
+
+    companion object {
+        // Mot de passe conservé EN MÉMOIRE uniquement quand le chiffrement (Keystore) est
+        // indisponible — jamais persisté en clair sur disque. Process-wide car GeoNatureConfig
+        // est ré-instancié à chaque usage ; perdu au redémarrage du process (re-saisie).
+        @Volatile private var motDePasseMemoire: String? = null
+    }
 }

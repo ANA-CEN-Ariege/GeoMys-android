@@ -92,10 +92,12 @@ class FormulaireRenderer(
      *  le code du champ + une lambda à invoquer avec l'URI String du fichier choisi (déjà
      *  importé dans le stockage interne) ou null en cas d'annulation. Externe car le picker
      *  Android (ActivityResultLauncher.GetContent) doit être enregistré dans le Fragment. */
-    private var onChoixMedia: ((codeChamp: String, callback: (uriLocale: String?) -> Unit) -> Unit)? = null
+    private var onChoixMedia: ((codeChamp: String, callback: (urisLocales: List<String>) -> Unit) -> Unit)? = null
 
-    /** Enregistre le callback de choix média (cf. [onChoixMedia]). */
-    fun setOnChoixMedia(callback: (String, (String?) -> Unit) -> Unit) {
+    /** Enregistre le callback de choix média (cf. [onChoixMedia]). Le callback fourni au Fragment
+     *  est rappelé avec la LISTE des URIs locales importées (multi-sélection ; liste vide si
+     *  annulation). */
+    fun setOnChoixMedia(callback: (String, (List<String>) -> Unit) -> Unit) {
         onChoixMedia = callback
     }
     /** Règles `change` du schéma (auto-remplissage de champs dépendants). Vide par défaut. */
@@ -184,14 +186,9 @@ class FormulaireRenderer(
                 tag = s
                 if (s.isNotEmpty()) { text = s; setTextColor(couleurValeur) }
             }
-            ViewType.MEDIA -> (vue as LinearLayout).apply {
-                val s = valeur?.toString().orEmpty()
-                tag = s.ifEmpty { null }
-                // Le 2e enfant est le TextView nom-de-fichier (cf. creerChampMedia).
-                (getChildAt(1) as? TextView)?.text =
-                    if (s.isNotEmpty()) java.io.File(android.net.Uri.parse(s).path ?: "").name
-                    else "Aucune photo"
-            }
+            // Les champs MEDIA ne sont jamais pilotés par les règles `change` du schéma (ce sont
+            // des fichiers choisis par l'utilisateur) : no-op pour ne pas écraser la liste d'URIs.
+            ViewType.MEDIA -> { /* rien */ }
             ViewType.SELECT_MULTIPLE -> (vue as TextView).apply {
                 @Suppress("UNCHECKED_CAST")
                 val liste = when (valeur) {
@@ -369,7 +366,10 @@ class FormulaireRenderer(
             // MEDIA : URI String stockée dans le tag du LinearLayout, ou null. Le payload
             // POST de l'objet ne porte PAS cette valeur — l'envoi du fichier est différé
             // à OutboxEnvoi (cf. SaisieEnAttente.mediaPathLocal).
-            ViewType.MEDIA -> (v as LinearLayout).tag as? String
+            ViewType.MEDIA -> {
+                @Suppress("UNCHECKED_CAST")
+                (v as LinearLayout).tag as? List<String> ?: emptyList<String>()
+            }
         }
     }
 
@@ -822,67 +822,96 @@ class FormulaireRenderer(
      *  String du fichier importé localement, ou null tant que rien n'est sélectionné. La
      *  contrainte de cardinalité est "un seul fichier" pour cette version. */
     private fun creerChampMedia(field: EditableField): LinearLayout {
+        // Conteneur VERTICAL : une liste de fichiers (nom + ✕) puis un bouton d'ajout. Le `tag`
+        // du conteneur porte la LISTE mutable des URIs locales (lue par lireValeurs ; mutée en
+        // place pour que la référence reste valide). Multi-fichiers.
         val container = LinearLayout(ctx).apply {
-            orientation = LinearLayout.HORIZONTAL
+            orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
             )
         }
+        val uris = mutableListOf<String>()
+        container.tag = uris
+        val liste = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            )
+        }
+        val tvVide = TextView(ctx).apply {
+            text = "Aucune photo"
+            setTextColor(couleurSecondaire)
+        }
+        fun rebuild() {
+            liste.removeAllViews()
+            if (uris.isEmpty()) {
+                liste.addView(tvVide)
+            } else {
+                uris.toList().forEach { uri ->
+                    val ligne = LinearLayout(ctx).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        layoutParams = LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.MATCH_PARENT,
+                            LinearLayout.LayoutParams.WRAP_CONTENT,
+                        )
+                    }
+                    val tv = TextView(ctx).apply {
+                        text = java.io.File(android.net.Uri.parse(uri).path ?: "").name
+                        setTextColor(couleurValeur)
+                        layoutParams = LinearLayout.LayoutParams(
+                            0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f,
+                        ).apply { gravity = android.view.Gravity.CENTER_VERTICAL }
+                    }
+                    val del = com.google.android.material.button.MaterialButton(
+                        ctx, null, com.google.android.material.R.attr.materialIconButtonStyle,
+                    ).apply {
+                        text = "✕"
+                        setOnClickListener {
+                            uris.remove(uri)
+                            rebuild()
+                            notifierChangement()
+                        }
+                    }
+                    ligne.addView(tv)
+                    ligne.addView(del)
+                    liste.addView(ligne)
+                }
+            }
+        }
         val btn = com.google.android.material.button.MaterialButton(ctx).apply {
-            text = "Ajouter une photo"
+            text = "Ajouter des photos"
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
             )
-        }
-        val tvNom = TextView(ctx).apply {
-            text = "Aucune photo"
-            setTextColor(couleurSecondaire)
-            setPadding((12 * density).toInt(), 0, 0, 0)
-            layoutParams = LinearLayout.LayoutParams(
-                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f,
-            ).apply { gravity = android.view.Gravity.CENTER_VERTICAL }
-        }
-        val btnEffacer = com.google.android.material.button.MaterialButton(
-            ctx, null, com.google.android.material.R.attr.materialIconButtonStyle,
-        ).apply {
-            text = "✕"
-            visibility = View.GONE
             setOnClickListener {
-                container.tag = null
-                tvNom.text = "Aucune photo"
-                tvNom.setTextColor(couleurSecondaire)
-                visibility = View.GONE
-                notifierChangement()
+                val cb = onChoixMedia ?: run {
+                    android.widget.Toast.makeText(ctx,
+                        "Picker média non configuré (callback manquant)",
+                        android.widget.Toast.LENGTH_LONG).show()
+                    return@setOnClickListener
+                }
+                cb(field.code) { nouvelles ->
+                    val ajout = nouvelles.filter { it.isNotEmpty() }
+                    if (ajout.isEmpty()) return@cb
+                    uris.addAll(ajout)
+                    rebuild()
+                    notifierChangement()
+                }
             }
         }
+        // Pré-remplissage (édition) : la valeur peut être une List<String> (multi) ou, par
+        // compatibilité, une String unique (ancien format).
+        when (val v = field.value) {
+            is List<*> -> uris.addAll(v.filterIsInstance<String>().filter { it.isNotEmpty() })
+            is String -> if (v.isNotEmpty()) uris.add(v)
+        }
+        rebuild()
+        container.addView(liste)
         container.addView(btn)
-        container.addView(tvNom)
-        container.addView(btnEffacer)
-        // Pré-remplissage : édition d'une saisie déjà attachée à un fichier local.
-        (field.value as? String)?.takeIf { it.isNotEmpty() }?.let { uri ->
-            container.tag = uri
-            tvNom.text = java.io.File(android.net.Uri.parse(uri).path ?: "").name
-            tvNom.setTextColor(couleurValeur)
-            btnEffacer.visibility = View.VISIBLE
-        }
-        btn.setOnClickListener {
-            val cb = onChoixMedia ?: run {
-                android.widget.Toast.makeText(ctx,
-                    "Picker média non configuré (callback manquant)",
-                    android.widget.Toast.LENGTH_LONG).show()
-                return@setOnClickListener
-            }
-            cb(field.code) { uriLocale ->
-                if (uriLocale.isNullOrEmpty()) return@cb
-                container.tag = uriLocale
-                tvNom.text = java.io.File(android.net.Uri.parse(uriLocale).path ?: "").name
-                tvNom.setTextColor(couleurValeur)
-                btnEffacer.visibility = View.VISIBLE
-                notifierChangement()
-            }
-        }
         return container
     }
 

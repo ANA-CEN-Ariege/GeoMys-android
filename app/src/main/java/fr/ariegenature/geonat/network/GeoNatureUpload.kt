@@ -629,25 +629,35 @@ object GeoNatureUpload {
      *  Retourne (succes, messageErreur). */
     suspend fun uploaderMediaMonitoring(
         config: GeoNatureConfig,
-        mediaPath: String,
+        mediaPaths: List<String>,
         schemaDotTable: String,
         uuidAttachedRow: String,
         titre: String,
         author: String,
     ): Pair<Boolean, String?> = withContext(Dispatchers.IO) {
+        if (mediaPaths.isEmpty()) return@withContext Pair(true, null)
         val base = config.urlServeur.trim().trimEnd('/')
         val auth = GeoNatureAuth.loginAvecCookies(base, config.login, config.motDePasse)
             ?: return@withContext Pair(false, "Authentification GeoNature échouée")
         val (token, _, cookies) = auth
+        // id_table_location résolu une seule fois (même table cible pour tous les médias du champ).
         val (idTableLoc, errTable) = resoudreIdTableLocationPour(base, token, cookies, schemaDotTable)
         if (idTableLoc == null) return@withContext Pair(false, errTable ?: "id_table_location introuvable pour $schemaDotTable")
-        val (json, err) = uploaderMediaFile(
-            base = base, token = token, cookies = cookies,
-            mediaPath = mediaPath, author = author, titre = titre,
-            idTableLocation = idTableLoc, idTypeMedia = null,
-            uuidAttachedRow = uuidAttachedRow,
-        )
-        if (json != null) Pair(true, null) else Pair(false, err)
+        // Upload séquentiel de chaque fichier, tous rattachés au même objet (uuid_attached_row).
+        var nbOk = 0
+        var premiereErreur: String? = null
+        mediaPaths.forEachIndexed { i, mediaPath ->
+            val (json, err) = uploaderMediaFile(
+                base = base, token = token, cookies = cookies,
+                mediaPath = mediaPath, author = author,
+                titre = if (mediaPaths.size > 1) "$titre (${i + 1})" else titre,
+                idTableLocation = idTableLoc, idTypeMedia = null,
+                uuidAttachedRow = uuidAttachedRow,
+            )
+            if (json != null) nbOk++ else if (premiereErreur == null) premiereErreur = err
+        }
+        if (nbOk == mediaPaths.size) Pair(true, null)
+        else Pair(false, "$nbOk/${mediaPaths.size} média(s) envoyé(s)" + (premiereErreur?.let { " — $it" } ?: ""))
     }
 
     /** Résout l'id_table_location pour un `schema.table` arbitraire (ex.

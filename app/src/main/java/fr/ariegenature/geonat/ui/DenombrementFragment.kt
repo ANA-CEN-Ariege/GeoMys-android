@@ -71,21 +71,24 @@ class DenombrementFragment : Fragment() {
      *  Partagé entre photo et audio puisqu'ils ne tournent jamais en parallèle. */
     private var pickMediaTargetIndex: Int = -1
 
-    private val pickPhotoLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        consommerPickerResult(uri, defaultMime = "image/jpeg")
+    private val pickPhotoLauncher = registerForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
+        consommerPickerResult(uris, defaultMime = "image/jpeg")
     }
 
-    private val pickAudioLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        consommerPickerResult(uri, defaultMime = "audio/mp4")
+    private val pickAudioLauncher = registerForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
+        consommerPickerResult(uris, defaultMime = "audio/mp4")
     }
 
-    private fun consommerPickerResult(uri: android.net.Uri?, defaultMime: String) {
+    /** Importe TOUTES les URIs sélectionnées (multi-sélection) et les ajoute aux médias du
+     *  counting ciblé. */
+    private fun consommerPickerResult(uris: List<android.net.Uri>?, defaultMime: String) {
         val targetIdx = pickMediaTargetIndex
         pickMediaTargetIndex = -1
-        if (uri == null || targetIdx < 0 || targetIdx >= items.size) return
+        if (uris.isNullOrEmpty() || targetIdx < 0 || targetIdx >= items.size) return
         collecter()
-        val localUri = importerMedia(uri, defaultMime) ?: return
-        items[targetIdx] = items[targetIdx].copy(mediaUris = items[targetIdx].mediaUris + localUri)
+        val locales = uris.mapIndexedNotNull { i, u -> importerMedia(u, defaultMime, i) }
+        if (locales.isEmpty()) return
+        items[targetIdx] = items[targetIdx].copy(mediaUris = items[targetIdx].mediaUris + locales)
         rafraichir()
     }
 
@@ -242,7 +245,7 @@ class DenombrementFragment : Fragment() {
     /** Copie le fichier sélectionné (photo ou audio) dans le storage privé pour avoir un chemin stable.
      *  Le préfixe de nom (photo_/audio_) sert juste de hint humain ; le mime réel est déduit
      *  côté upload via guessContentTypeFromName. */
-    private fun importerMedia(source: Uri, defaultMime: String): String? {
+    private fun importerMedia(source: Uri, defaultMime: String, index: Int = 0): String? {
         val ctx = requireContext()
         val mime = ctx.contentResolver.getType(source) ?: defaultMime
         val (prefix, ext) = when {
@@ -263,7 +266,8 @@ class DenombrementFragment : Fragment() {
             else -> "media" to mime.substringAfter("/").ifEmpty { "bin" }
         }
         val dir = File(ctx.filesDir, "medias").apply { mkdirs() }
-        val dest = File(dir, "${prefix}_${System.currentTimeMillis()}.$ext")
+        // `index` désambiguïse les fichiers importés dans la même milliseconde (multi-sélection).
+        val dest = File(dir, "${prefix}_${System.currentTimeMillis()}_$index.$ext")
         return try {
             ctx.contentResolver.openInputStream(source)?.use { input ->
                 dest.outputStream().use { out -> input.copyTo(out) }

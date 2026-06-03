@@ -77,28 +77,28 @@ class NouvelleVisiteFragment : Fragment() {
     /** Snapshot des valeurs à pré-remplir au prochain rendu (mode édition). Consommé une
      *  seule fois par [chargerSchemaEtRendre] juste avant l'appel à `renderer.rendre`. */
     private var valeursPreremplies: Map<String, Any?>? = null
-    /** Chemin média existant à ré-injecter dans le champ MEDIA en mode édition (le
-     *  valeursJson outbox ne stocke pas l'URI fichier — elle vit dans
-     *  SaisieEnAttente.mediaPathLocal). Consommé une fois après construction du formulaire. */
-    private var mediaPathPreremplir: String? = null
+    /** Chemins médias existants à ré-injecter dans le champ MEDIA en mode édition (le valeursJson
+     *  outbox ne stocke pas les URIs fichier — elles vivent dans SaisieEnAttente.mediaPathsLocal).
+     *  Consommé une fois après construction du formulaire. */
+    private var mediaPathsPreremplir: List<String> = emptyList()
     /** Lambda en attente du retour du picker média. Set par le callback du renderer (cf.
-     *  [FormulaireRenderer.setOnChoixMedia]), invoquée dans [pickPhotoLauncher] avec l'URI
-     *  String du fichier copié localement (ou null si annulation). */
-    private var attendCallbackMedia: ((String?) -> Unit)? = null
+     *  [FormulaireRenderer.setOnChoixMedia]), invoquée dans [pickPhotoLauncher] avec la LISTE des
+     *  URIs locales importées (multi-sélection ; liste vide si annulation). */
+    private var attendCallbackMedia: ((List<String>) -> Unit)? = null
     private val pickPhotoLauncher = registerForActivityResult(
-        androidx.activity.result.contract.ActivityResultContracts.GetContent()
-    ) { uri ->
+        androidx.activity.result.contract.ActivityResultContracts.GetMultipleContents()
+    ) { uris ->
         val cb = attendCallbackMedia
         attendCallbackMedia = null
-        if (uri == null || cb == null) { cb?.invoke(null); return@registerForActivityResult }
-        val uriLocale = importerMedia(uri, defaultMime = "image/jpeg")
-        cb(uriLocale)
+        if (uris.isNullOrEmpty() || cb == null) { cb?.invoke(emptyList()); return@registerForActivityResult }
+        val locales = uris.mapIndexedNotNull { i, u -> importerMedia(u, defaultMime = "image/jpeg", index = i) }
+        cb(locales)
     }
 
     /** Copie le contenu de l'URI fourni par le picker dans `filesDir/medias/photo_<ts>.<ext>`
      *  pour le rendre indépendant du cycle de vie de l'Uri système. Retourne l'URI String du
      *  fichier copié ou null en cas d'échec. Pattern repris de DenombrementFragment.importerMedia. */
-    private fun importerMedia(source: android.net.Uri, defaultMime: String): String? {
+    private fun importerMedia(source: android.net.Uri, defaultMime: String, index: Int = 0): String? {
         val ctx = requireContext()
         val mime = ctx.contentResolver.getType(source) ?: defaultMime
         val ext = when (mime) {
@@ -109,7 +109,8 @@ class NouvelleVisiteFragment : Fragment() {
             else -> mime.substringAfter("/").ifEmpty { "jpg" }
         }
         val dir = java.io.File(ctx.filesDir, "medias").apply { mkdirs() }
-        val dest = java.io.File(dir, "photo_${System.currentTimeMillis()}.$ext")
+        // `index` désambiguïse les fichiers importés dans la même milliseconde (multi-sélection).
+        val dest = java.io.File(dir, "photo_${System.currentTimeMillis()}_$index.$ext")
         return try {
             ctx.contentResolver.openInputStream(source)?.use { input ->
                 dest.outputStream().use { out -> input.copyTo(out) }
@@ -149,7 +150,7 @@ class NouvelleVisiteFragment : Fragment() {
             saisieEnEdition.parentIdServeur?.let { arguments?.putInt("parentId", it) }
             saisieEnEdition.parentUuidLocal?.let { arguments?.putString("parentUuidLocal", it) }
             valeursPreremplies = chargerValeursPourEdition(saisieEnEdition)
-            mediaPathPreremplir = saisieEnEdition.mediaPathLocal
+            mediaPathsPreremplir = saisieEnEdition.mediasLocaux()
         }
 
         val titreSite = arguments?.getString("titreSite").orEmpty()
@@ -306,19 +307,18 @@ class NouvelleVisiteFragment : Fragment() {
                     else f.copy(value = typerPourField(f, valeurs[f.code]))
                 }
             } ?: champsAvecTaxon
-            // Mode édition : pré-remplit le 1er champ MEDIA avec le path stocké sur la saisie
-            // (mediaPathLocal ne fait pas partie du valeursJson). MVP single-file ; quand on
-            // passera à plusieurs champs MEDIA il faudra un mapping code → path.
-            val champsFinaux = mediaPathPreremplir?.takeIf { it.isNotEmpty() }?.let { path ->
+            // Mode édition : pré-remplit le 1er champ MEDIA avec les paths stockés sur la saisie
+            // (mediaPathsLocal ne fait pas partie du valeursJson).
+            val champsFinaux = mediaPathsPreremplir.takeIf { it.isNotEmpty() }?.let { paths ->
                 var faitPour: String? = null
                 champsFinaux0.map { f ->
                     if (faitPour == null && f.viewType == ViewType.MEDIA) {
                         faitPour = f.code
-                        f.copy(value = path)
+                        f.copy(value = paths)
                     } else f
                 }
             } ?: champsFinaux0
-            mediaPathPreremplir = null
+            mediaPathsPreremplir = emptyList()
             renderer.rendre(champsFinaux)
             // Règles `change` du schéma : auto-remplissage de champs dépendants (ex.
             // presence == 'Non' → count_min/count_max = 0). Appliquées après le rendu.
@@ -541,14 +541,17 @@ class NouvelleVisiteFragment : Fragment() {
             return
         }
         val valeurs = renderer.lireValeurs().toMutableMap()
-        // Extraction du média (single-file MVP) : on prend le premier champ MEDIA non vide
-        // parmi les champs montés, on capture son URI + schema_dot_table, puis on RETIRE la
-        // clé du payload `valeurs` — le serveur Marshmallow n'accepte pas un media:"file://…"
-        // dans le POST de l'objet, l'upload se fait après création via gn_commons.
+        // Extraction des médias : on prend le premier champ MEDIA non vide parmi les champs
+        // montés, on capture ses URIs + schema_dot_table, puis on RETIRE la clé du payload
+        // `valeurs` — le serveur Marshmallow n'accepte pas un media:"file://…" dans le POST de
+        // l'objet, l'upload se fait après création via gn_commons. Multi-fichiers.
+        @Suppress("UNCHECKED_CAST")
+        fun pathsDe(f: EditableField): List<String> =
+            (valeurs[f.code] as? List<String>)?.filter { it.isNotEmpty() }.orEmpty()
         val champMedia = champsCourants.firstOrNull {
-            it.viewType == ViewType.MEDIA && (valeurs[it.code] as? String)?.isNotEmpty() == true
+            it.viewType == ViewType.MEDIA && pathsDe(it).isNotEmpty()
         }
-        val mediaPath = champMedia?.let { valeurs[it.code] as? String }
+        val mediaPaths = champMedia?.let { pathsDe(it) }.orEmpty()
         val mediaSchemaDotTable = champMedia?.schemaDotTable
         // Retire toutes les clés MEDIA (rempli OU vide) du payload — elles ne doivent jamais
         // partir telles quelles ; le champ medias[] sera padder à `[]` côté envoyerVisite.
@@ -579,12 +582,13 @@ class NouvelleVisiteFragment : Fragment() {
                 // un média à uploader (sinon inutile). Le serveur acceptera l'uuid_field_name
                 // si le schéma l'expose.
                 val nouvelUuid = ancien.uuidPayload
-                    ?: if (mediaPath != null && uuidFieldNameVisit != null) java.util.UUID.randomUUID().toString() else null
+                    ?: if (mediaPaths.isNotEmpty() && uuidFieldNameVisit != null) java.util.UUID.randomUUID().toString() else null
                 ancien.copy(
                     valeursJson = valeursJson,
                     etat = fr.ariegenature.geonat.store.SaisieEnAttente.Etat.PENDING,
                     messageErreur = null,
-                    mediaPathLocal = mediaPath,
+                    mediaPathLocal = null,
+                    mediaPathsLocal = mediaPaths,
                     mediaSchemaDotTable = mediaSchemaDotTable,
                     uuidPayload = nouvelUuid,
                     uuidFieldName = uuidFieldNameVisit ?: ancien.uuidFieldName,
@@ -620,7 +624,7 @@ class NouvelleVisiteFragment : Fragment() {
         // schéma : sans uuid_field_name on ne sait pas où l'injecter dans le payload, et sans
         // média on n'a rien à rattacher après création. Évite de spammer le serveur avec un
         // uuid client sur tous les objets — laisse Postgres en générer un comme aujourd'hui.
-        val uuidNouveau = if (mediaPath != null && uuidFieldNameVisit != null)
+        val uuidNouveau = if (mediaPaths.isNotEmpty() && uuidFieldNameVisit != null)
             java.util.UUID.randomUUID().toString() else null
         val saisie = fr.ariegenature.geonat.store.SaisieEnAttente(
             moduleCode = moduleCode,
@@ -634,7 +638,7 @@ class NouvelleVisiteFragment : Fragment() {
             valeursJson = valeursJson,
             uuidPayload = uuidNouveau,
             uuidFieldName = uuidFieldNameVisit,
-            mediaPathLocal = mediaPath,
+            mediaPathsLocal = mediaPaths,
             mediaSchemaDotTable = mediaSchemaDotTable,
         )
         fr.ariegenature.geonat.store.OutboxMonitoring.ajouter(saisie)

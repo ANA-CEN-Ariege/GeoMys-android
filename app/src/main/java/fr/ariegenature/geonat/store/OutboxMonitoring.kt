@@ -64,16 +64,24 @@ data class SaisieEnAttente(
     val uuidPayload: String? = null,
     /** Nom du champ uuid du schéma (cf. [uuidPayload]) — recopié du MonitoringSchemaObjet. */
     val uuidFieldName: String? = null,
-    /** Chemin local du fichier média à uploader après création de l'objet. Format URI String
-     *  pointant vers filesDir/medias/… (copie locale faite à la sélection pour survivre au
-     *  cycle de vie de l'Uri ACTION_GET_CONTENT). Null = pas de média. MVP single-file ;
-     *  passer à List<String> quand on portera la multi-pj. */
+    /** LEGACY (mono-fichier) : ancien champ unique, conservé en lecture seule pour ne pas perdre
+     *  les brouillons créés avant le passage au multi-fichiers. Les nouvelles saisies écrivent
+     *  [mediaPathsLocal]. Cf. [mediasLocaux]. */
     val mediaPathLocal: String? = null,
+    /** Chemins locaux des fichiers médias à uploader après création de l'objet. Format URI String
+     *  pointant vers filesDir/medias/… (copie locale faite à la sélection pour survivre au cycle
+     *  de vie de l'Uri ACTION_GET_CONTENT). Vide = pas de média. */
+    val mediaPathsLocal: List<String> = emptyList(),
     /** `schema_dot_table` du champ media (ex. `gn_monitoring.t_base_visits`), résolu en
      *  id_table_location côté envoi. Null si pas de média. */
     val mediaSchemaDotTable: String? = null,
 ) {
     enum class Etat { PENDING, SENDING, SENT, ERROR }
+
+    /** Liste effective des médias : [mediaPathsLocal] si renseignée, sinon repli sur l'ancien
+     *  champ mono-fichier [mediaPathLocal] (brouillons d'avant la multi-pj). */
+    fun mediasLocaux(): List<String> =
+        mediaPathsLocal.ifEmpty { listOfNotNull(mediaPathLocal?.takeIf { it.isNotEmpty() }) }
 }
 
 /** Store JSON local des saisies monitoring en attente d'envoi. Persistance dans

@@ -201,15 +201,16 @@ object OutboxEnvoi {
                 uuidClient = s.uuidPayload,
                 uuidFieldName = s.uuidFieldName,
             )
-            // Upload média (single-file MVP) après création réussie. La saisie reste SENT
-            // même si l'upload échoue — l'objet est en base côté serveur, c'est juste la
-            // pièce jointe qui manque. On log via android.util.Log pour diagnostic.
-            if (resVisite.isSuccess && s.mediaPathLocal != null &&
+            // Upload des médias (multi-fichiers) après création réussie. La saisie reste SENT
+            // même si l'upload échoue — l'objet est en base côté serveur, c'est juste la/les
+            // pièce(s) jointe(s) qui manque(nt). On log via android.util.Log pour diagnostic.
+            val medias = s.mediasLocaux()
+            if (resVisite.isSuccess && medias.isNotEmpty() &&
                 s.mediaSchemaDotTable != null && s.uuidPayload != null
             ) {
                 val (ok, err) = fr.ariegenature.geonat.network.GeoNatureUpload.uploaderMediaMonitoring(
                     config = config,
-                    mediaPath = s.mediaPathLocal,
+                    mediaPaths = medias,
                     schemaDotTable = s.mediaSchemaDotTable,
                     uuidAttachedRow = s.uuidPayload,
                     titre = "${s.objectType} ${s.uuidPayload.take(8)}",

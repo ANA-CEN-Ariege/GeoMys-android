@@ -56,17 +56,4 @@
                 android:orientation="vertical" />
         </ScrollView>
     </LinearLayout>
-
-    <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
-        android:id="@+id/fab_envoyer"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="bottom|end"
-        android:layout_margin="16dp"
-        android:contentDescription="Envoyer toutes les saisies"
-        android:text="Envoyer tout"
-        android:textColor="@color/colorOnSecondary"
-        app:backgroundTint="@color/colorSecondary"
-        app:icon="@drawable/ic_send"
-        app:iconTint="@color/colorOnSecondary" />
 </FrameLayout>

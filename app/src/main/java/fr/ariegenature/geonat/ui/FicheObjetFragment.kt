@@ -77,17 +77,36 @@ class FicheObjetFragment : Fragment() {
 
     override fun onResume() {
         super.onResume()
-        // Au retour d'une saisie locale, on re-render la liste des enfants pour
-        // intégrer la nouvelle entrée outbox. On ne re-fetch pas l'objet serveur si
-        // déjà chargé — juste un re-render léger.
         val moduleCode = arguments?.getString("moduleCode") ?: return
         val objectType = arguments?.getString("objectType") ?: return
         val id = arguments?.getInt("id", -1)?.takeIf { it > 0 } ?: return
-        if (objetCharge != null) {
+        val objet = objetCharge ?: return
+        // Si l'outbox attachée à cet objet a changé depuis le dernier rendu, il faut RE-FETCH
+        // côté serveur : une visite ENVOYÉE n'est plus dans l'outbox (filtrée car SENT) mais
+        // existe désormais côté serveur — sans re-fetch elle disparaîtrait de la liste. Quand
+        // rien n'a changé (simple retour de navigation), on garde le re-render léger.
+        val signatureActuelle = signatureOutbox(objet)
+        if (signatureActuelle != derniereSignatureOutbox) {
+            chargerEtAfficher(moduleCode, objectType, id)
+        } else {
             binding.llEnfants.removeAllViews()
-            afficherEnfants(objetCharge!!, schemaCharge, resolverCharge ?: MonitoringApi.LabelResolver())
+            afficherEnfants(objet, schemaCharge, resolverCharge ?: MonitoringApi.LabelResolver())
         }
     }
+
+    /** Signature des saisies outbox rattachées à cet objet (tous états confondus, y compris SENT).
+     *  Sert à détecter en [onResume] qu'une saisie a été ajoutée OU envoyée depuis le dernier
+     *  rendu, et donc qu'il faut recharger l'objet serveur plutôt que re-render des données
+     *  périmées. */
+    private fun signatureOutbox(objet: MonitoringApi.MonitoringObjet): String =
+        fr.ariegenature.geonat.store.OutboxMonitoring.tout()
+            .filter {
+                it.moduleCode == objet.moduleCode &&
+                    it.parentObjectType == objet.type &&
+                    it.parentIdServeur == objet.id
+            }
+            .sortedBy { it.uuid }
+            .joinToString(",") { "${it.uuid}:${it.etat}" }
 
     /** Cache du dernier objet chargé + son schéma + son resolver, pour pouvoir
      *  re-render la liste des enfants sans refaire les requêtes serveur (utile au
@@ -95,6 +114,8 @@ class FicheObjetFragment : Fragment() {
     private var objetCharge: MonitoringApi.MonitoringObjet? = null
     private var schemaCharge: Map<String, MonitoringApi.MonitoringSchemaObjet>? = null
     private var resolverCharge: MonitoringApi.LabelResolver? = null
+    /** Signature de l'outbox attachée, au moment du dernier rendu (cf. [signatureOutbox]). */
+    private var derniereSignatureOutbox: String? = null
 
     private fun navUp() { findNavController().navigateUp() }
 
@@ -153,6 +174,7 @@ class FicheObjetFragment : Fragment() {
         objetCharge = objet
         schemaCharge = schema
         resolverCharge = resolver
+        derniereSignatureOutbox = signatureOutbox(objet)
     }
 
     /** Affiche les propriétés de l'objet sous forme "Label : valeur".
@@ -213,6 +235,33 @@ class FicheObjetFragment : Fragment() {
         }
     }
 
+    /** Tri chronologique DÉCROISSANT (plus récentes d'abord) des enfants d'un type, en tenant
+     *  compte de la DATE puis de l'HEURE de la visite. Schema-driven : le champ date est celui de
+     *  `type_widget == "date"` (priorité au `description_field_name` du type, sinon un champ `*_min`,
+     *  sinon le premier), l'heure celui de `type_widget == "time"`. Les valeurs ISO `YYYY-MM-DD` +
+     *  `HH:MM` se trient lexicographiquement = chronologiquement. Fallback tri alpha par nom quand
+     *  le type n'a pas de champ date (parité avec l'ancien comportement). */
+    private fun trierChronologique(
+        items: List<MonitoringApi.MonitoringEnfant>,
+        schemaType: MonitoringApi.MonitoringSchemaObjet?,
+    ): List<MonitoringApi.MonitoringEnfant> {
+        val props = schemaType?.properties
+        val champsDate = props?.filterValues { it.typeWidget.equals("date", ignoreCase = true) }?.keys.orEmpty()
+        if (champsDate.isEmpty()) return MonitoringApi.trierEnfants(items, emptyList())
+        val champDate = schemaType?.nameField?.takeIf { it in champsDate }
+            ?: champsDate.firstOrNull { it.endsWith("_min") }
+            ?: champsDate.first()
+        val champHeure = props?.entries
+            ?.firstOrNull { it.value.typeWidget.equals("time", ignoreCase = true) }?.key
+        fun cle(e: MonitoringApi.MonitoringEnfant): String {
+            val d = e.proprietes[champDate].orEmpty()
+            val h = champHeure?.let { e.proprietes[it] }.orEmpty()
+            return "$d $h"
+        }
+        // Décroissant : les visites sans date (clé vide) se retrouvent en bas.
+        return items.sortedByDescending { cle(it) }
+    }
+
     /** Liste les enfants directs par type (visites, observations, etc.), chacun cliquable
      *  pour ouvrir sa propre fiche (drill-down récursif). */
     private fun afficherEnfants(
@@ -252,7 +301,7 @@ class FicheObjetFragment : Fragment() {
                 val nomSchema = e.proprietes[nf]
                 if (!nomSchema.isNullOrEmpty()) e.copy(nom = nomSchema) else e
             } else itemsBruts
-            val items = MonitoringApi.trierEnfants(itemsAffines, emptyList())
+            val items = trierChronologique(itemsAffines, schemaType)
             val typeLabel = schema?.get(type)?.let { it.labelList ?: it.label }
                 ?: labelTypeParDefaut(type)
             // Type d'enfant qui sera créé via le bouton "+" : on regarde si le type de

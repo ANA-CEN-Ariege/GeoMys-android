@@ -98,8 +98,14 @@ object OutboxEnvoi {
         var nouvelleVagueSucces = true
         while (nouvelleVagueSucces) {
             nouvelleVagueSucces = false
+            // ⚠ Filtrer AUSSI par [uuidsACibler] ici : sinon « Envoyer ce groupe » envoyait
+            // tous les PENDING de la file au lieu du seul sous-arbre ciblé (le filtre n'était
+            // appliqué qu'au calcul de `total`, pas à la boucle d'envoi).
             val restantes = OutboxMonitoring.tout()
-                .filter { it.etat == SaisieEnAttente.Etat.PENDING }
+                .filter {
+                    it.etat == SaisieEnAttente.Etat.PENDING &&
+                        (uuidsACibler == null || it.uuid in uuidsACibler)
+                }
             if (restantes.isEmpty()) break
 
             for (saisie in restantes) {

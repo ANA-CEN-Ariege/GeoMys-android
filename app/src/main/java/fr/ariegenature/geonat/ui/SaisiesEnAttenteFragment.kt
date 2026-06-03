@@ -53,7 +53,6 @@ class SaisiesEnAttenteFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
         binding.root.applySystemBarInsets(includeIme = true)
         appliquerBandeauNavigation(binding.bandeauSaisie.root, findNavController(), "Mes visites")
-        binding.fabEnvoyer.setOnClickListener { lancerEnvoi() }
         rafraichir()
     }
 
@@ -71,7 +70,6 @@ class SaisiesEnAttenteFragment : Fragment() {
             enAttente == 0 -> "Toutes les saisies ont été envoyées ($envoyees)."
             else -> "$enAttente en attente · $envoyees envoyées"
         }
-        binding.fabEnvoyer.isEnabled = enAttente > 0
         peuplerListe(toutes)
     }
 
@@ -490,10 +488,9 @@ class SaisiesEnAttenteFragment : Fragment() {
             .show()
     }
 
-    /** F : envoi du sous-arbre. Même UX que [lancerEnvoi] (progression + récap final),
-     *  mais on ne pousse que la saisie [uuidRacine] et ses descendants locaux. */
+    /** F : envoi du sous-arbre — progression + récap final. On ne pousse que la saisie
+     *  [uuidRacine] et ses descendants locaux (déclenché par « Envoyer ce groupe »). */
     private fun lancerEnvoiGroupe(uuidRacine: String) {
-        binding.fabEnvoyer.isEnabled = false
         binding.progressEnvoi.visibility = View.VISIBLE
         binding.tvMessageEnvoi.visibility = View.VISIBLE
         binding.tvMessageEnvoi.text = "Préparation du groupe…"
@@ -507,41 +504,8 @@ class SaisiesEnAttenteFragment : Fragment() {
             }
             if (!isAdded) return@launch
             binding.progressEnvoi.visibility = View.GONE
-            binding.fabEnvoyer.isEnabled = OutboxMonitoring.countEnAttente() > 0
             val recap = buildString {
                 append("Envoi du groupe terminé · ${res.succes} succès, ${res.echecs} échec(s)")
-                if (res.messages.isNotEmpty()) {
-                    append("\n\n")
-                    append(res.messages.joinToString("\n"))
-                }
-            }
-            AlertDialog.Builder(requireContext())
-                .setTitle("Récap")
-                .setMessage(recap)
-                .setPositiveButton("OK", null)
-                .show()
-            rafraichir()
-        }
-    }
-
-    private fun lancerEnvoi() {
-        binding.fabEnvoyer.isEnabled = false
-        binding.progressEnvoi.visibility = View.VISIBLE
-        binding.tvMessageEnvoi.visibility = View.VISIBLE
-        binding.tvMessageEnvoi.text = "Préparation…"
-        val config = GeoNatureConfig(requireContext())
-        viewLifecycleOwner.lifecycleScope.launch {
-            val res = OutboxEnvoi.envoyerTout(config) { envoyees, total, msg ->
-                activity?.runOnUiThread {
-                    binding.tvMessageEnvoi.text = "Envoi $envoyees/$total · $msg".trim().trimEnd('·', ' ')
-                    rafraichir()
-                }
-            }
-            if (!isAdded) return@launch
-            binding.progressEnvoi.visibility = View.GONE
-            binding.fabEnvoyer.isEnabled = true
-            val recap = buildString {
-                append("Envoi terminé · ${res.succes} succès, ${res.echecs} échec(s)")
                 if (res.messages.isNotEmpty()) {
                     append("\n\n")
                     append(res.messages.joinToString("\n"))

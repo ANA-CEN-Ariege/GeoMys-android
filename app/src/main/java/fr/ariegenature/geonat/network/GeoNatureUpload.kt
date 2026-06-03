@@ -228,15 +228,7 @@ object GeoNatureUpload {
                     .toString()
 
                 val urlReleve = URL("$base/api/occtax/OCCTAX/only/releve")
-                val conn1 = urlReleve.openConnection() as java.net.HttpURLConnection
-                conn1.requestMethod = "POST"
-                conn1.doOutput = true
-                conn1.connectTimeout = 30000
-                conn1.readTimeout = 30000
-                conn1.setRequestProperty("Content-Type", "application/json")
-                conn1.setRequestProperty("Accept", "application/json")
-                if (token != null) conn1.setRequestProperty("Authorization", "Bearer $token")
-                if (cookies.isNotEmpty()) conn1.setRequestProperty("Cookie", cookies)
+                val conn1 = HttpClient.postJson(urlReleve, token, cookies, 30000)
                 OutputStreamWriter(conn1.outputStream).use { it.write(body1) }
 
                 val code1 = conn1.responseCode
@@ -334,15 +326,7 @@ object GeoNatureUpload {
                     val occ = buildOccurrence(obs, nomenclatures, mediasParCounting)
 
                     val urlOcc = URL("$base/api/occtax/OCCTAX/releve/$idReleve/occurrence")
-                    val conn2 = urlOcc.openConnection() as java.net.HttpURLConnection
-                    conn2.requestMethod = "POST"
-                    conn2.doOutput = true
-                    conn2.connectTimeout = 30000
-                    conn2.readTimeout = 30000
-                    conn2.setRequestProperty("Content-Type", "application/json")
-                    conn2.setRequestProperty("Accept", "application/json")
-                    if (token != null) conn2.setRequestProperty("Authorization", "Bearer $token")
-                    if (cookies.isNotEmpty()) conn2.setRequestProperty("Cookie", cookies)
+                    val conn2 = HttpClient.postJson(urlOcc, token, cookies, 30000)
                     OutputStreamWriter(conn2.outputStream).use { it.write(occ.toString()) }
 
                     val code2 = conn2.responseCode
@@ -613,12 +597,7 @@ object GeoNatureUpload {
         idTableLocationCountingCache?.let { return Pair(it, null) }
         return try {
             val url = URL("$base/api/gn_commons/get_id_table_location/pr_occtax.cor_counting_occtax")
-            val conn = url.openConnection() as java.net.HttpURLConnection
-            conn.connectTimeout = 10000
-            conn.readTimeout = 10000
-            conn.setRequestProperty("Accept", "application/json")
-            if (token != null) conn.setRequestProperty("Authorization", "Bearer $token")
-            if (cookies.isNotEmpty()) conn.setRequestProperty("Cookie", cookies)
+            val conn = HttpClient.get(url, token, cookies, 10000)
             val code = conn.responseCode
             if (code != 200) {
                 val body = try { (conn.errorStream ?: conn.inputStream)?.bufferedReader()?.readText()?.take(200) } catch (_: Exception) { null }
@@ -680,12 +659,7 @@ object GeoNatureUpload {
         base: String, token: String?, cookies: String, schemaDotTable: String,
     ): Pair<Long?, String?> = try {
         val url = URL("$base/api/gn_commons/get_id_table_location/$schemaDotTable")
-        val conn = url.openConnection() as java.net.HttpURLConnection
-        conn.connectTimeout = 10000
-        conn.readTimeout = 10000
-        conn.setRequestProperty("Accept", "application/json")
-        if (token != null) conn.setRequestProperty("Authorization", "Bearer $token")
-        if (cookies.isNotEmpty()) conn.setRequestProperty("Cookie", cookies)
+        val conn = HttpClient.get(url, token, cookies, 10000)
         val code = conn.responseCode
         if (code != 200) {
             val body = try { (conn.errorStream ?: conn.inputStream)?.bufferedReader()?.readText()?.take(200) } catch (_: Exception) { null }
@@ -787,13 +761,7 @@ object GeoNatureUpload {
         base: String, token: String?, cookies: String, idReleve: Int,
     ): Boolean = try {
         val url = URL("$base/api/occtax/OCCTAX/releve/$idReleve")
-        val conn = url.openConnection() as java.net.HttpURLConnection
-        conn.requestMethod = "DELETE"
-        conn.connectTimeout = 15000
-        conn.readTimeout = 15000
-        conn.setRequestProperty("Accept", "application/json")
-        if (token != null) conn.setRequestProperty("Authorization", "Bearer $token")
-        if (cookies.isNotEmpty()) conn.setRequestProperty("Cookie", cookies)
+        val conn = HttpClient.delete(url, token, cookies, 15000)
         val code = conn.responseCode
         code in 200..299 || code == 404
     } catch (_: Exception) {
@@ -807,13 +775,7 @@ object GeoNatureUpload {
         base: String, token: String?, cookies: String, idMedia: Int,
     ): Boolean = try {
         val url = URL("$base/api/gn_commons/media/$idMedia")
-        val conn = url.openConnection() as java.net.HttpURLConnection
-        conn.requestMethod = "DELETE"
-        conn.connectTimeout = 15000
-        conn.readTimeout = 15000
-        conn.setRequestProperty("Accept", "application/json")
-        if (token != null) conn.setRequestProperty("Authorization", "Bearer $token")
-        if (cookies.isNotEmpty()) conn.setRequestProperty("Cookie", cookies)
+        val conn = HttpClient.delete(url, token, cookies, 15000)
         val code = conn.responseCode
         code in 200..299 || code == 404
     } catch (_: Exception) {
@@ -843,11 +805,7 @@ object GeoNatureUpload {
         if (cached.isNotEmpty()) return cached
 
         fun get(urlStr: String): String? = try {
-            val conn = URL(urlStr).openConnection() as java.net.HttpURLConnection
-            conn.connectTimeout = 10000
-            conn.readTimeout = 10000
-            if (token != null) conn.setRequestProperty("Authorization", "Bearer $token")
-            if (cookies.isNotEmpty()) conn.setRequestProperty("Cookie", cookies)
+            val conn = HttpClient.get(URL(urlStr), token, cookies, 10000)
             if (conn.responseCode == 200) conn.inputStream.bufferedReader().readText() else null
         } catch (e: Exception) { null }
 

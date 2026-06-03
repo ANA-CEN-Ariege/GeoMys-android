@@ -86,10 +86,7 @@ object TaxRefService {
                 }
 
                 val url = URL("$base/api/taxhub/api/taxref/?nom_cite=$encoded&limit=10$regneParam")
-                val conn = url.openConnection() as java.net.HttpURLConnection
-                conn.connectTimeout = 5000
-                conn.readTimeout = 5000
-                conn.setRequestProperty("Accept", "application/json")
+                val conn = HttpClient.get(url, timeoutMs = 5000)
                 if (conn.responseCode != 200) return@withContext null
                 val array = JSONArray(conn.inputStream.bufferedReader().readText())
                 val nomNettoye = TaxRefCache.nettoyerSuffixeArticle(nom)

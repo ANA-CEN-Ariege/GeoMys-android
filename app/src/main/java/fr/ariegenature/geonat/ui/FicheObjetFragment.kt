@@ -671,8 +671,7 @@ class FicheObjetFragment : Fragment() {
         if (v == "true") return "oui"
         if (v == "false") return "non"
         // Date ISO "YYYY-MM-DD..." → "YYYY-MM-DD" simple
-        if (v.length >= 10 && v[4] == '-' && v[7] == '-') return v.substring(0, 10)
-        return v
+        return fr.ariegenature.geonat.util.DateAffichage.isoTronquerDate(v)
     }
 
     /** Sous-titre d'un row enfant : valeurs des champs de `schema.display_list` séparées par
@@ -691,9 +690,7 @@ class FicheObjetFragment : Fragment() {
                 val v = e.proprietes[k]?.takeIf { it.isNotEmpty() && it != "null" } ?: return@mapNotNull null
                 val prop = schemaType?.properties?.get(k)
                 if (prop != null) resolver.resoudre(prop, v)?.let { return@mapNotNull it }
-                if (v.length >= 10 && v[4] == '-' && v[7] == '-')
-                    "${v.substring(8, 10)}/${v.substring(5, 7)}/${v.substring(0, 4)}"
-                else v
+                fr.ariegenature.geonat.util.DateAffichage.isoVersFr(v)
             }
             .joinToString(" · ")
     }

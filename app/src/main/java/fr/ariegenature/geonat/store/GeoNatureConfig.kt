@@ -174,6 +174,25 @@ class GeoNatureConfig(context: Context) {
     val datasetPresentDansCache: Boolean
         get() = idPresentDansCache(datasetsCacheJson, idDataset.trim().toIntOrNull(), "id")
 
+    /** Le jeu de données sélectionné est présent dans le cache ET marqué ACTIF (`actif=true`).
+     *  Un dataset archivé/inactif sur le serveur (cf. `actif:false`) reste présent dans le cache
+     *  mais NE doit PAS valider la config : une saisie y partirait dans le vide (invisible dans
+     *  l'interface web, masquée par défaut). `actif` absent du cache → permissif (true). */
+    val datasetActifDansCache: Boolean
+        get() {
+            val id = idDataset.trim().toIntOrNull()?.takeIf { it > 0 } ?: return false
+            val j = datasetsCacheJson.takeIf { it.isNotEmpty() } ?: return false
+            return try {
+                val arr = org.json.JSONArray(j)
+                (0 until arr.length()).any {
+                    val o = arr.getJSONObject(it)
+                    o.optInt("id", -1) == id && o.optBoolean("actif", true)
+                }
+            } catch (_: Exception) {
+                false
+            }
+        }
+
     /** Le jeu de données [id] est-il acceptable pour un envoi ? Permissif si le cache datasets est
      *  vide (on ne peut pas trancher → on n'empêche pas l'envoi), strict sinon. Sert à valider un
      *  override de relevé (« Détails du relevé ») AVANT le POST, pour éviter le 500 opaque sur FK
@@ -196,7 +215,7 @@ class GeoNatureConfig(context: Context) {
      *  les caches du serveur courant. Faux tant que les caches sont vides (rien synchronisé) ou
      *  qu'une sélection est fantôme — pilote l'activation des boutons de saisie sur l'accueil. */
     val saisieOcctaxValide: Boolean
-        get() = connexionConfiguree && datasetPresentDansCache &&
+        get() = connexionConfiguree && datasetActifDansCache &&
             listePresenteDansCache && observateurPresentDansCache
 
     companion object {

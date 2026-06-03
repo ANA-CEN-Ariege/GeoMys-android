@@ -91,10 +91,7 @@ object MonitoringApi {
         if (dernierChargement.isNotEmpty()) return dernierChargement.size
         val json = MonitoringCache.getJson(MonitoringCache.keyModules()) ?: return 0
         return try {
-            val arr = runCatching { JSONArray(json) }.getOrNull()
-                ?: JSONObject(json).let { o ->
-                    o.optJSONArray("data") ?: o.optJSONArray("items") ?: o.optJSONArray("modules")
-                } ?: return 0
+            val arr = json.parserTableauJson("data", "items", "modules") ?: return 0
             arr.length()
         } catch (_: Exception) { 0 }
     }
@@ -108,10 +105,7 @@ object MonitoringApi {
         }
         val json = MonitoringCache.getJson(MonitoringCache.keyModules()) ?: return emptySet()
         return try {
-            val arr = runCatching { JSONArray(json) }.getOrNull()
-                ?: JSONObject(json).let { o ->
-                    o.optJSONArray("data") ?: o.optJSONArray("items") ?: o.optJSONArray("modules")
-                } ?: return emptySet()
+            val arr = json.parserTableauJson("data", "items", "modules") ?: return emptySet()
             val ids = HashSet<Int>()
             for (i in 0 until arr.length()) {
                 arr.optJSONObject(i)?.optInt("id_list_taxonomy", -1)?.takeIf { it > 0 }?.let(ids::add)
@@ -129,10 +123,7 @@ object MonitoringApi {
             ?.let { return it }
         val json = MonitoringCache.getJson(MonitoringCache.keyModules()) ?: return null
         return try {
-            val arr = runCatching { JSONArray(json) }.getOrNull()
-                ?: JSONObject(json).let { o ->
-                    o.optJSONArray("data") ?: o.optJSONArray("items") ?: o.optJSONArray("modules")
-                } ?: return null
+            val arr = json.parserTableauJson("data", "items", "modules") ?: return null
             for (i in 0 until arr.length()) {
                 val item = arr.optJSONObject(i) ?: continue
                 if (item.optString("module_code") == moduleCode) {
@@ -162,12 +153,7 @@ object MonitoringApi {
                 } else {
                     val (token, _, cookies) = auth
                     val url = URL("$base/api/monitorings/modules")
-                    val conn = url.openConnection() as java.net.HttpURLConnection
-                    conn.connectTimeout = 10000
-                    conn.readTimeout = 10000
-                    conn.setRequestProperty("Accept", "application/json")
-                    if (token != null) conn.setRequestProperty("Authorization", "Bearer $token")
-                    if (cookies.isNotEmpty()) conn.setRequestProperty("Cookie", cookies)
+                    val conn = HttpClient.get(url, token, cookies, 10000)
                     val code = conn.responseCode
                     // 404 → gn_module_monitoring non installé sur l'instance.
                     // 403 → utilisateur authentifié mais sans aucun droit CRUVED sur le
@@ -189,11 +175,8 @@ object MonitoringApi {
             } catch (e: IOException) {
                 MonitoringCache.getJson(MonitoringCache.keyModules()) ?: throw e
             }
-            val array: JSONArray = try { JSONArray(text) } catch (_: Exception) {
-                val obj = JSONObject(text)
-                obj.optJSONArray("data") ?: obj.optJSONArray("items") ?: obj.optJSONArray("modules")
-                    ?: throw GNErreur.EnvoiEchoue(0, "Modules monitoring : format JSON inattendu")
-            }
+            val array: JSONArray = text.parserTableauJson("data", "items", "modules")
+                ?: throw GNErreur.EnvoiEchoue(0, "Modules monitoring : format JSON inattendu")
             // Parsing en deux temps pour pouvoir filtrer CRUVED ET ré-écrire le cache disque
             // avec uniquement les items accessibles. On conserve le JSONObject brut de chaque
             // module à côté du modèle Kotlin, ainsi on n'a pas à re-sérialiser depuis le data
@@ -460,12 +443,7 @@ object MonitoringApi {
                 } else {
                     val (token, _, cookies) = auth
                     val url = URL("$base/api/monitorings/object/$moduleCode/module?depth=1")
-                    val conn = url.openConnection() as java.net.HttpURLConnection
-                    conn.connectTimeout = 15000
-                    conn.readTimeout = 15000
-                    conn.setRequestProperty("Accept", "application/json")
-                    if (token != null) conn.setRequestProperty("Authorization", "Bearer $token")
-                    if (cookies.isNotEmpty()) conn.setRequestProperty("Cookie", cookies)
+                    val conn = HttpClient.get(url, token, cookies, 15000)
                     val code = conn.responseCode
                     if (code != 200) throw GNErreur.EnvoiEchoue(code, "Enfants du module $moduleCode")
                     val brut = conn.inputStream.bufferedReader().readText()
@@ -642,12 +620,7 @@ object MonitoringApi {
                 } else {
                     val (token, _, cookies) = auth
                     val url = URL("$base/api/monitorings/object/$moduleCode/$objectType/$id?depth=1")
-                    val conn = url.openConnection() as java.net.HttpURLConnection
-                    conn.connectTimeout = 15000
-                    conn.readTimeout = 15000
-                    conn.setRequestProperty("Accept", "application/json")
-                    if (token != null) conn.setRequestProperty("Authorization", "Bearer $token")
-                    if (cookies.isNotEmpty()) conn.setRequestProperty("Cookie", cookies)
+                    val conn = HttpClient.get(url, token, cookies, 15000)
                     val code = conn.responseCode
                     if (code != 200) throw GNErreur.EnvoiEchoue(code, "$objectType #$id")
                     val brut = conn.inputStream.bufferedReader().readText()
@@ -740,12 +713,7 @@ object MonitoringApi {
                 } else {
                     val (token, _, cookies) = auth
                     val url = URL("$base/api/monitorings/config/$moduleCode")
-                    val conn = url.openConnection() as java.net.HttpURLConnection
-                    conn.connectTimeout = 10000
-                    conn.readTimeout = 10000
-                    conn.setRequestProperty("Accept", "application/json")
-                    if (token != null) conn.setRequestProperty("Authorization", "Bearer $token")
-                    if (cookies.isNotEmpty()) conn.setRequestProperty("Cookie", cookies)
+                    val conn = HttpClient.get(url, token, cookies, 10000)
                     val code = conn.responseCode
                     if (code != 200) {
                         // Fallback cache pour les erreurs serveur transitoires.
@@ -1335,20 +1303,11 @@ object MonitoringApi {
 
         suspend fun fetchListe(path: String, keyId: String, keyLabel: String, dataPath: String?): Map<String, String> {
             val url = URL("$base/api/$path")
-            val conn = url.openConnection() as java.net.HttpURLConnection
-            conn.connectTimeout = 15000
-            conn.readTimeout = 15000
-            conn.setRequestProperty("Accept", "application/json")
-            if (token != null) conn.setRequestProperty("Authorization", "Bearer $token")
-            if (cookies.isNotEmpty()) conn.setRequestProperty("Cookie", cookies)
+            val conn = HttpClient.get(url, token, cookies, 15000)
             if (conn.responseCode != 200) return emptyMap()
             val text = conn.inputStream.bufferedReader().readText()
-            val array: JSONArray = try { JSONArray(text) } catch (_: Exception) {
-                val obj = try { JSONObject(text) } catch (_: Exception) { return emptyMap() }
-                val cle = dataPath ?: listOf("values", "data", "items", "results")
-                    .firstOrNull { obj.has(it) } ?: return emptyMap()
-                obj.optJSONArray(cle) ?: return emptyMap()
-            }
+            val clesArray = (listOfNotNull(dataPath) + listOf("values", "data", "items", "results")).toTypedArray()
+            val array: JSONArray = text.parserTableauJson(*clesArray) ?: return emptyMap()
             val map = mutableMapOf<String, String>()
             for (i in 0 until array.length()) {
                 val item = array.optJSONObject(i) ?: continue
@@ -1430,11 +1389,7 @@ object MonitoringApi {
         if (auth != null) {
             val (token, _, cookies) = auth
             val res = runCatching {
-                val conn = URL("$base/api/users/menu/$idListe").openConnection() as java.net.HttpURLConnection
-                conn.connectTimeout = 15000; conn.readTimeout = 15000
-                conn.setRequestProperty("Accept", "application/json")
-                if (token != null) conn.setRequestProperty("Authorization", "Bearer $token")
-                if (cookies.isNotEmpty()) conn.setRequestProperty("Cookie", cookies)
+                val conn = HttpClient.get(URL("$base/api/users/menu/$idListe"), token, cookies, 15000)
                 if (conn.responseCode != 200) null
                 else conn.inputStream.bufferedReader().readText()
             }.getOrNull()
@@ -1538,12 +1493,7 @@ object MonitoringApi {
         } else {
             URL("$base/api/$apiPath") to null
         }
-        val conn = urlFinale.openConnection() as java.net.HttpURLConnection
-        conn.connectTimeout = 15000
-        conn.readTimeout = 15000
-        conn.setRequestProperty("Accept", "application/json")
-        if (token != null) conn.setRequestProperty("Authorization", "Bearer $token")
-        if (cookies.isNotEmpty()) conn.setRequestProperty("Cookie", cookies)
+        val conn = HttpClient.get(urlFinale, token, cookies, 15000)
         if (postBody != null) {
             conn.requestMethod = "POST"
             conn.doOutput = true
@@ -1556,14 +1506,8 @@ object MonitoringApi {
         }
         val text = conn.inputStream.bufferedReader().readText()
         // Réponse soit array direct, soit objet contenant data_path → array.
-        val array: JSONArray = try { JSONArray(text) } catch (_: Exception) {
-            val obj = try { JSONObject(text) } catch (_: Exception) {
-                return@withContext fallbackDatasetCache()
-            }
-            val cle = prop.dataPath ?: listOf("values", "data", "items", "results")
-                .firstOrNull { obj.has(it) } ?: return@withContext fallbackDatasetCache()
-            obj.optJSONArray(cle) ?: return@withContext fallbackDatasetCache()
-        }
+        val clesArray = (listOfNotNull(prop.dataPath) + listOf("values", "data", "items", "results")).toTypedArray()
+        val array: JSONArray = text.parserTableauJson(*clesArray) ?: return@withContext fallbackDatasetCache()
         extraireOptions(array, keyValue, keyLabel, prop.filtres)
     }
 
@@ -1726,16 +1670,8 @@ object MonitoringApi {
             if (fr.ariegenature.geonat.BuildConfig.DEBUG) {
                 android.util.Log.i("MonitoringApi", "POST $urlStr\n  body=$bodyStr")
             }
-            val conn = URL(urlStr).openConnection() as java.net.HttpURLConnection
+            val conn = HttpClient.postJson(URL(urlStr), token, cookies, 20000)
             try {
-                conn.requestMethod = "POST"
-                conn.doOutput = true
-                conn.connectTimeout = 20000
-                conn.readTimeout = 20000
-                conn.setRequestProperty("Content-Type", "application/json")
-                conn.setRequestProperty("Accept", "application/json")
-                if (token != null) conn.setRequestProperty("Authorization", "Bearer $token")
-                if (cookies.isNotEmpty()) conn.setRequestProperty("Cookie", cookies)
                 conn.outputStream.use { it.write(bodyStr.toByteArray(Charsets.UTF_8)) }
 
                 val code = conn.responseCode
@@ -1796,9 +1732,7 @@ object MonitoringApi {
                 if (cookies.isNotEmpty()) conn.setRequestProperty("Cookie", cookies)
                 if (conn.responseCode != 200) continue
                 val txt = conn.inputStream.bufferedReader().readText()
-                val arr = try { JSONArray(txt) } catch (_: Exception) {
-                    JSONObject(txt).optJSONArray("data") ?: JSONArray()
-                }
+                val arr = txt.parserTableauJson("data") ?: JSONArray()
                 if (arr.length() > 0) {
                     val id = arr.getJSONObject(0).optInt("id_dataset", -1)
                     if (id > 0) return id

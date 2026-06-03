@@ -43,10 +43,7 @@ object GeoNatureSync {
             try {
                 val base = config.urlServeur.trim().trimEnd('/')
                 val url = URL("$base/api/taxhub/api/taxref/version")
-                val conn = url.openConnection() as java.net.HttpURLConnection
-                conn.connectTimeout = 5000
-                conn.readTimeout = 5000
-                conn.setRequestProperty("Accept", "application/json")
+                val conn = HttpClient.get(url, timeoutMs = 5000)
                 if (conn.responseCode != 200) return@withContext null
                 val obj = JSONObject(conn.inputStream.bufferedReader().readText())
                 obj.opt("version")?.toString()
@@ -77,21 +74,15 @@ object GeoNatureSync {
             var ok = false
             var page = 1
             while (true) {
-                val conn = URL("$base/api/taxhub/api/taxref?orderby=cd_nom&fields=listes&id_liste=$idListe&limit=$pageSize&page=$page")
-                    .openConnection() as java.net.HttpURLConnection
+                val conn = HttpClient.get(
+                    URL("$base/api/taxhub/api/taxref?orderby=cd_nom&fields=listes&id_liste=$idListe&limit=$pageSize&page=$page"),
+                    timeoutMs = 60000,
+                )
                 try {
-                    conn.connectTimeout = 60000
-                    conn.readTimeout = 60000
-                    conn.setRequestProperty("Accept", "application/json")
                     if (conn.responseCode != 200) break
                     ok = true
                     val text = conn.inputStream.bufferedReader().readText()
-                    val array: JSONArray = try {
-                        val obj = JSONObject(text)
-                        obj.optJSONArray("items") ?: obj.optJSONArray("data") ?: obj.optJSONArray("results") ?: JSONArray(text)
-                    } catch (_: Exception) {
-                        try { JSONArray(text) } catch (_: Exception) { break }
-                    }
+                    val array: JSONArray = text.parserTableauJson("items", "data", "results") ?: break
                     if (array.length() == 0) break
                     for (i in 0 until array.length()) {
                         val item = array.getJSONObject(i)
@@ -320,12 +311,7 @@ object GeoNatureSync {
                 var text: String? = null
                 var lastCode = 0
                 for (u in urls) {
-                    val conn = URL(u).openConnection() as java.net.HttpURLConnection
-                    conn.connectTimeout = 15000
-                    conn.readTimeout = 15000
-                    conn.setRequestProperty("Accept", "application/json")
-                    if (token != null) conn.setRequestProperty("Authorization", "Bearer $token")
-                    if (cookies.isNotEmpty()) conn.setRequestProperty("Cookie", cookies)
+                    val conn = HttpClient.get(URL(u), token, cookies, 15000)
                     lastCode = conn.responseCode
                     if (lastCode == 200) {
                         text = conn.inputStream.bufferedReader().readText()
@@ -335,16 +321,8 @@ object GeoNatureSync {
 
                 if (text == null) return@withContext Pair(0, "Endpoint taxonomy inaccessible (HTTP $lastCode)")
 
-                val array: JSONArray = try { JSONArray(text) } catch (_: Exception) {
-                    try {
-                        val obj = JSONObject(text)
-                        obj.optJSONArray("items") ?: obj.optJSONArray("data")
-                            ?: obj.optJSONArray("nomenclatures") ?: obj.optJSONArray("results")
-                            ?: return@withContext Pair(0, "Format inattendu")
-                    } catch (_: Exception) {
-                        return@withContext Pair(0, "Format inattendu")
-                    }
-                }
+                val array: JSONArray = text.parserTableauJson("items", "data", "nomenclatures", "results")
+                    ?: return@withContext Pair(0, "Format inattendu")
 
                 val typesVoulus = setOf("METH_OBS", "STATUT_OBS", "SEXE", "STADE_VIE", "STATUT_BIO", "ETA_BIO",
                                         "PREUVE_EXIST", "OBJ_DENBR", "TYP_DENBR", "OCC_COMPORTEMENT", "METH_DETERMIN", "TYPE_MEDIA")
@@ -414,12 +392,7 @@ object GeoNatureSync {
         for (variant in variantes) {
             val urlStr = "$base/api/$variant/defaultNomenclatures"
             try {
-                val conn = URL(urlStr).openConnection() as java.net.HttpURLConnection
-                conn.connectTimeout = 10000
-                conn.readTimeout = 10000
-                conn.setRequestProperty("Accept", "application/json")
-                if (token != null) conn.setRequestProperty("Authorization", "Bearer $token")
-                if (cookies.isNotEmpty()) conn.setRequestProperty("Cookie", cookies)
+                val conn = HttpClient.get(URL(urlStr), token, cookies, 10000)
                 val code = conn.responseCode
                 if (code != 200) {
                     android.util.Log.w("GeoNatureSync", "defaultNomenclatures HTTP $code pour $urlStr")

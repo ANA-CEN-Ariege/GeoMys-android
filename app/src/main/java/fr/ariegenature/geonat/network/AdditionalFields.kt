@@ -100,22 +100,14 @@ object AdditionalFieldsApi {
                 ?: throw GNErreur.AuthEchouee(401)
 
             val url = URL("$base/api/gn_commons/additional_fields?module_code=$moduleCode")
-            val conn = url.openConnection() as java.net.HttpURLConnection
-            conn.connectTimeout = 10000
-            conn.readTimeout = 10000
-            conn.setRequestProperty("Accept", "application/json")
-            if (token != null) conn.setRequestProperty("Authorization", "Bearer $token")
-            if (cookies.isNotEmpty()) conn.setRequestProperty("Cookie", cookies)
+            val conn = HttpClient.get(url, token, cookies, 10000)
             val code = conn.responseCode
             if (code == 404) return@withContext emptyList() // endpoint absent — feature optionnelle
             if (code != 200) throw GNErreur.EnvoiEchoue(code, "additional_fields : HTTP $code")
 
             val text = conn.inputStream.bufferedReader().readText()
-            val array: JSONArray = try { JSONArray(text) } catch (_: Exception) {
-                val obj = JSONObject(text)
-                obj.optJSONArray("data") ?: obj.optJSONArray("items")
-                    ?: throw GNErreur.EnvoiEchoue(code, "additional_fields : format JSON inattendu")
-            }
+            val array: JSONArray = text.parserTableauJson("data", "items")
+                ?: throw GNErreur.EnvoiEchoue(code, "additional_fields : format JSON inattendu")
             val result = parserChamps(array)
             // Pour les widgets `nomenclature` : fetch parallèle des listes serveur
             // (/api/nomenclatures/nomenclature/<CODE>) pour résoudre id_nomenclature → label_fr.
@@ -322,16 +314,10 @@ object AdditionalFieldsApi {
     ): List<Pair<String, String>> {
         return try {
             val url = URL("$base/api/nomenclatures/nomenclature/$code")
-            val conn = url.openConnection() as java.net.HttpURLConnection
-            conn.connectTimeout = 10000
-            conn.readTimeout = 10000
-            conn.setRequestProperty("Accept", "application/json")
-            if (token != null) conn.setRequestProperty("Authorization", "Bearer $token")
-            if (cookies.isNotEmpty()) conn.setRequestProperty("Cookie", cookies)
+            val conn = HttpClient.get(url, token, cookies, 10000)
             if (conn.responseCode != 200) return emptyList()
             val text = conn.inputStream.bufferedReader().readText()
-            val obj = JSONObject(text)
-            val arr = obj.optJSONArray("values") ?: obj.optJSONArray("data") ?: return emptyList()
+            val arr = text.parserTableauJson("values", "data") ?: return emptyList()
             val out = mutableListOf<Pair<String, String>>()
             for (i in 0 until arr.length()) {
                 val item = arr.optJSONObject(i) ?: continue

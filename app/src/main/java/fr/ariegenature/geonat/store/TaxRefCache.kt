@@ -210,6 +210,11 @@ object TaxRefCache {
     fun getVernaculaireParCdNom(cdNom: Int): String? =
         vernsParCdNom()[cdNom]?.firstOrNull()
 
+    /** Nom à AFFICHER pour un cd_nom : nom français si connu, sinon nom scientifique. Null si le
+     *  taxon n'est pas dans le cache (espèce hors listes synchronisées). */
+    fun nomAffichageParCdNom(cdNom: Int): String? =
+        entreesParCdNom()[cdNom]?.let { it.nomFrOriginal?.takeIf { n -> n.isNotEmpty() } ?: it.sciNom }
+
     var comptesGroupes: Map<String, Int>
         get() {
             val json = prefs.getString(KEY_COMPTES, null) ?: return emptyMap()

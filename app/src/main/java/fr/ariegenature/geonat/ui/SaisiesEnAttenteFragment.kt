@@ -213,8 +213,7 @@ class SaisiesEnAttenteFragment : Fragment() {
             }
         } catch (_: Exception) { null } ?: return null
         if (cdNom <= 0) return null
-        val entry = fr.ariegenature.geonat.store.TaxRefCache.entreesParCdNom()[cdNom] ?: return null
-        return entry.nomFrOriginal?.takeIf { it.isNotEmpty() } ?: entry.sciNom
+        return fr.ariegenature.geonat.store.TaxRefCache.nomAffichageParCdNom(cdNom)
     }
 
     private fun ordrePourTri(etat: SaisieEnAttente.Etat) = when (etat) {

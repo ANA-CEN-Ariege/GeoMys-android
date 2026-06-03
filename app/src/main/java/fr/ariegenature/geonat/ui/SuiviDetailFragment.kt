@@ -261,10 +261,7 @@ class SuiviDetailFragment : Fragment() {
 
     /** Date ISO YYYY-MM-DD → JJ/MM/AAAA pour affichage. Autres valeurs : telles quelles. */
     private fun formatValeurAffichee(v: String): String {
-        if (v.length >= 10 && v[4] == '-' && v[7] == '-') {
-            return "${v.substring(8, 10)}/${v.substring(5, 7)}/${v.substring(0, 4)}"
-        }
-        return v
+        return fr.ariegenature.geonat.util.DateAffichage.isoVersFr(v)
     }
 
     /** Fallback générique quand le schéma serveur ne fournit pas de `label_list`. Capitalise

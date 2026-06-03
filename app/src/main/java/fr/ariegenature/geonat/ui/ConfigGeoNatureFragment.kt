@@ -209,6 +209,14 @@ class ConfigGeoNatureFragment : Fragment() {
         val nouveau = Triple(gnConfig.urlServeur, gnConfig.login, gnConfig.motDePasse)
         if (ancien != nouveau) {
             fr.ariegenature.geonat.network.invaliderCachesSession()
+            // Changement d'IDENTITÉ serveur : les ids de sélection (dataset/liste/observateur) du
+            // serveur précédent n'ont plus aucun sens — ils peuvent même coïncider avec d'AUTRES
+            // entités sur le nouveau serveur (ex. liste id 100 ou observateur id 3 qui existent
+            // sur les deux mais désignent autre chose). La réconciliation par présence ne suffit
+            // donc pas ici : on réinitialise franchement les 3 sélections. L'observateur se
+            // re-défaut sur l'utilisateur connecté au prochain peuplement (cf. peuplerSpinnerObservateurs).
+            reinitialiserSelectionsOcctax()
+            return // les champs ont été vidés ; rien d'autre à sauvegarder pour cette passe.
         }
         // idDataset / nomDataset sont positionnés via le spinner — pas via le champ texte.
         gnConfig.taxaListeId = binding.etTaxaListe.text.toString()
@@ -266,9 +274,22 @@ class ConfigGeoNatureFragment : Fragment() {
         // Affiche la sélection courante si elle est dans les datasets proposés.
         val currentId = gnConfig.idDataset.toIntOrNull()
         val idx = proposes.indexOfFirst { it.id == currentId }
-        binding.acDatasets.setText(if (idx >= 0) noms[idx] else "", false)
-        // Restaure la restriction au démarrage si le dataset courant a une liste imposée.
-        if (idx >= 0) appliquerRestrictionListeDataset(proposes[idx])
+        if (idx >= 0) {
+            binding.acDatasets.setText(noms[idx], false)
+            // Rafraîchit le nom stocké depuis le cache (corrige une dérive id↔nom après re-sync).
+            gnConfig.nomDataset = proposes[idx].nom
+            // Restaure la restriction au démarrage si le dataset courant a une liste imposée.
+            appliquerRestrictionListeDataset(proposes[idx])
+        } else {
+            // Sélection stockée ABSENTE de la liste valide (dataset devenu inactif, supprimé, ou
+            // hérité d'un autre serveur / d'un état antérieur après re-sync) : on PURGE le fantôme
+            // pour que les prefs == l'affichage (sinon un id stale validait la config à tort).
+            if (gnConfig.idDataset.isNotEmpty() || gnConfig.nomDataset.isNotEmpty()) {
+                gnConfig.idDataset = ""
+                gnConfig.nomDataset = ""
+            }
+            binding.acDatasets.setText("", false)
+        }
     }
 
     /** Si le dataset porte un `id_taxa_list`, restreint la dropdown des listes à cette
@@ -340,6 +361,13 @@ class ConfigGeoNatureFragment : Fragment() {
             binding.acListes.setText(noms[0], false)
             gnConfig.taxaListeId = result[0].id.toString()
             binding.etTaxaListe.setText(gnConfig.taxaListeId)
+        } else {
+            // Sélection stockée absente du cache courant (après re-sync) → purge du fantôme.
+            if (gnConfig.taxaListeId.isNotEmpty()) {
+                gnConfig.taxaListeId = ""
+                binding.etTaxaListe.setText("")
+            }
+            binding.acListes.setText("", false)
         }
     }
 
@@ -379,7 +407,19 @@ class ConfigGeoNatureFragment : Fragment() {
                 }
             }
         }
-        binding.acObservateurs.setText(if (idx >= 0) noms[idx] else "", false)
+        if (idx >= 0) {
+            // Rafraîchit le nom stocké (corrige une dérive id↔nom après re-sync).
+            gnConfig.observateurDefautNom = observateurs[idx].nomComplet
+            binding.acObservateurs.setText(noms[idx], false)
+        } else {
+            // Sélection stockée absente du cache courant (et utilisateur connecté introuvable) →
+            // purge du fantôme.
+            if (gnConfig.observateurDefautId.isNotEmpty() || gnConfig.observateurDefautNom.isNotEmpty()) {
+                gnConfig.observateurDefautId = ""
+                gnConfig.observateurDefautNom = ""
+            }
+            binding.acObservateurs.setText("", false)
+        }
     }
 
     /** Restaure les 3 spinners depuis le cache SharedPreferences si présent. */
@@ -559,21 +599,23 @@ class ConfigGeoNatureFragment : Fragment() {
     }
 
     private fun updateStatusIndicator() {
-        // Pour cet écran on exige les 3 sélections (jeu de données, liste, observateur)
-        // ET que les données aient été effectivement chargées (= TaxRef en cache).
-        // `estConfiguree` côté store reste plus permissif car il est consommé par les
-        // écrans d'envoi (où seul idDataset est requis côté payload OCCTAX).
-        val configured = gnConfig.connexionConfiguree
-            && gnConfig.idDataset.trim().isNotEmpty()
-            && gnConfig.taxaListeId.trim().isNotEmpty()
-            && gnConfig.observateurDefautId.trim().isNotEmpty()
-            && TaxRefCache.count > 0
+        // Validation STRICTE (durcie) : il ne suffit PLUS que les champs soient non vides — on
+        // exige que le jeu de données, la liste ET l'observateur sélectionnés soient réellement
+        // PRÉSENTS dans les caches du serveur courant (cf. saisieOcctaxValide). Sans ça, un id
+        // fantôme (ex. dataset devenu inactif, donc absent du cache filtré active=true) passait
+        // pour « complet » alors qu'une saisie partait dans le vide / invisible côté serveur.
+        // On exige en plus que les taxons aient été chargés.
+        val configured = gnConfig.saisieOcctaxValide && TaxRefCache.count > 0
         binding.tvStatutConfig.text = if (configured)
             getString(R.string.configuration_complete)
         else
             getString(R.string.configuration_incomplete)
         binding.tvStatutConfig.setTextColor(
             if (configured) 0xFF2E7D32.toInt() else 0xFFE65100.toInt()
+        )
+        // Coche du bouton « Valider » : verte si config valide, orange tant qu'elle ne l'est pas.
+        binding.fabValider.setImageResource(
+            if (configured) R.drawable.coche else R.drawable.coche_orange
         )
     }
 

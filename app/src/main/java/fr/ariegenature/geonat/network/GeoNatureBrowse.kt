@@ -73,21 +73,12 @@ object GeoNatureBrowse {
             // saisie, c'est ce que fait le formulaire web. `fields=modules` ramène le
             // tableau des modules rattachés (utile au tracking).
             val url = URL("$base/api/meta/datasets?active=true&module_code=OCCTAX&fields=modules")
-            val conn = url.openConnection() as java.net.HttpURLConnection
-            conn.connectTimeout = 10000
-            conn.readTimeout = 10000
-            if (token != null) conn.setRequestProperty("Authorization", "Bearer $token")
-            conn.setRequestProperty("Accept", "application/json")
+            val conn = HttpClient.get(url, token, timeoutMs = 10000)
 
             if (conn.responseCode != 200) throw GNErreur.EnvoiEchoue(conn.responseCode, "Impossible de charger les jeux de données")
 
             val rawText = conn.inputStream.bufferedReader().readText()
-            val parsed = try { JSONArray(rawText) } catch (_: Exception) {
-                try {
-                    val obj = JSONObject(rawText)
-                    obj.optJSONArray("data") ?: obj.optJSONArray("items") ?: obj.optJSONArray("results") ?: JSONArray()
-                } catch (_: Exception) { JSONArray() }
-            }
+            val parsed = rawText.parserTableauJson("data", "items", "results") ?: JSONArray()
 
             val result = mutableListOf<GeoNatureDataset>()
             for (i in 0 until parsed.length()) {
@@ -126,18 +117,12 @@ object GeoNatureBrowse {
         withContext(Dispatchers.IO) {
             val base = config.urlServeur.trim().trimEnd('/')
             val url = URL("$base/api/taxhub/api/biblistes")
-            val conn = url.openConnection() as java.net.HttpURLConnection
-            conn.connectTimeout = 10000
-            conn.readTimeout = 10000
-            conn.setRequestProperty("Accept", "application/json")
+            val conn = HttpClient.get(url, timeoutMs = 10000)
             val code = conn.responseCode
             if (code != 200) throw GNErreur.EnvoiEchoue(code, "Listes taxons : HTTP $code")
             val text = conn.inputStream.bufferedReader().readText()
-            val array: JSONArray = try { JSONArray(text) } catch (_: Exception) {
-                val obj = JSONObject(text)
-                obj.optJSONArray("data") ?: obj.optJSONArray("items") ?: obj.optJSONArray("results")
-                    ?: throw GNErreur.EnvoiEchoue(code, "Listes taxons : format JSON inattendu")
-            }
+            val array: JSONArray = text.parserTableauJson("data", "items", "results")
+                ?: throw GNErreur.EnvoiEchoue(code, "Listes taxons : format JSON inattendu")
             val result = mutableListOf<GeoNatureListe>()
             for (i in 0 until array.length()) {
                 val item = array.getJSONObject(i)
@@ -158,21 +143,13 @@ object GeoNatureBrowse {
                 ?: throw GNErreur.AuthEchouee(401)
 
             val url = URL("$base/api/users/roles")
-            val conn = url.openConnection() as java.net.HttpURLConnection
-            conn.connectTimeout = 10000
-            conn.readTimeout = 10000
-            conn.setRequestProperty("Accept", "application/json")
-            if (token != null) conn.setRequestProperty("Authorization", "Bearer $token")
-            if (cookies.isNotEmpty()) conn.setRequestProperty("Cookie", cookies)
+            val conn = HttpClient.get(url, token, cookies, 10000)
             val code = conn.responseCode
             if (code != 200) throw GNErreur.EnvoiEchoue(code, "Observateurs : HTTP $code")
 
             val text = conn.inputStream.bufferedReader().readText()
-            val array: JSONArray = try { JSONArray(text) } catch (_: Exception) {
-                val obj = JSONObject(text)
-                obj.optJSONArray("data") ?: obj.optJSONArray("items") ?: obj.optJSONArray("results")
-                    ?: throw GNErreur.EnvoiEchoue(code, "Observateurs : format JSON inattendu")
-            }
+            val array: JSONArray = text.parserTableauJson("data", "items", "results")
+                ?: throw GNErreur.EnvoiEchoue(code, "Observateurs : format JSON inattendu")
             val result = mutableListOf<GeoNatureObservateur>()
             for (i in 0 until array.length()) {
                 val item = array.getJSONObject(i)
@@ -202,11 +179,7 @@ object GeoNatureBrowse {
         val bboxEncoded = java.net.URLEncoder.encode(bboxJson, "UTF-8")
 
         val url = URL("$base/api/synthese/for_web?bounding_box=$bboxEncoded&date_low=$dateLow&limit=1000")
-        val conn = url.openConnection() as java.net.HttpURLConnection
-        conn.connectTimeout = 20000
-        conn.readTimeout = 20000
-        conn.setRequestProperty("Accept", "application/json")
-        if (token != null) conn.setRequestProperty("Authorization", "Bearer $token")
+        val conn = HttpClient.get(url, token, timeoutMs = 20000)
 
         if (conn.responseCode != 200) throw GNErreur.EnvoiEchoue(conn.responseCode, "Erreur synthèse")
 
@@ -223,11 +196,7 @@ object GeoNatureBrowse {
         val regneParCdNom = TaxRefCache.tousLesRegnes()
         val groupe1ParCdNom = TaxRefCache.tousLesGroupes1()
         try {
-            val root = JSONObject(text)
-            val array: JSONArray = root.optJSONArray("features")
-                ?: root.optJSONArray("data")
-                ?: root.optJSONArray("items")
-                ?: root.optJSONArray("results")
+            val array: JSONArray = text.parserTableauJson("features", "data", "items", "results")
                 ?: return result
 
             for (i in 0 until array.length()) {

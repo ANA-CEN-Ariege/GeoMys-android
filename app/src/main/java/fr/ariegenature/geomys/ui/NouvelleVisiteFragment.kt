@@ -691,11 +691,12 @@ class NouvelleVisiteFragment : Fragment() {
             return
         }
 
-        // uuid pré-généré uniquement quand on a un média ET un uuid_field_name déclaré côté
-        // schéma : sans uuid_field_name on ne sait pas où l'injecter dans le payload, et sans
-        // média on n'a rien à rattacher après création. Évite de spammer le serveur avec un
-        // uuid client sur tous les objets — laisse Postgres en générer un comme aujourd'hui.
-        val uuidNouveau = if (mediaPaths.isNotEmpty() && uuidFieldNameVisit != null)
+        // uuid pré-généré dès que le schéma déclare un uuid_field_name (sinon on ne sait pas
+        // où l'injecter dans le payload). Double rôle : rattacher les médias après création
+        // (uuid_attached_row) ET identifier la saisie côté serveur pour l'anti-doublon — si la
+        // réponse d'un POST se perd (coupure en plein transfert), le re-envoi vérifie par cet
+        // uuid que l'objet n'existe pas déjà avant de re-POSTer (cf. OutboxEnvoi).
+        val uuidNouveau = if (uuidFieldNameVisit != null)
             java.util.UUID.randomUUID().toString() else null
         val saisie = fr.ariegenature.geomys.store.SaisieEnAttente(
             moduleCode = moduleCode,

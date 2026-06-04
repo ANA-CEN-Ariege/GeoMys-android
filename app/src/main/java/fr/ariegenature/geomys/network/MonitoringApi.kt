@@ -1564,6 +1564,56 @@ object MonitoringApi {
      *
      *  Retourne le `id` du nouvel objet créé via Result.success, ou une exception via
      *  Result.failure (auth, HTTP, parse). */
+    /** Cherche parmi les enfants directs de {parentObjectType}/{parentId} un objet portant
+     *  [uuid] dans son champ [uuidFieldName]. Anti-doublon : quand la RÉPONSE d'un POST s'est
+     *  perdue (coupure/timeout après que le serveur a traité), la saisie est marquée en échec
+     *  alors que l'objet existe — re-POSTer aveuglément le dupliquerait. Lecture LIVE
+     *  exclusivement (jamais le cache : un cache antérieur au POST dirait « absent » à tort).
+     *  Retourne l'id serveur si trouvé (0 si trouvé mais id illisible), null si absent.
+     *  LANCE en cas d'erreur réseau/auth : l'appelant ne doit alors PAS re-POSTer. */
+    suspend fun chercherEnfantParUuid(
+        config: GeoNatureConfig,
+        moduleCode: String,
+        parentObjectType: String,
+        parentId: Int,
+        childObjectType: String,
+        uuidFieldName: String,
+        uuid: String,
+    ): Int? = withContext(Dispatchers.IO) {
+        val base = config.urlServeur.trim().trimEnd('/')
+        val auth = GeoNatureAuth.loginAvecCookies(base, config.login, config.motDePasse)
+            ?: throw GNErreur.AuthEchouee(401)
+        val (token, _, cookies) = auth
+        val url = URL("$base/api/monitorings/object/$moduleCode/$parentObjectType/$parentId?depth=1")
+        val conn = HttpClient.get(url, token, cookies, 15000)
+        try {
+            val code = conn.responseCode
+            if (code != 200) {
+                throw GNErreur.EnvoiEchoue(code, "vérification anti-doublon ($parentObjectType #$parentId)")
+            }
+            val obj = JSONObject(conn.inputStream.bufferedReader().readText())
+            val arr = obj.optJSONObject("children")?.optJSONArray(childObjectType)
+                ?: return@withContext null
+            for (i in 0 until arr.length()) {
+                val item = arr.optJSONObject(i) ?: continue
+                val props = aplatirProprietes(item.optJSONObject("properties"))
+                val uuidServeur = props[uuidFieldName].orEmpty()
+                if (uuidServeur.equals(uuid, ignoreCase = true)) {
+                    // Même heuristique d'id que chargerObjet, avec repli sur les id_* des props.
+                    val id = item.optInt("id", item.optInt("${childObjectType}_id", -1))
+                        .takeIf { it > 0 }
+                        ?: props.entries.firstOrNull { (k, v) ->
+                            k.startsWith("id_") && (v.toIntOrNull() ?: 0) > 0
+                        }?.value?.toIntOrNull()
+                    return@withContext id ?: 0
+                }
+            }
+            null
+        } finally {
+            conn.disconnect()
+        }
+    }
+
     suspend fun envoyerVisite(
         config: GeoNatureConfig,
         moduleCode: String,

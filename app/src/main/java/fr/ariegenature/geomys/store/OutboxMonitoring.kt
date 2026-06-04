@@ -62,6 +62,11 @@ data class SaisieEnAttente(
      *  (doublon sinon) : il ne renvoie que les médias. Permet aussi de débloquer les enfants
      *  d'un parent dont seuls les médias ont échoué. */
     val objetCree: Boolean = false,
+    /** true dès qu'un POST a été TENTÉ (passage en SENDING), même sans confirmation. Si la
+     *  réponse s'est perdue (coupure pendant le transfert), l'objet peut exister côté serveur
+     *  sans que [objetCree] le sache : avant un re-POST, l'envoi vérifie alors par
+     *  [uuidPayload] que l'objet n'existe pas déjà (anti-doublon, cf. OutboxEnvoi). */
+    val dejaTentee: Boolean = false,
     /** uuid pré-généré côté client à la création de la saisie, injecté dans le payload POST
      *  au champ [uuidFieldName] (ex. `uuid_base_visit`). Sert ensuite à rattacher un média
      *  uploadé sur gn_commons à l'objet créé via `uuid_attached_row`. Null si le schéma ne
@@ -133,6 +138,7 @@ object OutboxMonitoring {
             champsTexteLibre = e.champsTexteLibre ?: emptyList(),
             valeursJson = e.valeursJson, dateLocale = e.dateLocale, etat = e.etat,
             messageErreur = e.messageErreur, idServeur = e.idServeur, objetCree = e.objetCree,
+            dejaTentee = e.dejaTentee,
             uuidPayload = e.uuidPayload, uuidFieldName = e.uuidFieldName,
             mediaPathLocal = e.mediaPathLocal,
             mediaPathsLocal = e.mediaPathsLocal ?: emptyList(),

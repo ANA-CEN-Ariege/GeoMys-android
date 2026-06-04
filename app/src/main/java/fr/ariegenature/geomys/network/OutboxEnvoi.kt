@@ -176,7 +176,9 @@ object OutboxEnvoi {
                     }
                 }
                 OutboxMonitoring.mettreAJour(saisie.uuid) {
-                    it.copy(etat = SaisieEnAttente.Etat.SENDING, messageErreur = null)
+                    // dejaTentee persisté AVANT le POST : si la réponse se perd, le prochain
+                    // envoi saura qu'il doit vérifier l'existence côté serveur (anti-doublon).
+                    it.copy(etat = SaisieEnAttente.Etat.SENDING, messageErreur = null, dejaTentee = true)
                 }
                 progression(envoyees, total, "Envoi de ${saisie.objectType}…")
 
@@ -260,30 +262,55 @@ object OutboxEnvoi {
                 // Objet déjà créé lors d'une tentative précédente — médias seulement.
                 idServeur = s.idServeur ?: 0
             } else {
-                val valeurs = mutableMapOf<String, Any?>()
-                val obj = org.json.JSONObject(s.valeursJson)
-                val it = obj.keys()
-                while (it.hasNext()) {
-                    val k = it.next()
-                    valeurs[k] = if (obj.isNull(k)) null else obj.opt(k)
+                // Anti-doublon : une saisie DÉJÀ tentée sans confirmation (réponse perdue en
+                // pleine coupure) peut exister côté serveur. Si elle porte un uuid client et
+                // que son parent serveur est connu, on vérifie AVANT de re-POSTer. Une erreur
+                // réseau pendant la vérification fait échouer l'envoi (pas de re-POST aveugle).
+                val idExistant = if (
+                    s.dejaTentee && s.uuidPayload != null && s.uuidFieldName != null &&
+                    s.parentObjectType != null && (s.parentIdServeur ?: 0) > 0
+                ) {
+                    MonitoringApi.chercherEnfantParUuid(
+                        config = config,
+                        moduleCode = s.moduleCode,
+                        parentObjectType = s.parentObjectType,
+                        parentId = s.parentIdServeur!!,
+                        childObjectType = s.objectType,
+                        uuidFieldName = s.uuidFieldName,
+                        uuid = s.uuidPayload,
+                    )
+                } else null
+                if (idExistant != null) {
+                    android.util.Log.i("OutboxEnvoi",
+                        "Anti-doublon : ${s.objectType} ${s.uuidPayload} déjà créé côté serveur (#$idExistant) — pas de re-POST")
+                    OutboxMonitoring.mettreAJour(s.uuid) { it.copy(objetCree = true, idServeur = idExistant) }
+                    idServeur = idExistant
+                } else {
+                    val valeurs = mutableMapOf<String, Any?>()
+                    val obj = org.json.JSONObject(s.valeursJson)
+                    val it = obj.keys()
+                    while (it.hasNext()) {
+                        val k = it.next()
+                        valeurs[k] = if (obj.isNull(k)) null else obj.opt(k)
+                    }
+                    val resVisite = MonitoringApi.envoyerVisite(
+                        config = config,
+                        moduleCode = s.moduleCode,
+                        objectType = s.objectType,
+                        parentIdField = s.parentIdField,
+                        parentId = s.parentIdServeur,
+                        valeurs = valeurs,
+                        nomsChampsSchema = s.nomsChampsSchema,
+                        champsTexteLibre = s.champsTexteLibre,
+                        uuidClient = s.uuidPayload,
+                        uuidFieldName = s.uuidFieldName,
+                    )
+                    idServeur = resVisite.getOrElse { return Result.failure(it) }
+                    // Marque « créé côté serveur » IMMÉDIATEMENT (avant l'upload des médias) :
+                    // si l'app meurt ou si les médias échouent, on sait qu'il ne faut plus
+                    // re-POSTer cet objet.
+                    OutboxMonitoring.mettreAJour(s.uuid) { it.copy(objetCree = true, idServeur = idServeur) }
                 }
-                val resVisite = MonitoringApi.envoyerVisite(
-                    config = config,
-                    moduleCode = s.moduleCode,
-                    objectType = s.objectType,
-                    parentIdField = s.parentIdField,
-                    parentId = s.parentIdServeur,
-                    valeurs = valeurs,
-                    nomsChampsSchema = s.nomsChampsSchema,
-                    champsTexteLibre = s.champsTexteLibre,
-                    uuidClient = s.uuidPayload,
-                    uuidFieldName = s.uuidFieldName,
-                )
-                idServeur = resVisite.getOrElse { return Result.failure(it) }
-                // Marque « créé côté serveur » IMMÉDIATEMENT (avant l'upload des médias) :
-                // si l'app meurt ou si les médias échouent, on sait qu'il ne faut plus
-                // re-POSTer cet objet.
-                OutboxMonitoring.mettreAJour(s.uuid) { it.copy(objetCree = true, idServeur = idServeur) }
             }
             // Upload des médias (multi-fichiers) après création. Un échec ne remet PAS en
             // cause la création de l'objet : il est remonté via EnvoiUne.erreurMedia pour que

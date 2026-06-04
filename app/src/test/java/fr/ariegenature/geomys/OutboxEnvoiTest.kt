@@ -62,6 +62,9 @@ class OutboxEnvoiTest {
     private val codesMedia = Collections.synchronizedList(mutableListOf<Int>())
     private val postsMedia = AtomicInteger(0)
 
+    /** Réponse du GET parent?depth=1 (vérification anti-doublon). Null = enfants vides. */
+    @Volatile private var reponseParentDepth1: MockResponse? = null
+
     @Before
     fun setup() {
         server = MockWebServer().apply { start() }
@@ -69,6 +72,7 @@ class OutboxEnvoiTest {
         codesVisite.clear()
         codesMedia.clear()
         postsMedia.set(0)
+        reponseParentDepth1 = null
         prochainIdServeur.set(41)
         OutboxMonitoring.init(ApplicationProvider.getApplicationContext())
         OutboxMonitoring.vider()
@@ -83,6 +87,9 @@ class OutboxEnvoiTest {
                 return when {
                     path.startsWith("/api/auth/login") ->
                         json.setResponseCode(200).setBody("""{"access_token":"t","user":{"id_role":1}}""")
+                    request.method == "GET" && path.startsWith("/api/monitorings/object/") &&
+                        path.contains("depth=1") ->
+                        reponseParentDepth1 ?: json.setResponseCode(200).setBody("""{"children":{}}""")
                     request.method == "POST" && path.startsWith("/api/monitorings/object/") -> {
                         postsVisite.add(request.body.readUtf8())
                         val code = synchronized(codesVisite) {
@@ -120,13 +127,18 @@ class OutboxEnvoiTest {
         avecMedia: Boolean = false,
         objetCree: Boolean = false,
         idServeur: Int? = null,
+        dejaTentee: Boolean = false,
+        parentObjectType: String? = null,
+        parentIdServeur: Int? = null,
+        uuidPayload: String? = if (avecMedia) "uuid-$uuid" else null,
+        uuidFieldName: String? = if (avecMedia) "uuid_base_visit" else null,
     ) = SaisieEnAttente(
         uuid = uuid, moduleCode = "STOC", objectType = "visite",
+        parentObjectType = parentObjectType, parentIdServeur = parentIdServeur,
         parentUuidLocal = parentUuidLocal, parentIdField = "id_base_site",
         valeursJson = """{"comments":"test $uuid"}""", etat = etat,
-        objetCree = objetCree, idServeur = idServeur,
-        uuidPayload = if (avecMedia) "uuid-$uuid" else null,
-        uuidFieldName = if (avecMedia) "uuid_base_visit" else null,
+        objetCree = objetCree, idServeur = idServeur, dejaTentee = dejaTentee,
+        uuidPayload = uuidPayload, uuidFieldName = uuidFieldName,
         mediaPathsLocal = if (avecMedia) listOf(fichierMedia()) else emptyList(),
         mediaSchemaDotTable = if (avecMedia) "gn_monitoring.t_base_visits" else null,
     )
@@ -252,6 +264,53 @@ class OutboxEnvoiTest {
         assertEquals("seul g1 est parti", 1, postsVisite.size)
         val g2 = OutboxMonitoring.tout().single { it.uuid == "g2" }
         assertEquals("g2 reste en erreur, non touché", SaisieEnAttente.Etat.ERROR, g2.etat)
+    }
+
+    // ── Anti-doublon : re-POST après réponse perdue ────────────────────────────────
+
+    /** Saisie déjà tentée (réponse perdue en pleine coupure) : porte un uuid client et
+     *  connaît son parent serveur → la vérification anti-doublon est possible. */
+    private fun saisieAmbigue() = saisie(
+        "obs", etat = SaisieEnAttente.Etat.ERROR, dejaTentee = true,
+        parentObjectType = "site", parentIdServeur = 12,
+        uuidPayload = "uuid-obs", uuidFieldName = "uuid_observation",
+    )
+
+    @Test
+    fun re_envoi_ne_duplique_pas_une_saisie_deja_creee_dont_la_reponse_s_est_perdue() {
+        // Le serveur a déjà l'objet (uuid retrouvé chez les enfants du parent) : le re-envoi
+        // doit le DÉTECTER au lieu de re-POSTer — c'est le doublon observé sur le terrain.
+        reponseParentDepth1 = MockResponse().setHeader("Content-Type", "application/json")
+            .setResponseCode(200)
+            .setBody("""{"children":{"visite":[
+                {"id":77,"properties":{"uuid_observation":"UUID-OBS","comments":"x"}}
+            ]}}""")
+        OutboxMonitoring.ajouter(saisieAmbigue())
+        val res = envoyerTout()
+        assertEquals(1, res.succes)
+        assertEquals("AUCUN re-POST : l'objet existe déjà", 0, postsVisite.size)
+        assertTrue("réconciliée et purgée", OutboxMonitoring.tout().isEmpty())
+    }
+
+    @Test
+    fun re_envoi_poste_normalement_si_l_objet_est_absent_du_serveur() {
+        // children vides (reponseParentDepth1 par défaut) → l'objet n'a jamais été créé.
+        OutboxMonitoring.ajouter(saisieAmbigue())
+        val res = envoyerTout()
+        assertEquals(1, res.succes)
+        assertEquals("le POST doit partir cette fois", 1, postsVisite.size)
+    }
+
+    @Test
+    fun verification_anti_doublon_inaccessible_bloque_le_re_envoi() {
+        // Vérification impossible (réseau/serveur KO) : ne PAS re-POSTer à l'aveugle.
+        reponseParentDepth1 = MockResponse().setResponseCode(500)
+        OutboxMonitoring.ajouter(saisieAmbigue())
+        val res = envoyerTout()
+        assertEquals(1, res.echecs)
+        assertEquals("pas de re-POST aveugle", 0, postsVisite.size)
+        assertEquals(SaisieEnAttente.Etat.ERROR,
+            OutboxMonitoring.tout().single().etat)
     }
 
     // ── Médias (objet créé, photo en échec — ex. mode avion pendant le transfert) ──

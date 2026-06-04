@@ -57,6 +57,11 @@ data class SaisieEnAttente(
     /** Id serveur attribué après envoi réussi — utile pour le drill-down ou pour purger
      *  cette saisie de la file plus tard. */
     val idServeur: Int? = null,
+    /** true dès que l'objet a été CRÉÉ côté serveur (POST 2xx), même si l'upload des médias
+     *  a échoué ensuite. Un « Réessayer » sur une saisie objetCree ne re-POSTe PAS l'objet
+     *  (doublon sinon) : il ne renvoie que les médias. Permet aussi de débloquer les enfants
+     *  d'un parent dont seuls les médias ont échoué. */
+    val objetCree: Boolean = false,
     /** uuid pré-généré côté client à la création de la saisie, injecté dans le payload POST
      *  au champ [uuidFieldName] (ex. `uuid_base_visit`). Sert ensuite à rattacher un média
      *  uploadé sur gn_commons à l'objet créé via `uuid_attached_row`. Null si le schéma ne
@@ -127,7 +132,7 @@ object OutboxMonitoring {
             nomsChampsSchema = e.nomsChampsSchema ?: emptyList(),
             champsTexteLibre = e.champsTexteLibre ?: emptyList(),
             valeursJson = e.valeursJson, dateLocale = e.dateLocale, etat = e.etat,
-            messageErreur = e.messageErreur, idServeur = e.idServeur,
+            messageErreur = e.messageErreur, idServeur = e.idServeur, objetCree = e.objetCree,
             uuidPayload = e.uuidPayload, uuidFieldName = e.uuidFieldName,
             mediaPathLocal = e.mediaPathLocal,
             mediaPathsLocal = e.mediaPathsLocal ?: emptyList(),

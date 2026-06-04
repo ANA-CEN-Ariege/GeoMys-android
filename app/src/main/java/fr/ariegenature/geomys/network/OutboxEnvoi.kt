@@ -129,25 +129,34 @@ object OutboxEnvoi {
                 // passera en SENT au tour suivant.
                 if (saisie.parentUuidLocal != null) {
                     val parent = OutboxMonitoring.tout().firstOrNull { it.uuid == saisie.parentUuidLocal }
-                    // Parent introuvable ou définitivement en échec : l'enfant ne sera jamais
-                    // envoyable dans ce run (on ne rejoue pas les ERROR). On le bascule en ERROR
-                    // au lieu de le laisser PENDING indéfiniment (cf. audit B3 — compteur
-                    // "en attente" trompeur). L'utilisateur corrigera le parent puis "Réessayer".
-                    if (parent == null || parent.etat == SaisieEnAttente.Etat.ERROR) {
-                        val raison = if (parent == null) "parent introuvable" else "parent en échec"
-                        OutboxMonitoring.mettreAJour(saisie.uuid) {
-                            it.copy(etat = SaisieEnAttente.Etat.ERROR, messageErreur = raison)
+                    when {
+                        // Parent CRÉÉ côté serveur (SENT, ou ERROR « médias seulement ») : sa FK
+                        // est connue → l'enfant est envoyable même si les photos du parent ont
+                        // échoué (elles se rejouent indépendamment via « Réessayer »).
+                        parent != null && parent.objetCree && (parent.idServeur ?: 0) > 0 -> {
+                            OutboxMonitoring.mettreAJour(saisie.uuid) {
+                                it.copy(parentIdServeur = parent.idServeur, parentUuidLocal = null)
+                            }
                         }
-                        echecs++
-                        envoyees++
-                        messages.add("⚠ ${saisie.objectType} : $raison")
-                        progression(envoyees, total, "")
-                        continue
-                    }
-                    // Parent encore PENDING/SENDING : sera repris quand il passera en SENT.
-                    if (parent.etat != SaisieEnAttente.Etat.SENT) continue
-                    if (parent.idServeur != null) {
-                        OutboxMonitoring.mettreAJour(saisie.uuid) {
+                        // Parent introuvable ou définitivement en échec (non créé) : l'enfant ne
+                        // sera jamais envoyable dans ce run (on ne rejoue pas les ERROR). On le
+                        // bascule en ERROR au lieu de le laisser PENDING indéfiniment (cf. audit
+                        // B3 — compteur "en attente" trompeur). L'utilisateur corrigera le parent
+                        // puis "Réessayer".
+                        parent == null || parent.etat == SaisieEnAttente.Etat.ERROR -> {
+                            val raison = if (parent == null) "parent introuvable" else "parent en échec"
+                            OutboxMonitoring.mettreAJour(saisie.uuid) {
+                                it.copy(etat = SaisieEnAttente.Etat.ERROR, messageErreur = raison)
+                            }
+                            echecs++
+                            envoyees++
+                            messages.add("⚠ ${saisie.objectType} : $raison")
+                            progression(envoyees, total, "")
+                            continue
+                        }
+                        // Parent encore PENDING/SENDING : repris quand il passera en SENT.
+                        parent.etat != SaisieEnAttente.Etat.SENT -> continue
+                        parent.idServeur != null -> OutboxMonitoring.mettreAJour(saisie.uuid) {
                             it.copy(parentIdServeur = parent.idServeur, parentUuidLocal = null)
                         }
                     }
@@ -161,15 +170,31 @@ object OutboxEnvoi {
                 val res = envoyerUne(config, saisieAJour)
                 envoyees++
                 res.fold(
-                    onSuccess = { idServeur ->
-                        succes++
-                        // Une SENT débloque potentiellement ses enfants → on permet un
-                        // nouveau tour de boucle.
+                    onSuccess = { envoi ->
+                        // L'objet est créé côté serveur → ses enfants sont débloqués dans tous
+                        // les cas (même si ses médias ont échoué) → nouveau tour de boucle.
                         nouvelleVagueSucces = true
-                        OutboxMonitoring.mettreAJour(saisie.uuid) {
-                            it.copy(etat = SaisieEnAttente.Etat.SENT, idServeur = idServeur, messageErreur = null)
+                        if (envoi.erreurMedia == null) {
+                            succes++
+                            OutboxMonitoring.mettreAJour(saisie.uuid) {
+                                it.copy(etat = SaisieEnAttente.Etat.SENT, idServeur = envoi.idServeur,
+                                    objetCree = true, messageErreur = null)
+                            }
+                            messages.add("✅ ${saisie.objectType} #${envoi.idServeur}")
+                        } else {
+                            // Objet créé MAIS médias non envoyés (ex. mode avion pendant le
+                            // transfert de la photo) : la saisie reste visible en erreur
+                            // ré-essayable — « Réessayer » ne renverra QUE les médias
+                            // (objetCree déjà posé par envoyerUne). Avant ce correctif, la
+                            // saisie passait SENT et les photos étaient perdues en silence.
+                            echecs++
+                            val msg = ("Objet créé (#${envoi.idServeur}) mais média(s) non envoyé(s) : " +
+                                "${envoi.erreurMedia} — « Réessayer » ne renverra que les médias.").take(300)
+                            OutboxMonitoring.mettreAJour(saisie.uuid) {
+                                it.copy(etat = SaisieEnAttente.Etat.ERROR, messageErreur = msg)
+                            }
+                            messages.add("⚠ ${saisie.objectType} #${envoi.idServeur} : médias non envoyés")
                         }
-                        messages.add("✅ ${saisie.objectType} #${idServeur}")
                     },
                     onFailure = { e ->
                         echecs++
@@ -191,39 +216,55 @@ object OutboxEnvoi {
         }
     }
 
+    /** Résultat d'un [envoyerUne] réussi : l'objet est créé (ou l'était déjà) côté serveur ;
+     *  [erreurMedia] non-null si l'upload d'au moins un média a échoué ensuite. */
+    private data class EnvoiUne(val idServeur: Int, val erreurMedia: String?)
+
     /** Envoie une saisie isolée. Lit les valeurs depuis valeursJson, reconstitue la Map
-     *  attendue par [MonitoringApi.envoyerVisite] et POST. En cas de succès, déclenche
-     *  l'upload du média éventuel (mediaPathLocal) vers gn_commons. Un échec d'upload média
-     *  ne fait pas basculer la saisie en ERROR — l'objet est créé côté serveur, on garde
-     *  SENT avec un message d'avertissement. */
-    private suspend fun envoyerUne(config: GeoNatureConfig, s: SaisieEnAttente): Result<Int> {
+     *  attendue par [MonitoringApi.envoyerVisite] et POST, puis uploade les médias éventuels
+     *  vers gn_commons. Si la saisie porte déjà [SaisieEnAttente.objetCree] (tentative
+     *  précédente où seuls les médias avaient échoué — ex. mode avion pendant le transfert
+     *  de la photo), le POST est SAUTÉ (re-POSTer dupliquerait l'objet) : on ne renvoie que
+     *  les médias. */
+    private suspend fun envoyerUne(config: GeoNatureConfig, s: SaisieEnAttente): Result<EnvoiUne> {
         return try {
-            val valeurs = mutableMapOf<String, Any?>()
-            val obj = org.json.JSONObject(s.valeursJson)
-            val it = obj.keys()
-            while (it.hasNext()) {
-                val k = it.next()
-                valeurs[k] = if (obj.isNull(k)) null else obj.opt(k)
+            val idServeur: Int
+            if (s.objetCree) {
+                // Objet déjà créé lors d'une tentative précédente — médias seulement.
+                idServeur = s.idServeur ?: 0
+            } else {
+                val valeurs = mutableMapOf<String, Any?>()
+                val obj = org.json.JSONObject(s.valeursJson)
+                val it = obj.keys()
+                while (it.hasNext()) {
+                    val k = it.next()
+                    valeurs[k] = if (obj.isNull(k)) null else obj.opt(k)
+                }
+                val resVisite = MonitoringApi.envoyerVisite(
+                    config = config,
+                    moduleCode = s.moduleCode,
+                    objectType = s.objectType,
+                    parentIdField = s.parentIdField,
+                    parentId = s.parentIdServeur,
+                    valeurs = valeurs,
+                    nomsChampsSchema = s.nomsChampsSchema,
+                    champsTexteLibre = s.champsTexteLibre,
+                    uuidClient = s.uuidPayload,
+                    uuidFieldName = s.uuidFieldName,
+                )
+                idServeur = resVisite.getOrElse { return Result.failure(it) }
+                // Marque « créé côté serveur » IMMÉDIATEMENT (avant l'upload des médias) :
+                // si l'app meurt ou si les médias échouent, on sait qu'il ne faut plus
+                // re-POSTer cet objet.
+                OutboxMonitoring.mettreAJour(s.uuid) { it.copy(objetCree = true, idServeur = idServeur) }
             }
-            val resVisite = MonitoringApi.envoyerVisite(
-                config = config,
-                moduleCode = s.moduleCode,
-                objectType = s.objectType,
-                parentIdField = s.parentIdField,
-                parentId = s.parentIdServeur,
-                valeurs = valeurs,
-                nomsChampsSchema = s.nomsChampsSchema,
-                champsTexteLibre = s.champsTexteLibre,
-                uuidClient = s.uuidPayload,
-                uuidFieldName = s.uuidFieldName,
-            )
-            // Upload des médias (multi-fichiers) après création réussie. La saisie reste SENT
-            // même si l'upload échoue — l'objet est en base côté serveur, c'est juste la/les
-            // pièce(s) jointe(s) qui manque(nt). On log via android.util.Log pour diagnostic.
+            // Upload des médias (multi-fichiers) après création. Un échec ne remet PAS en
+            // cause la création de l'objet : il est remonté via EnvoiUne.erreurMedia pour que
+            // l'appelant marque la saisie ERREUR ré-essayable (médias seulement) — avant, il
+            // n'était que loggé et les photos étaient perdues en silence.
+            var erreurMedia: String? = null
             val medias = s.mediasLocaux()
-            if (resVisite.isSuccess && medias.isNotEmpty() &&
-                s.mediaSchemaDotTable != null && s.uuidPayload != null
-            ) {
+            if (medias.isNotEmpty() && s.mediaSchemaDotTable != null && s.uuidPayload != null) {
                 val (ok, err) = fr.ariegenature.geomys.network.GeoNatureUpload.uploaderMediaMonitoring(
                     config = config,
                     mediaPaths = medias,
@@ -233,11 +274,12 @@ object OutboxEnvoi {
                     author = config.nomUtilisateur.ifEmpty { config.login },
                 )
                 if (!ok) {
+                    erreurMedia = err ?: "upload média échoué"
                     android.util.Log.w("OutboxEnvoi",
                         "Upload média échoué pour ${s.uuid} (objet créé OK) : $err")
                 }
             }
-            resVisite
+            Result.success(EnvoiUne(idServeur, erreurMedia))
         } catch (e: Exception) {
             Result.failure(e)
         }

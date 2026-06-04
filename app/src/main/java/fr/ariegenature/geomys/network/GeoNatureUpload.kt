@@ -129,6 +129,16 @@ object GeoNatureUpload {
             // renvoie true (on ne bloque pas faute de pouvoir trancher).
             if (!config.datasetValide) throw GNErreur.DatasetInvalide(datasetId)
 
+            // Nettoyage des relevés orphelins d'envois PRÉCÉDENTS (rollback DELETE qui avait
+            // échoué — typiquement coupure réseau totale type mode avion) : on retente leur
+            // suppression maintenant que le réseau répond. Best-effort : un échec les laisse
+            // mémorisés pour le prochain envoi.
+            fr.ariegenature.geomys.store.RelevesOrphelins.liste(base).forEach { idOrphelin ->
+                if (tenterSupprimerReleve(base, token, cookies, idOrphelin)) {
+                    fr.ariegenature.geomys.store.RelevesOrphelins.retirer(base, idOrphelin)
+                }
+            }
+
             val dateFmt = SimpleDateFormat("yyyy-MM-dd", Locale.US)
             val heureFmt = SimpleDateFormat("HH:mm", Locale.US)
 
@@ -372,7 +382,13 @@ object GeoNatureUpload {
                     }
                     mediasOK -= mediasSupprimes
                     val releveSupprime = tenterSupprimerReleve(base, token, cookies, idReleve)
-                    if (!releveSupprime) relevesOrphelins.add(idReleve)
+                    if (!releveSupprime) {
+                        relevesOrphelins.add(idReleve)
+                        // Mémorisé pour suppression automatique au prochain envoi (cf. début
+                        // d'envoyer) — un « relevé sans taxon » ne doit pas rester sur le
+                        // serveur en comptant sur une suppression manuelle.
+                        fr.ariegenature.geomys.store.RelevesOrphelins.ajouter(base, listOf(idReleve))
+                    }
                 }
             }
 
@@ -381,7 +397,8 @@ object GeoNatureUpload {
                     append(derniereErreur ?: "Aucun relevé créé")
                     if (relevesOrphelins.isNotEmpty()) {
                         append(" — ${relevesOrphelins.size} relevé(s) vide(s) créé(s) côté GeoNature ")
-                        append("(id : ${relevesOrphelins.joinToString(", ")}), à supprimer manuellement.")
+                        append("(id : ${relevesOrphelins.joinToString(", ")}) ; ")
+                        append("leur suppression sera retentée automatiquement au prochain envoi.")
                     }
                 }
                 throw GNErreur.EnvoiEchoue(dernierCodeErreur, msg)

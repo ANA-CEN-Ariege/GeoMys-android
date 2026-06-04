@@ -26,6 +26,7 @@ import fr.ariegenature.geomys.network.GeoNatureUpload
 import fr.ariegenature.geomys.store.GeoNatureConfig
 import fr.ariegenature.geomys.store.NomValeur
 import fr.ariegenature.geomys.store.NomenclatureCache
+import fr.ariegenature.geomys.store.RelevesOrphelins
 import kotlinx.coroutines.runBlocking
 import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
@@ -66,6 +67,7 @@ class GeoNatureUploadReseauDegradeTest {
     fun setup() {
         server = MockWebServer().apply { start() }
         deletes.set(0)
+        RelevesOrphelins.init(ApplicationProvider.getApplicationContext())
         NomenclatureCache.init(ApplicationProvider.getApplicationContext())
         NomenclatureCache.setAll(typesNomenclature.associateWith { listOf(NomValeur(1, "x")) })
         config = GeoNatureConfig(ApplicationProvider.getApplicationContext()).apply {
@@ -150,6 +152,26 @@ class GeoNatureUploadReseauDegradeTest {
         val e = envoyerEtAttendreEchec(Sortie(observations = listOf(obs("o1"))))
         // DELETE impossible (réseau toujours coupé) → le relevé 100 doit être signalé.
         assertTrue("doit signaler le relevé orphelin 100 : ${e.message}", e.message!!.contains("100"))
+    }
+
+    @Test
+    fun orphelin_memorise_puis_supprime_automatiquement_a_l_envoi_suivant() {
+        // Scénario terrain (mode avion en plein transfert) : relevé créé, occurrence ET
+        // rollback en échec → « relevé sans taxon » resté sur le serveur.
+        router(codeOccurrence = PANNE, codeDelete = PANNE)
+        envoyerEtAttendreEchec(Sortie(observations = listOf(obs("o1"))))
+        assertEquals("l'orphelin doit être mémorisé pour nettoyage différé",
+            listOf(100), RelevesOrphelins.liste(config.urlServeur))
+        val deletesApresPanne = deletes.get()
+
+        // Réseau rétabli, l'utilisateur renvoie (nouvelle sortie ou la même) : l'envoi
+        // commence par purger les orphelins mémorisés.
+        router()  // tout passe désormais
+        val res = runBlocking { GeoNatureUpload.envoyer(Sortie(observations = listOf(obs("o2"))), config) }
+        assertEquals(1, res.nbCrees)
+        assertEquals("le DELETE de l'orphelin doit être passé", 1, deletes.get() - deletesApresPanne)
+        assertTrue("plus d'orphelin mémorisé après nettoyage",
+            RelevesOrphelins.liste(config.urlServeur).isEmpty())
     }
 
     // ── Réponses serveur dégradées ─────────────────────────────────────────────────

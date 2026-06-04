@@ -48,6 +48,7 @@ class GeoMysApplication : Application() {
         NomenclatureCache.init(this)
         MonitoringCache.init(this)
         OutboxMonitoring.init(this)
+        fr.ariegenature.geomys.store.RelevesOrphelins.init(this)
         // OsmDroid doit être initialisé AVANT toute lecture/écriture du cache de tuiles
         // (sinon Configuration.getInstance().osmdroidTileCache déclenche une NPE asynchrone
         // qui crashe l'app via le UncaughtExceptionHandler).

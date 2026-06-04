@@ -69,6 +69,13 @@ class NouvelleVisiteFragment : Fragment() {
      *  `schemaDotTable` au moment du submit (la valeur récupérée par renderer.lireValeurs ne
      *  contient que l'URI, pas les métadonnées). */
     private var champsCourants: List<EditableField> = emptyList()
+
+    /** Instantané des valeurs du formulaire juste après le rendu (défauts serveur, règles
+     *  `change` et pré-remplissages inclus). Comparé aux valeurs courantes par [terminerChaine]
+     *  pour savoir si l'utilisateur a réellement saisi quelque chose de non enregistré —
+     *  insensible aux valeurs posées programmatiquement, contrairement à un simple flag
+     *  branché sur onChangement. */
+    private var valeursApresRendu: Map<String, Any?>? = null
     private var enCoursEnvoi = false
     /** Mode édition : uuid de la SaisieEnAttente à modifier. Quand non-null, le submit fait
      *  un `mettreAJour` au lieu d'un `ajouter` ; et avant le rendu on précharge les
@@ -177,7 +184,7 @@ class NouvelleVisiteFragment : Fragment() {
             }
         }
 
-        binding.btnTerminer.setOnClickListener { findNavController().navigateUp() }
+        binding.btnTerminer.setOnClickListener { terminerChaine() }
         // Mode "chaîne de saisies" : le parent est lui-même un type de saisie (visite) →
         // on enchaîne plusieurs obs sur la même visite. Le bouton "Terminer" est visible
         // dans ce cas pour permettre de sortir du flow. Désactivé en édition : on modifie
@@ -212,6 +219,29 @@ class NouvelleVisiteFragment : Fragment() {
             return
         }
         chargerSchemaEtRendre(moduleCode)
+    }
+
+    /** Sortie du mode « chaîne de saisies » via « Terminer ». Le formulaire en cours peut
+     *  porter une saisie NON enregistrée : sur le terrain, on remplit sa dernière obs puis
+     *  on clique « Terminer » en s'attendant à ce qu'elle soit conservée — l'ancien
+     *  comportement (navigateUp sec) la jetait silencieusement.
+     *  - formulaire non modifié depuis le rendu (cas « j'ai déjà tout enregistré ») → sortie ;
+     *  - modifié et valide → on ENREGISTRE la saisie puis on sort ;
+     *  - modifié mais incomplet → confirmation explicite avant d'abandonner. */
+    private fun terminerChaine() {
+        val modifie = valeursApresRendu != null && renderer.lireValeurs() != valeursApresRendu
+        when {
+            !modifie -> findNavController().navigateUp()
+            binding.btnSubmit.isEnabled -> envoyerVisite(puisTerminer = true)
+            else -> AlertDialog.Builder(requireContext())
+                .setTitle("Saisie non enregistrée")
+                .setMessage(
+                    "La saisie en cours est incomplète (champs obligatoires manquants) " +
+                        "et ne peut pas être enregistrée. Quitter et la perdre ?")
+                .setPositiveButton("Quitter") { _, _ -> findNavController().navigateUp() }
+                .setNegativeButton("Continuer la saisie", null)
+                .show()
+        }
     }
 
     /** Active/désactive le bouton de submit selon que des champs obligatoires sont vides
@@ -340,6 +370,9 @@ class NouvelleVisiteFragment : Fragment() {
             nomsChampsVisit = visitSchema.properties.keys.toList()
             uuidFieldNameVisit = visitSchema.uuidFieldName
             champsCourants = champsFinaux
+            // Référence « formulaire vierge » pour terminerChaine — APRÈS les règles change
+            // et les pré-remplissages, pour que seules les saisies utilisateur comptent.
+            valeursApresRendu = renderer.lireValeurs()
             if (construction.ignores.isNotEmpty()) {
                 val recapIgnores = construction.ignores.joinToString(", ") { "${it.first} (${it.second})" }
                 ajouterDebug("⚠ ${construction.ignores.size} champ(s) non supporté(s) : $recapIgnores")
@@ -532,8 +565,10 @@ class NouvelleVisiteFragment : Fragment() {
 
     /** Sauvegarde la saisie localement dans [OutboxMonitoring] — l'envoi serveur est
      *  exclusivement à la demande depuis l'écran "Saisies en attente". Si le schéma n'a
-     *  pas pu être chargé (mode démo), fallback sur l'ancien dialog POC. */
-    private fun envoyerVisite() {
+     *  pas pu être chargé (mode démo), fallback sur l'ancien dialog POC.
+     *  [puisTerminer] : sortie de chaîne via « Terminer » — après l'enregistrement on
+     *  quitte le formulaire au lieu d'enchaîner/réinitialiser. */
+    private fun envoyerVisite(puisTerminer: Boolean = false) {
         val moduleCode = arguments?.getString("moduleCode")
         val visitType = visitObjectType
         if (moduleCode.isNullOrEmpty() || visitType.isNullOrEmpty()) {
@@ -649,6 +684,13 @@ class NouvelleVisiteFragment : Fragment() {
             "$labelType enregistré(e) localement — envoi à la demande depuis « Saisies en attente »",
             android.widget.Toast.LENGTH_LONG,
         ).show()
+
+        // Sortie via « Terminer » : la saisie en cours vient d'être enregistrée, on quitte
+        // la chaîne au lieu d'enchaîner ou de réinitialiser le formulaire.
+        if (puisTerminer) {
+            findNavController().navigateUp()
+            return
+        }
 
         // Enchaînement : si l'objet créé a un type d'enfant « saisie » (ex. visite →
         // observation), on bascule directement sur la création de cet enfant — parent = l'objet

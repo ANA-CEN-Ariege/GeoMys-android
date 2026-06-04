@@ -185,6 +185,42 @@ class NouvelleVisiteFragment : Fragment() {
         }
 
         binding.btnTerminer.setOnClickListener { terminerChaine() }
+        // Garde « retour système » : le geste/bouton retour jetait silencieusement la saisie
+        // en cours — même piège que l'ancien « Terminer ». Formulaire intact → retour normal ;
+        // modifié → choix explicite (enregistrer si valide / quitter / continuer). Vaut pour
+        // tous les modes (création, chaîne d'obs, édition).
+        requireActivity().onBackPressedDispatcher.addCallback(
+            viewLifecycleOwner,
+            object : androidx.activity.OnBackPressedCallback(true) {
+                override fun handleOnBackPressed() {
+                    val modifie = valeursApresRendu != null && ::renderer.isInitialized &&
+                        renderer.lireValeurs() != valeursApresRendu
+                    if (!modifie || enCoursEnvoi) {
+                        isEnabled = false
+                        findNavController().navigateUp()
+                        return
+                    }
+                    val dialog = AlertDialog.Builder(requireContext())
+                        .setTitle("Saisie non enregistrée")
+                        .setNegativeButton("Quitter sans enregistrer") { _, _ ->
+                            isEnabled = false
+                            findNavController().navigateUp()
+                        }
+                        .setNeutralButton("Continuer la saisie", null)
+                    if (binding.btnSubmit.isEnabled) {
+                        dialog.setMessage("Enregistrer la saisie en cours avant de quitter ?")
+                            .setPositiveButton("Enregistrer et quitter") { _, _ ->
+                                envoyerVisite(puisTerminer = true)
+                            }
+                    } else {
+                        dialog.setMessage(
+                            "La saisie en cours est incomplète (champs obligatoires manquants) " +
+                                "et ne peut pas être enregistrée.")
+                    }
+                    dialog.show()
+                }
+            },
+        )
         // Mode "chaîne de saisies" : le parent est lui-même un type de saisie (visite) →
         // on enchaîne plusieurs obs sur la même visite. Le bouton "Terminer" est visible
         // dans ce cas pour permettre de sortir du flow. Désactivé en édition : on modifie

@@ -324,6 +324,15 @@ class FicheObjetFragment : Fragment() {
                 objet, schemaObjet, density, borderlessAttr,
             ))
             val borderless = borderlessAttr
+            // Saisies locales du même type (= visites/obs créées hors-ligne, pas encore
+            // envoyées) : affichées EN PREMIER sous le header — ce sont les plus récentes et
+            // celles qu'on vient chercher en arrivant ici — triées plus récentes d'abord,
+            // avec un look distinctif (cadre rouge + icône ⏳) et un bouton + qui permet
+            // d'enchaîner les sous-saisies en pointant le parent local via UUID. Les enfants
+            // serveur suivent, eux-mêmes en ordre chronologique décroissant.
+            saisiesLocalesCeType.sortedByDescending { it.dateLocale }.forEach { saisie ->
+                binding.llEnfants.addView(creerLigneSaisieLocale(objet, type, saisie, typeSaisieEnfant, density, borderless))
+            }
             items.forEach { e ->
                 val nom = e.nom
                 val row = LinearLayout(ctx).apply {
@@ -435,14 +444,6 @@ class FicheObjetFragment : Fragment() {
                 if (btnPlus != null) row.addView(btnPlus)
                 binding.llEnfants.addView(row)
             }
-            // Saisies locales du même type d'enfant (= visites/obs créées hors-ligne et
-            // pas encore envoyées au serveur). On les affiche sous le header existant
-            // avec un look distinctif (fond ambre + icône ⏳) et un bouton + qui permet
-            // d'enchaîner les sous-saisies, en pointant vers le parent local via UUID.
-            // (saisiesLocalesCeType est déjà calculé en début de forEach.)
-            saisiesLocalesCeType.forEach { saisie ->
-                binding.llEnfants.addView(creerLigneSaisieLocale(objet, type, saisie, typeSaisieEnfant, density, borderless))
-            }
         }
         // Types de saisies locales pas encore présents dans le schéma `objet.enfants`
         // (cas typique : première visite jamais saisie sur le serveur pour ce parent →
@@ -459,7 +460,7 @@ class FicheObjetFragment : Fragment() {
             binding.llEnfants.addView(creerHeaderType(
                 type, typeLabel, saisies.size, objet, schemaObjet, density, borderlessAttr,
             ))
-            saisies.forEach { saisie ->
+            saisies.sortedByDescending { it.dateLocale }.forEach { saisie ->
                 binding.llEnfants.addView(
                     creerLigneSaisieLocale(objet, type, saisie, typeSaisieEnfant, density, borderlessAttr),
                 )
@@ -572,7 +573,7 @@ class FicheObjetFragment : Fragment() {
     }
 
     /** Rend une ligne pour une saisie locale (= dans l'outbox). Look distinctif :
-     *  fond ambre, icône ⏳, sous-titre "Saisie locale du <date>". Bouton + actif pour
+     *  cadre rouge, icône ⏳, sous-titre "Saisie locale du <date>". Bouton + actif pour
      *  enchaîner des sous-saisies attachées à cette saisie locale via parentUuidLocal. */
     private fun creerLigneSaisieLocale(
         objet: MonitoringApi.MonitoringObjet,

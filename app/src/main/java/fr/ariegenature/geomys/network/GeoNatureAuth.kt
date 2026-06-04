@@ -98,7 +98,14 @@ object GeoNatureAuth {
                         // pré-sélection dans les champs observers de saisie monitoring). Best-effort.
                         extraireNomComplet(json)?.let { config.nomUtilisateur = it }
                         extraireIdRole(json)?.let { config.idRoleUtilisateur = it }
-                        Pair(true, "Connexion réussie")
+                        // Version de l'instance GeoNature — best-effort (l'endpoint
+                        // /api/gn_commons/config n'existe pas sur les vieux serveurs). Affichée
+                        // dans le résultat du test et mémorisée pour l'écran Paramètres : l'API
+                        // GeoNature n'étant pas versionnée par endpoint, c'est le seul indice
+                        // pour diagnostiquer un comportement propre à une version serveur.
+                        val version = versionGeoNature(base)
+                        config.versionGeoNatureServeur = version ?: ""
+                        Pair(true, "Connexion réussie" + (version?.let { " — GeoNature v$it" } ?: ""))
                     }
                     401, 403 -> Pair(false, "Identifiant ou mot de passe incorrect")
                     404 -> Pair(false, "URL serveur introuvable (HTTP 404) — vérifiez l'adresse")
@@ -108,6 +115,19 @@ object GeoNatureAuth {
                 Pair(false, "Impossible de joindre le serveur : ${e.message}")
             }
         }
+
+    /** Version de l'instance GeoNature via `/api/gn_commons/config` (exposée par les
+     *  GeoNature récents ; clé `GEONATURE_VERSION`). Best-effort : null si l'endpoint est
+     *  absent (404 sur les vieilles versions), protégé, ou si la clé a changé. */
+    internal fun versionGeoNature(base: String): String? = try {
+        val conn = HttpClient.get(URL("$base/api/gn_commons/config"), timeoutMs = 5000)
+        if (conn.responseCode != 200) null
+        else {
+            val json = JSONObject(conn.inputStream.bufferedReader().readText())
+            listOf("GEONATURE_VERSION", "geonature_version", "VERSION", "version")
+                .firstNotNullOfOrNull { k -> json.optString(k, "").takeIf { it.isNotEmpty() } }
+        }
+    } catch (_: Exception) { null }
 
     /** Diagnostique une réponse 3xx du serveur GeoNature en se basant sur le header `Location`.
      *  Trois sorties possibles, alignées sur la logique gn_mobile_monitoring :

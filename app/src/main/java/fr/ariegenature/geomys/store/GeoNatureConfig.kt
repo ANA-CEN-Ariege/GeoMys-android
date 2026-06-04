@@ -97,6 +97,13 @@ class GeoNatureConfig(context: Context) {
         get() = prefs.getInt("gn_id_role_utilisateur", -1)
         set(v) = prefs.edit().putInt("gn_id_role_utilisateur", v).apply()
 
+    /** Version de l'instance GeoNature relevée au dernier test de connexion réussi
+     *  (`/api/gn_commons/config`, best-effort). Vide si inconnue. Affichée dans Paramètres
+     *  pour diagnostiquer les comportements propres à une version serveur. */
+    var versionGeoNatureServeur: String
+        get() = prefs.getString("gn_version_serveur", "") ?: ""
+        set(v) = prefs.edit().putString("gn_version_serveur", v).apply()
+
     /** Nom complet de l'observateur sélectionné comme déterminateur par défaut. */
     var observateurDefautNom: String
         get() = prefs.getString("gn_obs_defaut_nom", "") ?: ""

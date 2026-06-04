@@ -383,7 +383,20 @@ object GeoNatureSync {
                     val nbTr = vals.count { it.taxref.isNotEmpty() }
                     "$t:${vals.size}val/${nbTr}taxref"
                 }
-                Pair(total, resume)
+                // Garde « types obligatoires » : GeoNatureUpload omet silencieusement du payload
+                // tout champ dont le type de nomenclature manque au cache. Sans cet avertissement,
+                // un type absent du serveur (instance incomplète, renommage entre versions
+                // GeoNature) produirait des envois incomplets invisibles pour l'utilisateur.
+                val typesManquants = typesVoulus - result.keys
+                val msg = buildString {
+                    append(resume)
+                    if (typesManquants.isNotEmpty()) {
+                        append("\n⚠ Type(s) de nomenclature absent(s) du serveur : ")
+                        append(typesManquants.sorted().joinToString(", "))
+                        append(" — les champs correspondants seront omis des envois.")
+                    }
+                }
+                Pair(total, msg)
             } catch (e: Exception) {
                 Pair(0, "Erreur : ${e.message}")
             }

@@ -140,6 +140,21 @@ app/src/main/java/fr/ariegenature/geomys/
 | `/api/monitorings/object/<module>/<type>[/<id>]` | Fiches + création d'objets |
 | `/api/synthese/get_one_synthese/<id>` | Détail d'une obs synthèse |
 
+## Compatibilité GeoNature
+
+L'app cible l'API **GeoNature 2.x** (développée et utilisée contre l'instance de l'ANA). L'API GeoNature n'étant pas versionnée par endpoint, la compatibilité repose sur une **tolérance défensive** plutôt que sur une détection de version :
+
+- **Fallbacks d'endpoints** : les routes qui varient entre versions sont essayées en séquence (ex. `/api/nomenclatures/nomenclatures/taxonomy` → `…/nomenclature/taxonomy` → `…/taxonomy` ; deux casses du code module pour `defaultNomenclatures` et `datasets?module_code=`).
+- **Fallbacks de parsing** : les clés JSON alternatives connues sont toutes tentées (token de login via `access_token`/`token`/`user.*`, enveloppes de tableau `items`/`data`/`results`/…, labels `label_default`/`label_fr`, id de relevé via 3 chemins, etc.).
+- **404 = fonctionnalité absente** : monitoring non installé, `additional_fields`, `defaultNomenclatures`… dégradent silencieusement (liste vide) au lieu d'échouer.
+- **Dégradation gracieuse à l'envoi** : une nomenclature non résolue est omise du payload (avec warning de log) plutôt que de bloquer l'envoi.
+
+Deux garde-fous aident au diagnostic :
+- la **version de l'instance** est relevée au test de connexion (`/api/gn_commons/config`, best-effort) et affichée dans **Paramètres GeoNature** ;
+- après synchronisation, un ⚠ signale tout **type de nomenclature obligatoire absent** du serveur (sinon les envois omettraient ces champs sans bruit).
+
+Avant de monter de version le serveur GeoNature, re-tester l'app contre une instance de recette : les variantes d'API ci-dessus sont celles observées jusqu'ici, une nouvelle version peut en introduire d'autres.
+
 ## Build
 
 ```bash

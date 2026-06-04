@@ -92,6 +92,17 @@
             android:textSize="13sp"
             android:visibility="gone" />
 
+        <!-- Version de l'instance GeoNature (relevée au dernier test de connexion réussi).
+             Aide au diagnostic : l'API GeoNature varie entre versions serveur. -->
+        <TextView
+            android:id="@+id/tv_version_geonature"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:textColor="?android:attr/textColorSecondary"
+            android:textSize="12sp"
+            android:visibility="gone" />
+
         <!-- Section "Charger les données" : visible une fois connecté.
              Lance les 5 chargements (datasets, listes, observateurs, additional_fields,
              TaxRef exhaustif, nomenclatures) — change de libellé en "Recharger…" ensuite. -->

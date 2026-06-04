@@ -175,6 +175,10 @@ class ConfigGeoNatureFragment : Fragment() {
             findNavController().navigateUp()
         }
 
+        // Version de l'instance GeoNature relevée au dernier test de connexion réussi —
+        // rafraîchie par testerConnexion(), vidée au changement d'identité serveur.
+        afficherVersionGeoNature()
+
         // Vérifier version TaxRef serveur
         if (gnConfig.connexionConfiguree) {
             viewLifecycleOwner.lifecycleScope.launch {
@@ -209,6 +213,9 @@ class ConfigGeoNatureFragment : Fragment() {
         val nouveau = Triple(gnConfig.urlServeur, gnConfig.login, gnConfig.motDePasse)
         if (ancien != nouveau) {
             fr.ariegenature.geomys.network.invaliderCachesSession()
+            // La version affichée appartient à l'ancienne instance — re-renseignée au
+            // prochain test de connexion réussi.
+            gnConfig.versionGeoNatureServeur = ""
             // Changement d'IDENTITÉ serveur : les ids de sélection (dataset/liste/observateur) du
             // serveur précédent n'ont plus aucun sens — ils peuvent même coïncider avec d'AUTRES
             // entités sur le nouveau serveur (ex. liste id 100 ou observateur id 3 qui existent
@@ -241,8 +248,17 @@ class ConfigGeoNatureFragment : Fragment() {
             // (le sync exhaustif peut être long, on ne le lance pas par surprise).
             if (success) {
                 binding.llSectionCharger.visibility = View.VISIBLE
+                afficherVersionGeoNature()  // version serveur relevée pendant le test
             }
         }
+    }
+
+    /** Affiche la version de l'instance GeoNature mémorisée au dernier test de connexion
+     *  réussi (masqué si inconnue — vieux serveur sans /api/gn_commons/config). */
+    private fun afficherVersionGeoNature() {
+        val version = gnConfig.versionGeoNatureServeur
+        binding.tvVersionGeonature.visibility = if (version.isEmpty()) View.GONE else View.VISIBLE
+        if (version.isNotEmpty()) binding.tvVersionGeonature.text = "Serveur GeoNature v$version"
     }
 
     /** Retourne null si OK, sinon un message d'erreur — exploité par chargerToutesLesDonnees

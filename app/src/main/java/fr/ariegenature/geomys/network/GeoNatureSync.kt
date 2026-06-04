@@ -63,7 +63,10 @@ object GeoNatureSync {
         val listesSupplementaires: List<Int>,
     )
 
-    /** Résultat du téléchargement (toutes pages) d'UNE liste de taxons. */
+    /** Résultat du téléchargement (toutes pages) d'UNE liste de taxons. [ok] = pagination
+     *  menée à TERME (dernière page atteinte) — pas seulement « au moins une page reçue » :
+     *  une coupure réseau à la page N laisserait sinon une liste tronquée marquée
+     *  synchronisée, et l'autocomplétion hors-ligne perdrait silencieusement des taxons. */
     private class ResultatListe(val idListe: Int, val ok: Boolean, val items: List<ItemTaxon>)
 
     /** Télécharge tous les taxons d'une liste (paginé). Ne touche AUCUN état partagé → peut
@@ -71,7 +74,7 @@ object GeoNatureSync {
     private suspend fun fetchListeTaxons(base: String, idListe: Int, pageSize: Int): ResultatListe =
         withContext(Dispatchers.IO) {
             val items = mutableListOf<ItemTaxon>()
-            var ok = false
+            var complete = false
             var page = 1
             while (true) {
                 val conn = HttpClient.get(
@@ -80,10 +83,9 @@ object GeoNatureSync {
                 )
                 try {
                     if (conn.responseCode != 200) break
-                    ok = true
                     val text = conn.inputStream.bufferedReader().readText()
                     val array: JSONArray = text.parserTableauJson("items", "data", "results") ?: break
-                    if (array.length() == 0) break
+                    if (array.length() == 0) { complete = true; break }
                     for (i in 0 until array.length()) {
                         val item = array.getJSONObject(i)
                         val cdNom = item.optInt("cd_nom", -1).takeIf { it > 0 } ?: continue
@@ -105,7 +107,7 @@ object GeoNatureSync {
                             )
                         )
                     }
-                    if (array.length() < pageSize) break
+                    if (array.length() < pageSize) { complete = true; break }
                     page++
                 } catch (_: Exception) {
                     break
@@ -113,7 +115,7 @@ object GeoNatureSync {
                     conn.disconnect()
                 }
             }
-            ResultatListe(idListe, ok, items)
+            ResultatListe(idListe, complete, items)
         }
 
     /** Sync exhaustif : itère sur **toutes** les biblistes du serveur pour permettre à
@@ -216,6 +218,9 @@ object GeoNatureSync {
 
         // Fusion SÉQUENTIELLE (ordre des listes préservé par awaitAll) → mêmes invariants que
         // l'ancienne boucle série : dernier écrit gagne pour un nom partagé, comptage dédupliqué.
+        // Les items d'une liste INTERROMPUE en cours de pagination (res.ok=false) sont fusionnés
+        // quand même — les noms aident l'autocomplétion — mais la liste n'est PAS marquée
+        // synchronisée : le ⚠ ci-dessous la signale et le prochain sync la retentera en entier.
         for (res in resultats) {
             if (res.ok) listesSynchronisees.add(res.idListe) else listesEnEchec.add(res.idListe)
             for (item in res.items) {
@@ -289,7 +294,7 @@ object GeoNatureSync {
             if (nbMol > 0) append(", $nbMol mollusques")
             if (nbInv > 0) append(", $nbInv autres invertébrés")
             if (nbP > 0) append(", $nbP plantes")
-            if (listesEnEchec.isNotEmpty()) append("\n⚠ ${listesEnEchec.size} liste(s) non chargée(s) : ${listesEnEchec.joinToString(",")}")
+            if (listesEnEchec.isNotEmpty()) append("\n⚠ ${listesEnEchec.size} liste(s) non ou partiellement chargée(s) : ${listesEnEchec.joinToString(",")}")
         }
         Pair(entrees.size, msg)
     }

@@ -4,6 +4,13 @@ Application Android de terrain pour la saisie naturaliste connectée à un serve
 
 Développée par l'[ANA - CEN Ariège](https://ariegenature.fr/).
 
+<p align="center">
+  <img src="Images/accueil.jpg" alt="Accueil" width="200" style="margin-right: 10px;" />
+  <img src="Images/saisie_multitaxons_1.jpg" alt="Saisie Multitaxons" width="200" style="margin-right: 10px;" />
+  <img src="Images/saisie_multitaxons_8.jpg" alt="Saisie Multitaxons" width="200" style="margin-right: 10px;" />
+  <img src="Images/saisie_multitaxons_10.jpg" alt="Saisie Multitaxons" width="200" style="margin-right: 10px;" />
+</p>
+
 👉 **Mode d'emploi utilisateur** : voir [`MODE_EMPLOI.md`](MODE_EMPLOI.md) pour la prise en main, les workflows terrain et les cas particuliers.
 
 ## Fonctionnalités principales

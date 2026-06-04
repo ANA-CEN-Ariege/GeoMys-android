@@ -118,10 +118,13 @@ class OutboxEnvoiTest {
         parentUuidLocal: String? = null,
         etat: SaisieEnAttente.Etat = SaisieEnAttente.Etat.PENDING,
         avecMedia: Boolean = false,
+        objetCree: Boolean = false,
+        idServeur: Int? = null,
     ) = SaisieEnAttente(
         uuid = uuid, moduleCode = "STOC", objectType = "visite",
         parentUuidLocal = parentUuidLocal, parentIdField = "id_base_site",
         valeursJson = """{"comments":"test $uuid"}""", etat = etat,
+        objetCree = objetCree, idServeur = idServeur,
         uuidPayload = if (avecMedia) "uuid-$uuid" else null,
         uuidFieldName = if (avecMedia) "uuid_base_visit" else null,
         mediaPathsLocal = if (avecMedia) listOf(fichierMedia()) else emptyList(),
@@ -156,34 +159,41 @@ class OutboxEnvoiTest {
     }
 
     @Test
-    fun saisie_sending_orpheline_d_un_crash_est_requalifiee_en_erreur_sans_reenvoi() {
-        // Simule un crash en plein envoi : l'entrée est restée SENDING sur le disque.
-        OutboxMonitoring.ajouter(saisie("u1", etat = SaisieEnAttente.Etat.SENDING))
-        envoyerTout()
-        val s = OutboxMonitoring.tout().single { it.uuid == "u1" }
-        // Pas de ré-envoi automatique (le POST interrompu a pu aboutir côté serveur → doublon) :
-        // la saisie doit redevenir visible en ERROR pour un « Réessayer » explicite.
-        assertEquals(SaisieEnAttente.Etat.ERROR, s.etat)
-        assertTrue("le message doit expliquer l'interruption : ${s.messageErreur}",
-            s.messageErreur!!.contains("interrompu"))
-        assertEquals("aucun POST ne doit partir automatiquement", 0, postsVisite.size)
-        // Après « Réessayer » (PENDING), la saisie repart normalement.
-        OutboxMonitoring.mettreAJour("u1") { it.copy(etat = SaisieEnAttente.Etat.PENDING, messageErreur = null) }
+    fun saisie_interrompue_avec_objet_deja_cree_repart_sans_re_poster() {
+        // Crash APRÈS la confirmation du POST (objetCree persisté) : le retry via la flèche
+        // ne doit PAS re-créer l'objet côté serveur (doublon sinon).
+        OutboxMonitoring.ajouter(saisie("u1", etat = SaisieEnAttente.Etat.SENDING,
+            objetCree = true, idServeur = 99))
         val res = envoyerTout()
         assertEquals(1, res.succes)
-        assertEquals(1, postsVisite.size)
+        assertEquals("aucun re-POST : l'objet existe déjà côté serveur", 0, postsVisite.size)
+        assertTrue("envoyée et purgée", OutboxMonitoring.tout().isEmpty())
     }
 
     @Test
-    fun saisie_sending_orpheline_ne_bloque_plus_ses_enfants_indefiniment() {
-        // Crash pendant l'envoi du parent : parent SENDING, enfant PENDING. Avant le correctif,
-        // l'enfant restait PENDING à vie (parent jamais SENT, jamais ERROR → jamais débloqué).
+    fun saisie_interrompue_avant_confirmation_serveur_est_re_postee_au_clic() {
+        // Crash AVANT la confirmation du POST (objetCree absent) : le clic « envoyer » vaut
+        // retry assumé — la saisie repart entière, en un seul clic.
+        OutboxMonitoring.ajouter(saisie("u1", etat = SaisieEnAttente.Etat.SENDING))
+        val res = envoyerTout()
+        assertEquals(1, res.succes)
+        assertEquals(1, postsVisite.size)
+        assertTrue(OutboxMonitoring.tout().isEmpty())
+    }
+
+    @Test
+    fun parent_interrompu_repart_avec_ses_enfants_en_un_clic() {
+        // Crash pendant l'envoi du parent : parent SENDING, enfant PENDING. Un seul envoi
+        // doit faire repartir le parent PUIS l'enfant (FK résolue) — avant, l'enfant restait
+        // bloqué à vie sur un parent jamais SENT.
         OutboxMonitoring.ajouter(saisie("parent", etat = SaisieEnAttente.Etat.SENDING))
         OutboxMonitoring.ajouter(saisie("enfant", parentUuidLocal = "parent"))
-        envoyerTout()
-        val enfant = OutboxMonitoring.tout().single { it.uuid == "enfant" }
-        assertEquals("l'enfant doit sortir de PENDING (parent en échec)",
-            SaisieEnAttente.Etat.ERROR, enfant.etat)
+        val res = envoyerTout()
+        assertEquals(2, res.succes)
+        assertEquals(2, postsVisite.size)
+        assertTrue("le POST enfant porte la FK du parent : ${postsVisite[1]}",
+            postsVisite[1].contains("\"id_base_site\":41"))
+        assertTrue(OutboxMonitoring.tout().isEmpty())
     }
 
     // ── Dépendances parent → enfant ────────────────────────────────────────────────
@@ -232,23 +242,6 @@ class OutboxEnvoiTest {
         assertTrue("le POST de l'obs porte la FK de la visite : ${postsVisite[1]}",
             postsVisite[1].contains("\"id_base_site\":41"))
         assertTrue("file vide après envoi complet", OutboxMonitoring.tout().isEmpty())
-    }
-
-    @Test
-    fun le_parent_envoye_resout_la_fk_des_enfants_meme_non_traites_dans_ce_run() {
-        // Enfant interrompu (SENDING, crash) : exclu du retry automatique de ce run, mais
-        // quand son parent part, sa FK doit être résolue — sinon la purge du parent SENT
-        // le rendait définitivement « parent introuvable ».
-        OutboxMonitoring.ajouter(saisie("parent"))
-        OutboxMonitoring.ajouter(saisie("enfant", parentUuidLocal = "parent",
-            etat = SaisieEnAttente.Etat.SENDING))
-        envoyerTout()
-        val enfant = OutboxMonitoring.tout().single { it.uuid == "enfant" }
-        assertEquals("pas de ré-envoi auto d'une saisie interrompue",
-            SaisieEnAttente.Etat.ERROR, enfant.etat)
-        assertEquals("FK résolue malgré tout", 41, enfant.parentIdServeur)
-        assertEquals("plus de référence au parent local purgé", null, enfant.parentUuidLocal)
-        assertEquals("seul le parent a été posté", 1, postsVisite.size)
     }
 
     @Test

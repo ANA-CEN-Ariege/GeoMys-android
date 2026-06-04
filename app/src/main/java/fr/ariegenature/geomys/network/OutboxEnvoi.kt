@@ -81,32 +81,28 @@ object OutboxEnvoi {
     ): Resultat = withContext(Dispatchers.IO) {
         mutexEnvoi.withLock {
         // Saisies restées SENDING d'un envoi précédent : le mutex garantit qu'aucun autre envoi
-        // ne tourne, donc un SENDING ici vient forcément d'un crash/kill en plein envoi. On ne
-        // les ré-envoie PAS automatiquement (le POST a pu aboutir côté serveur → doublon) : on
-        // les bascule en ERROR pour qu'elles redeviennent visibles et ré-essayables — sinon
-        // elles restaient invisibles à vie et bloquaient leurs enfants (jamais débloqués).
-        val interrompues = mutableSetOf<String>()
+        // ne tourne, donc un SENDING ici vient forcément d'un crash/kill en plein envoi. On les
+        // bascule en ERROR : visibles, et requalifiables comme les autres erreurs ci-dessous.
+        // Le risque de doublon au retry est couvert par [SaisieEnAttente.objetCree], persisté
+        // dès la confirmation du POST : si l'objet avait été créé avant le crash, le retry ne
+        // re-POSTe pas (médias seulement).
         OutboxMonitoring.tout()
             .filter { it.etat == SaisieEnAttente.Etat.SENDING }
             .forEach { s ->
-                interrompues.add(s.uuid)
                 OutboxMonitoring.mettreAJour(s.uuid) {
                     it.copy(
                         etat = SaisieEnAttente.Etat.ERROR,
-                        messageErreur = "Envoi interrompu (application fermée ?) — " +
-                            "vérifier sur GeoNature avant de réessayer",
+                        messageErreur = "Envoi interrompu (application fermée ?)",
                     )
                 }
             }
         // L'action « envoyer » (flèche d'un groupe / envoyer tout) vaut « Réessayer » pour les
         // saisies en erreur ciblées : on les requalifie PENDING pour qu'elles repartent avec le
         // groupe — sinon la flèche sur une visite en échec ne faisait RIEN (seuls les PENDING
-        // étaient traités) et il fallait « Réessayer » entrée par entrée. Exception : celles
-        // tout juste requalifiées depuis SENDING — l'utilisateur doit d'abord voir
-        // l'avertissement « vérifier sur GeoNature » (re-clic = retry assumé).
+        // étaient traités) et il fallait « Réessayer » entrée par entrée, en perdant les obs.
         OutboxMonitoring.tout()
             .filter {
-                it.etat == SaisieEnAttente.Etat.ERROR && it.uuid !in interrompues &&
+                it.etat == SaisieEnAttente.Etat.ERROR &&
                     (uuidsACibler == null || it.uuid in uuidsACibler)
             }
             .forEach { s ->

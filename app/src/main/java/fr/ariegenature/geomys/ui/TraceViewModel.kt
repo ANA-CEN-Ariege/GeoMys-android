@@ -101,10 +101,16 @@ class TraceViewModel(application: Application) : AndroidViewModel(application) {
     /** Remplace en bloc toutes les observations d'un [releveId] par [nouvelles] (qui portent
      *  ce même releveId), en une seule mutation → un seul auto-save. Utilisé par la saisie
      *  multi-taxons pour refléter le lot en cours au fil de l'eau sans réécrire le store une
-     *  fois par espèce. Préserve l'ordre des autres relevés. */
+     *  fois par espèce. Préserve l'ordre des autres relevés.
+     *
+     *  Purge AUSSI par id (upsert) : une obs MONO-taxon éditée porte releveId=null à l'origine
+     *  mais ressort de l'écran d'édition avec le releveId de la session — la purge par seul
+     *  releveId ne la retrouvait pas, l'originale survivait et l'espèce apparaissait en DOUBLE
+     *  sur le point (avec le même id d'obs, en plus). */
     fun remplacerObservationsDuReleve(releveId: String, nouvelles: List<Observation>) {
         val list = _observations.value ?: mutableListOf()
-        list.removeAll { it.releveId == releveId }
+        val idsNouvelles = nouvelles.map { it.id }.toHashSet()
+        list.removeAll { it.releveId == releveId || it.id in idsNouvelles }
         list.addAll(nouvelles)
         _observations.value = list
         persisterBrouillon()

@@ -181,5 +181,122 @@ class HiddenExprTest {
         // (auto-sélection + masquage quand une seule option, cf. enrichirAvecOptions).
         assertFalse(HiddenExpr.masquer(
             "({meta}) => meta.dataset && Object.keys(meta.dataset).length == 1", emptyMap()))
+        assertFalse(HiddenExpr.masquer(
+            "({value, meta}) => (meta.nomenclatures[value.technique_observation] || {}).cd_nomenclature != 'VU'",
+            mapOf("technique_observation" to "12")))
+    }
+
+    // ─── Grammaire étendue : audit des 33 protocoles de l'instance (2026-06) ─────
+
+    @Test
+    fun ou_logique_pop_amphibien() {
+        // POPAmphibien.visit.etat_site
+        val expr = "({value}) => value.accessibility === 'Non' || (value.num_passage !== 1)"
+        assertTrue(HiddenExpr.masquer(expr, mapOf("accessibility" to "Non", "num_passage" to "1")))
+        assertTrue(HiddenExpr.masquer(expr, mapOf("accessibility" to "Oui", "num_passage" to "2")))
+        assertFalse(HiddenExpr.masquer(expr, mapOf("accessibility" to "Oui", "num_passage" to "1")))
+    }
+
+    @Test
+    fun et_logique_required_pop_amphibien() {
+        // POPAmphibien.visit.etat_site (required)
+        val expr = "({value}) => value.accessibility === 'Oui' && (value.num_passage === 1)"
+        assertTrue(HiddenExpr.evaluerBooleen(expr, mapOf("accessibility" to "Oui", "num_passage" to "1")))
+        assertFalse(HiddenExpr.evaluerBooleen(expr, mapOf("accessibility" to "Oui", "num_passage" to "2")))
+        assertFalse(HiddenExpr.evaluerBooleen(expr, mapOf("accessibility" to "Non", "num_passage" to "1")))
+    }
+
+    @Test
+    fun negation_et_champ_truthy_lichens() {
+        // lichens_bio_indicateurs.visit.tgb_* : !presence && test
+        val expr = "({value}) => !value.presence_tgb_hors_placette && value.test_detectabilite"
+        assertTrue(HiddenExpr.masquer(expr,
+            mapOf("presence_tgb_hors_placette" to false, "test_detectabilite" to true)))
+        assertFalse(HiddenExpr.masquer(expr,
+            mapOf("presence_tgb_hors_placette" to true, "test_detectabilite" to true)))
+        assertFalse(HiddenExpr.masquer(expr,
+            mapOf("presence_tgb_hors_placette" to false, "test_detectabilite" to false)))
+    }
+
+    @Test
+    fun includes_rhomeo_amphibien() {
+        // RHOMEOAmphibien.observation.duree_peche — l'item null matche un champ vide
+        // (contrôle Angular non rempli = null).
+        val cache = "({value}) => ['Visuel',null].includes(value.typ_detection)"
+        assertTrue(HiddenExpr.masquer(cache, mapOf("typ_detection" to "Visuel")))
+        assertTrue(HiddenExpr.masquer(cache, emptyMap()))
+        assertFalse(HiddenExpr.masquer(cache, mapOf("typ_detection" to "Pêche au troubleau")))
+        val requis = "({value}) => ['Pêche au troubleau','Auditif'].includes(value.typ_detection)"
+        assertTrue(HiddenExpr.evaluerBooleen(requis, mapOf("typ_detection" to "Auditif")))
+        assertFalse(HiddenExpr.evaluerBooleen(requis, emptyMap()))
+    }
+
+    @Test
+    fun chemin_imbrique_cd_nom_loutre() {
+        // suivi_loutre.observation.nb_epreinte_* : champs Loutre (cd_nom 60630) uniquement.
+        // Côté app la valeur du champ taxon EST le cd_nom (scalaire) → value.cd_nom.cd_nom
+        // s'aplatit en ${cd_nom}.
+        val cache = "({value}) => !(value.cd_nom && value.cd_nom.cd_nom == 60630)"
+        assertTrue("aucun taxon choisi → caché", HiddenExpr.masquer(cache, emptyMap()))
+        assertTrue("autre taxon → caché", HiddenExpr.masquer(cache, mapOf("cd_nom" to 61258)))
+        assertFalse("Loutre → visible", HiddenExpr.masquer(cache, mapOf("cd_nom" to 60630)))
+        val requis = "({value}) => value.cd_nom && value.cd_nom.cd_nom == 60630"
+        assertTrue(HiddenExpr.evaluerBooleen(requis, mapOf("cd_nom" to 60630)))
+        assertFalse(HiddenExpr.evaluerBooleen(requis, mapOf("cd_nom" to 61258)))
+    }
+
+    @Test
+    fun comparaison_numerique_count_min() {
+        // POPAmphibien.observation.count_max : requis si count_min > 0.
+        val expr = "({value}) => value.count_min > 0"
+        assertTrue(HiddenExpr.evaluerBooleen(expr, mapOf("count_min" to 3)))
+        assertTrue(HiddenExpr.evaluerBooleen(expr, mapOf("count_min" to "2")))
+        assertFalse(HiddenExpr.evaluerBooleen(expr, mapOf("count_min" to 0)))
+        assertFalse("non numérique → non requis", HiddenExpr.evaluerBooleen(expr, emptyMap()))
+    }
+
+    @Test
+    fun ou_logique_sans_espace_loutre_uicn() {
+        // suivi_loutre_UICN.visit.gestion : noter le `=='Non'` SANS espace.
+        val expr = "({value}) => value.saisie_details_arsa =='Non' || value.hab_arsa != 'Oui'"
+        assertTrue(HiddenExpr.masquer(expr,
+            mapOf("saisie_details_arsa" to "Non", "hab_arsa" to "Oui")))
+        assertTrue(HiddenExpr.masquer(expr,
+            mapOf("saisie_details_arsa" to "Oui", "hab_arsa" to "Non")))
+        assertFalse(HiddenExpr.masquer(expr,
+            mapOf("saisie_details_arsa" to "Oui", "hab_arsa" to "Oui")))
+    }
+
+    @Test
+    fun litteraux_et_constantes() {
+        // suivi_phytosocio.visit.surf_releve : hidden = "true" littéral (champ auto-calculé).
+        assertTrue(HiddenExpr.masquer("true", emptyMap()))
+        assertFalse(HiddenExpr.masquer("false", emptyMap()))
+        // test_indi : comparaison de deux littéraux (artefact de générateur de protocole).
+        assertTrue(HiddenExpr.masquer("({value}) => '97152' !== 'None'", emptyMap()))
+        assertFalse(HiddenExpr.evaluerBooleen("({value}) => '97152' === 'None'", emptyMap()))
+    }
+
+    @Test
+    fun ternaire_petite_chouette_montagne() {
+        // petite_chouette_montagne.observation.{sexe,chev_chant,nb_passereau} : visibles et
+        // requis seulement pour la Chevêchette (cd_nom 3507). Combine ternaire + idiome
+        // `(null || undefined)` du générateur de protocole.
+        val cache = "({value}) => (value.cd_nom != (null || undefined) ? value.cd_nom != 3507 : true)"
+        assertTrue("aucun taxon → caché", HiddenExpr.masquer(cache, emptyMap()))
+        assertTrue("autre taxon → caché", HiddenExpr.masquer(cache, mapOf("cd_nom" to 4001)))
+        assertFalse("Chevêchette → visible", HiddenExpr.masquer(cache, mapOf("cd_nom" to 3507)))
+        val requis = "({value}) => (value.cd_nom != (null || undefined) ? value.cd_nom == 3507 : false)"
+        assertTrue(HiddenExpr.evaluerBooleen(requis, mapOf("cd_nom" to 3507)))
+        assertFalse(HiddenExpr.evaluerBooleen(requis, mapOf("cd_nom" to 4001)))
+        assertFalse(HiddenExpr.evaluerBooleen(requis, emptyMap()))
+    }
+
+    @Test
+    fun sous_terme_inconnu_rend_l_expression_non_reconnue() {
+        // Propagation stricte : si une moitié du && est inévaluable (meta), on ne tranche
+        // pas → champ visible. Mieux vaut un champ en trop qu'un champ caché à tort.
+        assertFalse(HiddenExpr.masquer(
+            "({value, meta}) => meta.bChainInput && value.x == 1", mapOf("x" to "1")))
     }
 }

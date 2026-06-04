@@ -1,6 +1,12 @@
 # GeoMys Android
 
-Application Android de terrain pour la saisie naturaliste connectée à un serveur [GeoNature](https://github.com/PnX-SI/GeoNature) — observations libres (OccTax) **et** suivis protocolés (gn_module_monitoring), en ligne comme hors-ligne.
+GeoMys est une application mobile Android alternative à Occtax-mobile (https://github.com/PnX-SI/gn_mobile_occtax/) et Monitoring-mobile (https://github.com/RNF-SI/gn_mobile_monitoring). Elle permet une saisie naturaliste sur un serveur [GeoNature](https://github.com/PnX-SI/GeoNature) — observations libres (OccTax) **et** suivis protocolés (gn_module_monitoring), en ligne comme hors-ligne.
+
+Elle permet de saisir des observations naturalistes dans le module Occtax en enchainant les relevés mono ou multi-taxons avec suivi GPS de la localisation, puis de les envoyer vers le module Occtax du serveur GeoNature auquel elle est connectée.
+
+Elle permet de saisir des visites et des observations dans les sous modules monitorings, puis de les envoyer vers le module Monitorings du serveur GeoNature auquel elle est connectée.
+
+Elle permet de consulter les données de moins de 12 mois présentes dans le serveur GeoNature auquel elle est connectée.
 
 Développée par l'[ANA - CEN Ariège](https://ariegenature.fr/).
 
@@ -17,8 +23,8 @@ Développée par l'[ANA - CEN Ariège](https://ariegenature.fr/).
 
 ### Saisie libre (OccTax)
 - **Suivi GPS** en arrière-plan via service foreground, tracé du parcours sur carte.
-- **Saisie multi-taxons** géolocalisée : un relevé peut contenir plusieurs occurrences (taxons, dénombrements, médias). Géométries point / ligne / polygone au doigt sur la carte. À la réédition d'une sortie, les lignes et polygones sont redessinés et leurs sommets restent **déplaçables** (un tap sur la forme ouvre la liste des espèces du relevé). Après validation d'un relevé, la carte repasse **directement en mode positionnement** pour enchaîner le relevé suivant.
-- **Saisie rapide mono-taxon** : ouverture instantanée, photo + taxon + envoi en quelques tap. Si le serveur déclare des **champs additionnels de relevé** (OCCTAX_RELEVE), l'écran « Détails du relevé » est intercalé une fois à l'entrée de la saisie (comme en multi-taxons) : ces valeurs sont saisies une seule fois et appliquées à toutes les observations de la session (chacune devenant un relevé séparé côté serveur). Elles restent **éditables** ensuite via le bouton « Détails du relevé » du panneau de configuration (même dialog qu'en multi-taxons).
+- **Saisie multi-taxons** géolocalisée : un relevé peut contenir plusieurs occurrences (taxons, dénombrements, médias). Géométries point / ligne / polygone au doigt sur la carte. À la réédition d'une sortie, les lignes et polygones sont redessinés et leurs sommets restent **déplaçables** (un tap sur la forme ouvre la liste des espèces du relevé). Après validation d'un relevé, la carte repasse **directement en mode positionnement** pour enchaîner le relevé suivant. Si le serveur déclare des **champs additionnels** (OCCTAX_RELEVE, OCCTAX_OCCURRENCE, OCCTAX_DENOMBREMENT), l'application les gère au niveau du relevé, de l'occurrence ou du dénombrement.
+- **Saisie rapide mono-taxon** : ouverture instantanée, photo + taxon + envoi en quelques tap. Si le serveur déclare des **champs additionnels** (OCCTAX_RELEVE, OCCTAX_OCCURRENCE, OCCTAX_DENOMBREMENT), l'application les gère au niveau du relevé, de l'occurrence ou du dénombrement.
 - **Bandeau de navigation** « 🏠 › Saisie mono-taxons / multi-taxons » présent sur tous les écrans de chaque flux de saisie (icône maison cliquable → retour à l'accueil), à l'image du fil d'Ariane des suivis.
 - **Autocomplétion TaxRef** (noms vernaculaires et scientifiques) avec cache local.
 - **Export GPX** des sorties enregistrées.
@@ -56,7 +62,7 @@ Le dernier fond choisi est **mémorisé** et réappliqué à l'ouverture de n'im
 Volontairement hors périmètre à ce stade. Aucune n'est un bug : les fonctionnalités absentes dégradent proprement (un champ non porté reste éditable en texte plutôt que de disparaître), et le périmètre cible du monitoring reste **consultation + visites + saisies sur sites existants** — pas de création de sites.
 
 - **Saisie de géométrie au formulaire monitoring (widget `geometry`)** — non portée. Les champs de type `geometry` (dessin d'un point / ligne / polygone sur carte, p. ex. pour créer un site ou tracer un transect) sont **dégradés en champ texte**. La *consultation* des géométries de sites existants, elle, est pleinement supportée (carte interactive, « Maps Manager »). Cohérent avec le périmètre « sites existants ».
-- **Médias** : plusieurs photos par objet sont désormais supportées (OccTax comme monitoring), avec multi-sélection dans le picker système. La **géométrie** (saisie cartographique d'un objet monitoring) reste hors périmètre.
+- **Médias** : plusieurs photos par objet sont supportées (OccTax comme monitoring), avec multi-sélection dans le picker système. La **géométrie** (saisie cartographique d'un objet monitoring) reste hors périmètre.
 - **Datalists TaxHub** — seules les listes alimentées par une application `GeoNature` sont chargées dynamiquement ; les datalists pointant vers **TaxHub** ne sont pas encore récupérées.
 - **Dictée vocale en français uniquement** — la reconnaissance vocale (saisie OccTax) n'expose pas de choix de langue.
 - **Pas de tests instrumentés UI** — la couverture automatique est solide côté logique (parsing schéma, payloads, flux réseau, offline) mais il n'y a pas de tests d'interface / fragments / services de localisation ; la validation de ces parcours reste manuelle.

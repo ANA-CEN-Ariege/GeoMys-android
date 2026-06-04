@@ -85,15 +85,33 @@ object OutboxEnvoi {
         // les ré-envoie PAS automatiquement (le POST a pu aboutir côté serveur → doublon) : on
         // les bascule en ERROR pour qu'elles redeviennent visibles et ré-essayables — sinon
         // elles restaient invisibles à vie et bloquaient leurs enfants (jamais débloqués).
+        val interrompues = mutableSetOf<String>()
         OutboxMonitoring.tout()
             .filter { it.etat == SaisieEnAttente.Etat.SENDING }
             .forEach { s ->
+                interrompues.add(s.uuid)
                 OutboxMonitoring.mettreAJour(s.uuid) {
                     it.copy(
                         etat = SaisieEnAttente.Etat.ERROR,
                         messageErreur = "Envoi interrompu (application fermée ?) — " +
                             "vérifier sur GeoNature avant de réessayer",
                     )
+                }
+            }
+        // L'action « envoyer » (flèche d'un groupe / envoyer tout) vaut « Réessayer » pour les
+        // saisies en erreur ciblées : on les requalifie PENDING pour qu'elles repartent avec le
+        // groupe — sinon la flèche sur une visite en échec ne faisait RIEN (seuls les PENDING
+        // étaient traités) et il fallait « Réessayer » entrée par entrée. Exception : celles
+        // tout juste requalifiées depuis SENDING — l'utilisateur doit d'abord voir
+        // l'avertissement « vérifier sur GeoNature » (re-clic = retry assumé).
+        OutboxMonitoring.tout()
+            .filter {
+                it.etat == SaisieEnAttente.Etat.ERROR && it.uuid !in interrompues &&
+                    (uuidsACibler == null || it.uuid in uuidsACibler)
+            }
+            .forEach { s ->
+                OutboxMonitoring.mettreAJour(s.uuid) {
+                    it.copy(etat = SaisieEnAttente.Etat.PENDING, messageErreur = null)
                 }
             }
         val initiales = OutboxMonitoring.enAttente()
@@ -174,6 +192,19 @@ object OutboxEnvoi {
                         // L'objet est créé côté serveur → ses enfants sont débloqués dans tous
                         // les cas (même si ses médias ont échoué) → nouveau tour de boucle.
                         nouvelleVagueSucces = true
+                        // Résout la FK de TOUS les enfants pointant ce parent local — y compris
+                        // ceux qui ne sont pas traités dans ce run (ex. en erreur d'un envoi
+                        // précédent). Sans ça, purgerSent() supprimait le parent SENT et ses
+                        // enfants en erreur devenaient définitivement « parent introuvable ».
+                        if (envoi.idServeur > 0) {
+                            OutboxMonitoring.tout()
+                                .filter { it.parentUuidLocal == saisie.uuid }
+                                .forEach { enfant ->
+                                    OutboxMonitoring.mettreAJour(enfant.uuid) {
+                                        it.copy(parentIdServeur = envoi.idServeur, parentUuidLocal = null)
+                                    }
+                                }
+                        }
                         if (envoi.erreurMedia == null) {
                             succes++
                             OutboxMonitoring.mettreAJour(saisie.uuid) {

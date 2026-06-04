@@ -220,9 +220,14 @@ object OutboxMonitoring {
     fun countEnAttente(): Int = enAttente().size
 
     /** Purge les saisies déjà envoyées (utile pour limiter la croissance du fichier
-     *  après quelques mois d'usage). */
+     *  après quelques mois d'usage). Filet de sécurité : une SENT encore RÉFÉRENCÉE par un
+     *  enfant local (parentUuidLocal) est conservée — la purger casserait le lien (« parent
+     *  introuvable » définitif). Cas normalement impossible depuis la résolution globale des
+     *  FK à l'envoi (OutboxEnvoi), gardé en dernière défense. */
     fun purgerSent() {
-        sauvegarder(charger().filterNot { it.etat == SaisieEnAttente.Etat.SENT })
+        val tous = charger()
+        val referencees = tous.mapNotNull { it.parentUuidLocal }.toSet()
+        sauvegarder(tous.filterNot { it.etat == SaisieEnAttente.Etat.SENT && it.uuid !in referencees })
     }
 
     fun vider() {

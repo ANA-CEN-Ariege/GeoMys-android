@@ -214,6 +214,53 @@ class OutboxEnvoiTest {
         assertTrue(enfant.messageErreur!!.contains("parent en échec"))
     }
 
+    // ── Flèche d'envoi sur un groupe en erreur (retour terrain) ────────────────────
+
+    @Test
+    fun fleche_sur_un_groupe_en_erreur_reessaye_la_visite_ET_ses_obs() {
+        // État après un envoi raté (ex. coupure réseau) : visite ERROR, obs ERROR
+        // « parent en échec ». Avant le correctif, la flèche ne faisait RIEN (seuls les
+        // PENDING étaient traités) et « Réessayer » sur la seule visite l'envoyait sans
+        // ses obs (puis les orphelinait à la purge : « parent introuvable »).
+        OutboxMonitoring.ajouter(saisie("visite", etat = SaisieEnAttente.Etat.ERROR))
+        OutboxMonitoring.ajouter(saisie("obs", parentUuidLocal = "visite",
+            etat = SaisieEnAttente.Etat.ERROR))
+        val res = runBlocking { OutboxEnvoi.envoyerGroupe(config, "visite") { _, _, _ -> } }
+        assertEquals("visite ET obs envoyées", 2, res.succes)
+        assertEquals(0, res.echecs)
+        assertEquals(2, postsVisite.size)
+        assertTrue("le POST de l'obs porte la FK de la visite : ${postsVisite[1]}",
+            postsVisite[1].contains("\"id_base_site\":41"))
+        assertTrue("file vide après envoi complet", OutboxMonitoring.tout().isEmpty())
+    }
+
+    @Test
+    fun le_parent_envoye_resout_la_fk_des_enfants_meme_non_traites_dans_ce_run() {
+        // Enfant interrompu (SENDING, crash) : exclu du retry automatique de ce run, mais
+        // quand son parent part, sa FK doit être résolue — sinon la purge du parent SENT
+        // le rendait définitivement « parent introuvable ».
+        OutboxMonitoring.ajouter(saisie("parent"))
+        OutboxMonitoring.ajouter(saisie("enfant", parentUuidLocal = "parent",
+            etat = SaisieEnAttente.Etat.SENDING))
+        envoyerTout()
+        val enfant = OutboxMonitoring.tout().single { it.uuid == "enfant" }
+        assertEquals("pas de ré-envoi auto d'une saisie interrompue",
+            SaisieEnAttente.Etat.ERROR, enfant.etat)
+        assertEquals("FK résolue malgré tout", 41, enfant.parentIdServeur)
+        assertEquals("plus de référence au parent local purgé", null, enfant.parentUuidLocal)
+        assertEquals("seul le parent a été posté", 1, postsVisite.size)
+    }
+
+    @Test
+    fun envoyer_un_groupe_ne_requalifie_pas_les_erreurs_des_autres_groupes() {
+        OutboxMonitoring.ajouter(saisie("g1", etat = SaisieEnAttente.Etat.ERROR))
+        OutboxMonitoring.ajouter(saisie("g2", etat = SaisieEnAttente.Etat.ERROR))
+        runBlocking { OutboxEnvoi.envoyerGroupe(config, "g1") { _, _, _ -> } }
+        assertEquals("seul g1 est parti", 1, postsVisite.size)
+        val g2 = OutboxMonitoring.tout().single { it.uuid == "g2" }
+        assertEquals("g2 reste en erreur, non touché", SaisieEnAttente.Etat.ERROR, g2.etat)
+    }
+
     // ── Médias (objet créé, photo en échec — ex. mode avion pendant le transfert) ──
 
     @Test

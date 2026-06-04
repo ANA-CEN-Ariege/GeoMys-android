@@ -345,6 +345,28 @@ class OutboxEnvoiTest {
     }
 
     @Test
+    fun re_envoi_sans_verification_possible_signale_le_doublon_potentiel() {
+        // Saisie déjà tentée mais SANS uuid (vieux protocole sans uuid_field_name) : on
+        // re-POSTe — pas le choix — mais le message doit avertir du doublon possible.
+        OutboxMonitoring.ajouter(saisie("u1", etat = SaisieEnAttente.Etat.ERROR,
+            dejaTentee = true, uuidPayload = null, uuidFieldName = null))
+        val res = envoyerTout()
+        assertEquals(1, res.succes)
+        assertEquals(1, postsVisite.size)
+        assertTrue("le message doit avertir : ${res.messages}",
+            res.messages.any { it.contains("doublon") })
+    }
+
+    @Test
+    fun premiere_tentative_ne_declenche_aucun_avertissement_doublon() {
+        OutboxMonitoring.ajouter(saisie("u1"))  // jamais tentée
+        val res = envoyerTout()
+        assertEquals(1, res.succes)
+        assertTrue("pas d'avertissement sur un premier envoi : ${res.messages}",
+            res.messages.none { it.contains("doublon") })
+    }
+
+    @Test
     fun verification_anti_doublon_inaccessible_bloque_le_re_envoi() {
         // Vérification impossible (réseau/serveur KO) : ne PAS re-POSTer à l'aveugle.
         reponseParentDepth1 = MockResponse().setResponseCode(500)

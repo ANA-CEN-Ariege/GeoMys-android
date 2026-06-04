@@ -195,7 +195,10 @@ object OutboxEnvoi {
                 progression(envoyees, total, "Envoi de ${saisie.objectType}…")
 
                 val saisieAJour = OutboxMonitoring.tout().firstOrNull { it.uuid == saisie.uuid } ?: continue
-                val res = envoyerUne(config, saisieAJour)
+                // dejaTentee est lu sur le snapshot d'AVANT la transition SENDING : la valeur
+                // fraîche (saisieAJour) est toujours true — elle ne distingue plus une
+                // première tentative d'un re-envoi.
+                val res = envoyerUne(config, saisieAJour, dejaTenteeAvant = saisie.dejaTentee)
                 envoyees++
                 res.fold(
                     onSuccess = { envoi ->
@@ -221,7 +224,13 @@ object OutboxEnvoi {
                                 it.copy(etat = SaisieEnAttente.Etat.SENT, idServeur = envoi.idServeur,
                                     objetCree = true, messageErreur = null)
                             }
-                            messages.add("✅ ${saisie.objectType} #${envoi.idServeur}")
+                            messages.add(buildString {
+                                append("✅ ${saisie.objectType} #${envoi.idServeur}")
+                                if (envoi.doublonPossible) {
+                                    append(" — ⚠ renvoyée sans vérification anti-doublon " +
+                                        "possible : vérifier l'absence de doublon sur GeoNature")
+                                }
+                            })
                         } else {
                             // Objet créé MAIS médias non envoyés (ex. mode avion pendant le
                             // transfert de la photo) : la saisie reste visible en erreur
@@ -258,8 +267,15 @@ object OutboxEnvoi {
     }
 
     /** Résultat d'un [envoyerUne] réussi : l'objet est créé (ou l'était déjà) côté serveur ;
-     *  [erreurMedia] non-null si l'upload d'au moins un média a échoué ensuite. */
-    private data class EnvoiUne(val idServeur: Int, val erreurMedia: String?)
+     *  [erreurMedia] non-null si l'upload d'au moins un média a échoué ensuite.
+     *  [doublonPossible] : la saisie avait déjà été tentée mais la vérification anti-doublon
+     *  était IMPOSSIBLE (pas d'uuid client / parent serveur inconnu) → on a re-POSTé à
+     *  l'aveugle, l'utilisateur doit vérifier l'absence de doublon côté GeoNature. */
+    private data class EnvoiUne(
+        val idServeur: Int,
+        val erreurMedia: String?,
+        val doublonPossible: Boolean = false,
+    )
 
     /** Envoie une saisie isolée. Lit les valeurs depuis valeursJson, reconstitue la Map
      *  attendue par [MonitoringApi.envoyerVisite] et POST, puis uploade les médias éventuels
@@ -267,9 +283,16 @@ object OutboxEnvoi {
      *  précédente où seuls les médias avaient échoué — ex. mode avion pendant le transfert
      *  de la photo), le POST est SAUTÉ (re-POSTer dupliquerait l'objet) : on ne renvoie que
      *  les médias. */
-    private suspend fun envoyerUne(config: GeoNatureConfig, s: SaisieEnAttente): Result<EnvoiUne> {
+    private suspend fun envoyerUne(
+        config: GeoNatureConfig,
+        s: SaisieEnAttente,
+        /** dejaTentee AVANT la tentative courante (le champ de [s] est déjà posé à true par la
+         *  transition SENDING) : true = un POST précédent a pu aboutir sans confirmation. */
+        dejaTenteeAvant: Boolean,
+    ): Result<EnvoiUne> {
         return try {
             val idServeur: Int
+            var doublonPossible = false
             if (s.objetCree) {
                 // Objet déjà créé lors d'une tentative précédente — médias seulement.
                 idServeur = s.idServeur ?: 0
@@ -278,10 +301,9 @@ object OutboxEnvoi {
                 // pleine coupure) peut exister côté serveur. Si elle porte un uuid client et
                 // que son parent serveur est connu, on vérifie AVANT de re-POSTer. Une erreur
                 // réseau pendant la vérification fait échouer l'envoi (pas de re-POST aveugle).
-                val idExistant = if (
-                    s.dejaTentee && s.uuidPayload != null && s.uuidFieldName != null &&
+                val peutVerifier = s.uuidPayload != null && s.uuidFieldName != null &&
                     s.parentObjectType != null && (s.parentIdServeur ?: 0) > 0
-                ) {
+                val idExistant = if (dejaTenteeAvant && peutVerifier) {
                     MonitoringApi.chercherEnfantParUuid(
                         config = config,
                         moduleCode = s.moduleCode,
@@ -298,6 +320,11 @@ object OutboxEnvoi {
                     OutboxMonitoring.mettreAJour(s.uuid) { it.copy(objetCree = true, idServeur = idExistant) }
                     idServeur = idExistant
                 } else {
+                    // Re-POST d'une saisie déjà tentée SANS vérification possible (pas d'uuid
+                    // client — vieux protocole sans uuid_field_name — ou parent serveur
+                    // inconnu) : un doublon est possible si la 1re tentative avait en réalité
+                    // abouti. Signalé à l'utilisateur via le message de fin d'envoi.
+                    doublonPossible = dejaTenteeAvant && !peutVerifier
                     val valeurs = mutableMapOf<String, Any?>()
                     val obj = org.json.JSONObject(s.valeursJson)
                     val it = obj.keys()
@@ -345,7 +372,7 @@ object OutboxEnvoi {
                         "Upload média échoué pour ${s.uuid} (objet créé OK) : $err")
                 }
             }
-            Result.success(EnvoiUne(idServeur, erreurMedia))
+            Result.success(EnvoiUne(idServeur, erreurMedia, doublonPossible))
         } catch (e: Exception) {
             Result.failure(e)
         }

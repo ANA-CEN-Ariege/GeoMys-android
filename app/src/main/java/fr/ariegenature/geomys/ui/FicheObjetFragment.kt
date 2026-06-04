@@ -586,7 +586,14 @@ class FicheObjetFragment : Fragment() {
         val row = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setBackgroundColor(0xFFFFF8E1.toInt())  // ambre très clair
+            // Cadre rouge sur le fond du thème (l'ancien fond ambre très clair passait pour
+            // un fond blanc sur le thème sombre) : signale une saisie locale pas encore
+            // envoyée, cohérent avec les cadres de « Mes visites ».
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(0x00000000)
+                cornerRadius = 8 * density
+                setStroke((2 * density).toInt(), couleurErreur(ctx))
+            }
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,

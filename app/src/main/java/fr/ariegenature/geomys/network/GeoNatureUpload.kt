@@ -298,18 +298,7 @@ object GeoNatureUpload {
                     val besoinMedia = urisCounting0.isNotEmpty() || urisAdditionnels.any { it.isNotEmpty() }
                     if (besoinMedia) {
                         val (idTableLoc, errTable) = resoudreIdTableLocationCounting(base, token, cookies)
-                        // Mapping mime → label TYPE_MEDIA. Le label exact dépend de l'instance
-                        // GeoNature ; on essaie quelques variantes courantes.
-                        fun idTypeMediaPour(mime: String): Int? {
-                            val cache = nomenclatures["TYPE_MEDIA"] ?: return null
-                            val candidats = when {
-                                mime.startsWith("image/") -> listOf("photo", "photo (fichier local)", "photo (lien web)")
-                                mime.startsWith("audio/") -> listOf("audio", "audio (fichier local)", "audio (lien web)")
-                                mime.startsWith("video/") -> listOf("vidéo", "vidéo (fichier local)", "vidéo (lien web)", "video")
-                                else -> emptyList()
-                            }
-                            return candidats.firstNotNullOfOrNull { cache[it] }
-                        }
+                        val typesMediaOcctax = nomenclatures["TYPE_MEDIA"] ?: emptyMap()
                         val author = config.observateurDefautNom.ifEmpty {
                             config.nomUtilisateur.ifEmpty { config.login }
                         }
@@ -323,7 +312,7 @@ object GeoNatureUpload {
                                 val path = android.net.Uri.parse(uri).path ?: ""
                                 java.net.URLConnection.guessContentTypeFromName(path) ?: "image/jpeg"
                             } catch (_: Exception) { "image/jpeg" }
-                            val idTypeMedia = idTypeMediaPour(mimeHint)
+                            val idTypeMedia = idTypeMediaPour(typesMediaOcctax, mimeHint)
                             val (json, err) = uploaderMediaFile(
                                 base = base, token = token, cookies = cookies,
                                 mediaPath = uri, author = author, titre = obs.espece,
@@ -680,21 +669,45 @@ object GeoNatureUpload {
         // id_table_location résolu une seule fois (même table cible pour tous les médias du champ).
         val (idTableLoc, errTable) = resoudreIdTableLocationPour(base, token, cookies, schemaDotTable)
         if (idTableLoc == null) return@withContext Pair(false, errTable ?: "id_table_location introuvable pour $schemaDotTable")
+        // id_nomenclature_media_type : NOT NULL côté gn_commons.t_medias — son ABSENCE faisait
+        // partir le POST en 500 opaque (« photo en échec », bug terrain ; l'objet, lui, était
+        // créé). Résolution identique au flux OCCTAX : cache TYPE_MEDIA (labels stables entre
+        // instances), repli sur la résolution live si le cache est vide.
+        val typesMedia = fr.ariegenature.geomys.store.NomenclatureCache.get("TYPE_MEDIA")
+            .associate { it.label.lowercase() to it.id }
+            .ifEmpty { resolverNomenclatures(base, token, cookies, "TYPE_MEDIA") }
         // Upload séquentiel de chaque fichier, tous rattachés au même objet (uuid_attached_row).
         var nbOk = 0
         var premiereErreur: String? = null
         mediaPaths.forEachIndexed { i, mediaPath ->
+            val mimeHint = try {
+                val path = android.net.Uri.parse(mediaPath).path ?: ""
+                java.net.URLConnection.guessContentTypeFromName(path) ?: "image/jpeg"
+            } catch (_: Exception) { "image/jpeg" }
             val (json, err) = uploaderMediaFile(
                 base = base, token = token, cookies = cookies,
                 mediaPath = mediaPath, author = author,
                 titre = if (mediaPaths.size > 1) "$titre (${i + 1})" else titre,
-                idTableLocation = idTableLoc, idTypeMedia = null,
+                idTableLocation = idTableLoc, idTypeMedia = idTypeMediaPour(typesMedia, mimeHint),
                 uuidAttachedRow = uuidAttachedRow,
             )
             if (json != null) nbOk++ else if (premiereErreur == null) premiereErreur = err
         }
         if (nbOk == mediaPaths.size) Pair(true, null)
         else Pair(false, "$nbOk/${mediaPaths.size} média(s) envoyé(s)" + (premiereErreur?.let { " — $it" } ?: ""))
+    }
+
+    /** Mappe un type mime → id_nomenclature TYPE_MEDIA via les labels stables entre instances
+     *  (« photo », « audio », « vidéo », variantes « fichier local » / « lien web »).
+     *  [typesMedia] = label lowercase → id_nomenclature. Null si introuvable. */
+    private fun idTypeMediaPour(typesMedia: Map<String, Int>, mime: String): Int? {
+        val candidats = when {
+            mime.startsWith("image/") -> listOf("photo", "photo (fichier local)", "photo (lien web)")
+            mime.startsWith("audio/") -> listOf("audio", "audio (fichier local)", "audio (lien web)")
+            mime.startsWith("video/") -> listOf("vidéo", "vidéo (fichier local)", "vidéo (lien web)", "video")
+            else -> emptyList()
+        }
+        return candidats.firstNotNullOfOrNull { typesMedia[it] }
     }
 
     /** Résout l'id_table_location pour un `schema.table` arbitraire (ex.

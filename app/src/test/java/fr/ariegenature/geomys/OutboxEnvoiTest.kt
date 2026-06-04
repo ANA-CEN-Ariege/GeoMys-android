@@ -65,6 +65,9 @@ class OutboxEnvoiTest {
     /** Réponse du GET parent?depth=1 (vérification anti-doublon). Null = enfants vides. */
     @Volatile private var reponseParentDepth1: MockResponse? = null
 
+    /** Corps multipart du dernier POST média reçu. */
+    @Volatile private var dernierCorpsMedia: String = ""
+
     @Before
     fun setup() {
         server = MockWebServer().apply { start() }
@@ -72,10 +75,16 @@ class OutboxEnvoiTest {
         codesVisite.clear()
         codesMedia.clear()
         postsMedia.set(0)
+        dernierCorpsMedia = ""
         reponseParentDepth1 = null
         prochainIdServeur.set(41)
         OutboxMonitoring.init(ApplicationProvider.getApplicationContext())
         OutboxMonitoring.vider()
+        // TYPE_MEDIA en cache : l'upload média doit résoudre id_nomenclature_media_type
+        // (NOT NULL côté gn_commons — son absence = 500 serveur, bug terrain).
+        fr.ariegenature.geomys.store.NomenclatureCache.init(ApplicationProvider.getApplicationContext())
+        fr.ariegenature.geomys.store.NomenclatureCache.setAll(
+            mapOf("TYPE_MEDIA" to listOf(fr.ariegenature.geomys.store.NomValeur(7, "Photo"))))
         config = GeoNatureConfig(ApplicationProvider.getApplicationContext()).apply {
             urlServeur = server.url("/").toString().trimEnd('/')
             login = "alice"; motDePasse = "pwd"; idDataset = "12"
@@ -106,6 +115,7 @@ class OutboxEnvoiTest {
                         json.setResponseCode(200).setBody("1")
                     request.method == "POST" && path.startsWith("/api/gn_commons/media") -> {
                         postsMedia.incrementAndGet()
+                        dernierCorpsMedia = request.body.readUtf8()
                         val code = synchronized(codesMedia) {
                             if (codesMedia.isEmpty()) 200 else codesMedia.removeAt(0)
                         }
@@ -396,6 +406,22 @@ class OutboxEnvoiTest {
         assertTrue("le message doit expliquer l'échec média : ${s.messageErreur}",
             s.messageErreur!!.contains("média"))
         assertEquals(1, postsVisite.size)
+    }
+
+    @Test
+    fun upload_media_monitoring_porte_le_type_de_media() {
+        // id_nomenclature_media_type est NOT NULL côté gn_commons.t_medias : il doit être
+        // résolu depuis le cache TYPE_MEDIA et présent dans le multipart — son absence
+        // faisait répondre 500 au serveur (« photo en échec », bug terrain).
+        OutboxMonitoring.ajouter(saisie("u1", avecMedia = true))
+        val res = envoyerTout()
+        assertEquals(1, res.succes)
+        assertEquals(1, postsMedia.get())
+        assertTrue("le multipart doit porter id_nomenclature_media_type : $dernierCorpsMedia",
+            dernierCorpsMedia.contains("name=\"id_nomenclature_media_type\""))
+        assertTrue("avec l'id du TYPE_MEDIA « Photo » (7)", dernierCorpsMedia.contains("7"))
+        assertTrue("et le rattachement uuid_attached_row",
+            dernierCorpsMedia.contains("name=\"uuid_attached_row\""))
     }
 
     @Test

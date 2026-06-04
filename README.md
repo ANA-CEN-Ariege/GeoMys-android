@@ -1,6 +1,6 @@
 # GeoMys Android
 
-GeoMys est une application mobile Android alternative à Occtax-mobile (https://github.com/PnX-SI/gn_mobile_occtax/) et Monitoring-mobile (https://github.com/RNF-SI/gn_mobile_monitoring). Elle permet une saisie naturaliste sur un serveur [GeoNature](https://github.com/PnX-SI/GeoNature) — observations libres (OccTax) **et** suivis protocolés (gn_module_monitoring), en ligne comme hors-ligne.
+GeoMys est une application mobile Android alternative à Occtax-mobile (https://github.com/PnX-SI/gn_mobile_occtax/) et Monitoring-mobile (https://github.com/RNF-SI/gn_mobile_monitoring). Elle permet une saisie naturaliste sur un serveur [GeoNature](https://github.com/PnX-SI/GeoNature), en ligne comme hors-ligne.
 
 Elle permet de saisir des observations naturalistes dans le module Occtax en enchainant les relevés mono ou multi-taxons avec suivi GPS de la localisation, puis de les envoyer vers le module Occtax du serveur GeoNature auquel elle est connectée.
 

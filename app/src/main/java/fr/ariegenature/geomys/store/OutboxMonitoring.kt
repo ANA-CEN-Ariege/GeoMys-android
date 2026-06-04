@@ -94,6 +94,7 @@ object OutboxMonitoring {
 
     fun init(context: Context) {
         fichier = File(context.filesDir, "monitoring_outbox.json")
+        mem = null  // ré-init = démarrage à froid : la prochaine lecture repart du disque
     }
 
     private fun charger(): List<SaisieEnAttente> {
@@ -101,10 +102,37 @@ object OutboxMonitoring {
         if (!::fichier.isInitialized || !fichier.exists()) return emptyList()
         return try {
             val json = fichier.readText()
-            val type = object : TypeToken<List<SaisieEnAttente>>() {}.type
-            (gson.fromJson<List<SaisieEnAttente>>(json, type) ?: emptyList())
+            val type = object : TypeToken<List<SaisieEnAttente?>>() {}.type
+            (gson.fromJson<List<SaisieEnAttente?>>(json, type) ?: emptyList())
+                .mapNotNull { it?.let(::normaliser) }
                 .also { mem = it }
         } catch (_: Exception) { emptyList() }
+    }
+
+    /** Reconstruit une entrée sûre après désérialisation. Gson instancie sans passer par le
+     *  constructeur (Unsafe) : les champs absents du JSON restent à null, y compris les listes
+     *  NON-NULLABLES ajoutées par des versions plus récentes de l'app (ex. [SaisieEnAttente
+     *  .mediaPathsLocal] en 0.10.4 — un brouillon écrit avant crashe au premier copy()/accès).
+     *  Même chose pour un JSON corrompu-mais-parsable (champ obligatoire manquant, etat
+     *  inconnu → null). Retourne null si un champ obligatoire manque (entrée écartée). */
+    @Suppress("SENSELESS_COMPARISON", "USELESS_ELVIS") // Gson viole la non-nullabilité Kotlin
+    private fun normaliser(e: SaisieEnAttente): SaisieEnAttente? {
+        if (e.uuid == null || e.moduleCode == null || e.objectType == null ||
+            e.valeursJson == null || e.etat == null
+        ) return null
+        return SaisieEnAttente(
+            uuid = e.uuid, moduleCode = e.moduleCode, objectType = e.objectType,
+            parentObjectType = e.parentObjectType, parentIdServeur = e.parentIdServeur,
+            parentUuidLocal = e.parentUuidLocal, parentIdField = e.parentIdField,
+            nomsChampsSchema = e.nomsChampsSchema ?: emptyList(),
+            champsTexteLibre = e.champsTexteLibre ?: emptyList(),
+            valeursJson = e.valeursJson, dateLocale = e.dateLocale, etat = e.etat,
+            messageErreur = e.messageErreur, idServeur = e.idServeur,
+            uuidPayload = e.uuidPayload, uuidFieldName = e.uuidFieldName,
+            mediaPathLocal = e.mediaPathLocal,
+            mediaPathsLocal = e.mediaPathsLocal ?: emptyList(),
+            mediaSchemaDotTable = e.mediaSchemaDotTable,
+        )
     }
 
     private fun sauvegarder(liste: List<SaisieEnAttente>) {

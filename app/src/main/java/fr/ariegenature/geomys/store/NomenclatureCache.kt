@@ -143,9 +143,14 @@ object NomenclatureCache {
         } catch (_: Exception) { emptyMap() }
     }
 
+    /** Purge valeurs ET défauts (mémoire + disque). Les id_nomenclature sont propres à une
+     *  instance GeoNature : à appeler au changement d'identité serveur, sinon les envois
+     *  partent avec des FK de l'ancienne instance. Sans effet si [init] n'a pas été appelé. */
     fun vider() {
-        prefs.edit().remove(KEY).apply()
+        if (!::prefs.isInitialized) return
+        prefs.edit().remove(KEY).remove(KEY_DEFAUTS).apply()
         mem = null
+        memDefauts = null
     }
 
     private fun charger(): Map<String, List<NomValeur>> {

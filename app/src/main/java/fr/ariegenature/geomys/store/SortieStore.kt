@@ -28,11 +28,18 @@ class SortieStore(context: Context) {
     private val gson = Gson()
     private val key = "sorties_sauvegardees"
 
+    @Suppress("SENSELESS_COMPARISON") // Gson peut violer la non-nullabilité Kotlin (cf. filtre)
     fun charger(): MutableList<Sortie> {
         val json = prefs.getString(key, null) ?: return mutableListOf()
         return try {
-            val type = object : TypeToken<MutableList<Sortie>>() {}.type
-            gson.fromJson(json, type) ?: mutableListOf()
+            val type = object : TypeToken<MutableList<Sortie?>>() {}.type
+            (gson.fromJson<MutableList<Sortie?>>(json, type) ?: mutableListOf())
+                .filterNotNull()
+                // Gson ne valide pas les types Kotlin : un JSON corrompu-mais-parsable peut
+                // produire des champs non-nullables à null (entrée nulle, id manquant) et un
+                // crash différé (NPE) au premier usage. On écarte ces entrées au chargement.
+                .filter { it.id != null && it.observations != null && it.pointsParcours != null }
+                .toMutableList()
         } catch (e: Exception) {
             mutableListOf()
         }

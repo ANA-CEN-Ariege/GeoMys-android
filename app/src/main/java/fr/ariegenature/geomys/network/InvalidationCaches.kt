@@ -31,4 +31,10 @@ fun invaliderCachesSession() {
     GeoNatureAuth.invaliderCache()
     MonitoringApi.invaliderCaches()
     GeoNatureUpload.invaliderCaches()
+    // Cache DISQUE des nomenclatures : contrairement aux caches ci-dessus il survit au
+    // process, et GeoNatureUpload.envoyer() le préfère au réseau (`fromCache.isNotEmpty()`).
+    // Sans cette purge, les id_nomenclature de l'ancienne instance partaient dans les
+    // occurrences → FK invalide → 500 opaque. Purge volontairement large (aussi sur simple
+    // changement de login/mdp) : un cache vide se resynchronise tout seul à l'envoi.
+    fr.ariegenature.geomys.store.NomenclatureCache.vider()
 }

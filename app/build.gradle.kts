@@ -10,8 +10,8 @@ android {
         applicationId = "fr.ariegenature.geomys"
         minSdk = 24
         targetSdk = 36
-        versionCode = 132
-        versionName = "0.10.6"
+        versionCode = 133
+        versionName = "1.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

@@ -84,6 +84,35 @@ class SchemaFusionTest {
     }
 
     @Test
+    fun required_dynamique_parse_en_expression_pas_en_booleen() {
+        // Cas réel (Point écoute avifaune) : champs végétation requis SEULEMENT au passage 2.
+        // Avant : optBoolean("required") rendait false → jamais obligatoires dans l'app
+        // alors que le web les exige.
+        val schema = JSONObject(
+            """
+            {
+              "generic": {},
+              "specific": {
+                "st_veg_lign_16_32": {
+                  "type_widget": "number",
+                  "required": "({value}) => value.num_passage == 2"
+                },
+                "num_passage": { "type_widget": "select", "required": true }
+              }
+            }
+            """.trimIndent(),
+        )
+        val props = MonitoringApi.parserPropertiesFusionnees(schema)
+        val veg = props.getValue("st_veg_lign_16_32")
+        assertFalse("pas obligatoire statiquement", veg.obligatoire)
+        assertEquals("l'expression doit être transportée",
+            "({value}) => value.num_passage == 2", veg.obligatoireExpr)
+        val passage = props.getValue("num_passage")
+        assertTrue("required booléen inchangé", passage.obligatoire)
+        assertEquals(null, passage.obligatoireExpr)
+    }
+
+    @Test
     fun champ_specific_sans_widget_infere_via_type_util() {
         // Cas réel : un protocole ne déclare en specific que `type_util: date` sans type_widget.
         val schema = JSONObject("""{"generic":{},"specific":{"date_obs":{"type_util":"date"}}}""")

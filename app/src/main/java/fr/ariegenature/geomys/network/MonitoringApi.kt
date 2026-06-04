@@ -294,6 +294,11 @@ object MonitoringApi {
          *  Évaluée à la volée par le renderer pour masquer/afficher dynamiquement le champ
          *  en fonction des autres valeurs. Null = toujours visible. */
         val hiddenExpr: String? = null,
+        /** Expression de caractère obligatoire DYNAMIQUE (clé `required` du schéma quand
+         *  c'est une lambda `({value}) => …` et non un booléen — ex. champs végétation requis
+         *  seulement au passage 2). Évaluée par le renderer contre les valeurs courantes ;
+         *  null = se fier au booléen [MonitoringPropertySchema] `obligatoire`. */
+        val obligatoireExpr: String? = null,
         /** `hidden: true` côté schéma serveur : champ technique caché à l'UI (id_base_visit,
          *  id_module, medias, nb_observations…). Inclus dans le payload POST avec valeur
          *  null sinon le serveur Marshmallow plante. */
@@ -1030,7 +1035,18 @@ object MonitoringApi {
         val label = v.optString("attribut_label", "")
             .ifEmpty { v.optString("label", "") }
             .ifEmpty { nom.replace('_', ' ').replaceFirstChar { c -> c.uppercase() } }
-        val obligatoire = v.optBoolean("required", false)
+        // `required` : booléen OU expression dynamique `({value}) => …` (ex. champs
+        // végétation du protocole Point écoute avifaune, requis seulement au passage 2 —
+        // même mécanique que `hidden`). L'expression est transportée jusqu'au renderer qui
+        // l'évalue contre les valeurs courantes du formulaire.
+        val requiredBrut = v.opt("required")
+        val obligatoire = when (requiredBrut) {
+            is Boolean -> requiredBrut
+            is String -> requiredBrut.equals("true", ignoreCase = true)
+            else -> false
+        }
+        val obligatoireExpr = (requiredBrut as? String)
+            ?.takeIf { it.contains("=>") || it.contains("value") }
         val apiBrut = v.optString("api", "").takeIf { it.isNotEmpty() }
         // Détection enrichie du type de nomenclature (parité isNomenclatureField de
         // gn_mobile_monitoring) : code explicite, sinon inféré depuis l'`api`
@@ -1125,6 +1141,7 @@ object MonitoringApi {
             defaultValue = defaultValue,
             defaultObjet = defaultObjet.toMap(),
             hiddenExpr = hiddenExpr,
+            obligatoireExpr = obligatoireExpr,
             hiddenBool = hiddenBool,
             filtres = filtresMap.toMap(),
             definition = v.optString("definition", "").takeIf { it.isNotEmpty() },
@@ -1493,22 +1510,41 @@ object MonitoringApi {
         } else {
             URL("$base/api/$apiPath") to null
         }
-        val conn = HttpClient.get(urlFinale, token, cookies, 15000)
-        if (postBody != null) {
-            conn.requestMethod = "POST"
-            conn.doOutput = true
-            conn.setRequestProperty("Content-Type", "application/json")
-            conn.outputStream.use { it.write(postBody.toByteArray(Charsets.UTF_8)) }
-        }
-        val httpCode = conn.responseCode
-        if (httpCode != 200) {
-            return@withContext fallbackDatasetCache()
-        }
-        val text = conn.inputStream.bufferedReader().readText()
-        // Réponse soit array direct, soit objet contenant data_path → array.
+        // Tentatives successives pour le dataset : body complet, puis SANS le filtre `create`
+        // (CRUVED action C). Sur certaines instances, `create=<module>.<objet>` renvoie vide ou
+        // échoue (objet de permission absent de la config du protocole) alors que des jeux de
+        // données sont bien rattachés au module — le web ne s'en aperçoit pas car il masque le
+        // champ à dataset unique sans appeler cette route. Champ requis vide = saisie bloquée,
+        // on préfère élargir au module (parité avec ce que le protocole affiche en tête).
+        val bodies: List<String?> = if (postBody != null && postBody.contains("\"create\"")) {
+            val sansCreate = JSONObject(postBody).also { it.remove("create") }.toString()
+            listOf(postBody, sansCreate)
+        } else listOf(postBody)
         val clesArray = (listOfNotNull(prop.dataPath) + listOf("values", "data", "items", "results")).toTypedArray()
-        val array: JSONArray = text.parserTableauJson(*clesArray) ?: return@withContext fallbackDatasetCache()
-        extraireOptions(array, keyValue, keyLabel, prop.filtres)
+        for ((index, body) in bodies.withIndex()) {
+            val conn = HttpClient.get(urlFinale, token, cookies, 15000)
+            if (body != null) {
+                conn.requestMethod = "POST"
+                conn.doOutput = true
+                conn.setRequestProperty("Content-Type", "application/json")
+                conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+            }
+            val httpCode = try { conn.responseCode } catch (_: IOException) { -1 }
+            if (httpCode != 200) continue
+            val text = try { conn.inputStream.bufferedReader().readText() } catch (_: IOException) { continue }
+            // Réponse soit array direct, soit objet contenant data_path → array.
+            val array: JSONArray = text.parserTableauJson(*clesArray) ?: continue
+            val options = extraireOptions(array, keyValue, keyLabel, prop.filtres)
+            // Dataset vide avec une tentative plus permissive encore disponible → on la joue.
+            if (estDataset && options.isEmpty() && index < bodies.size - 1) {
+                android.util.Log.w("MonitoringApi",
+                    "Datalist dataset vide avec filtre create — nouvelle tentative sans create")
+                continue
+            }
+            if (options.isEmpty()) return@withContext fallbackDatasetCache() ?: options
+            return@withContext options
+        }
+        fallbackDatasetCache()
     }
 
     /** Factorise la conversion d'un JSONArray d'objets en `List<OptionDatalist>` triée par

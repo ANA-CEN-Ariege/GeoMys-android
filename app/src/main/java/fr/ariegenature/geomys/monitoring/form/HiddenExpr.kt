@@ -31,6 +31,13 @@ package fr.ariegenature.geomys.monitoring.form
  *  - Retourne `true` quand le champ doit être **masqué** (sémantique de la clé `hidden`). */
 object HiddenExpr {
 
+    /** Évalue une expression booléenne quelconque du schéma contre les valeurs courantes —
+     *  même grammaire que `hidden`, utilisée aussi pour le `required` dynamique
+     *  (`({value}) => value.num_passage == 2`). Expression non reconnue → false
+     *  (champ non requis : on ne bloque pas la saisie sur une grammaire inconnue). */
+    fun evaluerBooleen(expression: String?, valeurs: Map<String, Any?>): Boolean =
+        masquer(expression, valeurs)
+
     /** Évalue l'expression sur l'ensemble des valeurs courantes du formulaire.
      *  @return true → masquer le champ, false → l'afficher. */
     fun masquer(expression: String?, valeurs: Map<String, Any?>): Boolean {
@@ -39,35 +46,64 @@ object HiddenExpr {
         // `({value}) => !value.habitat_input` — on extrait la partie après `=>` et on
         // remplace `value.champ` par `${champ}` pour la traiter avec les patterns standard.
         val expr = normaliser(expression.trim())
-
-        // Pattern : `!${champ}` ou `not ${champ}` → masque si champ est falsy.
-        Regex("""^!\s*\$\{(\w+)\}$""").matchEntire(expr)?.let { m ->
-            return !truthy(valeurs[m.groupValues[1]])
+        val resultat = evaluer(expr, valeurs)
+        if (resultat == null) {
+            android.util.Log.w("HiddenExpr",
+                "Expression non reconnue, champ traité comme visible : $expression")
+            return false
         }
-        Regex("""^not\s+\$\{(\w+)\}$""", RegexOption.IGNORE_CASE).matchEntire(expr)?.let { m ->
-            return !truthy(valeurs[m.groupValues[1]])
+        return resultat
+    }
+
+    /** Évaluation récursive d'une expression normalisée (`${champ}`, comparaisons, négation,
+     *  parenthèses englobantes — ex. `!(${num_passage} == 2)`, schéma Point écoute avifaune).
+     *  Retourne null quand la forme n'est pas reconnue (l'appelant affichera le champ). */
+    private fun evaluer(exprBrut: String, valeurs: Map<String, Any?>): Boolean? {
+        var expr = exprBrut.trim()
+        // Parenthèses englobantes : `(X)` → X, répété tant qu'elles enveloppent TOUT le corps
+        // (le contrôle d'équilibre évite de casser `(${a} == 1) && (${b} == 2)`).
+        while (expr.length >= 2 && expr.startsWith("(") && expr.endsWith(")") &&
+            parenthesesEquilibrees(expr.substring(1, expr.length - 1))
+        ) {
+            expr = expr.substring(1, expr.length - 1).trim()
         }
 
-        // Pattern : `${champ}` seul → masque si champ est truthy.
-        Regex("""^\$\{(\w+)\}$""").matchEntire(expr)?.let { m ->
-            return truthy(valeurs[m.groupValues[1]])
+        // Négation `!X` (et `not X`) → inverse de l'évaluation interne.
+        if (expr.startsWith("!") && !expr.startsWith("!=")) {
+            return evaluer(expr.substring(1), valeurs)?.let { !it }
+        }
+        Regex("""^not\s+(.+)$""", RegexOption.IGNORE_CASE).matchEntire(expr)?.let { m ->
+            return evaluer(m.groupValues[1], valeurs)?.let { !it }
         }
 
-        // Pattern : `${champ} ==|=== 'val'` → masque si champ vaut val.
+        // Pattern : `${champ} ==|=== 'val'` → vrai si champ vaut val.
         Regex("""^\$\{(\w+)\}\s*={2,3}\s*['"]?([^'"]*)['"]?$""").matchEntire(expr)?.let { m ->
             val v = valeurs[m.groupValues[1]]?.toString() ?: ""
             return v == m.groupValues[2]
         }
 
-        // Pattern : `${champ} !=|!== 'val'` → masque si champ DIFFÈRE de val.
+        // Pattern : `${champ} !=|!== 'val'` → vrai si champ DIFFÈRE de val.
         Regex("""^\$\{(\w+)\}\s*!=={0,1}\s*['"]?([^'"]*)['"]?$""").matchEntire(expr)?.let { m ->
             val v = valeurs[m.groupValues[1]]?.toString() ?: ""
             return v != m.groupValues[2]
         }
 
-        android.util.Log.w("HiddenExpr",
-            "Expression non reconnue, champ traité comme visible : $expression")
-        return false
+        // Pattern : `${champ}` seul → truthiness du champ.
+        Regex("""^\$\{(\w+)\}$""").matchEntire(expr)?.let { m ->
+            return truthy(valeurs[m.groupValues[1]])
+        }
+
+        return null
+    }
+
+    /** Les parenthèses de [s] s'équilibrent-elles sans jamais passer en négatif ? */
+    private fun parenthesesEquilibrees(s: String): Boolean {
+        var profondeur = 0
+        for (c in s) {
+            if (c == '(') profondeur++
+            if (c == ')') { profondeur--; if (profondeur < 0) return false }
+        }
+        return profondeur == 0
     }
 
     /** Reconnaît plusieurs formats serveur et les ramène à `${champ}` :

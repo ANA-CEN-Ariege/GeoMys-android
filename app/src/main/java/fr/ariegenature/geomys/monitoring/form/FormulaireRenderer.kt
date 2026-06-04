@@ -230,7 +230,11 @@ class FormulaireRenderer(
     fun champsObligatoiresManquants(): List<String> {
         val valeurs = lireValeurs()
         return fieldsParCode.filter { (code, field) ->
-            if (!field.obligatoire) return@filter false
+            // Obligatoire statique (required: true) OU dynamique (required: ({value}) => …,
+            // ex. champs végétation requis seulement au passage 2 — Point écoute avifaune).
+            val requis = field.obligatoire ||
+                (field.obligatoireExpr != null && HiddenExpr.evaluerBooleen(field.obligatoireExpr, valeurs))
+            if (!requis) return@filter false
             if (wrappersParCode[code]?.visibility == View.GONE) return@filter false
             when (val v = valeurs[code]) {
                 null -> true
@@ -383,7 +387,10 @@ class FormulaireRenderer(
             )
         }
         val labelTv = TextView(ctx).apply {
-            text = if (field.obligatoire) "${field.label} *" else field.label
+            // « * » pour un obligatoire statique OU conditionnel (required dynamique : dans
+            // les schémas observés, la condition d'obligation suit celle de visibilité —
+            // quand le champ est affiché, il est requis).
+            text = if (field.obligatoire || field.obligatoireExpr != null) "${field.label} *" else field.label
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
             setTextColor(couleurSecondaire)
             setPadding(0, 0, 0, (4 * density).toInt())

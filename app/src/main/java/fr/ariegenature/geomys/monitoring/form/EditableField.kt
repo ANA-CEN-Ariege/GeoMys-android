@@ -77,6 +77,10 @@ data class EditableField(
     /** Expression `hidden` du schéma serveur (forme Angular `${champ}` etc.). Évaluée
      *  par le renderer pour masquer/afficher dynamiquement selon les autres valeurs. */
     val hiddenExpr: String? = null,
+    /** Expression `required` DYNAMIQUE du schéma (`({value}) => …`) : le champ n'est
+     *  obligatoire que lorsque l'expression est vraie au regard des valeurs courantes
+     *  (ex. champs végétation requis seulement au passage 2). Complète [obligatoire]. */
+    val obligatoireExpr: String? = null,
     /** Pour les champs TAXON : id_liste UsersHub qui restreint les taxons proposés à
      *  l'autocomplete. Vient typiquement de `schema.idListTaxonomy` du protocole ou du
      *  `dataset.idTaxaList` rattaché. Null = toutes les espèces du cache TaxRef proposées. */

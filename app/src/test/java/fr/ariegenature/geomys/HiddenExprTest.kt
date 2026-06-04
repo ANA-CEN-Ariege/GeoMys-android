@@ -129,4 +129,57 @@ class HiddenExprTest {
         val norm = HiddenExpr.normaliser(brut)
         assertTrue("Attendu '\${champ}', reçu '$norm'", norm == "\${champ}")
     }
+
+    // ─── Négation parenthésée (schéma Point écoute avifaune) ────────────────
+
+    @Test
+    fun negation_parenthesee_d_une_comparaison() {
+        // Expression RÉELLE du protocole « Point écoute avifaune » : les champs de
+        // description de végétation ne sont visibles qu'au passage 2. Avant ce support,
+        // l'expression était « non reconnue » → champs toujours visibles (bug terrain).
+        val expr = "({value}) => !(value.num_passage == 2)"
+        // num_passage non encore choisi → masqué (parité web : !(undefined == 2) = true).
+        assertTrue(HiddenExpr.masquer(expr, emptyMap()))
+        assertTrue(HiddenExpr.masquer(expr, mapOf("num_passage" to "")))
+        // Passage 1 → masqué.
+        assertTrue(HiddenExpr.masquer(expr, mapOf("num_passage" to "1")))
+        // Passage 2 → visible.
+        assertFalse(HiddenExpr.masquer(expr, mapOf("num_passage" to "2")))
+    }
+
+    @Test
+    fun negation_parenthesee_triple_egal_et_parentheses_simples() {
+        assertTrue(HiddenExpr.masquer("({value}) => !(value.statut === 'actif')",
+            mapOf("statut" to "inactif")))
+        assertFalse(HiddenExpr.masquer("({value}) => !(value.statut === 'actif')",
+            mapOf("statut" to "actif")))
+        // Parenthèses englobantes sans négation.
+        assertTrue(HiddenExpr.masquer("({value}) => (value.statut == 'actif')",
+            mapOf("statut" to "actif")))
+        // Double négation parenthésée — tordu mais doit rester cohérent.
+        assertTrue(HiddenExpr.masquer("({value}) => !(!(value.statut == 'actif'))",
+            mapOf("statut" to "actif")))
+    }
+
+    @Test
+    fun evaluer_booleen_pour_le_required_dynamique() {
+        // Expression `required` RÉELLE du protocole Point écoute avifaune : champ requis
+        // seulement au passage 2. Même grammaire que hidden, via l'alias evaluerBooleen.
+        val expr = "({value}) => value.num_passage == 2"
+        assertTrue(HiddenExpr.evaluerBooleen(expr, mapOf("num_passage" to "2")))
+        assertFalse(HiddenExpr.evaluerBooleen(expr, mapOf("num_passage" to "1")))
+        assertFalse(HiddenExpr.evaluerBooleen(expr, emptyMap()))
+        // Grammaire inconnue → false : on ne bloque pas la saisie sur une expression
+        // qu'on ne sait pas évaluer.
+        assertFalse(HiddenExpr.evaluerBooleen("({value}) => value.a + value.b > 3", emptyMap()))
+    }
+
+    @Test
+    fun expression_meta_reste_non_reconnue_donc_visible() {
+        // Les expressions sur `meta` (contexte applicatif web) ne sont pas évaluables ici :
+        // fallback « visible », sans crash. Le masquage dataset-unique est géré ailleurs
+        // (auto-sélection + masquage quand une seule option, cf. enrichirAvecOptions).
+        assertFalse(HiddenExpr.masquer(
+            "({meta}) => meta.dataset && Object.keys(meta.dataset).length == 1", emptyMap()))
+    }
 }

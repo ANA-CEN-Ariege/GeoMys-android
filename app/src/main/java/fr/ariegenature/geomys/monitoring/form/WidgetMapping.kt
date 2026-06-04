@@ -151,6 +151,7 @@ fun construireFormulaire(schemaObjet: MonitoringApi.MonitoringSchemaObjet): Form
                 label = prop.label,
                 values = prop.valeurs.map { (v, l) -> PropertyValue(v, l) },
                 obligatoire = prop.obligatoire,
+                obligatoireExpr = prop.obligatoireExpr,
                 aide = prop.definition,
                 hiddenExpr = prop.hiddenExpr,
                 // Pour les widgets TAXON, on transmet l'id_list_taxonomy : d'abord celui porté

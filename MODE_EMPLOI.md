@@ -3,7 +3,10 @@
 Application Android de terrain pour la saisie naturaliste connectée à un serveur [GeoNature](https://github.com/PnX-SI/GeoNature). Ce guide couvre la prise en main et l'utilisation au quotidien.
 
 <p align="center">
-  <img src="Images/accueil.jpg" alt="Écran d'accueil de GeoMys" width="300">
+  <img src="Images/accueil.jpg" alt="Écran d'accueil de GeoMys" width="200">
+  <img src="Images/saisie_multitaxons_1.jpg" alt="Écran d'accueil de GeoMys" width="200">
+  <img src="Images/saisie_multitaxons_7.jpg" alt="saisie multitaxons" width="200">
+  <img src="Images/saisie_multitaxons_10.jpg" alt="saisie multitaxons" width="200">
 </p>
 
 ---

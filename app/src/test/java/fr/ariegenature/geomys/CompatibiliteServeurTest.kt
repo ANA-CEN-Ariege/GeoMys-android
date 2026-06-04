@@ -21,6 +21,9 @@ package fr.ariegenature.geomys
 import androidx.test.core.app.ApplicationProvider
 import fr.ariegenature.geomys.network.GeoNatureAuth
 import fr.ariegenature.geomys.network.GeoNatureSync
+import fr.ariegenature.geomys.network.VERSION_GEONATURE_MINIMALE
+import fr.ariegenature.geomys.network.comparerVersions
+import fr.ariegenature.geomys.network.versionGeoNatureSupportee
 import fr.ariegenature.geomys.store.GeoNatureConfig
 import fr.ariegenature.geomys.store.NomenclatureCache
 import kotlinx.coroutines.runBlocking
@@ -99,20 +102,22 @@ class CompatibiliteServeurTest {
 
     @Test
     fun test_connexion_releve_et_memorise_la_version_du_serveur() {
-        router(configServeur = """{"GEONATURE_VERSION":"2.14.2"}""")
+        router(configServeur = """{"GEONATURE_VERSION":"2.16.4"}""")
         val (ok, msg) = runBlocking { GeoNatureAuth.testerConnexion(config) }
         assertTrue(ok)
-        assertTrue("le message doit afficher la version : $msg", msg.contains("GeoNature v2.14.2"))
-        assertEquals("2.14.2", config.versionGeoNatureServeur)
+        assertTrue("le message doit afficher la version : $msg", msg.contains("GeoNature v2.16.4"))
+        assertEquals("2.16.4", config.versionGeoNatureServeur)
     }
 
     @Test
-    fun vieux_serveur_sans_endpoint_config_reste_un_succes_sans_version() {
-        router(configServeur = null)  // 404 — endpoint absent des vieilles versions
+    fun vieux_serveur_sans_endpoint_config_reste_un_succes_avec_note() {
+        router(configServeur = null)  // 404 — endpoint absent des vieilles versions / proxy filtrant
         val (ok, msg) = runBlocking { GeoNatureAuth.testerConnexion(config) }
-        assertTrue("l'absence de version ne doit pas faire échouer le test de connexion", ok)
-        assertEquals("Connexion réussie", msg)
+        assertTrue("l'absence de version ne doit pas faire échouer le test (bénéfice du doute)", ok)
+        assertTrue("une note doit signaler la version non détectée : $msg",
+            msg.contains("non détectée"))
         assertEquals("", config.versionGeoNatureServeur)
+        assertTrue("bénéfice du doute : la config reste utilisable", config.serveurCompatible)
     }
 
     @Test
@@ -120,7 +125,50 @@ class CompatibiliteServeurTest {
         router(configServeur = """{"autre_cle":"valeur"}""")
         val (ok, msg) = runBlocking { GeoNatureAuth.testerConnexion(config) }
         assertTrue(ok)
-        assertFalse(msg.contains("GeoNature v"))
+        assertFalse(msg.contains("GeoNature v2"))
+    }
+
+    // ── Version minimale supportée ─────────────────────────────────────────────────
+
+    @Test
+    fun version_trop_ancienne_fait_echouer_le_test_et_invalide_la_config() {
+        router(configServeur = """{"GEONATURE_VERSION":"2.10.5"}""")
+        val (ok, msg) = runBlocking { GeoNatureAuth.testerConnexion(config) }
+        assertFalse("une version sous le minimum doit faire échouer le test", ok)
+        assertTrue("le message doit citer la version détectée et le minimum : $msg",
+            msg.contains("2.10.5") && msg.contains(VERSION_GEONATURE_MINIMALE))
+        assertFalse(config.serveurCompatible)
+        // Invalidation effective : toutes les gardes de config tombent.
+        assertFalse("connexionConfiguree doit être invalidée", config.connexionConfiguree)
+        assertFalse("estConfiguree doit être invalidée", config.estConfiguree)
+        // La version reste mémorisée pour l'affichage diagnostique dans Paramètres.
+        assertEquals("2.10.5", config.versionGeoNatureServeur)
+    }
+
+    @Test
+    fun nouveau_test_contre_un_serveur_a_jour_retablit_la_config() {
+        // 1er test : serveur trop ancien → config invalidée.
+        router(configServeur = """{"GEONATURE_VERSION":"2.10.5"}""")
+        runBlocking { GeoNatureAuth.testerConnexion(config) }
+        assertFalse(config.connexionConfiguree)
+        // Serveur mis à jour → un nouveau test réussi rétablit tout.
+        router(configServeur = """{"GEONATURE_VERSION":"${VERSION_GEONATURE_MINIMALE}.1"}""")
+        val (ok, _) = runBlocking { GeoNatureAuth.testerConnexion(config) }
+        assertTrue(ok)
+        assertTrue(config.serveurCompatible)
+        assertTrue(config.connexionConfiguree)
+    }
+
+    @Test
+    fun comparaison_de_versions_numerique_pas_lexicographique() {
+        assertTrue("2.9 < 2.15 (numérique, pas alphabétique)", comparerVersions("2.9", "2.15") < 0)
+        assertTrue(comparerVersions("2.15", "2.15.0") == 0)
+        assertTrue(comparerVersions("2.15.1", "2.15") > 0)
+        assertTrue(comparerVersions("3.0", "2.99") > 0)
+        assertTrue("suffixe non numérique ignoré", comparerVersions("2.15.0-rc1", "2.15") == 0)
+        assertTrue(versionGeoNatureSupportee("2.15"))
+        assertTrue(versionGeoNatureSupportee("2.16.4"))
+        assertFalse(versionGeoNatureSupportee("2.14.2"))
     }
 
     // ── Types de nomenclatures obligatoires ────────────────────────────────────────

@@ -105,7 +105,23 @@ object GeoNatureAuth {
                         // pour diagnostiquer un comportement propre à une version serveur.
                         val version = versionGeoNature(base)
                         config.versionGeoNatureServeur = version ?: ""
-                        Pair(true, "Connexion réussie" + (version?.let { " — GeoNature v$it" } ?: ""))
+                        // Garde version minimale : une instance trop ancienne n'expose pas les
+                        // routes requises (TaxHub intégré sous /api/taxhub…). On invalide la
+                        // config (serveurCompatible → connexionConfiguree) plutôt que de laisser
+                        // l'app échouer de façon opaque à la première synchro. Version non
+                        // détectable → bénéfice du doute (proxy filtrant possible), simple note.
+                        if (version != null && !versionGeoNatureSupportee(version)) {
+                            config.serveurCompatible = false
+                            return@withContext Pair(
+                                false,
+                                "GeoNature v$version détecté — version minimale supportée : " +
+                                    "v$VERSION_GEONATURE_MINIMALE. Mettez à jour le serveur pour " +
+                                    "utiliser l'application.",
+                            )
+                        }
+                        config.serveurCompatible = true
+                        Pair(true, "Connexion réussie" + (version?.let { " — GeoNature v$it" }
+                            ?: " (version GeoNature non détectée — minimum supporté : v$VERSION_GEONATURE_MINIMALE)"))
                     }
                     401, 403 -> Pair(false, "Identifiant ou mot de passe incorrect")
                     404 -> Pair(false, "URL serveur introuvable (HTTP 404) — vérifiez l'adresse")

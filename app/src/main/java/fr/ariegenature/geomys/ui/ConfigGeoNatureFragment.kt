@@ -214,8 +214,10 @@ class ConfigGeoNatureFragment : Fragment() {
         if (ancien != nouveau) {
             fr.ariegenature.geomys.network.invaliderCachesSession()
             // La version affichée appartient à l'ancienne instance — re-renseignée au
-            // prochain test de connexion réussi.
+            // prochain test de connexion réussi. Le flag de compatibilité repart au bénéfice
+            // du doute : le nouveau serveur sera re-jugé à son premier test de connexion.
             gnConfig.versionGeoNatureServeur = ""
+            gnConfig.serveurCompatible = true
             // Changement d'IDENTITÉ serveur : les ids de sélection (dataset/liste/observateur) du
             // serveur précédent n'ont plus aucun sens — ils peuvent même coïncider avec d'AUTRES
             // entités sur le nouveau serveur (ex. liste id 100 ou observateur id 3 qui existent

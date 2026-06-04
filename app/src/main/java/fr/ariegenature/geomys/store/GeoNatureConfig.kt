@@ -134,8 +134,18 @@ class GeoNatureConfig(context: Context) {
         get() = prefs.getString("gn_cache_add_fields_occtax", "") ?: ""
         set(v) = prefs.edit().putString("gn_cache_add_fields_occtax", v).apply()
 
+    /** false quand le dernier test de connexion a détecté une version GeoNature inférieure
+     *  à la minimale supportée ([fr.ariegenature.geomys.network.VERSION_GEONATURE_MINIMALE]).
+     *  Invalide [connexionConfiguree] — donc toutes les opérations réseau (envois, Explorer,
+     *  recherche TaxRef live…) — jusqu'à un nouveau test réussi contre un serveur à jour.
+     *  true par défaut : bénéfice du doute quand la version n'est pas détectable. */
+    var serveurCompatible: Boolean
+        get() = prefs.getBoolean("gn_serveur_compatible", true)
+        set(v) = prefs.edit().putBoolean("gn_serveur_compatible", v).apply()
+
     val connexionConfiguree: Boolean
-        get() = urlServeur.trim().isNotEmpty() && login.trim().isNotEmpty() && motDePasse.isNotEmpty()
+        get() = urlServeur.trim().isNotEmpty() && login.trim().isNotEmpty() && motDePasse.isNotEmpty() &&
+            serveurCompatible
 
     val estConfiguree: Boolean
         get() = connexionConfiguree && idDataset.trim().isNotEmpty()

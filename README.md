@@ -142,7 +142,9 @@ app/src/main/java/fr/ariegenature/geomys/
 
 ## Compatibilité GeoNature
 
-L'app cible l'API **GeoNature 2.x** (développée et utilisée contre l'instance de l'ANA). L'API GeoNature n'étant pas versionnée par endpoint, la compatibilité repose sur une **tolérance défensive** plutôt que sur une détection de version :
+**Version minimale supportée : GeoNature 2.15** (TaxHub intégré, servi sous `<URL_GEONATURE>/api/taxhub` — requis par la synchro des taxons). La constante `VERSION_GEONATURE_MINIMALE` (`network/CompatibiliteServeur.kt`) porte ce seuil : si le test de connexion détecte une version inférieure, il **échoue et invalide la configuration** (toutes les opérations réseau sont gelées jusqu'à un test réussi contre un serveur à jour). Une version non détectable (serveur < 2.12 sans `/api/gn_commons/config`, ou proxy filtrant) est tolérée avec une note dans le résultat du test.
+
+Au-delà de ce seuil, l'API GeoNature n'étant pas versionnée par endpoint, la compatibilité repose sur une **tolérance défensive** plutôt que sur une détection fine de version :
 
 - **Fallbacks d'endpoints** : les routes qui varient entre versions sont essayées en séquence (ex. `/api/nomenclatures/nomenclatures/taxonomy` → `…/nomenclature/taxonomy` → `…/taxonomy` ; deux casses du code module pour `defaultNomenclatures` et `datasets?module_code=`).
 - **Fallbacks de parsing** : les clés JSON alternatives connues sont toutes tentées (token de login via `access_token`/`token`/`user.*`, enveloppes de tableau `items`/`data`/`results`/…, labels `label_default`/`label_fr`, id de relevé via 3 chemins, etc.).

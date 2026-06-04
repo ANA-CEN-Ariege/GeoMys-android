@@ -657,25 +657,33 @@ class FormulaireRenderer(
                 // Index memoizé côté TaxRefCache : pas de re-matérialisation des 15-50k
                 // entrées à chaque rendu d'un champ TAXON (cf. audit B5).
                 val restreint = fr.ariegenature.geomys.store.TaxRefCache.nomsSuggestion(idListeRestreinte)
-                // Une liste taxonomique est imposée par le protocole mais AUCUN taxon n'en est en
-                // cache (liste non synchronisée). On NE propose PAS d'autres espèces (elles seraient
-                // hors de la liste autorisée) : on laisse vide et on invite à recharger les données.
+                // Liste taxonomique imposée par le protocole mais AUCUN taxon n'en est en cache
+                // (liste non synchronisée — la résolution de l'id de liste passe parfois par le
+                // réseau, le cache local peut ne pas la couvrir). Dégradation gracieuse : on
+                // propose TOUTES les espèces du cache plutôt qu'un champ inutilisable — un champ
+                // vide empêchait carrément de saisir l'obs sur le terrain (« l'autocomplétion ne
+                // marche plus »), pire qu'une suggestion hors liste que le serveur validera.
                 val listeVide = idListeRestreinte != null && restreint.isEmpty()
+                val effectifs = if (listeVide)
+                    fr.ariegenature.geomys.store.TaxRefCache.nomsSuggestion(null) else restreint
                 val diag = when {
-                    listeVide -> "liste=$idListeRestreinte VIDE en cache (non synchronisée) — champ laissé vide"
-                    idListeRestreinte != null -> "liste=$idListeRestreinte, ${restreint.size} suggestions"
-                    else -> "liste=null (toutes), ${restreint.size} suggestions"
+                    listeVide -> "liste=$idListeRestreinte VIDE en cache (non synchronisée) — " +
+                        "repli sur toutes les espèces (${effectifs.size})"
+                    idListeRestreinte != null -> "liste=$idListeRestreinte, ${effectifs.size} suggestions"
+                    else -> "liste=null (toutes), ${effectifs.size} suggestions"
                 }
-                Triple(restreint, listeVide, diag)
+                Triple(effectifs, listeVide, diag)
             }
             android.util.Log.i("FormulaireRenderer",
                 "Champ TAXON '${field.code}' → $diagDetails")
-            if (ac.isAttachedToWindow) {
-                val adapter = fr.ariegenature.geomys.ui.saisie.createSpeciesAutocompleteAdapter(ctx, noms)
-                ac.setAdapter(adapter)
-                ac.hint = if (listeVide)
-                    "Liste du protocole absente du cache — Recharger les données" else hintInitial
-            }
+            // Adapter posé inconditionnellement : le scope (lifecycle du Fragment) annule déjà
+            // la coroutine si la vue est détruite. L'ancien garde `isAttachedToWindow` sautait
+            // silencieusement la pose quand le rendu aboutissait AVANT l'attachement de la vue
+            // (cache rapide) → champ définitivement sans suggestions, de façon intermittente.
+            val adapter = fr.ariegenature.geomys.ui.saisie.createSpeciesAutocompleteAdapter(ctx, noms)
+            ac.setAdapter(adapter)
+            ac.hint = if (listeVide)
+                "Liste du protocole non synchronisée — toutes les espèces proposées" else hintInitial
         }
         // Sélection d'une suggestion : on résout le cd_nom via TaxRefCache et on le stocke.
         ac.setOnItemClickListener { _, _, _, _ ->

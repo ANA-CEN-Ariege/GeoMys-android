@@ -14,7 +14,6 @@
 .cxx
 local.properties
 
-# R
-.Rhistory
-.RData
-.Rproj.user
+# Captures d'écran de travail (les images de la doc déjà suivies restent versionnées —
+# un .gitignore n'affecte pas les fichiers déjà trackés).
+Images/

@@ -90,6 +90,17 @@ object HiddenExpr {
         // Idiome de générateur de protocole : `(null || undefined)` ≡ null (petite chouette
         // de montagne : `value.cd_nom != (null || undefined) ? … : …`).
         corps = corps.replace(Regex("""\(\s*null\s*\|\|\s*undefined\s*\)"""), "null")
+        // `meta.nomenclatures[value.X].cd_nomenclature` (avec ou sans le garde `|| {}`) →
+        // `${X__cd}` : le cd_nomenclature de l'option sélectionnée du champ X, exposé par le
+        // renderer (cf. FormulaireRenderer.valeursPourExpressions). Protocoles loutre /
+        // blaireau / Camphi : sexe, stade de vie… visibles/requis selon la technique d'obs.
+        // Doit passer AVANT les remplacements `value.X` génériques.
+        corps = corps.replace(
+            Regex("""\(\s*meta\.nomenclatures\[\s*value\.(\w+)\s*\]\s*\|\|\s*\{\s*\}\s*\)\s*\.cd_nomenclature"""),
+        ) { "\${${it.groupValues[1]}__cd}" }
+        corps = corps.replace(
+            Regex("""meta\.nomenclatures\[\s*value\.(\w+)\s*\]\s*\.cd_nomenclature"""),
+        ) { "\${${it.groupValues[1]}__cd}" }
         // Chemins imbriqués `value.cd_nom.cd_nom` → ${cd_nom} : les valeurs du formulaire
         // côté app sont scalaires (le champ taxon PORTE le cd_nom), là où le web manipule
         // un objet. Doit passer AVANT le remplacement simple.

@@ -468,10 +468,17 @@ class FicheObjetFragment : Fragment() {
         }
 
         // 3e passe — types de saisie déclarés au schéma mais sans aucune occurrence (ni
-        // côté serveur, ni en outbox). Ex : un point d'écoute STOM sans visite encore.
+        // côté serveur, ni en outbox). Ex : un point d'écoute sans visite encore.
         // On rend juste un header "(0)" — le bouton "+" du header (cf. creerHeaderType)
         // suffit pour amorcer la première saisie.
-        val typesDejaAffiches = objet.enfants.keys + saisiesLocalesOrphelines.map { it.objectType }.toSet()
+        // ⚠ « Déjà affiché » = réellement RENDU par la 1re passe (items serveur non vides ou
+        // saisies locales), pas simple présence de la clé : le serveur renvoie souvent
+        // `children: {visit: []}` (clé présente, liste vide) pour un point sans visite — la
+        // 1re passe saute alors le rendu, et tester les clés privait l'écran du header
+        // « Visites (0) + » (impossible d'amorcer la première visite, bug terrain).
+        val typesDejaAffiches = objet.enfants.filter { (type, items) ->
+            items.isNotEmpty() || saisiesLocalesIci.any { it.objectType == type }
+        }.keys + saisiesLocalesOrphelines.map { it.objectType }.toSet()
         val tousChildren = schemaObjet?.childrenTypes.orEmpty()
         val typesSaisieAttendus = tousChildren.filter { ct ->
             fr.ariegenature.geomys.network.MonitoringSync.estTypeSaisie(ct) && ct !in typesDejaAffiches

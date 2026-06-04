@@ -106,12 +106,21 @@ class FormulaireRenderer(
      *  (sinon les setText/setSelection re-déclenchent les listeners → boucle infinie). */
     private var appliquantChange = false
 
+    /** Approximation du `dirty` Angular (champ modifié par l'UTILISATEUR) sans instrumenter
+     *  chaque widget : un champ est dirty si sa valeur courante diffère de la dernière valeur
+     *  posée programmatiquement (règles change) ou, à défaut, de sa valeur au rendu. Sert aux
+     *  gardes `!objForm.controls.X.dirty` des scripts change (ex. nom de site auto-généré
+     *  tant que l'utilisateur ne l'a pas édité à la main). */
+    private var valeursAuRendu: Map<String, String> = emptyMap()
+    private val dernieresValeursAuto = mutableMapOf<String, String>()
+
     fun rendre(fields: List<EditableField>) {
         parent.removeAllViews()
         vuesParCode.clear()
         fieldsParCode.clear()
         wrappersParCode.clear()
         erreursParCode.clear()
+        dernieresValeursAuto.clear()
         fields.forEach { field ->
             fieldsParCode[field.code] = field
             val (rowView, editable) = creerLigne(field)
@@ -122,6 +131,9 @@ class FormulaireRenderer(
             if (field.masque) rowView.visibility = View.GONE
             parent.addView(rowView)
         }
+        // Référence « non touché par l'utilisateur » pour le drapeau dirty — AVANT la première
+        // passe des règles change.
+        valeursAuRendu = lireValeurs().mapValues { it.value?.toString() ?: "" }
         // Évaluation initiale + listeners sur tous les éditables pour ré-évaluer en live.
         attacherListenersDynamiques()
         appliquerVisibiliteConditionnelle()
@@ -139,15 +151,22 @@ class FormulaireRenderer(
         appliquerChangeRules()
     }
 
-    /** Évalue les règles `change` contre les valeurs courantes et applique les champs à
-     *  mettre à jour. La garde [appliquantChange] empêche la récursion via les listeners. */
+    /** Évalue les règles `change` contre les valeurs courantes (enrichies des drapeaux
+     *  `__cd`/`__dirty`) et applique les champs à mettre à jour. La garde [appliquantChange]
+     *  empêche la récursion via les listeners. */
     private fun appliquerChangeRules() {
         if (reglesChange.isEmpty() || appliquantChange) return
-        val maj = ChangeRules.evaluer(reglesChange, lireValeurs())
+        val maj = ChangeRules.evaluer(reglesChange, valeursPourExpressions())
         if (maj.isEmpty()) return
         appliquantChange = true
         try {
-            maj.forEach { (code, valeur) -> appliquerValeur(code, valeur) }
+            maj.forEach { (code, valeur) ->
+                appliquerValeur(code, valeur)
+                // Mémorise la valeur posée par le moteur (relue après pose, donc normalisée
+                // par le widget) : référence du drapeau dirty — tant que l'utilisateur ne la
+                // change pas, le champ reste « non touché » et re-calculable.
+                dernieresValeursAuto[code] = lireValeurs()[code]?.toString() ?: ""
+            }
         } finally {
             appliquantChange = false
         }
@@ -228,7 +247,7 @@ class FormulaireRenderer(
      *  `hidden` ne doit pas bloquer le submit). Utilisé par l'écran appelant pour
      *  désactiver le bouton de submit tant qu'il reste des champs requis non remplis. */
     fun champsObligatoiresManquants(): List<String> {
-        val valeurs = lireValeurs()
+        val valeurs = valeursPourExpressions()
         return fieldsParCode.filter { (code, field) ->
             // Obligatoire statique (required: true) OU dynamique (required: ({value}) => …,
             // ex. champs végétation requis seulement au passage 2 — Point écoute avifaune).
@@ -318,12 +337,33 @@ class FormulaireRenderer(
 
     /** Évalue chaque expression `hidden` et met à jour la visibilité du wrapper. */
     private fun appliquerVisibiliteConditionnelle() {
-        val valeurs = lireValeurs()
+        val valeurs = valeursPourExpressions()
         fieldsParCode.forEach { (code, field) ->
             val expr = field.hiddenExpr ?: return@forEach
             val masquer = HiddenExpr.masquer(expr, valeurs)
             wrappersParCode[code]?.visibility = if (masquer) View.GONE else View.VISIBLE
         }
+    }
+
+    /** Valeurs courantes ENRICHIES pour le moteur d'expressions : pour chaque champ dont les
+     *  options portent un cd_nomenclature (datalists nomenclature), expose le cd de l'option
+     *  sélectionnée sous la clé `<code>__cd`. C'est la cible des réécritures
+     *  `meta.nomenclatures[value.X].cd_nomenclature` → `${X__cd}` de [HiddenExpr.normaliser]
+     *  (protocoles loutre/blaireau : sexe, stade de vie… selon la technique d'observation).
+     *  Aucune sélection → clé absente → l'expression compare contre null (parité web). */
+    private fun valeursPourExpressions(): Map<String, Any?> {
+        val valeurs = lireValeurs().toMutableMap()
+        fieldsParCode.forEach { (code, field) ->
+            // Drapeau « modifié par l'utilisateur » (cf. valeursAuRendu/dernieresValeursAuto).
+            val courantStr = valeurs[code]?.toString() ?: ""
+            val reference = dernieresValeursAuto[code] ?: valeursAuRendu[code] ?: ""
+            valeurs["${code}__dirty"] = courantStr != reference
+            // cd_nomenclature de l'option sélectionnée (datalists nomenclature).
+            val courant = courantStr.takeIf { it.isNotEmpty() } ?: return@forEach
+            field.values.firstOrNull { it.value == courant }?.cdNomenclature
+                ?.let { valeurs["${code}__cd"] = it }
+        }
+        return valeurs
     }
 
     /** Notification publique : à appeler après une modification "externe" d'un champ

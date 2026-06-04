@@ -452,7 +452,7 @@ class NouvelleVisiteFragment : Fragment() {
                     continue
                 }
                 optionsParIdx[idx] = opts
-                val valeurs = opts.map { o -> PropertyValue(o.value, o.label) }
+                val valeurs = opts.map { o -> PropertyValue(o.value, o.label, o.cdNomenclature) }
                 // Sélecteur à choix unique = inutile : pour les champs `dataset`/`observers`
                 // n'exposant qu'une seule option, on auto-sélectionne cette valeur et on masque
                 // le champ (la valeur reste dans le payload via lireValeurs). Limité à ces deux

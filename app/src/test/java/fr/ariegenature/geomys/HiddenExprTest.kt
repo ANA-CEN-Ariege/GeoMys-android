@@ -175,15 +175,41 @@ class HiddenExprTest {
     }
 
     @Test
-    fun expression_meta_reste_non_reconnue_donc_visible() {
-        // Les expressions sur `meta` (contexte applicatif web) ne sont pas évaluables ici :
-        // fallback « visible », sans crash. Le masquage dataset-unique est géré ailleurs
-        // (auto-sélection + masquage quand une seule option, cf. enrichirAvecOptions).
+    fun expression_meta_dataset_reste_non_reconnue_donc_visible() {
+        // Les expressions sur le contexte applicatif web (meta.dataset, meta.bChainInput…)
+        // ne sont pas évaluables ici : fallback « visible », sans crash. Le masquage
+        // dataset-unique est géré ailleurs (auto-sélection + masquage quand une seule
+        // option, cf. enrichirAvecOptions).
         assertFalse(HiddenExpr.masquer(
             "({meta}) => meta.dataset && Object.keys(meta.dataset).length == 1", emptyMap()))
-        assertFalse(HiddenExpr.masquer(
-            "({value, meta}) => (meta.nomenclatures[value.technique_observation] || {}).cd_nomenclature != 'VU'",
-            mapOf("technique_observation" to "12")))
+    }
+
+    @Test
+    fun meta_nomenclatures_cd_nomenclature_via_cle_enrichie() {
+        // suivi_loutre / blaireau : sexe, stade de vie, nombre d'individus visibles et requis
+        // seulement quand la technique d'observation a le cd_nomenclature '0' (vu directement).
+        // Le renderer expose le cd de l'option sélectionnée sous `<code>__cd`.
+        val cache = "({value, meta}) => (meta.nomenclatures[value.technique_observation] || {}).cd_nomenclature !== '0'"
+        // Technique « vu » (cd 0) → visible.
+        assertFalse(HiddenExpr.masquer(cache,
+            mapOf("technique_observation" to "123", "technique_observation__cd" to "0")))
+        // Autre technique (épreintes, cd 2) → caché.
+        assertTrue(HiddenExpr.masquer(cache,
+            mapOf("technique_observation" to "456", "technique_observation__cd" to "2")))
+        // Aucune sélection → cd absent (null) ≠ '0' → caché (parité web : undefined !== '0').
+        assertTrue(HiddenExpr.masquer(cache, emptyMap()))
+        val requis = "({value, meta}) => (meta.nomenclatures[value.technique_observation] || {}).cd_nomenclature === '0'"
+        assertTrue(HiddenExpr.evaluerBooleen(requis,
+            mapOf("technique_observation__cd" to "0")))
+        assertFalse(HiddenExpr.evaluerBooleen(requis, emptyMap()))
+        // Variante SANS le garde `|| {}` + combinée (suivi_Camphi acces_riv).
+        val combine = "({value, meta}) => meta.nomenclatures[value.gestion].cd_nomenclature != 'PATUR' || value.saisie_details == 'Non'"
+        assertFalse(HiddenExpr.masquer(combine,
+            mapOf("gestion__cd" to "PATUR", "saisie_details" to "Oui")))
+        assertTrue(HiddenExpr.masquer(combine,
+            mapOf("gestion__cd" to "PATUR", "saisie_details" to "Non")))
+        assertTrue(HiddenExpr.masquer(combine,
+            mapOf("gestion__cd" to "FAUCHE", "saisie_details" to "Oui")))
     }
 
     // ─── Grammaire étendue : audit des 33 protocoles de l'instance (2026-06) ─────

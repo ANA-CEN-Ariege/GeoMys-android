@@ -60,7 +60,14 @@ enum class ViewType {
 
 /** Valeur d'une option pour un widget SELECT (et plus tard NOMENCLATURE_TYPE / RADIO).
  *  [value] est la valeur technique envoyée à l'API, [label] est ce que voit l'utilisateur. */
-data class PropertyValue(val value: String, val label: String)
+data class PropertyValue(
+    val value: String,
+    val label: String,
+    /** `cd_nomenclature` de l'option (datalists nomenclature uniquement, null sinon).
+     *  Exposé au moteur d'expressions sous `<code>__cd` pour évaluer les conditions
+     *  `meta.nomenclatures[value.X].cd_nomenclature == '…'` des schémas (loutre, blaireau…). */
+    val cdNomenclature: String? = null,
+)
 
 /** Un champ éditable d'un formulaire dynamique. Construit à partir du schéma serveur
  *  ([fr.ariegenature.geomys.network.MonitoringApi.MonitoringSchemaObjet]) ou en dur pour les

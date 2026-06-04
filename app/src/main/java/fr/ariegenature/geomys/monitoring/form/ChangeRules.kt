@@ -18,141 +18,291 @@
 
 package fr.ariegenature.geomys.monitoring.form
 
-/** Évaluateur pragmatique des règles `change` de gn_module_monitoring (auto-remplissage de
- *  champs dépendants). Le serveur les envoie sous forme d'un tableau de lignes JS :
+/** Moteur des règles `change` de gn_module_monitoring (auto-remplissage de champs
+ *  dépendants). Le serveur les envoie sous forme d'un script JS en tableau de lignes :
  *
- *  ```json
- *  "change": [
- *    "({objForm, meta}) => {",
- *    "if (objForm.value.presence === 'Non') {",
- *    "objForm.patchValue({count_min: 0, count_max: 0})",
- *    "}",
- *    "}"
- *  ]
+ *  ```js
+ *  ({objForm, meta}) => {
+ *    const nb_total = (objForm.value.nb_before_rep + objForm.value.nb_repasse);
+ *    objForm.patchValue({nb_total});
+ *    if (objForm.value.presence === 'Non') {
+ *      objForm.patchValue({count_min : 0, count_max : 0}, {emitEvent : false})
+ *    }
+ *    (objForm.value.hulotte != 'Oui' ? objForm.patchValue({nb_hulotte}) : '');
+ *  }
  *  ```
  *
- *  On ne peut pas exécuter du JS arbitraire côté Android — comme [HiddenExpr], on couvre les
- *  patterns observés : un bloc `if (objForm.value.X <op> 'Y') { objForm.patchValue({…}) }`
- *  (ops ===, ==, !==, !=, ou test truthy/falsy), et les `patchValue` inconditionnels au
- *  niveau racine. Ternaires et déclarations `const` (2-pass de gn_mobile_monitoring) ne sont
- *  pas gérés — les lignes non reconnues sont ignorées. */
+ *  On ne peut pas exécuter du JS arbitraire côté Android — on couvre la grammaire observée
+ *  sur l'ensemble des protocoles de l'instance (audit des 33 schémas, 2026-06) :
+ *
+ *  - `const NOM = expr;` : littéraux, `value.x`, sommes/concaténations `+`, ternaires
+ *  - `if (COND) { objForm.patchValue({…}) }` : condition déléguée à [HiddenExpr]
+ *    (comparaisons, &&/||, !!, meta.nomenclatures[…].cd_nomenclature)
+ *  - ternaire-instruction : `(COND ? objForm.patchValue({…}) : '');`
+ *  - garde « dirty » : `if (!objForm.controls.X.dirty)` — réécrite en `value.X__dirty`,
+ *    drapeau fourni par le renderer (champ modifié par l'utilisateur → on ne l'écrase plus)
+ *  - valeurs de patch : littéraux, identifiants `const`, `value.x`, expressions `+`,
+ *    raccourci `{nb_total}`, objet taxon `{cd_nom: 914450, …}` (réduit à son cd_nom —
+ *    les valeurs de formulaire côté app sont scalaires)
+ *
+ *  Les instructions hors grammaire sont ignorées (pas de patch erroné). */
 object ChangeRules {
 
-    /** Condition d'une règle, portant sur la valeur courante d'un champ [champ]. */
-    data class Condition(val champ: String, val operateur: Op, val valeurAttendue: String?)
+    /** Une instruction du script, dans l'ordre du source. */
+    sealed interface Instruction
 
-    enum class Op { EGAL, DIFFERENT, TRUTHY, FALSY }
+    /** `const NOM = expr;` — évaluée à l'exécution, stockée dans l'environnement local. */
+    data class Affectation(val nom: String, val expression: String) : Instruction
 
-    /** Une règle : applique [patch] (code → valeur) quand [condition] est vraie, ou toujours
-     *  si [condition] est null. */
-    data class Regle(val condition: Condition?, val patch: Map<String, Any?>)
+    /** `objForm.patchValue({…})` gardé par [condition] (null = inconditionnel). Les valeurs
+     *  du patch sont des expressions brutes, évaluées à l'exécution. */
+    data class Patch(val condition: String?, val patch: Map<String, String>) : Instruction
 
-    private val REGEX_PATCH = Regex("""objForm\.patchValue\(\s*\{(.*?)\}\s*\)""")
-    private val REGEX_COND_COMPARAISON =
-        Regex("""(?:objForm\.)?value(?:\.(\w+)|\[['"](\w+)['"]\])\s*(===|!==|==|!=)\s*(.+)""")
-    private val REGEX_COND_TRUTHY =
-        Regex("""(!?)\s*(?:objForm\.)?value(?:\.(\w+)|\[['"](\w+)['"]\])\s*""")
+    /** Type public opaque (compat renderer/tests) : une instruction ordonnée du script. */
+    data class Regle(val instruction: Instruction)
 
-    /** Parse les lignes brutes en liste de règles ordonnées. Format multi-lignes attendu :
-     *  une ligne `if (…) {`, une ligne `objForm.patchValue({…})`, une ligne `}`. */
+    /** Parse les lignes brutes en instructions ordonnées. */
     fun parser(lignes: List<String>): List<Regle> {
         if (lignes.isEmpty()) return emptyList()
-        val regles = mutableListOf<Regle>()
-        var conditionCourante: Condition? = null
-        for (ligneBrute in lignes) {
-            val ligne = ligneBrute.trim()
-            if (ligne.isEmpty()) continue
-            // `if (...)` : ouvre un bloc conditionnel (on extrait l'expression entre parenthèses).
-            if (ligne.startsWith("if") && ligne.contains('(')) {
-                conditionCourante = parserCondition(ligne.substringAfter('(').substringBeforeLast(')').trim())
-            }
-            // `objForm.patchValue({...})` : règle utilisant la condition courante (ou null).
-            REGEX_PATCH.find(ligne)?.let { m ->
-                regles.add(Regle(conditionCourante, parserPatch(m.groupValues[1])))
-            }
-            // Fin de bloc `}` (hors ligne `if`) → retour au niveau inconditionnel.
-            if (ligne.endsWith("}") && !ligne.startsWith("if")) {
-                conditionCourante = null
-            }
+        var script = lignes.joinToString("\n").trim()
+        // Déballe la lambda englobante `({objForm, meta}) => { … }` si présente.
+        Regex("""^\(\s*\{[^}]*\}\s*\)\s*=>\s*\{(.*)\}$""", RegexOption.DOT_MATCHES_ALL)
+            .matchEntire(script)?.let { script = it.groupValues[1] }
+        // Normalisations : `objForm.value.X` → `value.X` ; `objForm.controls.X.dirty` →
+        // `value.X__dirty` (drapeau « modifié par l'utilisateur » fourni par le renderer).
+        script = script.replace("objForm.value.", "value.")
+        script = script.replace(Regex("""objForm\.controls\.(\w+)\.dirty""")) {
+            "value.${it.groupValues[1]}__dirty"
         }
-        return regles
+
+        val instructions = mutableListOf<Regle>()
+        var conditionBloc: String? = null
+        for (brute in script.lines()) {
+            val ligne = brute.trim().trimEnd(';').trim()
+            if (ligne.isEmpty()) continue
+            // `const NOM = EXPR`
+            Regex("""^const\s+(\w+)\s*=\s*(.+)$""").matchEntire(ligne)?.let { m ->
+                instructions.add(Regle(Affectation(m.groupValues[1], m.groupValues[2].trim())))
+                null
+            }?.let { continue }
+            // `if (COND) {` : ouvre un bloc conditionnel.
+            if (ligne.startsWith("if") && ligne.contains('(')) {
+                conditionBloc = ligne.substringAfter('(').substringBeforeLast(')').trim()
+                    .removeSuffix("{").trim().ifEmpty { null }
+                continue
+            }
+            // `objForm.patchValue({…})` — éventuellement en ternaire-instruction
+            // `(COND ? objForm.patchValue({…}) : '')`.
+            val idxPatch = ligne.indexOf("patchValue")
+            if (idxPatch >= 0) {
+                val corps = extraireObjetEquilibre(ligne, ligne.indexOf('(', idxPatch)) ?: continue
+                val conditionInline = conditionTernaireInstruction(ligne, idxPatch)
+                val condition = conditionInline ?: conditionBloc
+                val patch = parserPatch(corps)
+                if (patch.isNotEmpty()) instructions.add(Regle(Patch(condition, patch)))
+                continue
+            }
+            // Fin de bloc `}` → retour au niveau inconditionnel.
+            if (ligne == "}" || ligne.endsWith("}")) conditionBloc = null
+        }
+        return instructions
     }
 
-    private fun parserCondition(brut: String): Condition? {
-        REGEX_COND_COMPARAISON.matchEntire(brut)?.let { m ->
-            val champ = m.groupValues[1].ifEmpty { m.groupValues[2] }
-            val op = if (m.groupValues[3].startsWith("!")) Op.DIFFERENT else Op.EGAL
-            val valeur = m.groupValues[4].trim().trim('\'', '"', ';').trim()
-            return Condition(champ, op, valeur)
+    /** Pour une ligne `(COND ? objForm.patchValue({…}) : …)`, extrait COND ; null sinon. */
+    private fun conditionTernaireInstruction(ligne: String, idxPatch: Int): String? {
+        var l = ligne
+        // Retire les parenthèses englobantes éventuelles.
+        while (l.length >= 2 && l.startsWith("(") && l.endsWith(")") && parensEquilibrees(l.substring(1, l.length - 1))) {
+            l = l.substring(1, l.length - 1).trim()
         }
-        REGEX_COND_TRUTHY.matchEntire(brut)?.let { m ->
-            val champ = m.groupValues[2].ifEmpty { m.groupValues[3] }
-            if (champ.isEmpty()) return null
-            val op = if (m.groupValues[1] == "!") Op.FALSY else Op.TRUTHY
-            return Condition(champ, op, null)
+        val idxQ = indexNiveauZero(l, "?") ?: return null
+        if (idxQ > l.indexOf("patchValue").takeIf { it >= 0 }!!) return null  // `?` après le patch → pas un ternaire-garde
+        return l.substring(0, idxQ).trim().ifEmpty { null }
+    }
+
+    /** Extrait le corps du premier objet `{…}` ÉQUILIBRÉ à partir de [depuis] (gère les
+     *  objets imbriqués type taxon et les quotes). Retourne l'intérieur sans les accolades. */
+    private fun extraireObjetEquilibre(texte: String, depuis: Int): String? {
+        if (depuis < 0) return null
+        val debut = texte.indexOf('{', depuis).takeIf { it >= 0 } ?: return null
+        var profondeur = 0
+        var quote: Char? = null
+        for (i in debut until texte.length) {
+            val c = texte[i]
+            when {
+                quote != null -> if (c == quote) quote = null
+                c == '\'' || c == '"' -> quote = c
+                c == '{' -> profondeur++
+                c == '}' -> {
+                    profondeur--
+                    if (profondeur == 0) return texte.substring(debut + 1, i)
+                }
+            }
         }
         return null
     }
 
-    /** Parse le corps d'un objet `{a: 0, b: 'x', c: null, d: true}` en Map code → valeur typée. */
-    private fun parserPatch(corps: String): Map<String, Any?> {
-        val out = linkedMapOf<String, Any?>()
+    /** Parse le corps d'un objet patch en Map code → EXPRESSION brute. Gère le raccourci
+     *  `{nb_total}` (clé = expression = identifiant) et les valeurs imbriquées. */
+    private fun parserPatch(corps: String): Map<String, String> {
+        val out = linkedMapOf<String, String>()
         if (corps.isBlank()) return out
-        for (paire in corps.split(',')) {
-            val idx = paire.indexOf(':')
-            if (idx <= 0) continue
+        for (paire in decouperNiveauZero(corps, ",") ?: listOf(corps)) {
+            val idx = indexNiveauZero(paire, ":")
+            if (idx == null) {
+                // Raccourci ES6 `{nb_total}` : la valeur est la variable du même nom.
+                val nom = paire.trim().trim('\'', '"')
+                if (Regex("""^\w+$""").matches(nom)) out[nom] = nom
+                continue
+            }
             val cle = paire.take(idx).trim().trim('\'', '"')
-            if (cle.isEmpty()) continue
-            out[cle] = parserLitteral(paire.substring(idx + 1).trim())
+            if (cle.isNotEmpty()) out[cle] = paire.substring(idx + 1).trim()
         }
         return out
     }
 
-    private fun parserLitteral(brut: String): Any? {
-        val s = brut.trim().trimEnd(';').trim()
-        return when {
-            s == "null" || s == "undefined" -> null
-            s == "true" -> true
-            s == "false" -> false
-            s.startsWith('\'') || s.startsWith('"') -> s.trim('\'', '"')
-            s.toIntOrNull() != null -> s.toInt()
-            s.toDoubleOrNull() != null -> s.toDouble()
-            else -> s // expression non littérale : on garde le texte brut
-        }
-    }
-
-    /** Évalue toutes les règles contre les [valeurs] courantes et renvoie les champs à mettre
-     *  à jour (les règles plus tardives surchargent les précédentes). */
+    /** Évalue toutes les instructions contre les [valeurs] courantes (qui peuvent inclure les
+     *  clés enrichies `X__cd` / `X__dirty` du renderer) et renvoie les champs à mettre à jour.
+     *  Les patchs précédents sont visibles des conditions suivantes (parité patchValue web). */
     fun evaluer(regles: List<Regle>, valeurs: Map<String, Any?>): Map<String, Any?> {
+        if (regles.isEmpty()) return emptyMap()
+        val env = mutableMapOf<String, Any?>()
         val maj = linkedMapOf<String, Any?>()
+        fun contexte(): Map<String, Any?> = valeurs + maj
         for (regle in regles) {
-            if (conditionVraie(regle.condition, valeurs)) maj.putAll(regle.patch)
+            when (val ins = regle.instruction) {
+                is Affectation -> env[ins.nom] = evaluerValeur(ins.expression, contexte(), env)
+                is Patch -> {
+                    val ok = ins.condition == null ||
+                        HiddenExpr.evaluerBooleen(ins.condition, contexte())
+                    if (ok) ins.patch.forEach { (code, expr) ->
+                        maj[code] = evaluerValeur(expr, contexte(), env)
+                    }
+                }
+            }
         }
-        return maj
+        // Les clés enrichies ne sont pas des champs : on ne les patche jamais.
+        return maj.filterKeys { !it.endsWith("__cd") && !it.endsWith("__dirty") }
     }
 
-    private fun conditionVraie(condition: Condition?, valeurs: Map<String, Any?>): Boolean {
-        if (condition == null) return true
-        val courant = valeurs[condition.champ]
-        return when (condition.operateur) {
-            Op.EGAL -> egal(courant, condition.valeurAttendue)
-            Op.DIFFERENT -> !egal(courant, condition.valeurAttendue)
-            Op.TRUTHY -> truthy(courant)
-            Op.FALSY -> !truthy(courant)
+    /** Évalue une expression de VALEUR : littéraux, `value.x`, identifiant d'environnement,
+     *  somme/concaténation `+` (numérique si tous les termes le sont, concat sinon — null
+     *  neutre), ternaire, objet taxon réduit à son cd_nom. Null si hors grammaire. */
+    private fun evaluerValeur(brut: String, lecture: Map<String, Any?>, env: Map<String, Any?>): Any? {
+        var e = brut.trim().trimEnd(';').trim()
+        while (e.length >= 2 && e.startsWith("(") && e.endsWith(")") && parensEquilibrees(e.substring(1, e.length - 1))) {
+            e = e.substring(1, e.length - 1).trim()
         }
+        if (e.isEmpty()) return null
+
+        // Ternaire valeur : `cond ? a : b`.
+        indexNiveauZero(e, "?")?.let { idxQ ->
+            indexNiveauZero(e, ":", depuis = idxQ + 1)?.let { idxC ->
+                val condition = HiddenExpr.evaluerBooleen(e.substring(0, idxQ), lecture)
+                val branche = if (condition) e.substring(idxQ + 1, idxC) else e.substring(idxC + 1)
+                return evaluerValeur(branche, lecture, env)
+            }
+        }
+
+        // Somme / concaténation `+` : numérique si tous les termes le sont, concat sinon.
+        decouperNiveauZero(e, "+")?.let { parties ->
+            val termes = parties.map { evaluerValeur(it, lecture, env) }
+            val nombres = termes.map { it?.toString()?.toDoubleOrNull() ?: if (it == null) 0.0 else null }
+            if (nombres.none { it == null }) {
+                val somme = nombres.filterNotNull().sum()
+                return if (somme % 1.0 == 0.0) somme.toInt() else somme
+            }
+            return termes.joinToString("") { t ->
+                when (t) {
+                    null -> ""
+                    is Double -> if (t % 1.0 == 0.0) t.toInt().toString() else t.toString()
+                    else -> t.toString()
+                }
+            }
+        }
+
+        // Littéraux.
+        if (e == "null" || e == "undefined") return null
+        if (e.equals("true", ignoreCase = true)) return true
+        if (e.equals("false", ignoreCase = true)) return false
+        Regex("""^'([^']*)'$""").matchEntire(e)?.let { return it.groupValues[1] }
+        Regex("""^"([^"]*)"$""").matchEntire(e)?.let { return it.groupValues[1] }
+        e.toIntOrNull()?.let { return it }
+        e.toDoubleOrNull()?.let { return it }
+
+        // `value.x` (chemins imbriqués aplatis : `value.a.b` → champ a).
+        Regex("""^value\.(\w+)(?:\.\w+)*$""").matchEntire(e)?.let { return lecture[it.groupValues[1]] }
+
+        // Objet `{…}` : cas taxon — la valeur utile côté app est le cd_nom scalaire.
+        if (e.startsWith("{") && e.endsWith("}")) {
+            val corps = e.substring(1, e.length - 1)
+            for (paire in decouperNiveauZero(corps, ",") ?: listOf(corps)) {
+                val idx = indexNiveauZero(paire, ":") ?: continue
+                val cle = paire.take(idx).trim().trim('\'', '"')
+                if (cle == "cd_nom") return evaluerValeur(paire.substring(idx + 1), lecture, env)
+            }
+            return null
+        }
+
+        // Identifiant d'environnement (const précédente).
+        if (Regex("""^\w+$""").matches(e)) return env[e]
+
+        return null
     }
 
-    private fun egal(courant: Any?, attendu: String?): Boolean {
-        if (attendu == null) return courant == null
-        return (courant?.toString() ?: "") == attendu
+    // ── Petits scanners niveau-0 (hors parenthèses/accolades/crochets/quotes) ─────────
+
+    private fun decouperNiveauZero(expr: String, separateur: String): List<String>? {
+        val parties = mutableListOf<String>()
+        var profondeur = 0
+        var quote: Char? = null
+        var debut = 0
+        var i = 0
+        while (i < expr.length) {
+            val c = expr[i]
+            when {
+                quote != null -> if (c == quote) quote = null
+                c == '\'' || c == '"' -> quote = c
+                c == '(' || c == '[' || c == '{' -> profondeur++
+                c == ')' || c == ']' || c == '}' -> profondeur--
+                profondeur == 0 && expr.startsWith(separateur, i) -> {
+                    parties.add(expr.substring(debut, i))
+                    i += separateur.length
+                    debut = i
+                    continue
+                }
+            }
+            i++
+        }
+        if (parties.isEmpty()) return null
+        parties.add(expr.substring(debut))
+        return parties.map { it.trim() }.filter { it.isNotEmpty() }
     }
 
-    private fun truthy(v: Any?): Boolean = when (v) {
-        null -> false
-        is Boolean -> v
-        is Number -> v.toDouble() != 0.0
-        is String -> v.isNotEmpty() && !v.equals("false", true) && v != "0"
-        is Collection<*> -> v.isNotEmpty()
-        else -> true
+    private fun indexNiveauZero(expr: String, cible: String, depuis: Int = 0): Int? {
+        var profondeur = 0
+        var quote: Char? = null
+        var i = 0
+        while (i < expr.length) {
+            val c = expr[i]
+            when {
+                quote != null -> if (c == quote) quote = null
+                c == '\'' || c == '"' -> quote = c
+                c == '(' || c == '[' || c == '{' -> profondeur++
+                c == ')' || c == ']' || c == '}' -> profondeur--
+                profondeur == 0 && i >= depuis && expr.startsWith(cible, i) -> return i
+            }
+            i++
+        }
+        return null
+    }
+
+    private fun parensEquilibrees(s: String): Boolean {
+        var profondeur = 0
+        for (c in s) {
+            if (c == '(') profondeur++
+            if (c == ')') { profondeur--; if (profondeur < 0) return false }
+        }
+        return profondeur == 0
     }
 }

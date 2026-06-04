@@ -225,14 +225,18 @@ object OutboxMonitoring {
     /** Compteur affiché dans le badge de l'écran d'accueil / menu Suivis. */
     fun countEnAttente(): Int = enAttente().size
 
-    /** Purge les saisies déjà envoyées (utile pour limiter la croissance du fichier
-     *  après quelques mois d'usage). Filet de sécurité : une SENT encore RÉFÉRENCÉE par un
-     *  enfant local (parentUuidLocal) est conservée — la purger casserait le lien (« parent
-     *  introuvable » définitif). Cas normalement impossible depuis la résolution globale des
-     *  FK à l'envoi (OutboxEnvoi), gardé en dernière défense. */
+    /** Purge les saisies déjà envoyées (utile pour limiter la croissance du fichier après
+     *  quelques mois d'usage) — SAUF un parent SENT encore référencé par un enfant NON envoyé
+     *  (parentUuidLocal) : une visite partiellement envoyée doit rester affichée dans « Mes
+     *  visites » comme groupe portant ses obs restantes (et sa flèche d'envoi), jusqu'à ce que
+     *  tout soit parti. Les références d'enfants eux-mêmes SENT ne comptent pas : quand tout
+     *  le groupe est envoyé, parent et enfants sont purgés ensemble. */
     fun purgerSent() {
         val tous = charger()
-        val referencees = tous.mapNotNull { it.parentUuidLocal }.toSet()
+        val referencees = tous
+            .filterNot { it.etat == SaisieEnAttente.Etat.SENT }
+            .mapNotNull { it.parentUuidLocal }
+            .toSet()
         sauvegarder(tous.filterNot { it.etat == SaisieEnAttente.Etat.SENT && it.uuid !in referencees })
     }
 

@@ -266,6 +266,36 @@ class OutboxEnvoiTest {
         assertEquals("g2 reste en erreur, non touché", SaisieEnAttente.Etat.ERROR, g2.etat)
     }
 
+    @Test
+    fun envoi_partiel_garde_la_visite_en_groupe_avec_les_obs_restantes() {
+        // Visite + 2 obs ; la visite et la 1re obs partent, la 2e échoue. La visite SENT doit
+        // RESTER dans la file comme groupe de l'obs restante (lien local conservé) — avant,
+        // elle était purgée et l'obs devenait une racine détachée.
+        codesVisite.add(200); codesVisite.add(200); codesVisite.add(500)
+        OutboxMonitoring.ajouter(saisie("visite"))
+        OutboxMonitoring.ajouter(saisie("obs1", parentUuidLocal = "visite"))
+        OutboxMonitoring.ajouter(saisie("obs2", parentUuidLocal = "visite"))
+        envoyerTout()
+        val restants = OutboxMonitoring.tout()
+        assertEquals("la visite (groupe) et l'obs en échec restent, obs1 purgée",
+            setOf("visite", "obs2"), restants.map { it.uuid }.toSet())
+        val visite = restants.single { it.uuid == "visite" }
+        assertEquals("la visite reste à l'état envoyé (pas de re-POST possible)",
+            SaisieEnAttente.Etat.SENT, visite.etat)
+        val obs2 = restants.single { it.uuid == "obs2" }
+        assertEquals("l'obs restante reste rattachée au groupe", "visite", obs2.parentUuidLocal)
+        assertEquals("sa FK serveur est déjà résolue", 41, obs2.parentIdServeur)
+
+        // La flèche du groupe n'envoie QUE le reste : pas de re-POST de la visite ni d'obs1.
+        val postsAvant = postsVisite.size
+        val res = runBlocking { OutboxEnvoi.envoyerGroupe(config, "visite") { _, _, _ -> } }
+        assertEquals(1, res.succes)
+        assertEquals("un seul POST de plus (obs2)", postsAvant + 1, postsVisite.size)
+        assertTrue("le re-POST d'obs2 porte la FK : ${postsVisite.last()}",
+            postsVisite.last().contains("\"id_base_site\":41"))
+        assertTrue("groupe complet → tout est purgé ensemble", OutboxMonitoring.tout().isEmpty())
+    }
+
     // ── Anti-doublon : re-POST après réponse perdue ────────────────────────────────
 
     /** Saisie déjà tentée (réponse perdue en pleine coupure) : porte un uuid client et

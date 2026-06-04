@@ -143,13 +143,18 @@ object OutboxEnvoi {
                 // passera en SENT au tour suivant.
                 if (saisie.parentUuidLocal != null) {
                     val parent = OutboxMonitoring.tout().firstOrNull { it.uuid == saisie.parentUuidLocal }
+                    // NB : parentUuidLocal est CONSERVÉ après résolution de la FK — c'est lui
+                    // qui groupe visuellement les obs sous leur visite dans « Mes visites » et
+                    // qui protège le parent SENT de la purge tant qu'il reste des obs à envoyer.
                     when {
+                        // FK déjà résolue (run précédent) : l'enfant est envoyable tel quel.
+                        (saisie.parentIdServeur ?: 0) > 0 -> Unit
                         // Parent CRÉÉ côté serveur (SENT, ou ERROR « médias seulement ») : sa FK
                         // est connue → l'enfant est envoyable même si les photos du parent ont
                         // échoué (elles se rejouent indépendamment via « Réessayer »).
                         parent != null && parent.objetCree && (parent.idServeur ?: 0) > 0 -> {
                             OutboxMonitoring.mettreAJour(saisie.uuid) {
-                                it.copy(parentIdServeur = parent.idServeur, parentUuidLocal = null)
+                                it.copy(parentIdServeur = parent.idServeur)
                             }
                         }
                         // Parent introuvable ou définitivement en échec (non créé) : l'enfant ne
@@ -171,7 +176,7 @@ object OutboxEnvoi {
                         // Parent encore PENDING/SENDING : repris quand il passera en SENT.
                         parent.etat != SaisieEnAttente.Etat.SENT -> continue
                         parent.idServeur != null -> OutboxMonitoring.mettreAJour(saisie.uuid) {
-                            it.copy(parentIdServeur = parent.idServeur, parentUuidLocal = null)
+                            it.copy(parentIdServeur = parent.idServeur)
                         }
                     }
                 }
@@ -192,14 +197,14 @@ object OutboxEnvoi {
                         nouvelleVagueSucces = true
                         // Résout la FK de TOUS les enfants pointant ce parent local — y compris
                         // ceux qui ne sont pas traités dans ce run (ex. en erreur d'un envoi
-                        // précédent). Sans ça, purgerSent() supprimait le parent SENT et ses
-                        // enfants en erreur devenaient définitivement « parent introuvable ».
+                        // précédent). parentUuidLocal est conservé : il porte le groupement
+                        // visuel et protège le parent de la purge tant qu'un enfant reste.
                         if (envoi.idServeur > 0) {
                             OutboxMonitoring.tout()
                                 .filter { it.parentUuidLocal == saisie.uuid }
                                 .forEach { enfant ->
                                     OutboxMonitoring.mettreAJour(enfant.uuid) {
-                                        it.copy(parentIdServeur = envoi.idServeur, parentUuidLocal = null)
+                                        it.copy(parentIdServeur = envoi.idServeur)
                                     }
                                 }
                         }

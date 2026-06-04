@@ -299,6 +299,15 @@ class SaisiesEnAttenteFragment : Fragment() {
         })
         if (s.etat == SaisieEnAttente.Etat.PENDING || s.etat == SaisieEnAttente.Etat.ERROR) {
             ajouterIconesActions(header, s, profondeur)
+        } else if (profondeur == 0 && s.etat == SaisieEnAttente.Etat.SENT && aDescendantsAEnvoyer(s)) {
+            // Visite déjà envoyée mais obs restantes : la ligne reste affichée comme groupe
+            // (cf. purgerSent) et garde UNIQUEMENT la flèche — qui n'enverra que le reste
+            // (l'objet créé n'est jamais re-POSTé, cf. SaisieEnAttente.objetCree).
+            header.addView(creerIconeAction(
+                fr.ariegenature.geomys.R.drawable.ic_send,
+                "Envoyer les saisies restantes",
+                tintBleu = true,
+            ) { lancerEnvoiGroupe(s.uuid) })
         }
         row.addView(header)
         row.addView(TextView(ctx).apply {
@@ -318,6 +327,17 @@ class SaisiesEnAttenteFragment : Fragment() {
         // ImageButton du header consomment leur propre clic.
         row.setOnClickListener { afficherOptions(s) }
         return row
+    }
+
+    /** La saisie a-t-elle au moins un descendant local encore à envoyer (PENDING/ERROR) ?
+     *  Détermine si une visite déjà SENT doit garder sa flèche « envoyer le reste ». */
+    private fun aDescendantsAEnvoyer(s: SaisieEnAttente): Boolean {
+        val descendants = OutboxMonitoring.descendants(s.uuid).toSet()
+        if (descendants.isEmpty()) return false
+        return OutboxMonitoring.tout().any {
+            it.uuid in descendants &&
+                (it.etat == SaisieEnAttente.Etat.PENDING || it.etat == SaisieEnAttente.Etat.ERROR)
+        }
     }
 
     /** Ajoute les icônes d'action à droite du titre d'une saisie. Sur une racine

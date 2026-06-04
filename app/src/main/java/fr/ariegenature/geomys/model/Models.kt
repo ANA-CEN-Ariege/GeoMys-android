@@ -118,5 +118,9 @@ data class Sortie(
     var observations: List<Observation> = emptyList(),
     var distanceTotale: Double = 0.0,
     var envoyeGeoNature: Boolean = false,
-    var estImportee: Boolean = false
+    var estImportee: Boolean = false,
+    /** Message du dernier ÉCHEC d'envoi GeoNature (humanisé). Null si jamais échoué ou si
+     *  l'envoi a fini par réussir. Sert au marquage visuel (cadre rouge) dans « Mes saisies »
+     *  pour qu'un échec ne passe pas inaperçu une fois le dialog d'erreur fermé. */
+    var derniereErreurEnvoi: String? = null,
 )

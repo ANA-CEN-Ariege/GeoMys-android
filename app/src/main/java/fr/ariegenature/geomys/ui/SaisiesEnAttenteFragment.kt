@@ -233,12 +233,20 @@ class SaisiesEnAttenteFragment : Fragment() {
         val row = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(padGauche, padVert, padDroit, padVert)
-            setBackgroundColor(when (s.etat) {
-                SaisieEnAttente.Etat.SENT -> 0xFFE8F5E9.toInt()      // vert très clair
-                SaisieEnAttente.Etat.ERROR -> 0xFFFFEBEE.toInt()     // rouge très clair
-                SaisieEnAttente.Etat.SENDING -> 0xFFFFF8E1.toInt()   // ambre très clair
-                else -> 0x00000000
-            })
+            when (s.etat) {
+                // Erreur : CADRE rouge sur le fond du thème (l'ancien fond rose pâle passait
+                // pour un fond blanc sur le thème sombre et noyait l'info). Le fond reste
+                // celui du thème → textes lisibles, l'erreur saute aux yeux par le contour.
+                SaisieEnAttente.Etat.ERROR -> background =
+                    android.graphics.drawable.GradientDrawable().apply {
+                        setColor(0x00000000)
+                        cornerRadius = 8 * density
+                        setStroke((2 * density).toInt(), couleurErreur(ctx))
+                    }
+                SaisieEnAttente.Etat.SENT -> setBackgroundColor(0xFFE8F5E9.toInt())     // vert très clair
+                SaisieEnAttente.Etat.SENDING -> setBackgroundColor(0xFFFFF8E1.toInt())  // ambre très clair
+                else -> setBackgroundColor(0x00000000)
+            }
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,

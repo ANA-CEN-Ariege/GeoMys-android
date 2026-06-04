@@ -1115,6 +1115,9 @@ class TraceFragment : Fragment() {
                 if (res.relevesOrphelins.isNotEmpty()) msg += "\n⚠ ${res.relevesOrphelins.size} relevé(s) vide(s) côté GeoNature (id : ${res.relevesOrphelins.joinToString(", ")}), à supprimer manuellement."
                 showResult(msg, true)
             } catch (e: Exception) {
+                // Mémorise l'échec : cadre rouge sur la sortie dans « Mes saisies ».
+                sortieStore.marquerErreurEnvoi(
+                    sortie.id, fr.ariegenature.geomys.network.humaniserErreurReseau(e))
                 showResult(e.message ?: "Erreur inconnue", false)
             } finally {
                 envoiEnCours = false

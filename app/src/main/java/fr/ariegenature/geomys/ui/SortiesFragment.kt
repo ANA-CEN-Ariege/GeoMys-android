@@ -220,7 +220,11 @@ class SortiesFragment : Fragment() {
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
+                // Mémorise l'échec sur la sortie : cadre rouge dans la liste, l'échec reste
+                // visible après fermeture du dialog (sinon il passait inaperçu).
+                sortieStore.marquerErreurEnvoi(sortie.id, humaniserErreurReseau(e))
                 if (!isAdded) return@launch
+                refreshList()
                 AlertDialog.Builder(requireContext())
                     .setTitle("Erreur d'envoi")
                     .setMessage(humaniserErreurReseau(e))
@@ -282,6 +286,22 @@ class SortieAdapter(
             tvDistance.text = "%.0f m".format(sortie.distanceTotale)
             tvNbObs.text = "${sortie.observations.size} obs."
             tvNbPts.text = "${sortie.pointsParcours.size} pts"
+            // Dernier envoi en échec → cadre rouge + message, pour que l'échec reste visible
+            // après la fermeture du dialog d'erreur. Reset explicite sinon (recyclage).
+            val erreur = sortie.derniereErreurEnvoi
+            if (erreur != null) {
+                val density = root.resources.displayMetrics.density
+                root.background = android.graphics.drawable.GradientDrawable().apply {
+                    setColor(0x00000000)
+                    cornerRadius = 8 * density
+                    setStroke((2 * density).toInt(), couleurErreur(root.context))
+                }
+                tvErreurEnvoi.visibility = android.view.View.VISIBLE
+                tvErreurEnvoi.text = "⚠ ${erreur.lineSequence().first()}"
+            } else {
+                root.background = null
+                tvErreurEnvoi.visibility = android.view.View.GONE
+            }
             root.setOnClickListener { onClick(sortie) }
             btnSupprimer.setOnClickListener { onDelete(sortie) }
             // Bouton "Continuer la saisie" : visible uniquement pour les sorties à envoyer

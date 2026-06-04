@@ -84,7 +84,19 @@ class SortieStore(context: Context) {
         val sorties = charger()
         val idx = sorties.indexOfFirst { it.id == id }
         if (idx >= 0) {
-            sorties[idx] = sorties[idx].copy(envoyeGeoNature = true)
+            // Succès → on efface aussi l'éventuelle erreur d'un échec précédent.
+            sorties[idx] = sorties[idx].copy(envoyeGeoNature = true, derniereErreurEnvoi = null)
+            sauvegarder(sorties)
+        }
+    }
+
+    /** Mémorise l'échec du dernier envoi (message humanisé) — affiché en cadre rouge dans
+     *  « Mes saisies » pour que l'échec reste visible après la fermeture du dialog. */
+    fun marquerErreurEnvoi(id: String, message: String) {
+        val sorties = charger()
+        val idx = sorties.indexOfFirst { it.id == id }
+        if (idx >= 0) {
+            sorties[idx] = sorties[idx].copy(derniereErreurEnvoi = message.take(200))
             sauvegarder(sorties)
         }
     }

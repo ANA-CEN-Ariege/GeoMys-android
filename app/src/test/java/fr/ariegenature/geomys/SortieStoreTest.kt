@@ -60,6 +60,20 @@ class SortieStoreTest {
     }
 
     @Test
+    fun marquer_erreur_envoi_pose_le_message_et_le_succes_l_efface() {
+        store.ajouter(Sortie(id = "s1"))
+        store.marquerErreurEnvoi("s1", "Réseau interrompu pendant l'envoi")
+        val enErreur = store.charger().first { it.id == "s1" }
+        assertEquals("Réseau interrompu pendant l'envoi", enErreur.derniereErreurEnvoi)
+        assertFalse("toujours À envoyer", enErreur.envoyeGeoNature)
+        // L'envoi finit par réussir → le marqueur d'échec disparaît.
+        store.marquerEnvoyee("s1")
+        val envoyee = store.charger().first { it.id == "s1" }
+        assertTrue(envoyee.envoyeGeoNature)
+        assertEquals(null, envoyee.derniereErreurEnvoi)
+    }
+
+    @Test
     fun marquer_envoyee_met_a_jour_le_flag() {
         store.ajouter(Sortie(id = "s1"))
         assertFalse(store.charger().first().envoyeGeoNature)

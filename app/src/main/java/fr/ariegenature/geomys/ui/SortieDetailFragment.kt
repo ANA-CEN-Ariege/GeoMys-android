@@ -158,6 +158,9 @@ class SortieDetailFragment : Fragment() {
                     .setPositiveButton("OK", null)
                     .show()
             } catch (e: Exception) {
+                // Mémorise l'échec : cadre rouge sur la sortie dans « Mes saisies ».
+                sortieStore.marquerErreurEnvoi(
+                    sortie.id, fr.ariegenature.geomys.network.humaniserErreurReseau(e))
                 binding.btnEnvoyerGn.isEnabled = true
                 AlertDialog.Builder(requireContext())
                     .setTitle("Erreur d'envoi")

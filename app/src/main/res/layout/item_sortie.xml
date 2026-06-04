@@ -75,6 +75,17 @@
                 android:textColor="?attr/colorControlNormal"
                 android:textSize="12sp" />
         </LinearLayout>
+
+        <!-- Dernier échec d'envoi GeoNature (Sortie.derniereErreurEnvoi) — visible tant que
+             l'envoi n'a pas fini par réussir, en complément du cadre rouge posé par l'adapter. -->
+        <TextView
+            android:id="@+id/tv_erreur_envoi"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:textColor="?attr/colorError"
+            android:textSize="12sp"
+            android:visibility="gone" />
     </LinearLayout>
 
     <ImageButton

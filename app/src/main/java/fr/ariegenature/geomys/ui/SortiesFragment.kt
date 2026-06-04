@@ -37,8 +37,7 @@ import fr.ariegenature.geomys.databinding.FragmentSortiesBinding
 import fr.ariegenature.geomys.databinding.ItemSortieBinding
 import fr.ariegenature.geomys.gpx.importerGPX
 import fr.ariegenature.geomys.model.Sortie
-import fr.ariegenature.geomys.network.GeoNatureUpload
-import fr.ariegenature.geomys.network.humaniserErreurReseau
+import fr.ariegenature.geomys.network.envoyerSortieVersGeoNature
 import fr.ariegenature.geomys.store.GeoNatureConfig
 import fr.ariegenature.geomys.store.SortieStore
 import kotlinx.coroutines.launch
@@ -200,34 +199,14 @@ class SortiesFragment : Fragment() {
             .show()
         viewLifecycleOwner.lifecycleScope.launch {
             try {
-                val res = GeoNatureUpload.envoyer(sortie, gnConfig)
-                sortieStore.marquerEnvoyee(sortie.id)
-                if (!isAdded) return@launch
-                refreshList()
-                val msg = buildString {
-                    append("${res.nbCrees}/${res.nbTotal} relevé")
-                    if (res.nbTotal > 1) append("s")
-                    append(" créé")
-                    if (res.nbCrees > 1) append("s")
-                    append(" sur GeoNature")
-                    if (res.mediasOK > 0) append("\n${res.mediasOK} média(s) uploadé(s)")
-                    if (res.mediasKO > 0) append("\n⚠ ${res.mediasKO} média(s) échoué(s)")
-                    if (res.relevesOrphelins.isNotEmpty())
-                        append("\n⚠ ${res.relevesOrphelins.size} relevé(s) vide(s) côté GeoNature à supprimer manuellement.")
-                }
-                AlertDialog.Builder(requireContext())
-                    .setTitle("GeoNature").setMessage(msg).setPositiveButton("OK", null).show()
-            } catch (e: kotlinx.coroutines.CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                // Mémorise l'échec sur la sortie : cadre rouge dans la liste, l'échec reste
-                // visible après fermeture du dialog (sinon il passait inaperçu).
-                sortieStore.marquerErreurEnvoi(sortie.id, humaniserErreurReseau(e))
+                // Envoi + mise à jour du store (succès/erreur persistée) factorisés —
+                // cf. envoyerSortieVersGeoNature, partagé par les 4 écrans d'envoi.
+                val res = envoyerSortieVersGeoNature(sortie, sortieStore, gnConfig)
                 if (!isAdded) return@launch
                 refreshList()
                 AlertDialog.Builder(requireContext())
-                    .setTitle("Erreur d'envoi")
-                    .setMessage(humaniserErreurReseau(e))
+                    .setTitle(if (res.succes) "GeoNature" else "Erreur d'envoi")
+                    .setMessage(res.message)
                     .setPositiveButton("OK", null).show()
             } finally {
                 runCatching { dialogEnvoi.dismiss() }
@@ -290,12 +269,7 @@ class SortieAdapter(
             // après la fermeture du dialog d'erreur. Reset explicite sinon (recyclage).
             val erreur = sortie.derniereErreurEnvoi
             if (erreur != null) {
-                val density = root.resources.displayMetrics.density
-                root.background = android.graphics.drawable.GradientDrawable().apply {
-                    setColor(0x00000000)
-                    cornerRadius = 8 * density
-                    setStroke((2 * density).toInt(), couleurErreur(root.context))
-                }
+                root.background = cadreColore(couleurErreur(root.context), root.resources.displayMetrics.density)
                 tvErreurEnvoi.visibility = android.view.View.VISIBLE
                 tvErreurEnvoi.text = "⚠ ${erreur.lineSequence().first()}"
             } else {

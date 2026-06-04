@@ -106,28 +106,14 @@ class NouvelleVisiteFragment : Fragment() {
      *  pour le rendre indépendant du cycle de vie de l'Uri système. Retourne l'URI String du
      *  fichier copié ou null en cas d'échec. Pattern repris de DenombrementFragment.importerMedia. */
     private fun importerMedia(source: android.net.Uri, defaultMime: String, index: Int = 0): String? {
-        val ctx = requireContext()
-        val mime = ctx.contentResolver.getType(source) ?: defaultMime
-        val ext = when (mime) {
-            "image/jpeg", "image/jpg" -> "jpg"
-            "image/png" -> "png"
-            "image/heic", "image/heif" -> "heic"
-            "image/webp" -> "webp"
-            else -> mime.substringAfter("/").ifEmpty { "jpg" }
+        // Copie locale + RECOMPRESSION des images (2048 px max, JPEG q85, orientation EXIF) —
+        // partagé avec le flux OCCTAX, cf. MediaImport.
+        val uri = MediaImport.importer(requireContext(), source, defaultMime, index)
+        if (uri == null) {
+            android.widget.Toast.makeText(requireContext(),
+                "Import média échoué", android.widget.Toast.LENGTH_LONG).show()
         }
-        val dir = java.io.File(ctx.filesDir, "medias").apply { mkdirs() }
-        // `index` désambiguïse les fichiers importés dans la même milliseconde (multi-sélection).
-        val dest = java.io.File(dir, "photo_${System.currentTimeMillis()}_$index.$ext")
-        return try {
-            ctx.contentResolver.openInputStream(source)?.use { input ->
-                dest.outputStream().use { out -> input.copyTo(out) }
-            }
-            dest.toURI().toString()
-        } catch (e: Exception) {
-            android.widget.Toast.makeText(ctx,
-                "Import média échoué : ${e.message}", android.widget.Toast.LENGTH_LONG).show()
-            null
-        }
+        return uri
     }
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
@@ -563,35 +549,17 @@ class NouvelleVisiteFragment : Fragment() {
         config: GeoNatureConfig,
         moduleCode: String,
     ): Int? = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-        try {
-            val base = config.urlServeur.trim().trimEnd('/')
-            val auth = fr.ariegenature.geomys.network.GeoNatureAuth.loginAvecCookies(
-                base, config.login, config.motDePasse
-            ) ?: return@withContext null
-            val (token, _, cookies) = auth
-            val variantes = listOf(moduleCode, moduleCode.lowercase()).distinct()
-            for (variant in variantes) {
-                val url = java.net.URL("$base/api/meta/datasets?module_code=$variant&active=true&fields=modules")
-                val conn = url.openConnection() as java.net.HttpURLConnection
-                conn.connectTimeout = 10000
-                conn.readTimeout = 10000
-                conn.setRequestProperty("Accept", "application/json")
-                if (token != null) conn.setRequestProperty("Authorization", "Bearer $token")
-                if (cookies.isNotEmpty()) conn.setRequestProperty("Cookie", cookies)
-                if (conn.responseCode != 200) continue
-                val text = conn.inputStream.bufferedReader().readText()
-                val arr = try { org.json.JSONArray(text) } catch (_: Exception) {
-                    org.json.JSONObject(text).optJSONArray("data") ?: org.json.JSONArray()
-                }
-                for (i in 0 until arr.length()) {
-                    val d = arr.optJSONObject(i) ?: continue
-                    if (!d.has("id_taxa_list") || d.isNull("id_taxa_list")) continue
-                    val id = d.optInt("id_taxa_list", -1)
-                    if (id > 0) return@withContext id
-                }
-            }
-            null
-        } catch (_: Exception) { null }
+        // Fetch partagé avec MonitoringApi (datasets actifs du module, casses essayées) —
+        // ici on n'extrait que l'id_taxa_list du premier dataset qui en déclare une.
+        val arr = MonitoringApi.chargerDatasetsDuModuleLive(config, moduleCode)
+            ?: return@withContext null
+        for (i in 0 until arr.length()) {
+            val d = arr.optJSONObject(i) ?: continue
+            if (!d.has("id_taxa_list") || d.isNull("id_taxa_list")) continue
+            val id = d.optInt("id_taxa_list", -1)
+            if (id > 0) return@withContext id
+        }
+        null
     }
 
     private fun ajouterDebug(msg: String) {

@@ -246,37 +246,14 @@ class DenombrementFragment : Fragment() {
      *  Le préfixe de nom (photo_/audio_) sert juste de hint humain ; le mime réel est déduit
      *  côté upload via guessContentTypeFromName. */
     private fun importerMedia(source: Uri, defaultMime: String, index: Int = 0): String? {
-        val ctx = requireContext()
-        val mime = ctx.contentResolver.getType(source) ?: defaultMime
-        val (prefix, ext) = when {
-            mime.startsWith("image/") -> "photo" to when (mime) {
-                "image/jpeg" -> "jpg"
-                "image/png"  -> "png"
-                "image/webp" -> "webp"
-                else         -> mime.substringAfter("/").ifEmpty { "jpg" }
-            }
-            mime.startsWith("audio/") -> "audio" to when (mime) {
-                "audio/mpeg" -> "mp3"
-                "audio/mp4"  -> "m4a"
-                "audio/aac"  -> "aac"
-                "audio/ogg"  -> "ogg"
-                "audio/wav", "audio/x-wav" -> "wav"
-                else         -> mime.substringAfter("/").ifEmpty { "mp3" }
-            }
-            else -> "media" to mime.substringAfter("/").ifEmpty { "bin" }
+        // Copie locale + RECOMPRESSION des images (2048 px max, JPEG q85, orientation EXIF),
+        // audio copié tel quel — partagé avec le flux monitoring, cf. MediaImport.
+        val uri = MediaImport.importer(requireContext(), source, defaultMime, index)
+        if (uri == null) {
+            android.widget.Toast.makeText(requireContext(),
+                "Import média échoué", android.widget.Toast.LENGTH_LONG).show()
         }
-        val dir = File(ctx.filesDir, "medias").apply { mkdirs() }
-        // `index` désambiguïse les fichiers importés dans la même milliseconde (multi-sélection).
-        val dest = File(dir, "${prefix}_${System.currentTimeMillis()}_$index.$ext")
-        return try {
-            ctx.contentResolver.openInputStream(source)?.use { input ->
-                dest.outputStream().use { out -> input.copyTo(out) }
-            }
-            dest.toURI().toString()
-        } catch (e: Exception) {
-            android.widget.Toast.makeText(ctx, "Import média échoué : ${e.message}", android.widget.Toast.LENGTH_LONG).show()
-            null
-        }
+        return uri
     }
 
     private fun supprimerFichierLocal(uri: String) {

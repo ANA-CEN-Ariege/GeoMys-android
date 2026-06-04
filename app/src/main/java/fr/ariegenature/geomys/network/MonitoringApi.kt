@@ -1803,26 +1803,29 @@ object MonitoringApi {
         }
         // 2) Appel live filtré par module (les datasets monitoring ne sont pas dans le
         // cache OCCTAX par défaut — sync app filtre module_code=OCCTAX).
+        val arr = chargerDatasetsDuModuleLive(config, moduleCode) ?: return null
+        return arr.optJSONObject(0)?.optInt("id_dataset", -1)?.takeIf { it > 0 }
+    }
+
+    /** Datasets ACTIFS rattachés à [moduleCode], en appel LIVE (le cache OCCTAX ne les
+     *  contient pas — sync filtré `module_code=OCCTAX`). Essaie les deux casses du code
+     *  module (routes Flask sensibles à la casse). Retourne le tableau brut (id_dataset,
+     *  id_taxa_list, …) non vide, ou null si injoignable/vide. BLOQUANT : à appeler depuis
+     *  Dispatchers.IO. Partagé entre [trouverDatasetPourModule] (id du dataset pour le
+     *  payload de visite) et NouvelleVisiteFragment (id_taxa_list pour les champs TAXON) —
+     *  c'était deux copies du même HTTP brut qui pouvaient diverger. */
+    internal fun chargerDatasetsDuModuleLive(config: GeoNatureConfig, moduleCode: String): JSONArray? {
         return try {
             val base = config.urlServeur.trim().trimEnd('/')
             val auth = GeoNatureAuth.loginAvecCookies(base, config.login, config.motDePasse) ?: return null
             val (token, _, cookies) = auth
-            val variantes = listOf(moduleCode, moduleCode.lowercase()).distinct()
-            for (variant in variantes) {
-                val conn = URL("$base/api/meta/datasets?module_code=$variant&active=true").openConnection()
-                    as java.net.HttpURLConnection
-                conn.connectTimeout = 10000
-                conn.readTimeout = 10000
-                conn.setRequestProperty("Accept", "application/json")
-                if (token != null) conn.setRequestProperty("Authorization", "Bearer $token")
-                if (cookies.isNotEmpty()) conn.setRequestProperty("Cookie", cookies)
+            for (variant in listOf(moduleCode, moduleCode.lowercase()).distinct()) {
+                val url = URL("$base/api/meta/datasets?module_code=$variant&active=true&fields=modules")
+                val conn = HttpClient.get(url, token, cookies, 10000)
                 if (conn.responseCode != 200) continue
                 val txt = conn.inputStream.bufferedReader().readText()
-                val arr = txt.parserTableauJson("data") ?: JSONArray()
-                if (arr.length() > 0) {
-                    val id = arr.getJSONObject(0).optInt("id_dataset", -1)
-                    if (id > 0) return id
-                }
+                val arr = txt.parserTableauJson("data") ?: continue
+                if (arr.length() > 0) return arr
             }
             null
         } catch (_: Exception) { null }

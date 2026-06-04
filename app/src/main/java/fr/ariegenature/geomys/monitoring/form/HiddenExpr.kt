@@ -117,16 +117,16 @@ object HiddenExpr {
         if (expr.isEmpty()) return null
         // Parenthèses englobantes : `(X)` → X, répété tant qu'elles enveloppent TOUT le corps.
         while (expr.length >= 2 && expr.startsWith("(") && expr.endsWith(")") &&
-            parenthesesEquilibrees(expr.substring(1, expr.length - 1))
+            ExpressionScanner.parenthesesEquilibrees(expr.substring(1, expr.length - 1))
         ) {
             expr = expr.substring(1, expr.length - 1).trim()
         }
 
         // Ternaire `cond ? a : b` — précédence la plus basse en JS, donc testé en premier
         // (petite chouette de montagne : `value.cd_nom != null ? value.cd_nom != 3507 : true`).
-        val idxQuestion = indexOperateurNiveauZero(expr, "?")
+        val idxQuestion = ExpressionScanner.indexNiveauZero(expr, "?")
         if (idxQuestion != null) {
-            val idxDeuxPoints = indexOperateurNiveauZero(expr, ":", depuis = idxQuestion + 1)
+            val idxDeuxPoints = ExpressionScanner.indexNiveauZero(expr, ":", depuis = idxQuestion + 1)
             if (idxDeuxPoints != null) {
                 val condition = evaluer(expr.substring(0, idxQuestion), valeurs) ?: return null
                 val branche = if (condition) expr.substring(idxQuestion + 1, idxDeuxPoints)
@@ -137,11 +137,11 @@ object HiddenExpr {
 
         // `||` puis `&&` (précédence JS : && lie plus fort que ||, donc on scinde sur ||
         // d'abord). Découpe au niveau 0 uniquement (hors parenthèses/crochets/quotes).
-        decouperNiveauZero(expr, "||")?.let { parties ->
+        ExpressionScanner.decouperNiveauZero(expr, "||")?.let { parties ->
             val evals = parties.map { evaluer(it, valeurs) ?: return null }
             return evals.any { it }
         }
-        decouperNiveauZero(expr, "&&")?.let { parties ->
+        ExpressionScanner.decouperNiveauZero(expr, "&&")?.let { parties ->
             val evals = parties.map { evaluer(it, valeurs) ?: return null }
             return evals.all { it }
         }
@@ -159,7 +159,7 @@ object HiddenExpr {
         // c'est l'idiome utilisé par les protocoles pour « caché tant que non choisi »).
         Regex("""^\[(.*)\]\s*\.includes\(\s*\$\{(\w+)\}\s*\)$""").matchEntire(expr)?.let { m ->
             val brutItems = m.groupValues[1]
-            val morceaux = decouperNiveauZero(brutItems, ",") ?: listOf(brutItems)
+            val morceaux = ExpressionScanner.decouperNiveauZero(brutItems, ",") ?: listOf(brutItems)
             val items = morceaux.map { resoudreOperande(it.trim(), valeurs) ?: return null }
             val v = valeurs[m.groupValues[2]]
             return items.any { item ->
@@ -172,7 +172,7 @@ object HiddenExpr {
 
         // Comparaison binaire au niveau 0 : ===, !==, ==, !=, >=, <=, >, <.
         for (op in listOf("===", "!==", "==", "!=", ">=", "<=", ">", "<")) {
-            val idx = indexOperateurNiveauZero(expr, op) ?: continue
+            val idx = ExpressionScanner.indexNiveauZero(expr, op) ?: continue
             val gauche = resoudreOperande(expr.substring(0, idx).trim(), valeurs) ?: return null
             val droite = resoudreOperande(expr.substring(idx + op.length).trim(), valeurs) ?: return null
             return when (op) {
@@ -230,73 +230,6 @@ object HiddenExpr {
         val nb = vb.toString().toDoubleOrNull()
         if (na != null && nb != null) return na == nb
         return va.toString() == vb.toString()
-    }
-
-    /** Découpe [expr] sur [separateur] au niveau 0 (hors parenthèses, crochets et quotes).
-     *  Retourne null si le séparateur n'apparaît pas au niveau 0. */
-    private fun decouperNiveauZero(expr: String, separateur: String): List<String>? {
-        val parties = mutableListOf<String>()
-        var profondeur = 0
-        var quote: Char? = null
-        var debut = 0
-        var i = 0
-        while (i < expr.length) {
-            val c = expr[i]
-            when {
-                quote != null -> if (c == quote) quote = null
-                c == '\'' || c == '"' -> quote = c
-                c == '(' || c == '[' -> profondeur++
-                c == ')' || c == ']' -> profondeur--
-                profondeur == 0 && expr.startsWith(separateur, i) -> {
-                    parties.add(expr.substring(debut, i))
-                    i += separateur.length
-                    debut = i
-                    continue
-                }
-            }
-            i++
-        }
-        if (parties.isEmpty()) return null
-        parties.add(expr.substring(debut))
-        return parties.map { it.trim() }.filter { it.isNotEmpty() }
-    }
-
-    /** Position du premier [op] au niveau 0 à partir de [depuis], ou null. Évite de
-     *  confondre `>` avec `>=` et `!` de `!=` avec une négation : l'appelant teste les
-     *  opérateurs longs d'abord. */
-    private fun indexOperateurNiveauZero(expr: String, op: String, depuis: Int = 0): Int? {
-        var profondeur = 0
-        var quote: Char? = null
-        var i = 0
-        while (i < expr.length) {
-            val c = expr[i]
-            when {
-                quote != null -> if (c == quote) quote = null
-                c == '\'' || c == '"' -> quote = c
-                c == '(' || c == '[' -> profondeur++
-                c == ')' || c == ']' -> profondeur--
-                profondeur == 0 && i >= depuis && expr.startsWith(op, i) -> {
-                    // `==` ne doit pas matcher au milieu de `===`/`!==`, ni `>` celui de `>=`.
-                    val avant = expr.getOrNull(i - 1)
-                    val apres = expr.getOrNull(i + op.length)
-                    val collisionAvant = (op == "==" && (avant == '=' || avant == '!' || avant == '<' || avant == '>'))
-                    val collisionApres = ((op == "==" || op == ">" || op == "<") && apres == '=')
-                    if (!collisionAvant && !collisionApres) return i
-                }
-            }
-            i++
-        }
-        return null
-    }
-
-    /** Les parenthèses de [s] s'équilibrent-elles sans jamais passer en négatif ? */
-    private fun parenthesesEquilibrees(s: String): Boolean {
-        var profondeur = 0
-        for (c in s) {
-            if (c == '(') profondeur++
-            if (c == ')') { profondeur--; if (profondeur < 0) return false }
-        }
-        return profondeur == 0
     }
 
     /** Sémantique JS-like de la vérité : `false`, `""`, `0`, `null`, listes vides = falsy. */

@@ -247,7 +247,9 @@ class FicheObjetFragment : Fragment() {
     ): List<MonitoringApi.MonitoringEnfant> {
         val props = schemaType?.properties
         val champsDate = props?.filterValues { it.typeWidget.equals("date", ignoreCase = true) }?.keys.orEmpty()
-        if (champsDate.isEmpty()) return MonitoringApi.trierEnfants(items, emptyList())
+        // Type sans champ date (sites, groupes de sites…) : on respecte les `sorts` déclarés
+        // par le schéma (parité web), à défaut le tri alphabétique par nom de trierEnfants.
+        if (champsDate.isEmpty()) return MonitoringApi.trierEnfants(items, schemaType?.sorts.orEmpty())
         val champDate = schemaType?.nameField?.takeIf { it in champsDate }
             ?: champsDate.firstOrNull { it.endsWith("_min") }
             ?: champsDate.first()
@@ -597,11 +599,7 @@ class FicheObjetFragment : Fragment() {
             // Cadre rouge sur le fond du thème (l'ancien fond ambre très clair passait pour
             // un fond blanc sur le thème sombre) : signale une saisie locale pas encore
             // envoyée, cohérent avec les cadres de « Mes visites ».
-            background = android.graphics.drawable.GradientDrawable().apply {
-                setColor(0x00000000)
-                cornerRadius = 8 * density
-                setStroke((2 * density).toInt(), couleurErreur(ctx))
-            }
+            background = cadreColore(couleurErreur(ctx), density)
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,

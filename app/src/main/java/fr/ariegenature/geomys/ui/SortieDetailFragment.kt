@@ -143,28 +143,14 @@ class SortieDetailFragment : Fragment() {
         binding.btnEnvoyerGn.isEnabled = false
         lifecycleScope.launch {
             try {
-                val res = GeoNatureUpload.envoyer(sortie, gnConfig)
-                val nb = res.nbCrees; val total = res.nbTotal; val premierReleve = res.premierIdReleve
-                var msg = "$nb/$total relevé${if (total > 1) "s" else ""} créé${if (nb > 1) "s" else ""} sur GeoNature"
-                if (premierReleve != null) msg += "\nPremier id_releve_occtax : $premierReleve"
-                if (res.mediasOK > 0) msg += "\n${res.mediasOK} média(s) uploadé(s)"
-                if (res.mediasKO > 0) msg += "\n⚠ ${res.mediasKO} média(s) échoué(s) : ${res.mediaErreurMsg ?: ""}"
-                if (res.relevesOrphelins.isNotEmpty()) msg += "\n⚠ ${res.relevesOrphelins.size} relevé(s) vide(s) côté GeoNature (id : ${res.relevesOrphelins.joinToString(", ")}), à supprimer manuellement."
-                sortieStore.marquerEnvoyee(sortie.id)
-                binding.btnEnvoyerGn.visibility = View.GONE
+                // Envoi + mise à jour du store factorisés (cf. envoyerSortieVersGeoNature).
+                val res = fr.ariegenature.geomys.network.envoyerSortieVersGeoNature(
+                    sortie, sortieStore, gnConfig)
+                if (res.succes) binding.btnEnvoyerGn.visibility = View.GONE
+                else binding.btnEnvoyerGn.isEnabled = true
                 AlertDialog.Builder(requireContext())
-                    .setTitle("GeoNature")
-                    .setMessage(msg)
-                    .setPositiveButton("OK", null)
-                    .show()
-            } catch (e: Exception) {
-                // Mémorise l'échec : cadre rouge sur la sortie dans « Mes saisies ».
-                sortieStore.marquerErreurEnvoi(
-                    sortie.id, fr.ariegenature.geomys.network.humaniserErreurReseau(e))
-                binding.btnEnvoyerGn.isEnabled = true
-                AlertDialog.Builder(requireContext())
-                    .setTitle("Erreur d'envoi")
-                    .setMessage(e.message ?: "Erreur inconnue")
+                    .setTitle(if (res.succes) "GeoNature" else "Erreur d'envoi")
+                    .setMessage(res.message)
                     .setPositiveButton("OK", null)
                     .show()
             } finally {

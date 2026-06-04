@@ -49,3 +49,14 @@ fun couleurErreur(ctx: Context): Int = MaterialColors.getColor(
 fun couleurPrimaire(ctx: Context): Int = MaterialColors.getColor(
     ctx, com.google.android.material.R.attr.colorPrimary, 0xFF1B6CA8.toInt(),
 )
+
+/** Cadre coloré arrondi sur fond transparent — le marqueur d'état standard des listes
+ *  (rouge = erreur/à envoyer, vert = envoyé, ambre = en cours). Remplace les fonds pastel
+ *  (illisibles sur le thème sombre) ; centralisé pour que rayon/épaisseur restent uniformes
+ *  entre les écrans (Mes visites, Mes saisies, drill-down protocole). */
+fun cadreColore(couleur: Int, density: Float): android.graphics.drawable.GradientDrawable =
+    android.graphics.drawable.GradientDrawable().apply {
+        setColor(0x00000000)
+        cornerRadius = 8 * density
+        setStroke((2 * density).toInt(), couleur)
+    }

@@ -237,15 +237,10 @@ class SaisiesEnAttenteFragment : Fragment() {
             // pastel — rose/vert/ambre très clairs — passaient pour des fonds blancs sur le
             // thème sombre et rendaient les textes illisibles) : rouge = erreur, vert =
             // envoyée (groupe conservé tant qu'il reste des obs), ambre = envoi en cours.
-            fun cadre(couleur: Int) = android.graphics.drawable.GradientDrawable().apply {
-                setColor(0x00000000)
-                cornerRadius = 8 * density
-                setStroke((2 * density).toInt(), couleur)
-            }
             when (s.etat) {
-                SaisieEnAttente.Etat.ERROR -> background = cadre(couleurErreur(ctx))
-                SaisieEnAttente.Etat.SENT -> background = cadre(0xFF4CAF50.toInt())     // vert
-                SaisieEnAttente.Etat.SENDING -> background = cadre(0xFFFFB300.toInt())  // ambre
+                SaisieEnAttente.Etat.ERROR -> background = cadreColore(couleurErreur(ctx), density)
+                SaisieEnAttente.Etat.SENT -> background = cadreColore(0xFF4CAF50.toInt(), density)     // vert
+                SaisieEnAttente.Etat.SENDING -> background = cadreColore(0xFFFFB300.toInt(), density)  // ambre
                 else -> setBackgroundColor(0x00000000)
             }
             layoutParams = LinearLayout.LayoutParams(

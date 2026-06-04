@@ -112,10 +112,10 @@ object ChangeRules {
     private fun conditionTernaireInstruction(ligne: String, idxPatch: Int): String? {
         var l = ligne
         // Retire les parenthèses englobantes éventuelles.
-        while (l.length >= 2 && l.startsWith("(") && l.endsWith(")") && parensEquilibrees(l.substring(1, l.length - 1))) {
+        while (l.length >= 2 && l.startsWith("(") && l.endsWith(")") && ExpressionScanner.parenthesesEquilibrees(l.substring(1, l.length - 1))) {
             l = l.substring(1, l.length - 1).trim()
         }
-        val idxQ = indexNiveauZero(l, "?") ?: return null
+        val idxQ = ExpressionScanner.indexNiveauZero(l, "?") ?: return null
         if (idxQ > l.indexOf("patchValue").takeIf { it >= 0 }!!) return null  // `?` après le patch → pas un ternaire-garde
         return l.substring(0, idxQ).trim().ifEmpty { null }
     }
@@ -147,8 +147,8 @@ object ChangeRules {
     private fun parserPatch(corps: String): Map<String, String> {
         val out = linkedMapOf<String, String>()
         if (corps.isBlank()) return out
-        for (paire in decouperNiveauZero(corps, ",") ?: listOf(corps)) {
-            val idx = indexNiveauZero(paire, ":")
+        for (paire in ExpressionScanner.decouperNiveauZero(corps, ",") ?: listOf(corps)) {
+            val idx = ExpressionScanner.indexNiveauZero(paire, ":")
             if (idx == null) {
                 // Raccourci ES6 `{nb_total}` : la valeur est la variable du même nom.
                 val nom = paire.trim().trim('\'', '"')
@@ -190,14 +190,14 @@ object ChangeRules {
      *  neutre), ternaire, objet taxon réduit à son cd_nom. Null si hors grammaire. */
     private fun evaluerValeur(brut: String, lecture: Map<String, Any?>, env: Map<String, Any?>): Any? {
         var e = brut.trim().trimEnd(';').trim()
-        while (e.length >= 2 && e.startsWith("(") && e.endsWith(")") && parensEquilibrees(e.substring(1, e.length - 1))) {
+        while (e.length >= 2 && e.startsWith("(") && e.endsWith(")") && ExpressionScanner.parenthesesEquilibrees(e.substring(1, e.length - 1))) {
             e = e.substring(1, e.length - 1).trim()
         }
         if (e.isEmpty()) return null
 
         // Ternaire valeur : `cond ? a : b`.
-        indexNiveauZero(e, "?")?.let { idxQ ->
-            indexNiveauZero(e, ":", depuis = idxQ + 1)?.let { idxC ->
+        ExpressionScanner.indexNiveauZero(e, "?")?.let { idxQ ->
+            ExpressionScanner.indexNiveauZero(e, ":", depuis = idxQ + 1)?.let { idxC ->
                 val condition = HiddenExpr.evaluerBooleen(e.substring(0, idxQ), lecture)
                 val branche = if (condition) e.substring(idxQ + 1, idxC) else e.substring(idxC + 1)
                 return evaluerValeur(branche, lecture, env)
@@ -205,7 +205,7 @@ object ChangeRules {
         }
 
         // Somme / concaténation `+` : numérique si tous les termes le sont, concat sinon.
-        decouperNiveauZero(e, "+")?.let { parties ->
+        ExpressionScanner.decouperNiveauZero(e, "+")?.let { parties ->
             val termes = parties.map { evaluerValeur(it, lecture, env) }
             val nombres = termes.map { it?.toString()?.toDoubleOrNull() ?: if (it == null) 0.0 else null }
             if (nombres.none { it == null }) {
@@ -236,8 +236,8 @@ object ChangeRules {
         // Objet `{…}` : cas taxon — la valeur utile côté app est le cd_nom scalaire.
         if (e.startsWith("{") && e.endsWith("}")) {
             val corps = e.substring(1, e.length - 1)
-            for (paire in decouperNiveauZero(corps, ",") ?: listOf(corps)) {
-                val idx = indexNiveauZero(paire, ":") ?: continue
+            for (paire in ExpressionScanner.decouperNiveauZero(corps, ",") ?: listOf(corps)) {
+                val idx = ExpressionScanner.indexNiveauZero(paire, ":") ?: continue
                 val cle = paire.take(idx).trim().trim('\'', '"')
                 if (cle == "cd_nom") return evaluerValeur(paire.substring(idx + 1), lecture, env)
             }
@@ -250,59 +250,4 @@ object ChangeRules {
         return null
     }
 
-    // ── Petits scanners niveau-0 (hors parenthèses/accolades/crochets/quotes) ─────────
-
-    private fun decouperNiveauZero(expr: String, separateur: String): List<String>? {
-        val parties = mutableListOf<String>()
-        var profondeur = 0
-        var quote: Char? = null
-        var debut = 0
-        var i = 0
-        while (i < expr.length) {
-            val c = expr[i]
-            when {
-                quote != null -> if (c == quote) quote = null
-                c == '\'' || c == '"' -> quote = c
-                c == '(' || c == '[' || c == '{' -> profondeur++
-                c == ')' || c == ']' || c == '}' -> profondeur--
-                profondeur == 0 && expr.startsWith(separateur, i) -> {
-                    parties.add(expr.substring(debut, i))
-                    i += separateur.length
-                    debut = i
-                    continue
-                }
-            }
-            i++
-        }
-        if (parties.isEmpty()) return null
-        parties.add(expr.substring(debut))
-        return parties.map { it.trim() }.filter { it.isNotEmpty() }
-    }
-
-    private fun indexNiveauZero(expr: String, cible: String, depuis: Int = 0): Int? {
-        var profondeur = 0
-        var quote: Char? = null
-        var i = 0
-        while (i < expr.length) {
-            val c = expr[i]
-            when {
-                quote != null -> if (c == quote) quote = null
-                c == '\'' || c == '"' -> quote = c
-                c == '(' || c == '[' || c == '{' -> profondeur++
-                c == ')' || c == ']' || c == '}' -> profondeur--
-                profondeur == 0 && i >= depuis && expr.startsWith(cible, i) -> return i
-            }
-            i++
-        }
-        return null
-    }
-
-    private fun parensEquilibrees(s: String): Boolean {
-        var profondeur = 0
-        for (c in s) {
-            if (c == '(') profondeur++
-            if (c == ')') { profondeur--; if (profondeur < 0) return false }
-        }
-        return profondeur == 0
-    }
 }

@@ -1106,19 +1106,10 @@ class TraceFragment : Fragment() {
         envoiEnCours = true
         currentJob = lifecycleScope.launch {
             try {
-                val res = GeoNatureUpload.envoyer(sortie, gnConfig)
-                sortieStore.marquerEnvoyee(sortie.id)
-                var msg = "${res.nbCrees}/${res.nbTotal} relevé${if (res.nbTotal > 1) "s" else ""} créé${if (res.nbCrees > 1) "s" else ""}"
-                if (res.premierIdReleve != null) msg += " (premier #${res.premierIdReleve})"
-                if (res.mediasOK > 0) msg += "\n${res.mediasOK} média(s) uploadé(s)"
-                if (res.mediasKO > 0) msg += "\n⚠ ${res.mediasKO} média(s) échoué(s) : ${res.mediaErreurMsg ?: ""}"
-                if (res.relevesOrphelins.isNotEmpty()) msg += "\n⚠ ${res.relevesOrphelins.size} relevé(s) vide(s) côté GeoNature (id : ${res.relevesOrphelins.joinToString(", ")}), à supprimer manuellement."
-                showResult(msg, true)
-            } catch (e: Exception) {
-                // Mémorise l'échec : cadre rouge sur la sortie dans « Mes saisies ».
-                sortieStore.marquerErreurEnvoi(
-                    sortie.id, fr.ariegenature.geomys.network.humaniserErreurReseau(e))
-                showResult(e.message ?: "Erreur inconnue", false)
+                // Envoi + mise à jour du store factorisés (cf. envoyerSortieVersGeoNature).
+                val res = fr.ariegenature.geomys.network.envoyerSortieVersGeoNature(
+                    sortie, sortieStore, gnConfig)
+                showResult(res.message, res.succes)
             } finally {
                 envoiEnCours = false
                 binding.overlayEnvoi.visibility = View.GONE

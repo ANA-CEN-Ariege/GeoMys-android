@@ -80,6 +80,22 @@ object OutboxEnvoi {
         progression: (envoyees: Int, total: Int, message: String) -> Unit,
     ): Resultat = withContext(Dispatchers.IO) {
         mutexEnvoi.withLock {
+        // Saisies restées SENDING d'un envoi précédent : le mutex garantit qu'aucun autre envoi
+        // ne tourne, donc un SENDING ici vient forcément d'un crash/kill en plein envoi. On ne
+        // les ré-envoie PAS automatiquement (le POST a pu aboutir côté serveur → doublon) : on
+        // les bascule en ERROR pour qu'elles redeviennent visibles et ré-essayables — sinon
+        // elles restaient invisibles à vie et bloquaient leurs enfants (jamais débloqués).
+        OutboxMonitoring.tout()
+            .filter { it.etat == SaisieEnAttente.Etat.SENDING }
+            .forEach { s ->
+                OutboxMonitoring.mettreAJour(s.uuid) {
+                    it.copy(
+                        etat = SaisieEnAttente.Etat.ERROR,
+                        messageErreur = "Envoi interrompu (application fermée ?) — " +
+                            "vérifier sur GeoNature avant de réessayer",
+                    )
+                }
+            }
         val initiales = OutboxMonitoring.enAttente()
             .filter { uuidsACibler == null || it.uuid in uuidsACibler }
         if (initiales.isEmpty()) return@withLock Resultat(0, 0, emptyList())

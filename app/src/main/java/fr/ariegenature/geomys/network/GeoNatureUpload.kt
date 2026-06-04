@@ -26,6 +26,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.IOException
 import java.io.OutputStreamWriter
 import java.net.URL
 import java.text.SimpleDateFormat
@@ -229,9 +230,19 @@ object GeoNatureUpload {
 
                 val urlReleve = URL("$base/api/occtax/OCCTAX/only/releve")
                 val conn1 = HttpClient.postJson(urlReleve, token, cookies, 30000)
-                OutputStreamWriter(conn1.outputStream).use { it.write(body1) }
-
-                val code1 = conn1.responseCode
+                // Coupure réseau (timeout, socket fermée…) pendant le POST du relevé : aucun id
+                // serveur connu → on enregistre l'erreur et on passe au groupe suivant, la sortie
+                // reste ré-envoyable telle quelle. Sans ce garde-fou l'IOException remontait brute
+                // (pas de GNErreur, pas de message humanisé).
+                val code1 = try {
+                    OutputStreamWriter(conn1.outputStream).use { it.write(body1) }
+                    conn1.responseCode
+                } catch (e: IOException) {
+                    conn1.disconnect()
+                    dernierCodeErreur = 0
+                    derniereErreur = "Réseau interrompu pendant la création du relevé (${e.message ?: e.javaClass.simpleName})"
+                    continue
+                }
                 if (code1 !in 200..299) {
                     val bodyErr = try { (conn1.errorStream ?: conn1.inputStream)?.bufferedReader()?.readText() } catch (_: Exception) { null }
                     conn1.disconnect()
@@ -327,13 +338,22 @@ object GeoNatureUpload {
 
                     val urlOcc = URL("$base/api/occtax/OCCTAX/releve/$idReleve/occurrence")
                     val conn2 = HttpClient.postJson(urlOcc, token, cookies, 30000)
-                    OutputStreamWriter(conn2.outputStream).use { it.write(occ.toString()) }
-
-                    val code2 = conn2.responseCode
+                    // Coupure réseau pendant le POST de l'occurrence : comptée comme un échec
+                    // ordinaire (code2 = -1) pour que le rollback du relevé en fin de groupe
+                    // s'applique. Sans ce garde-fou l'IOException remontait brute et laissait
+                    // un relevé vide côté GeoNature, sans signalement d'orphelin.
+                    val code2 = try {
+                        OutputStreamWriter(conn2.outputStream).use { it.write(occ.toString()) }
+                        conn2.responseCode
+                    } catch (e: IOException) {
+                        dernierCodeErreur = 0
+                        derniereErreur = "Réseau interrompu pendant l'envoi de l'occurrence (${e.message ?: e.javaClass.simpleName})"
+                        -1
+                    }
                     if (code2 in 200..299) {
                         nbCrees++
                         nbReussisGroupe++
-                    } else {
+                    } else if (code2 > 0) {
                         val bodyErr = try { (conn2.errorStream ?: conn2.inputStream)?.bufferedReader()?.readText() } catch (_: Exception) { null }
                         dernierCodeErreur = code2
                         derniereErreur = parseErreur(code2, bodyErr)

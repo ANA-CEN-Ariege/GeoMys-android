@@ -1,12 +1,11 @@
 *.iml
 .gradle
 /local.properties
-/.idea/caches
-/.idea/libraries
-/.idea/modules.xml
-/.idea/workspace.xml
-/.idea/navEditor.xml
-/.idea/assetWizardSettings.xml
+# IDE : régénéré par Android Studio à l'ouverture du projet (fichiers machine/session :
+# device sélectionné, settings IA, etc.) — rien à partager.
+/.idea
+# Claude Code : settings.local.json = permissions personnelles avec chemins machine.
+/.claude
 .DS_Store
 /build
 /captures

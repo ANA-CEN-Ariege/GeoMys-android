@@ -296,6 +296,19 @@ class OutboxEnvoiTest {
         assertTrue("groupe complet → tout est purgé ensemble", OutboxMonitoring.tout().isEmpty())
     }
 
+    @Test
+    fun saisie_legacy_sans_uuid_en_recoit_un_a_la_premiere_tentative() {
+        // Saisie créée AVANT la génération systématique d'uuid (réservé aux médias à
+        // l'époque) : uuidFieldName connu via le schéma, mais uuidPayload absent. L'envoi
+        // doit lui en attribuer un et l'injecter au payload — sans identité client,
+        // l'anti-doublon est impossible si la réponse de ce POST se perd.
+        OutboxMonitoring.ajouter(saisie("u1", uuidPayload = null, uuidFieldName = "uuid_base_visit"))
+        val res = envoyerTout()
+        assertEquals(1, res.succes)
+        assertTrue("le POST doit porter un uuid généré : ${postsVisite[0]}",
+            Regex("\"uuid_base_visit\":\"[0-9a-f]{8}-[0-9a-f-]{27}\"").containsMatchIn(postsVisite[0]))
+    }
+
     // ── Anti-doublon : re-POST après réponse perdue ────────────────────────────────
 
     /** Saisie déjà tentée (réponse perdue en pleine coupure) : porte un uuid client et

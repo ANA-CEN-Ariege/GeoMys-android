@@ -41,7 +41,14 @@ internal object HttpClient {
     ): HttpURLConnection = configurer(url, token, cookies, timeoutMs, readTimeoutMs)
 
     /** POST avec corps JSON : positionne `method`/`doOutput`/`Content-Type: application/json`.
-     *  L'appelant écrit ensuite le body via `outputStream` puis lit `responseCode`. */
+     *  L'appelant écrit ensuite le body via `outputStream` puis lit `responseCode`.
+     *
+     *  `Connection: close` : interdit la réutilisation keep-alive. Sans ça, HttpURLConnection
+     *  peut REJOUER silencieusement un POST quand la connexion réutilisée s'avère périmée
+     *  (bascule réseau, serveur qui a fermé) — le serveur traite alors la requête DEUX fois
+     *  alors que l'app ne voit qu'un succès → relevés/occurrences/visites en double. Le coût
+     *  (une connexion neuve par POST) est négligeable au volume de l'app ; la non-duplication
+     *  des données prime. */
     fun postJson(
         url: URL,
         token: String? = null,
@@ -52,6 +59,7 @@ internal object HttpClient {
         requestMethod = "POST"
         doOutput = true
         setRequestProperty("Content-Type", "application/json")
+        setRequestProperty("Connection", "close")
     }
 
     /** DELETE JSON. */

@@ -183,7 +183,14 @@ object OutboxEnvoi {
                 OutboxMonitoring.mettreAJour(saisie.uuid) {
                     // dejaTentee persisté AVANT le POST : si la réponse se perd, le prochain
                     // envoi saura qu'il doit vérifier l'existence côté serveur (anti-doublon).
-                    it.copy(etat = SaisieEnAttente.Etat.SENDING, messageErreur = null, dejaTentee = true)
+                    // uuidPayload : les saisies créées avant la génération systématique (uuid
+                    // réservé aux médias à l'époque) en reçoivent un ici, à la première
+                    // tentative — sans identité client, l'anti-doublon est impossible.
+                    it.copy(
+                        etat = SaisieEnAttente.Etat.SENDING, messageErreur = null, dejaTentee = true,
+                        uuidPayload = it.uuidPayload
+                            ?: if (it.uuidFieldName != null) java.util.UUID.randomUUID().toString() else null,
+                    )
                 }
                 progression(envoyees, total, "Envoi de ${saisie.objectType}…")
 

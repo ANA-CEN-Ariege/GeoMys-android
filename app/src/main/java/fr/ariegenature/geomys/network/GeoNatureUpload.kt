@@ -755,6 +755,9 @@ object GeoNatureUpload {
         conn.readTimeout = 60000
         conn.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
         conn.setRequestProperty("Accept", "application/json")
+        // Pas de réutilisation keep-alive : évite le re-POST silencieux d'HttpURLConnection
+        // sur connexion périmée → média uploadé en double (cf. HttpClient.postJson).
+        conn.setRequestProperty("Connection", "close")
         if (token != null) conn.setRequestProperty("Authorization", "Bearer $token")
         if (cookies.isNotEmpty()) conn.setRequestProperty("Cookie", cookies)
 

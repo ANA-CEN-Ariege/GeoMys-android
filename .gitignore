@@ -13,7 +13,3 @@
 .externalNativeBuild
 .cxx
 local.properties
-
-# Captures d'écran de travail (les images de la doc déjà suivies restent versionnées —
-# un .gitignore n'affecte pas les fichiers déjà trackés).
-Images/

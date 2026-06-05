@@ -1,6 +1,18 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
 }
+
+// Signature release : credentials chargés depuis `keystore.properties` (racine du projet,
+// GITIGNORÉ — gabarit dans keystore.properties.example). Le keystore lui-même vit hors du
+// dépôt. Sans ce fichier, `assembleRelease` produit un APK non signé et la config debug
+// reste inchangée — la CI et les postes sans keystore buildent donc normalement.
+val keystoreProperties = Properties().apply {
+    val fichier = rootProject.file("keystore.properties")
+    if (fichier.exists()) fichier.inputStream().use { load(it) }
+}
+val signatureDisponible = keystoreProperties.getProperty("storeFile") != null
 
 android {
     namespace = "fr.ariegenature.geomys"
@@ -16,13 +28,31 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        if (signatureDisponible) {
+            create("release") {
+                storeFile = File(keystoreProperties.getProperty("storeFile"))
+                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
+            // Minification volontairement désactivée pour la première génération signée :
+            // R8 + reflexion Gson (stores JSON) demanderaient des règles proguard à valider
+            // sur le terrain — à activer dans un second temps, séparément de la bascule de
+            // signature (un changement de comportement à la fois).
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            if (signatureDisponible) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
     compileOptions {

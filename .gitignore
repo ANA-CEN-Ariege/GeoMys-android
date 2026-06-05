@@ -9,6 +9,11 @@
 .DS_Store
 /build
 /captures
+# Signature release : credentials et keystores ne doivent JAMAIS entrer dans le dépôt
+# (cf. keystore.properties.example pour le gabarit).
+keystore.properties
+*.jks
+*.keystore
 .externalNativeBuild
 .cxx
 local.properties

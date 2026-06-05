@@ -174,12 +174,37 @@ Avant de monter de version le serveur GeoNature, re-tester l'app contre une inst
 
 ```bash
 ./gradlew assembleDebug         # APK debug
+./gradlew assembleRelease       # APK release signé (si keystore.properties présent)
 ./gradlew testDebugUnitTest     # tests unitaires (JVM, rapides)
 ./gradlew connectedAndroidTest  # tests instrumentés (device requis)
 ./gradlew lint                  # lint
 ```
 
 Requiert Android Studio Hedgehog+ et JDK 11.
+
+### Build release signé
+
+La signature lit ses credentials dans `keystore.properties` à la racine (**gitignoré** —
+gabarit : `keystore.properties.example`). Mise en place, une seule fois :
+
+```bash
+# 1. Créer le keystore (hors du dépôt !) — répondre aux questions, choisir des mots de passe solides
+mkdir -p ~/keystores
+keytool -genkeypair -v -keystore ~/keystores/geomys-release.jks \
+        -alias geomys -keyalg RSA -keysize 4096 -validity 10000
+
+# 2. Copier le gabarit et renseigner chemins/mots de passe
+cp keystore.properties.example keystore.properties
+```
+
+⚠️ **Le keystore et ses mots de passe sont irremplaçables** : sans eux, impossible de signer
+une mise à jour installable par-dessus l'existant (il faudrait désinstaller → perte des
+saisies locales). Sauvegarder le `.jks` + les mots de passe dans un gestionnaire de mots de
+passe et une copie hors machine.
+
+⚠️ **Bascule debug → release sur les téléphones** : signatures différentes → il faut
+désinstaller l'app debug (perte des données locales). Vider les saisies en attente
+(tout envoyer) avant la bascule.
 
 ## Tests automatiques
 

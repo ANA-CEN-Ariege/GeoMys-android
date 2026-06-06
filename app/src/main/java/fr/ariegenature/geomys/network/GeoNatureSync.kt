@@ -329,8 +329,9 @@ object GeoNatureSync {
                 val array: JSONArray = text.parserTableauJson("items", "data", "nomenclatures", "results")
                     ?: return@withContext Pair(0, "Format inattendu")
 
-                val typesVoulus = setOf("METH_OBS", "STATUT_OBS", "SEXE", "STADE_VIE", "STATUT_BIO", "ETA_BIO",
-                                        "PREUVE_EXIST", "OBJ_DENBR", "TYP_DENBR", "OCC_COMPORTEMENT", "METH_DETERMIN", "TYPE_MEDIA")
+                // Types de nomenclature de saisie : dérivés du registre unique (OcctaxFieldsConfig),
+                // + TYPE_MEDIA (type de média, hors champs de saisie).
+                val typesVoulus = fr.ariegenature.geomys.store.OcctaxFieldsConfig.mnemoniques().toSet() + "TYPE_MEDIA"
                 val result = mutableMapOf<String, List<NomValeur>>()
 
                 for (i in 0 until array.length()) {
@@ -399,6 +400,44 @@ object GeoNatureSync {
                 Pair(total, msg)
             } catch (e: Exception) {
                 Pair(0, "Erreur : ${e.message}")
+            }
+        }
+
+    /** Récupère la config de formulaire Occtax (settings.json du serveur) et met en cache l'objet
+     *  `nomenclature` (sections information[]/counting[]) dans [GeoNatureConfig.settingsOcctaxJson],
+     *  qui pilote la visibilité des champs de saisie (cf. [fr.ariegenature.geomys.store.OcctaxFieldsConfig]).
+     *  Endpoint `/api/gn_commons/t_mobile_apps` (public). Best-effort : en cas d'échec ou d'absence
+     *  de config, le registre par défaut s'applique (tous les champs visibles). */
+    suspend fun synchroniserSettingsOcctax(config: GeoNatureConfig): Pair<Int, String> =
+        withContext(Dispatchers.IO) {
+            val base = config.urlServeur.trim().trimEnd('/')
+            // Endpoint public : on tente avec les éventuels identifiants, sans bloquer s'ils manquent.
+            val auth = GeoNatureAuth.loginAvecCookies(base, config.login, config.motDePasse)
+            val token = auth?.first
+            val cookies = auth?.third ?: ""
+            try {
+                val conn = HttpClient.get(URL("$base/api/gn_commons/t_mobile_apps"), token, cookies, 15000)
+                if (conn.responseCode != 200)
+                    return@withContext Pair(0, "t_mobile_apps HTTP ${conn.responseCode}")
+                val text = conn.inputStream.bufferedReader().readText()
+                val arr = JSONArray(text)
+                var nomenclature: JSONObject? = null
+                for (i in 0 until arr.length()) {
+                    val app = arr.getJSONObject(i)
+                    if (!app.optString("app_code", "").equals("OCCTAX", ignoreCase = true)) continue
+                    nomenclature = app.optJSONObject("settings")?.optJSONObject("nomenclature")
+                    break
+                }
+                if (nomenclature == null) {
+                    config.settingsOcctaxJson = ""
+                    return@withContext Pair(0, "Aucune config OCCTAX dans t_mobile_apps (registre par défaut)")
+                }
+                config.settingsOcctaxJson = nomenclature.toString()
+                val nbInfo = nomenclature.optJSONArray("information")?.length() ?: 0
+                val nbCount = nomenclature.optJSONArray("counting")?.length() ?: 0
+                Pair(nbInfo + nbCount, "Config champs OCCTAX : information=$nbInfo, counting=$nbCount")
+            } catch (e: Exception) {
+                Pair(0, "Erreur settings OCCTAX : ${e.message}")
             }
         }
 

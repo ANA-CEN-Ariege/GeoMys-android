@@ -126,11 +126,18 @@ object SyncRunner {
                         null
                     } catch (e: Exception) { e.message ?: "Erreur champs additionnels" }
                 }
+                // Config de visibilité des champs Occtax (settings.json serveur). Best-effort, non
+                // bloquant : sans config publiée le registre par défaut s'applique (tous champs visibles).
+                val set = async {
+                    GeoNatureSync.synchroniserSettingsOcctax(config)
+                    null
+                }
                 listOf(
                     "Jeux de données" to ds.await(),
                     "Listes de taxons" to li.await(),
                     "Observateurs" to obs.await(),
                     "Champs additionnels" to add.await(),
+                    "Config champs OCCTAX" to set.await(),
                 ).forEach { (nom, err) -> if (err != null) echecs += "$nom ($err)" }
                 protocolListIds = mod.await()
             }

@@ -38,178 +38,19 @@
                 android:minLines="3" />
         </com.google.android.material.textfield.TextInputLayout>
 
-        <!-- Sexe (masqué pour Plantes) -->
+        <!-- Champs de nomenclature occurrence (information) et dénombrement (counting) rendus
+             dynamiquement (OcctaxFieldsRenderer) d'après le registre filtré par la config serveur. -->
         <LinearLayout
-            android:id="@+id/layout_sexe"
+            android:id="@+id/ll_information"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical">
+            android:orientation="vertical" />
 
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="16dp"
-                android:layout_marginBottom="4dp"
-                android:text="Sexe"
-                android:textSize="13sp"
-                android:textColor="@android:color/darker_gray" />
-
-            <Spinner
-                android:id="@+id/spinner_sexe"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content" />
-        </LinearLayout>
-
-        <TextView
-            android:id="@+id/tv_stade_vie_label"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:layout_marginBottom="4dp"
-            android:text="Stade de vie"
-            android:textSize="13sp"
-            android:textColor="@android:color/darker_gray" />
-
-        <Spinner
-            android:id="@+id/spinner_stade_vie"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content" />
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:layout_marginBottom="4dp"
-            android:text="Technique d'observation"
-            android:textSize="13sp"
-            android:textColor="@android:color/darker_gray" />
-
-        <Spinner
-            android:id="@+id/spinner_technique"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content" />
-
-        <!-- Statut biologique (masqué pour Plantes) -->
         <LinearLayout
-            android:id="@+id/layout_statut_bio"
+            android:id="@+id/ll_counting"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical">
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:layout_marginBottom="4dp"
-                android:text="Statut biologique"
-                android:textSize="13sp"
-                android:textColor="@android:color/darker_gray" />
-
-            <Spinner
-                android:id="@+id/spinner_statut_bio"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content" />
-        </LinearLayout>
-
-        <!-- État biologique (masqué pour Plantes) -->
-        <LinearLayout
-            android:id="@+id/layout_eta_bio"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical">
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:layout_marginBottom="4dp"
-                android:text="État biologique"
-                android:textSize="13sp"
-                android:textColor="@android:color/darker_gray" />
-
-            <Spinner
-                android:id="@+id/spinner_eta_bio"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content" />
-        </LinearLayout>
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:layout_marginBottom="4dp"
-            android:text="Preuve d'existence"
-            android:textSize="13sp"
-            android:textColor="@android:color/darker_gray" />
-
-        <Spinner
-            android:id="@+id/spinner_preuve_exist"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content" />
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:layout_marginBottom="4dp"
-            android:text="Objet du dénombrement"
-            android:textSize="13sp"
-            android:textColor="@android:color/darker_gray" />
-
-        <Spinner
-            android:id="@+id/spinner_obj_denbr"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content" />
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:layout_marginBottom="4dp"
-            android:text="Type de dénombrement"
-            android:textSize="13sp"
-            android:textColor="@android:color/darker_gray" />
-
-        <Spinner
-            android:id="@+id/spinner_typ_denbr"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content" />
-
-        <!-- Comportement (masqué pour Plantes) -->
-        <LinearLayout
-            android:id="@+id/layout_comportement"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical">
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:layout_marginBottom="4dp"
-                android:text="Comportement"
-                android:textSize="13sp"
-                android:textColor="@android:color/darker_gray" />
-
-            <Spinner
-                android:id="@+id/spinner_comportement"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content" />
-        </LinearLayout>
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:layout_marginBottom="4dp"
-            android:text="Méthode de détermination"
-            android:textSize="13sp"
-            android:textColor="@android:color/darker_gray" />
-
-        <Spinner
-            android:id="@+id/spinner_meth_determin"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content" />
+            android:orientation="vertical" />
 
         <com.google.android.material.textfield.TextInputLayout
             android:layout_width="match_parent"

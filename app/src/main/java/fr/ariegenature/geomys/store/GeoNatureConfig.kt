@@ -134,6 +134,13 @@ class GeoNatureConfig(context: Context) {
         get() = prefs.getString("gn_cache_add_fields_occtax", "") ?: ""
         set(v) = prefs.edit().putString("gn_cache_add_fields_occtax", v).apply()
 
+    /** Cache JSON de l'objet `nomenclature` du settings.json Occtax du serveur (sections
+     *  information[]/counting[]), récupéré via /api/gn_commons/t_mobile_apps. Pilote la visibilité
+     *  des champs standards de saisie (cf. [OcctaxFieldsConfig]). Vide ⇒ registre par défaut. */
+    var settingsOcctaxJson: String
+        get() = prefs.getString("gn_cache_settings_occtax", "") ?: ""
+        set(v) = prefs.edit().putString("gn_cache_settings_occtax", v).apply()
+
     /** false quand le dernier test de connexion a détecté une version GeoNature inférieure
      *  à la minimale supportée ([fr.ariegenature.geomys.network.VERSION_GEONATURE_MINIMALE]).
      *  Invalide [connexionConfiguree] — donc toutes les opérations réseau (envois, Explorer,

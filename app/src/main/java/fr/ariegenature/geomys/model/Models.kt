@@ -76,6 +76,7 @@ data class Observation(
     var preuveExist: String? = null,
     var comportement: String? = null,
     var methDetermin: String? = null,
+    var naturalite: String? = null,
     var determinateur: String? = null,
     // UUID partagé par les obs d'une même saisie multi-taxons : à l'envoi, elles seront
     // regroupées dans un seul relevé GeoNature (1 relevé = 1 point + N occurrences).

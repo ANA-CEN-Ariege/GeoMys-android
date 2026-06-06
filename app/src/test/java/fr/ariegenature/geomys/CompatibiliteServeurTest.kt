@@ -55,6 +55,7 @@ class CompatibiliteServeurTest {
     private val typesObligatoires = listOf(
         "METH_OBS", "STATUT_OBS", "SEXE", "STADE_VIE", "STATUT_BIO", "ETA_BIO",
         "PREUVE_EXIST", "OBJ_DENBR", "TYP_DENBR", "OCC_COMPORTEMENT", "METH_DETERMIN", "TYPE_MEDIA",
+        "NATURALITE",
     )
 
     @Before
@@ -174,10 +175,10 @@ class CompatibiliteServeurTest {
     // ── Types de nomenclatures obligatoires ────────────────────────────────────────
 
     @Test
-    fun sync_complete_des_12_types_sans_avertissement() {
+    fun sync_complete_des_types_sans_avertissement() {
         router(configServeur = null, taxonomy = payloadTaxonomy(typesObligatoires))
         val (total, msg) = runBlocking { GeoNatureSync.synchroniserNomenclatures(config) }
-        assertEquals(12, total)
+        assertEquals(typesObligatoires.size, total)
         assertFalse("aucun avertissement attendu : $msg", msg.contains("⚠"))
     }
 

@@ -22,66 +22,12 @@ import fr.ariegenature.geomys.model.Taxon
 import fr.ariegenature.geomys.store.NomenclatureCache
 import fr.ariegenature.geomys.ui.saisie.ChampsTaxon
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Logique d'affichage des champs par taxon (factorisée depuis 3 fragments). */
+/** Contexte taxonomique (groupesEtRegno) pour le filtrage des valeurs de nomenclature.
+ *  La visibilité des champs est désormais pilotée par la config serveur (OcctaxFieldsConfig),
+ *  plus par taxon : les anciens tests de visibilité ont donc été retirés. */
 class ChampsTaxonTest {
-
-    // ── champsCaracterisation (niveau occurrence) ──────────────────────────────
-    @Test
-    fun caracterisation_oiseau_a_statut_bio_et_comportement() {
-        val c = ChampsTaxon.champsCaracterisation(Taxon.OISEAU)
-        assertTrue("STATUT_BIO" in c)
-        assertTrue("OCC_COMPORTEMENT" in c)
-        assertTrue("METH_DETERMIN" in c)
-    }
-
-    @Test
-    fun caracterisation_n_inclut_jamais_les_champs_de_denombrement() {
-        // SEXE / STADE_VIE / OBJ_DENBR / TYP_DENBR sont gérés au dénombrement, pas ici.
-        Taxon.entries.forEach { t ->
-            val c = ChampsTaxon.champsCaracterisation(t)
-            listOf("SEXE", "STADE_VIE", "OBJ_DENBR", "TYP_DENBR").forEach {
-                assertFalse("$it ne doit pas être dans la caractérisation de $t", it in c)
-            }
-        }
-    }
-
-    @Test
-    fun caracterisation_plante_et_fonge_minimal() {
-        assertEquals(setOf("METH_OBS", "PREUVE_EXIST", "METH_DETERMIN"), ChampsTaxon.champsCaracterisation(Taxon.PLANTE))
-        assertEquals(setOf("METH_OBS", "PREUVE_EXIST", "METH_DETERMIN"), ChampsTaxon.champsCaracterisation(Taxon.FONGE))
-    }
-
-    @Test
-    fun caracterisation_definie_pour_tous_les_taxons() {
-        Taxon.entries.forEach { assertTrue(ChampsTaxon.champsCaracterisation(it).isNotEmpty()) }
-    }
-
-    // ── champsObservationDetails (écran legacy : caractérisation + dénombrement) ─
-    @Test
-    fun details_inclut_sexe_stade_et_denombrement_pour_oiseau() {
-        val c = ChampsTaxon.champsObservationDetails(Taxon.OISEAU)
-        listOf("SEXE", "STADE_VIE", "OBJ_DENBR", "TYP_DENBR", "STATUT_BIO", "OCC_COMPORTEMENT").forEach {
-            assertTrue("$it attendu pour OISEAU", it in c)
-        }
-    }
-
-    @Test
-    fun details_plante_sans_sexe() {
-        val c = ChampsTaxon.champsObservationDetails(Taxon.PLANTE)
-        assertFalse("SEXE" in c)
-        assertTrue("STADE_VIE" in c) // stade phénologique
-    }
-
-    @Test
-    fun details_fonge_sans_sexe_ni_stade() {
-        val c = ChampsTaxon.champsObservationDetails(Taxon.FONGE)
-        assertFalse("SEXE" in c)
-        assertFalse("STADE_VIE" in c)
-    }
 
     // ── groupesEtRegno ──────────────────────────────────────────────────────────
     // NB : la branche PLANTE de groupesEtRegno appelle NomenclatureCache.groupesBotaniquesConnus()

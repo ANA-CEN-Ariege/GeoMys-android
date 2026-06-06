@@ -21,44 +21,14 @@ package fr.ariegenature.geomys.ui.saisie
 import fr.ariegenature.geomys.model.Taxon
 import fr.ariegenature.geomys.store.NomenclatureCache
 
-/** Logique d'affichage des champs de caractérisation/dénombrement selon le taxon, factorisée
- *  depuis CaracterisationFragment / DenombrementFragment / ObservationDetailsFragment (qui
- *  en avaient chacun une copie). Logique pure (testable hors device) : le filtrage des
- *  valeurs de nomenclature se fait ensuite via [NomenclatureCache.filtrerPourGroupes]. */
+/** Contexte taxonomique pour le filtrage des VALEURS de nomenclature (groupe2_inpn + regno),
+ *  factorisé depuis les écrans de saisie. Logique pure (testable hors device) : le filtrage des
+ *  valeurs se fait ensuite via [NomenclatureCache.filtrerPourGroupes].
+ *
+ *  NB : la VISIBILITÉ des champs n'est plus décidée ici (elle l'était par taxon, en dur) — elle
+ *  est désormais pilotée par la config serveur via [fr.ariegenature.geomys.store.OcctaxFieldsConfig].
+ *  Seul le filtrage par taxon des valeurs reste pertinent et vit ici. */
 object ChampsTaxon {
-
-    /** Champs de caractérisation de l'OCCURRENCE visibles pour ce taxon (écran multi-taxons,
-     *  CaracterisationFragment). N'inclut PAS les champs de dénombrement (sexe, stade, OBJ/TYP). */
-    fun champsCaracterisation(taxon: Taxon): Set<String> = when (taxon) {
-        Taxon.OISEAU    -> setOf("METH_OBS", "STATUT_BIO", "ETA_BIO", "PREUVE_EXIST", "OCC_COMPORTEMENT", "METH_DETERMIN")
-        Taxon.MAMMIFERE -> setOf("METH_OBS", "ETA_BIO", "PREUVE_EXIST", "OCC_COMPORTEMENT", "METH_DETERMIN")
-        Taxon.REPTILE,
-        Taxon.BATRACIEN,
-        Taxon.POISSON,
-        Taxon.INSECTE,
-        Taxon.MOLLUSQUE,
-        Taxon.INVERTEBRES -> setOf("METH_OBS", "ETA_BIO", "PREUVE_EXIST", "METH_DETERMIN")
-        Taxon.FONGE       -> setOf("METH_OBS", "PREUVE_EXIST", "METH_DETERMIN")
-        Taxon.PLANTE      -> setOf("METH_OBS", "PREUVE_EXIST", "METH_DETERMIN")
-    }
-
-    /** Champs visibles sur l'écran de détails mono-taxon legacy (ObservationDetailsFragment) :
-     *  caractérisation + dénombrement (sexe, stade de vie, OBJ_DENBR, TYP_DENBR). */
-    fun champsObservationDetails(taxon: Taxon): Set<String> = when (taxon) {
-        Taxon.OISEAU    -> setOf("METH_OBS", "SEXE", "STADE_VIE", "STATUT_BIO", "ETA_BIO",
-                                 "PREUVE_EXIST", "OBJ_DENBR", "TYP_DENBR", "OCC_COMPORTEMENT", "METH_DETERMIN")
-        Taxon.MAMMIFERE -> setOf("METH_OBS", "SEXE", "STADE_VIE", "ETA_BIO",
-                                 "PREUVE_EXIST", "OBJ_DENBR", "TYP_DENBR", "OCC_COMPORTEMENT", "METH_DETERMIN")
-        Taxon.REPTILE,
-        Taxon.BATRACIEN,
-        Taxon.POISSON,
-        Taxon.INSECTE,
-        Taxon.MOLLUSQUE,
-        Taxon.INVERTEBRES -> setOf("METH_OBS", "SEXE", "STADE_VIE", "ETA_BIO",
-                                   "PREUVE_EXIST", "OBJ_DENBR", "TYP_DENBR", "METH_DETERMIN")
-        Taxon.FONGE       -> setOf("METH_OBS", "PREUVE_EXIST", "OBJ_DENBR", "TYP_DENBR", "METH_DETERMIN")
-        Taxon.PLANTE      -> setOf("METH_OBS", "STADE_VIE", "PREUVE_EXIST", "OBJ_DENBR", "TYP_DENBR", "METH_DETERMIN")
-    }
 
     /** Groupes de filtrage (group2_inpn) + regno (Plantae/Fungi/Animalia) pour restreindre les
      *  nomenclatures proposées au taxon. Pour Plantes : union des groupes botaniques présents

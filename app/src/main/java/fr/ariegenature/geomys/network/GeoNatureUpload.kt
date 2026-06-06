@@ -22,6 +22,7 @@ import fr.ariegenature.geomys.model.Observation
 import fr.ariegenature.geomys.model.Sortie
 import fr.ariegenature.geomys.store.GeoNatureConfig
 import fr.ariegenature.geomys.store.NomenclatureCache
+import fr.ariegenature.geomys.store.OcctaxFieldsConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -68,48 +69,9 @@ object GeoNatureUpload {
         idTableLocationCountingCache = null
     }
 
-    // Correspondance code interne → label minuscule stable (même logique qu'OrniTrace)
-    // Les cd_nomenclature varient d'une instance GeoNature à l'autre ; les labels sont stables.
-    private val SEXE_LABELS     = mapOf("1" to "mâle", "2" to "femelle", "5" to "indéterminé")
-    private val STADE_LABELS    = mapOf("2" to "adulte", "3" to "juvénile", "4" to "immature")
-    private val METH_OBS_LABELS = mapOf(
-        "0" to "vu", "1" to "entendu", "2" to "vu et entendu", "4" to "chant", "5" to "indices de présence"
-    )
-    private val STATUT_BIO_LABELS = mapOf(
-        "1" to "reproduction", "2" to "pas de reproduction",
-        "3" to "hibernation", "4" to "estivation", "5" to "non déterminé", "6" to "inconnu"
-    )
-    private val ETA_BIO_LABELS = mapOf("1" to "vivant", "2" to "mort", "3" to "signe d'activité")
-    private val PREUVE_EXIST_LABELS = mapOf("0" to "non", "1" to "oui", "2" to "non acquise", "3" to "inconnu")
-    private val OBJ_DENBR_LABELS = mapOf(
-        "1" to "individu", "2" to "couple", "3" to "nid", "4" to "famille", "5" to "groupe"
-    )
-    private val TYP_DENBR_LABELS = mapOf("1" to "exact", "2" to "estimé", "3" to "minimum", "4" to "maximum")
-    private val COMPORTEMENT_LABELS = mapOf(
-        "1"  to "chant",
-        "2"  to "chasse/alimentation",
-        "3"  to "repos",
-        "4"  to "déplacement",
-        "5"  to "passage en vol",
-        "6"  to "migration",
-        "7"  to "halte migratoire",
-        "8"  to "hivernage",
-        "9"  to "nourrissage des jeunes",
-        "10" to "territorial",
-        "11" to "accouplement",
-        "12" to "30 - nidification possible",
-        "13" to "40 - nidification probable",
-        "14" to "50 - nidification certaine",
-        "15" to "inconnu"
-    )
-    private val METH_DETERMIN_LABELS = mapOf(
-        "1" to "examen visuel à distance",
-        "2" to "examen auditif direct",
-        "3" to "examen visuel sur photo ou vidéo",
-        "4" to "examen auditif avec transformation électronique",
-        "5" to "examen visuel de l'individu en main",
-        "6" to "autre méthode de détermination"
-    )
+    // Les correspondances code interne → label minuscule stable (pour résoudre l'id_nomenclature
+    // serveur, qui varie d'une instance à l'autre) vivent désormais dans le registre unique
+    // OcctaxFieldsConfig (champ `uploadLabels`), comme les clés d'upload (`uploadKey`).
 
     suspend fun envoyer(sortie: Sortie, config: GeoNatureConfig): EnvoiResult =
         withContext(Dispatchers.IO) {
@@ -155,8 +117,8 @@ object GeoNatureUpload {
             val relevesOrphelins = mutableListOf<Int>()
 
             val nomenclatures = mutableMapOf<String, Map<String, Int>>()
-            val typesVoulus = listOf("METH_OBS", "STATUT_OBS", "SEXE", "STADE_VIE", "STATUT_BIO", "ETA_BIO",
-                "PREUVE_EXIST", "OBJ_DENBR", "TYP_DENBR", "OCC_COMPORTEMENT", "METH_DETERMIN", "TYPE_MEDIA")
+            // Types à résoudre : dérivés du registre unique (+ TYPE_MEDIA), même source que la synchro.
+            val typesVoulus = OcctaxFieldsConfig.mnemoniques() + "TYPE_MEDIA"
 
             // Si le cache est vide, on tente une synchro automatique
             if (!NomenclatureCache.estDisponible) {
@@ -437,33 +399,26 @@ object GeoNatureUpload {
             put("nom_cite", obs.espece)
             if (obs.notes.isNotEmpty()) put("comment", obs.notes)
             put("cor_counting_occtax", countings)
-            val codeTechnique = obs.techniqueObs ?: "0"
-            resolverIdNomenclature(codeTechnique, "METH_OBS", METH_OBS_LABELS, nomenclatures)
-                ?.let { put("id_nomenclature_obs_technique", it) }
-            obs.statutObs?.let { code ->
-                resolverIdNomenclature(code, "STATUT_OBS", emptyMap(), nomenclatures)
-                    ?.let { put("id_nomenclature_observation_status", it) }
-            }
-            obs.statutBio?.let { code ->
-                resolverIdNomenclature(code, "STATUT_BIO", STATUT_BIO_LABELS, nomenclatures)
-                    ?.let { put("id_nomenclature_bio_status", it) }
-            }
-            obs.etaBio?.let { code ->
-                resolverIdNomenclature(code, "ETA_BIO", ETA_BIO_LABELS, nomenclatures)
-                    ?.let { put("id_nomenclature_bio_condition", it) }
-            }
-            obs.preuveExist?.let { code ->
-                resolverIdNomenclature(code, "PREUVE_EXIST", PREUVE_EXIST_LABELS, nomenclatures)
-                    ?.let { put("id_nomenclature_exist_proof", it) }
-            }
-            obs.comportement?.let { code ->
-                resolverIdNomenclature(code, "OCC_COMPORTEMENT", COMPORTEMENT_LABELS, nomenclatures)
-                    ?.let { put("id_nomenclature_behaviour", it) }
-            }
-            obs.methDetermin?.let { code ->
-                resolverIdNomenclature(code, "METH_DETERMIN", METH_DETERMIN_LABELS, nomenclatures)
-                    ?.let { put("id_nomenclature_determination_method", it) }
-            }
+            // Champs de nomenclature occurrence : pilotés par le registre unique (svKey → valeur,
+            // code/uploadKey/uploadLabels). METH_OBS prend "0" par défaut (présence non qualifiée).
+            val valeursOcc = mapOf(
+                "statutObs" to obs.statutObs,
+                "techniqueObs" to (obs.techniqueObs ?: "0"),
+                "etaBio" to obs.etaBio,
+                "comportement" to obs.comportement,
+                "statutBio" to obs.statutBio,
+                "methDetermin" to obs.methDetermin,
+                "preuveExist" to obs.preuveExist,
+                "naturalite" to obs.naturalite,
+            )
+            OcctaxFieldsConfig.REGISTRE
+                .filter { it.niveau == OcctaxFieldsConfig.Niveau.INFORMATION }
+                .forEach { f ->
+                    valeursOcc[f.svKey]?.let { code ->
+                        resolverIdNomenclature(code, f.code, f.uploadLabels, nomenclatures)
+                            ?.let { put(f.uploadKey, it) }
+                    }
+                }
             obs.determinateur?.takeIf { it.isNotEmpty() }?.let { put("determiner", it) }
             if (obs.additionalFieldsOccurrence.isNotEmpty()) {
                 put("additional_fields", jsonDepuisMap(obs.additionalFieldsOccurrence))
@@ -542,22 +497,16 @@ object GeoNatureUpload {
     ): JSONObject = JSONObject().apply {
         put("count_min", nombreMin)
         put("count_max", nombreMax.coerceAtLeast(nombreMin))
-        sexe?.let { code ->
-            resolverIdNomenclature(code, "SEXE", SEXE_LABELS, nomenclatures)
-                ?.let { put("id_nomenclature_sex", it) }
-        }
-        stadeVie?.let { code ->
-            resolverIdNomenclature(code, "STADE_VIE", STADE_LABELS, nomenclatures)
-                ?.let { put("id_nomenclature_life_stage", it) }
-        }
-        objDenbr?.let { code ->
-            resolverIdNomenclature(code, "OBJ_DENBR", OBJ_DENBR_LABELS, nomenclatures)
-                ?.let { put("id_nomenclature_obj_count", it) }
-        }
-        typDenbr?.let { code ->
-            resolverIdNomenclature(code, "TYP_DENBR", TYP_DENBR_LABELS, nomenclatures)
-                ?.let { put("id_nomenclature_type_count", it) }
-        }
+        // Champs de nomenclature dénombrement : pilotés par le registre unique.
+        val valeursCnt = mapOf("sexe" to sexe, "stadeVie" to stadeVie, "objDenbr" to objDenbr, "typDenbr" to typDenbr)
+        OcctaxFieldsConfig.REGISTRE
+            .filter { it.niveau == OcctaxFieldsConfig.Niveau.COUNTING }
+            .forEach { f ->
+                valeursCnt[f.svKey]?.let { code ->
+                    resolverIdNomenclature(code, f.code, f.uploadLabels, nomenclatures)
+                        ?.let { put(f.uploadKey, it) }
+                }
+            }
         // medias[] : objets renvoyés par POST /api/gn_commons/media — le serveur lie au counting
         // par référence (id_media). Le pattern suit gn_mobile_occtax/TaxonRecordJsonWriter.
         if (medias.isNotEmpty()) {

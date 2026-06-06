@@ -91,6 +91,7 @@ class SaisieObservationFragment : Fragment() {
         var preuveExist: String = "",
         var comportement: String = "",
         var methDetermin: String = "",
+        var naturalite: String = "",
         var determinateur: String = "",
         var notes: String = "",
         var cdNomManuel: String = "",
@@ -219,6 +220,7 @@ class SaisieObservationFragment : Fragment() {
                         preuveExist = obsExistante.preuveExist ?: "",
                         comportement = obsExistante.comportement ?: "",
                         methDetermin = obsExistante.methDetermin ?: "",
+                        naturalite = obsExistante.naturalite ?: "",
                         determinateur = obsExistante.determinateur ?: "",
                         notes = obsExistante.notes,
                         cdNomManuel = obsExistante.cdNom?.toString() ?: "",
@@ -426,6 +428,7 @@ class SaisieObservationFragment : Fragment() {
             putString("comportement",        obs.comportement)
             putString("statutBio",           obs.statutBio)
             putString("methDetermin",        obs.methDetermin)
+            putString("naturalite",          obs.naturalite)
             putString("determinateur",       obs.determinateur)
             // Même chaîne de fallback que la création d'obs (helper determinateurParDefaut).
             putString("determinateurDefaut", determinateurParDefaut())
@@ -526,6 +529,7 @@ class SaisieObservationFragment : Fragment() {
         consommerString("methDetermin")  { obs.methDetermin = it }
         consommerString("determinateur") { obs.determinateur = it }
         consommerString("preuveExist")   { obs.preuveExist = it }
+        consommerString("naturalite")    { obs.naturalite = it }
         consommerString("notes")         { obs.notes = it }
 
         val mapType = object : com.google.gson.reflect.TypeToken<Map<String, String>>() {}.type
@@ -830,6 +834,7 @@ class SaisieObservationFragment : Fragment() {
                 preuveExist               = obs.preuveExist.ifEmpty { null },
                 comportement              = obs.comportement.ifEmpty { null },
                 methDetermin              = obs.methDetermin.ifEmpty { null },
+                naturalite                = obs.naturalite.ifEmpty { null },
                 determinateur             = obs.determinateur.ifEmpty { null },
                 mediaUrisCounting0        = obs.mediaUrisCounting0,
                 additionalFieldsReleve    = additionalFieldsReleveSession,

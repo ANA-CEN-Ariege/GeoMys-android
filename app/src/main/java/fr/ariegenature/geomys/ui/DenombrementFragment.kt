@@ -23,11 +23,9 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.ImageButton
 import android.widget.LinearLayout
-import android.widget.Spinner
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.fragment.app.Fragment
@@ -43,10 +41,11 @@ import fr.ariegenature.geomys.model.Taxon
 import fr.ariegenature.geomys.network.AdditionalFieldDef
 import fr.ariegenature.geomys.network.AdditionalFieldsObject
 import fr.ariegenature.geomys.store.GeoNatureConfig
-import fr.ariegenature.geomys.store.NomenclatureCache
+import fr.ariegenature.geomys.store.OcctaxFieldsConfig
 import fr.ariegenature.geomys.store.TaxRefCache
 import fr.ariegenature.geomys.ui.saisie.AdditionalFieldsRenderer
 import fr.ariegenature.geomys.ui.saisie.ChampsTaxon
+import fr.ariegenature.geomys.ui.saisie.OcctaxFieldsRenderer
 import java.io.File
 
 /** Édition de la liste des dénombrements d'une PendingObs en saisie multi-taxons.
@@ -63,7 +62,8 @@ class DenombrementFragment : Fragment() {
     private var groupe2Inpn: String = ""
     private lateinit var groupes: Set<String>
     private var regno: String = ""
-    private var sexeActif: Boolean = true
+    /** Champs de nomenclature du dénombrement à afficher (registre filtré par la config serveur). */
+    private var champsCounting: List<OcctaxFieldsConfig.OcctaxField> = emptyList()
     /** Définitions des champs additionnels OCCTAX_DENOMBREMENT (chargées depuis le cache config). */
     private var defsCounting: List<AdditionalFieldDef> = emptyList()
 
@@ -113,7 +113,6 @@ class DenombrementFragment : Fragment() {
         val (g, r) = ChampsTaxon.groupesEtRegno(taxon, groupe2Inpn)
         groupes = g
         regno = r
-        sexeActif = sexeActifPourTaxon(taxon)
         // Filtre les définitions OCCTAX_DENOMBREMENT depuis le cache config (peut être vide).
         // Restreint par dataset courant + listes UsersHub du cd_nom observé (info récupérée au
         // sync TaxRef) : un champ avec id_list = X ne s'affiche que si le taxon appartient à X.
@@ -124,6 +123,10 @@ class DenombrementFragment : Fragment() {
         defsCounting = AdditionalFieldsRenderer.fromJson(gnConfig.additionalFieldsOcctaxJson)
             .filter { it.appliqueA(AdditionalFieldsObject.COUNTING) }
             .filter { it.visiblePour(idDataset, listesDuTaxon) }
+        // Champs de nomenclature du dénombrement : visibilité/ordre pilotés par la config serveur.
+        champsCounting = OcctaxFieldsConfig.champsVisibles(
+            gnConfig.settingsOcctaxJson, OcctaxFieldsConfig.Niveau.COUNTING
+        )
 
         val type = object : TypeToken<List<Denombrement>>() {}.type
         val initial: List<Denombrement> = try { gson.fromJson(denombrementsJson, type) ?: emptyList() } catch (_: Exception) { emptyList() }
@@ -190,23 +193,19 @@ class DenombrementFragment : Fragment() {
                 }
             })
 
-            val sexeLayout = row.findViewById<LinearLayout>(R.id.layout_sexe)
-            sexeLayout.visibility = if (sexeActif) View.VISIBLE else View.GONE
-            val tvStadeVieLabel = row.findViewById<TextView>(R.id.tv_stade_vie_label)
-            tvStadeVieLabel.text = if (taxon == Taxon.PLANTE) "Stade phénologique" else "Stade de vie"
-
-            setupSpinner(row.findViewById(R.id.spinner_sexe), "SEXE", denom.sexe ?: "",
-                listOf("Non renseigné","Mâle","Femelle","Indéterminé"),
-                listOf("","1","2","5"))
-            setupSpinner(row.findViewById(R.id.spinner_stade_vie), "STADE_VIE", denom.stadeVie ?: "",
-                listOf("Non renseigné","Adulte","Juvénile","Immature"),
-                listOf("","2","3","4"))
-            setupSpinner(row.findViewById(R.id.spinner_obj_denbr), "OBJ_DENBR", denom.objDenbr ?: "",
-                listOf("Non renseigné","Individu","Couple","Nid","Famille","Groupe"),
-                listOf("","1","2","3","4","5"))
-            setupSpinner(row.findViewById(R.id.spinner_typ_denbr), "TYP_DENBR", denom.typDenbr ?: "",
-                listOf("Non renseigné","Exact","Estimé","Minimum","Maximum"),
-                listOf("","1","2","3","4"))
+            // Nomenclatures du dénombrement (sexe/stade/objet/type) rendues dynamiquement, valeurs
+            // dérivées du registre via svKey. Le label "Stade de vie" devient "Stade phénologique"
+            // pour les plantes.
+            val labelOverrides = if (taxon == Taxon.PLANTE) mapOf("STADE_VIE" to "Stade phénologique") else emptyMap()
+            val valBySvKey = mapOf(
+                "sexe" to (denom.sexe ?: ""), "stadeVie" to (denom.stadeVie ?: ""),
+                "objDenbr" to (denom.objDenbr ?: ""), "typDenbr" to (denom.typDenbr ?: ""),
+            )
+            OcctaxFieldsRenderer.rendre(
+                row.findViewById(R.id.ll_counting_nomenclatures), champsCounting,
+                champsCounting.associate { it.code to (valBySvKey[it.svKey] ?: "") },
+                groupes, regno, labelOverrides,
+            )
 
             // ── Photos attachées à ce counting ──
             val llPhotos = row.findViewById<LinearLayout>(R.id.ll_photos)
@@ -267,15 +266,20 @@ class DenombrementFragment : Fragment() {
             val min = row.findViewById<TextInputEditText>(R.id.et_nombre_min).text?.toString()?.toIntOrNull()?.coerceAtLeast(1) ?: 1
             val maxRaw = row.findViewById<TextInputEditText>(R.id.et_nombre_max).text?.toString()?.toIntOrNull() ?: min
             val max = maxRaw.coerceAtLeast(min)
-            val sexe = selectedCode(row.findViewById(R.id.spinner_sexe)).ifEmpty { null }
-            val stadeVie = selectedCode(row.findViewById(R.id.spinner_stade_vie)).ifEmpty { null }
-            val objDenbr = selectedCode(row.findViewById(R.id.spinner_obj_denbr)).ifEmpty { null }
-            val typDenbr = selectedCode(row.findViewById(R.id.spinner_typ_denbr)).ifEmpty { null }
+            // Un champ masqué par la config serveur n'est pas rendu : on préserve alors la valeur
+            // existante au lieu de l'écraser (absent de la map collectée). Valeurs ré-indexées par
+            // svKey (= nom du champ Denombrement) via le registre.
+            val nom = OcctaxFieldsRenderer.collecter(row.findViewById(R.id.ll_counting_nomenclatures))
+            val nomBySvKey = nom.entries.associate { (OcctaxFieldsConfig.parCode[it.key]?.svKey ?: it.key) to it.value }
+            fun champ(svKey: String, actuel: String?): String? =
+                if (nomBySvKey.containsKey(svKey)) nomBySvKey[svKey]?.ifEmpty { null } else actuel
             val addCounting = AdditionalFieldsRenderer.collecter(row.findViewById(R.id.ll_add_counting))
             items[i] = items[i].copy(
                 nombreMin = min, nombreMax = max,
-                sexe = if (sexeActif) sexe else null,
-                stadeVie = stadeVie, objDenbr = objDenbr, typDenbr = typDenbr,
+                sexe = champ("sexe", items[i].sexe),
+                stadeVie = champ("stadeVie", items[i].stadeVie),
+                objDenbr = champ("objDenbr", items[i].objDenbr),
+                typDenbr = champ("typDenbr", items[i].typDenbr),
                 additionalFields = addCounting,
                 // mediaUris : conservées telles quelles (déjà mises à jour par le picker / suppression).
             )
@@ -296,41 +300,6 @@ class DenombrementFragment : Fragment() {
         mediaUris = (d.mediaUris as List<String>?) ?: emptyList(),
         additionalFields = (d.additionalFields as Map<String, String>?) ?: emptyMap(),
     )
-
-    private fun sexeActifPourTaxon(taxon: Taxon): Boolean = when (taxon) {
-        Taxon.OISEAU, Taxon.MAMMIFERE, Taxon.REPTILE, Taxon.BATRACIEN,
-        Taxon.POISSON, Taxon.INSECTE, Taxon.MOLLUSQUE, Taxon.INVERTEBRES -> true
-        Taxon.FONGE, Taxon.PLANTE -> false
-    }
-
-
-    private fun setupSpinner(
-        spinner: Spinner, type: String, current: String,
-        fallbackLabels: List<String>, fallbackCodes: List<String>,
-    ) {
-        val useCache = NomenclatureCache.estDisponible
-        val (labels, codes) = if (useCache) {
-            val valeurs = NomenclatureCache.filtrerPourGroupes(type, groupes, regno)
-            if (valeurs.isNotEmpty())
-                Pair(listOf("Non renseigné") + valeurs.map { it.label },
-                     listOf("") + valeurs.map { it.id.toString() })
-            else Pair(fallbackLabels, fallbackCodes)
-        } else Pair(fallbackLabels, fallbackCodes)
-
-        val adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, labels)
-        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-        spinner.adapter = adapter
-        spinner.tag = codes
-        // Fallback sur le défaut serveur (defaultNomenclatures du module) si pas de
-        // valeur explicite côté dénombrement courant — alignement avec l'UI web.
-        val codeEffectif = current.ifEmpty { NomenclatureCache.defautPour(type) ?: "" }
-        spinner.setSelection(codes.indexOf(codeEffectif).coerceAtLeast(0))
-    }
-
-    private fun selectedCode(spinner: Spinner): String {
-        val codes = spinner.tag as? List<*> ?: return ""
-        return codes.getOrNull(spinner.selectedItemPosition) as? String ?: ""
-    }
 
     override fun onDestroyView() {
         super.onDestroyView()

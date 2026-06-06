@@ -41,6 +41,7 @@ import fr.ariegenature.geomys.model.Observation
 import fr.ariegenature.geomys.model.Taxon
 import fr.ariegenature.geomys.network.TaxRefStatut
 import fr.ariegenature.geomys.store.GeoNatureConfig
+import fr.ariegenature.geomys.store.NidificationOiseaux
 import fr.ariegenature.geomys.store.TaxRefCache
 import fr.ariegenature.geomys.ui.saisie.AdditionalFieldsRenderer
 import fr.ariegenature.geomys.ui.saisie.SpeechToTextHelper
@@ -689,6 +690,7 @@ class SaisieObservationFragment : Fragment() {
         binding.etEspece.setText("")
         taxrefLookup.reset()
         rafraichirListe()
+        declencherCaracterisationSiNidification(pendingObs.lastIndex)
     }
 
     /** Ajoute une nouvelle PendingObs à partir d'une suggestion d'autocomplétion. */
@@ -719,6 +721,7 @@ class SaisieObservationFragment : Fragment() {
         binding.etEspece.setText("")
         taxrefLookup.reset()
         rafraichirListe()
+        declencherCaracterisationSiNidification(pendingObs.lastIndex)
     }
 
     /** Déterminateur préfilé à la création d'une nouvelle obs (et utilisé comme défaut
@@ -728,6 +731,25 @@ class SaisieObservationFragment : Fragment() {
         gnConfig.observateurDefautNom.ifEmpty {
             gnConfig.nomUtilisateur.ifEmpty { gnConfig.login }
         }
+
+    /** Mois (1..12) pilotant l'ouverture auto de la caractérisation. Pour l'instant le mois
+     *  courant ; point UNIQUE à rebrancher sur la date de saisie le jour où la saisie d'une
+     *  date antérieure sera implémentée dans le multi-taxon. */
+    private fun moisPertinent(): Int =
+        java.util.Calendar.getInstance().get(java.util.Calendar.MONTH) + 1
+
+    /** Oiseaux uniquement : si l'espèce qu'on vient d'ajouter est en période de nidification
+     *  pour le mois pertinent, ouvre automatiquement sa caractérisation (non bloquant : l'écran
+     *  reste fermable). Espèce hors fichier, mois hors période ou cd_nom non résolu => aucun
+     *  effet, comportement de saisie inchangé. */
+    private fun declencherCaracterisationSiNidification(index: Int) {
+        val obs = pendingObs.getOrNull(index) ?: return
+        if (obs.taxon != Taxon.OISEAU) return
+        val cdNom = obs.cdNom ?: return
+        if (NidificationOiseaux.estEnPeriode(requireContext(), cdNom, moisPertinent())) {
+            ouvrirCaracterisation(index)
+        }
+    }
 
 
     // ─── Nombre ───────────────────────────────────────────────────────────────

@@ -33,7 +33,10 @@ import androidx.fragment.app.activityViewModels
 import androidx.navigation.fragment.findNavController
 import fr.ariegenature.geomys.R
 import fr.ariegenature.geomys.databinding.FragmentAccueilBinding
+import androidx.lifecycle.lifecycleScope
+import fr.ariegenature.geomys.network.MiseAJour
 import fr.ariegenature.geomys.network.MonitoringApi
+import kotlinx.coroutines.launch
 import fr.ariegenature.geomys.store.GeoNatureConfig
 import fr.ariegenature.geomys.store.OutboxMonitoring
 import fr.ariegenature.geomys.store.SaisieEnAttente
@@ -62,6 +65,11 @@ class AccueilFragment : Fragment() {
         binding.accueilContent.applySystemBarInsets()
 
         binding.tvVersion.text = "v${versionName()}"
+        // Tap sur le numéro de version → écran de mise à jour de l'application.
+        binding.tvVersion.setOnClickListener {
+            findNavController().navigate(R.id.action_accueil_to_mise_a_jour)
+        }
+        verifierMajAuDemarrage()
         binding.tvLicence.setOnClickListener { afficherLicence() }
 
         val prefs = requireContext().getSharedPreferences("GeoMys_prefs", android.content.Context.MODE_PRIVATE)
@@ -85,7 +93,7 @@ class AccueilFragment : Fragment() {
             traceViewModel.reinitialiser()
             traceViewModel.typeSaisieLabel = getString(R.string.saisie_mono_taxons)
             val aDesChampsReleve = fr.ariegenature.geomys.ui.saisie.AdditionalFieldsRenderer
-                .aDesChampsReleve(gnConfig.additionalFieldsOcctaxJson, gnConfig.idDataset.toIntOrNull())
+                .aDesChampsReleve(gnConfig.additionalFieldsOcctaxJsonActif, gnConfig.idDataset.toIntOrNull())
             if (aDesChampsReleve) {
                 findNavController().navigate(
                     R.id.action_accueil_to_details_releve,
@@ -173,6 +181,21 @@ class AccueilFragment : Fragment() {
         OutboxMonitoring.tout().count {
             it.etat == SaisieEnAttente.Etat.PENDING || it.etat == SaisieEnAttente.Etat.ERROR
         }
+
+    /** Vérifie au démarrage s'il existe une release GitHub plus récente ; le cas échéant, affiche
+     *  une pastille rouge à côté du numéro de version (un tap mène à l'écran de mise à jour).
+     *  Silencieux hors-ligne / en cas d'erreur. */
+    private fun verifierMajAuDemarrage() {
+        viewLifecycleOwner.lifecycleScope.launch {
+            val r = MiseAJour.verifier(versionName())
+            if (_binding == null) return@launch
+            if (r is MiseAJour.Resultat.Disponible) {
+                // Version en jaune (comme le lien « Logiciel libre… ») + pastille rouge.
+                binding.tvVersion.setTextColor(ContextCompat.getColor(requireContext(), R.color.jaune_clair))
+                binding.tvVersion.text = titreAvecPastille("v${versionName()}", true)
+            }
+        }
+    }
 
     /** Renvoie [titre] suffixé d'une pastille ronde rouge "●" quand [afficher] est vrai, pour
      *  signaler des éléments en attente d'envoi sur une entrée du menu déplié. */

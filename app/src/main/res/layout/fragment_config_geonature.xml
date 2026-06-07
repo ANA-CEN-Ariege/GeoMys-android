@@ -208,7 +208,6 @@
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:gravity="center_vertical"
                 android:orientation="horizontal"
                 android:paddingVertical="2dp">
                 <TextView
@@ -221,21 +220,21 @@
                     android:id="@+id/tv_count_taxons"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginEnd="8dp"
                     android:text="—"
                     android:textSize="14sp"
                     android:textStyle="bold" />
-                <!-- Ouvre un dialog listant les groupes (Oiseaux, Mammifères, …) avec leur
-                     compteur ; un tap sur un groupe affiche les taxons de ce groupe. -->
-                <Button
-                    android:id="@+id/btn_taxons_par_groupe"
-                    style="@style/Widget.GeoMys.Button.TextButton"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:minHeight="36dp"
-                    android:paddingHorizontal="12dp"
-                    android:text="Détails" />
             </LinearLayout>
+
+            <!-- Ouvre un dialog listant les groupes (Oiseaux, Mammifères, …) avec leur compteur ;
+                 un tap sur un groupe affiche les taxons de ce groupe. -->
+            <Button
+                android:id="@+id/btn_taxons_par_groupe"
+                style="@style/Widget.GeoMys.Button.OutlinedButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="end"
+                android:layout_marginTop="8dp"
+                android:text="Détails" />
 
             <TextView
                 android:id="@+id/tv_tax_ref_version"

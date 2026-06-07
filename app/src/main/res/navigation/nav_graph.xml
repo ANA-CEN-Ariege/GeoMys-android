@@ -35,6 +35,9 @@
         <action
             android:id="@+id/action_accueil_to_cache_manager"
             app:destination="@id/cacheManagerFragment" />
+        <action
+            android:id="@+id/action_accueil_to_mise_a_jour"
+            app:destination="@id/miseAJourFragment" />
     </fragment>
 
     <fragment
@@ -229,9 +232,6 @@
         android:name="fr.ariegenature.geomys.ui.SaisieObservationFragment"
         android:label="Nouveau relevé">
         <action
-            android:id="@+id/action_saisie_to_details"
-            app:destination="@id/observationDetailsFragment" />
-        <action
             android:id="@+id/action_saisie_to_caracterisation"
             app:destination="@id/caracterisationFragment" />
         <action
@@ -263,11 +263,6 @@
             android:id="@+id/action_saisieRapide_to_saisie"
             app:destination="@id/saisieObservationFragment" />
     </fragment>
-
-    <fragment
-        android:id="@+id/observationDetailsFragment"
-        android:name="fr.ariegenature.geomys.ui.ObservationDetailsFragment"
-        android:label="Détails" />
 
     <fragment
         android:id="@+id/observationsFragment"
@@ -307,6 +302,11 @@
             android:id="@+id/action_config_to_taxons"
             app:destination="@id/taxonsListeFragment" />
     </fragment>
+
+    <fragment
+        android:id="@+id/miseAJourFragment"
+        android:name="fr.ariegenature.geomys.ui.MiseAJourFragment"
+        android:label="Mise à jour" />
 
     <fragment
         android:id="@+id/taxonsListeFragment"

@@ -2,7 +2,6 @@
     <string name="app_name">GeoMys</string>
     <string name="saisie_multi_taxons">Saisie multi-taxons</string>
     <string name="saisie_mono_taxons">Saisie mono-taxons</string>
-    <string name="nouvelle_sortie">Nouvelle sortie</string>
     <string name="mes_sorties">Mes saisies</string>
     <string name="detail_sortie">Détail de la sortie</string>
     <string name="terminer_sortie">Terminer la sortie</string>
@@ -14,11 +13,9 @@
     <string name="repositionner_observation">Déplacez la carte pour repositionner l\'observation</string>
     <string name="valider_position">Valider ce point</string>
     <string name="annuler">Annuler</string>
-    <string name="enregistrer">Enregistrer</string>
     <string name="tout_reinitialiser">Tout réinitialiser</string>
     <string name="action_irreversible">Cette action est irréversible.</string>
     <string name="effacer_trace_obs">Effacer les observations et la trace</string>
-    <string name="partager_gpx">Partager GPX</string>
     <string name="erreur_envoi">Erreur d\'envoi</string>
     <string name="erreur_import">Erreur d\'import</string>
     <string name="erreur_import_gpx">Impossible de lire ce fichier GPX. Vérifiez qu\'il contient un parcours ou des waypoints valides.</string>

@@ -23,18 +23,19 @@ import android.text.Editable
 import android.text.InputType
 import android.text.TextWatcher
 import android.widget.ArrayAdapter
-import android.widget.AutoCompleteTextView
 import android.widget.EditText
 import android.widget.Filter
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.textfield.MaterialAutoCompleteTextView
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import fr.ariegenature.geomys.network.AdditionalFieldDef
 import fr.ariegenature.geomys.network.GeoNatureDataset
 import fr.ariegenature.geomys.network.GeoNatureObservateur
+import fr.ariegenature.geomys.R
 import fr.ariegenature.geomys.network.HabitatSuggestion
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -153,6 +154,8 @@ fun ouvrirDialogDetailsReleve(
     val racine = LinearLayout(ctx).apply {
         orientation = LinearLayout.VERTICAL
         setPadding(pad, pad / 2, pad, pad / 2)
+        // Capte le focus initial pour qu'aucun champ ne s'ouvre tout seul à l'affichage du dialogue.
+        isFocusableInTouchMode = true
     }
 
     fun titre(t: String) = TextView(ctx).apply {
@@ -171,6 +174,14 @@ fun ouvrirDialogDetailsReleve(
             setPadding(0, 0, 0, (8 * density).toInt())
         })
     }
+
+    // Champ « menu déroulant » Material identique à Paramètres (cf. champ_dropdown_releve.xml) :
+    // le wrapper TextInputLayout ExposedDropdownMenu est ce qui ouvre la liste au 1er tap.
+    fun champDropdown(hint: String): com.google.android.material.textfield.TextInputLayout =
+        (android.view.LayoutInflater.from(ctx)
+            .inflate(R.layout.champ_dropdown_releve, racine, false)
+                as com.google.android.material.textfield.TextInputLayout)
+            .apply { this.hint = hint }
 
     // Sélecteur déroulant (jeu de données / observateur) : renvoie un getter de l'id choisi.
     // Si [options] est vide (cache non chargé), on retombe en ligne lecture seule. Le getter ne
@@ -195,27 +206,31 @@ fun ouvrirDialogDetailsReleve(
         }
         racine.addView(titre(label))
         val labels = options.map { it.second }
-        val champ = AutoCompleteTextView(ctx).apply {
-            val ad = AdaptateurAutocomplete(ctx, labels)
-            setAdapter(ad)
+        // Sélection mémorisée hors du champ texte (comme Paramètres) : le texte n'est plus la
+        // source de vérité, on peut donc le vider au clic pour déployer toute la liste sans
+        // perdre la valeur si l'utilisateur referme le menu sans re-choisir.
+        var idChoisi: Int? = idInitial
+        var nomChoisi: String? = labelInitial
+        // Widget IDENTIQUE à Paramètres : TextInputLayout ExposedDropdownMenu (inflé) → ouverture
+        // de toute la liste dès le 1er tap.
+        val til = champDropdown("Rechercher un jeu de données")
+        val champ = til.findViewById<MaterialAutoCompleteTextView>(R.id.ac_champ_releve).apply {
+            setAdapter(AdaptateurAutocomplete(ctx, labels))
             threshold = 1
-            isSingleLine = true
-            // Clic / prise de focus = déploie TOUTE la liste (contrainte vide), façon spinner —
-            // sans quoi le filtre la réduirait à la valeur déjà affichée.
-            setOnClickListener { ad.filter.filter(null) { showDropDown() } }
-            setOnFocusChangeListener { _, aFocus -> if (aFocus) ad.filter.filter(null) { showDropDown() } }
             val idx = options.indexOfFirst { it.first == idInitial }
-            // Affiche la sélection initiale même si elle n'est pas (ou plus) dans les options.
             if (idx >= 0) setText(labels[idx], false)
             else labelInitial?.let { setText(it, false) }
-            setPadding(0, 0, 0, (8 * density).toInt())
+            // Clic = vide le champ puis déploie toute la liste (comme Paramètres).
+            setOnClickListener { setText("", false); showDropDown() }
+            setOnItemClickListener { _, _, pos, _ ->
+                val txt = (adapter.getItem(pos) as? String).orEmpty()
+                options.firstOrNull { it.second == txt }?.let { idChoisi = it.first; nomChoisi = it.second }
+            }
+            // Fermeture sans (re)choix : on réaffiche le libellé de la sélection courante.
+            setOnDismissListener { setText(nomChoisi.orEmpty(), false) }
         }
-        racine.addView(champ)
-        return {
-            val txt = champ.text?.toString().orEmpty()
-            // Match exact d'un libellé d'option ; sinon on garde la sélection initiale.
-            options.firstOrNull { it.second == txt } ?: initialOuNull()
-        }
+        racine.addView(til)
+        return { idChoisi?.let { id -> id to (nomChoisi ?: id.toString()) } }
     }
 
     // Sélecteur MULTIPLE (observateurs) : un champ de recherche qui AJOUTE à une liste affichée
@@ -264,25 +279,21 @@ fun ouvrirDialogDetailsReleve(
             racine.addView(liste); rafraichir()
             return { choisis.map { (id, nom) -> id to nom } }
         }
-        val recherche = AutoCompleteTextView(ctx).apply {
-            val ad = AdaptateurAutocomplete(ctx, options.map { it.second })
-            setAdapter(ad)
+        // Même widget que Paramètres (ExposedDropdownMenu) : la liste des observateurs se déploie
+        // au 1er tap ; on tape pour filtrer (insensible aux accents), on choisit pour ajouter.
+        val til = champDropdown("Ajouter un observateur")
+        til.findViewById<MaterialAutoCompleteTextView>(R.id.ac_champ_releve).apply {
+            setAdapter(AdaptateurAutocomplete(ctx, options.map { it.second }))
             threshold = 1
-            isSingleLine = true
-            hint = "Ajouter un observateur…"
-            // Clic / focus = déploie toute la liste des observateurs (insensible aux accents en frappe).
-            setOnClickListener { ad.filter.filter(null) { showDropDown() } }
-            setOnFocusChangeListener { _, aFocus -> if (aFocus) ad.filter.filter(null) { showDropDown() } }
+            setOnClickListener { setText("", false); showDropDown() }
             setOnItemClickListener { _, _, pos, _ ->
                 val txt = (adapter.getItem(pos) as? String).orEmpty()
                 options.firstOrNull { it.second == txt }?.let { choisis[it.first] = it.second }
                 setText("", false)
                 rafraichir()
             }
-            // Même respiration que le champ Habitat (8dp), pour ne pas coller la liste en dessous.
-            setPadding(0, 0, 0, (8 * density).toInt())
         }
-        racine.addView(recherche)
+        racine.addView(til)
         racine.addView(liste)
         rafraichir()
         return { choisis.map { (id, nom) -> id to nom } }
@@ -328,7 +339,7 @@ fun ouvrirDialogDetailsReleve(
         }
         override fun getFilter(): Filter = filtreNeutre
     }
-    val champHabitat = AutoCompleteTextView(ctx).apply {
+    val champHabitat = MaterialAutoCompleteTextView(ctx).apply {
         setAdapter(adapterHabitat)
         threshold = 0
         isSingleLine = true
@@ -404,6 +415,7 @@ fun ouvrirDialogDetailsReleve(
         .setNegativeButton("Annuler", null)
         .create()
     dialog.setOnShowListener {
+        racine.requestFocus() // évite l'ouverture auto d'un dropdown si un champ happait le focus
         dialog.getButton(android.content.DialogInterface.BUTTON_POSITIVE).setOnClickListener {
             val manquants = if (defs.isNotEmpty()) AdditionalFieldsRenderer.champsObligatoiresVides(containerAdd) else emptyList()
             if (manquants.isNotEmpty()) {

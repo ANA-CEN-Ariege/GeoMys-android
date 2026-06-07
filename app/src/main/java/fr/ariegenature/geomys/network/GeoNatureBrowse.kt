@@ -150,15 +150,27 @@ object GeoNatureBrowse {
             result.sortedBy { it.nom }
         }
 
-    /** Récupère la liste des observateurs GeoNature via `/api/users/roles` (tous les utilisateurs,
-     *  hors groupes). Pas de filtre par menu UsersHub : l'app récupère tout, l'utilisateur choisit
-     *  son observateur par défaut dans la config. */
+    /** Récupère la liste des observateurs Occtax.
+     *
+     *  Comme le **formulaire web Occtax** : on restreint à la LISTE D'OBSERVATEURS configurée du
+     *  module (menu UsersHub `OCCTAX.id_observers_list`, via `/api/users/menu/<id>`) — liste curée,
+     *  donc **sans les doublons de comptes** que renvoie `/api/users/roles` (un même « Prénom Nom »
+     *  pouvant correspondre à plusieurs `id_role`). Repli sur `/api/users/roles` (tous les rôles) si
+     *  la config ou le menu ne sont pas disponibles (compat. multi-serveurs). */
     suspend fun chargerObservateurs(config: GeoNatureConfig): List<GeoNatureObservateur> =
         withContext(Dispatchers.IO) {
             val base = config.urlServeur.trim().trimEnd('/')
             val (token, _, cookies) = GeoNatureAuth.loginAvecCookies(base, config.login, config.motDePasse)
                 ?: throw GNErreur.AuthEchouee(401)
 
+            // Aligné sur le web : liste d'observateurs configurée du module si disponible.
+            val idListe = idListeObservateursOcctax(base, token, cookies)
+            if (idListe != null) {
+                val depuisMenu = chargerObservateursDeMenu(base, token, cookies, idListe)
+                if (!depuisMenu.isNullOrEmpty()) return@withContext depuisMenu
+            }
+
+            // Repli : tous les rôles (comportement historique).
             val url = URL("$base/api/users/roles")
             val conn = HttpClient.get(url, token, cookies, 10000)
             val code = conn.responseCode
@@ -180,6 +192,43 @@ object GeoNatureBrowse {
             }
             result.sortedBy { it.nomComplet.lowercase() }
         }
+
+    /** Id du menu UsersHub « liste d'observateurs » du module Occtax, lu dans la config serveur
+     *  (`/api/gn_commons/config` → `OCCTAX.id_observers_list`) — la MÊME source que le web. null si
+     *  absent/illisible (→ repli sur tous les rôles). */
+    private fun idListeObservateursOcctax(base: String, token: String?, cookies: String): Int? =
+        try {
+            val conn = HttpClient.get(URL("$base/api/gn_commons/config"), token, cookies, 10000)
+            if (conn.responseCode != 200) null
+            else JSONObject(conn.inputStream.bufferedReader().readText())
+                .optJSONObject("OCCTAX")?.optInt("id_observers_list", -1)?.takeIf { it > 0 }
+        } catch (_: Exception) { null }
+
+    /** Observateurs d'une liste UsersHub (`/api/users/menu/<id>`) : `id_role` + `nom_complet`
+     *  (format « NOM Prénom », tel qu'affiché par le web). null si échec → l'appelant retombe sur
+     *  `/users/roles`. */
+    private fun chargerObservateursDeMenu(
+        base: String, token: String?, cookies: String, idListe: Int,
+    ): List<GeoNatureObservateur>? =
+        try {
+            val conn = HttpClient.get(URL("$base/api/users/menu/$idListe"), token, cookies, 10000)
+            if (conn.responseCode != 200) null
+            else {
+                val arr = conn.inputStream.bufferedReader().readText()
+                    .parserTableauJson("data", "items", "results") ?: JSONArray()
+                val res = mutableListOf<GeoNatureObservateur>()
+                for (i in 0 until arr.length()) {
+                    val item = arr.getJSONObject(i)
+                    val idRole = item.optInt("id_role", -1).takeIf { it > 0 } ?: continue
+                    val nomComplet = item.optString("nom_complet", "").trim().ifEmpty {
+                        listOf(item.optString("nom_role", "").trim(), item.optString("prenom_role", "").trim())
+                            .filter { it.isNotEmpty() }.joinToString(" ")
+                    }
+                    if (nomComplet.isNotEmpty()) res.add(GeoNatureObservateur(idRole, nomComplet))
+                }
+                res.sortedBy { it.nomComplet.lowercase() }
+            }
+        } catch (_: Exception) { null }
 
     suspend fun recupererObsExplorer(
         config: GeoNatureConfig,

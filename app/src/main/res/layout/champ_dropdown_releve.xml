@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Champ « menu déroulant » identique à l'écran Paramètres : c'est le TextInputLayout au style
+  ExposedDropdownMenu qui installe l'ouverture de TOUTE la liste dès le premier tap (un
+  MaterialAutoCompleteTextView seul, créé en code, retombe sur « 1er tap = focus seulement »).
+  Inflé par DetailsReleveDialog pour les champs Jeu de données et Observateurs.
+-->
+<com.google.android.material.textfield.TextInputLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    style="@style/Widget.Material3.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="4dp">
+
+    <com.google.android.material.textfield.MaterialAutoCompleteTextView
+        android:id="@+id/ac_champ_releve"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:inputType="text" />
+</com.google.android.material.textfield.TextInputLayout>

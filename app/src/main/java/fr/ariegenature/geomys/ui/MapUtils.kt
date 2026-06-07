@@ -24,7 +24,7 @@ import org.osmdroid.tileprovider.tilesource.TileSourcePolicy
 import org.osmdroid.tileprovider.tilesource.XYTileSource
 import org.osmdroid.util.MapTileIndex
 
-enum class FondCarte { OSM, TOPO, SCAN25, ORTHO }
+enum class FondCarte { OSM, OPENTOPO, TOPO, SCAN25, ORTHO, ESRI }
 
 private const val PREFS_FOND = "GeoMys_prefs"
 private const val KEY_FOND = "fond_carte"
@@ -50,10 +50,12 @@ fun enregistrerFondCarte(context: Context, fond: FondCarte) {
 private val POLICY_PERMISSIVE = TileSourcePolicy(2, TileSourcePolicy.FLAG_NO_PREVENTIVE)
 
 fun tileSourcePour(fond: FondCarte) = when (fond) {
-    FondCarte.OSM    -> osmTileSource()
-    FondCarte.TOPO   -> ignTileSource("GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2", "image/png", false)
-    FondCarte.SCAN25 -> ignTileSource("GEOGRAPHICALGRIDSYSTEMS.MAPS", "image/jpeg", true)
-    FondCarte.ORTHO  -> ignTileSource("ORTHOIMAGERY.ORTHOPHOTOS", "image/jpeg", false)
+    FondCarte.OSM      -> osmTileSource()
+    FondCarte.OPENTOPO -> openTopoTileSource()
+    FondCarte.TOPO     -> ignTileSource("GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2", "image/png", false)
+    FondCarte.SCAN25   -> ignTileSource("GEOGRAPHICALGRIDSYSTEMS.MAPS", "image/jpeg", true)
+    FondCarte.ORTHO    -> ignTileSource("ORTHOIMAGERY.ORTHOPHOTOS", "image/jpeg", false)
+    FondCarte.ESRI     -> esriImageryTileSource()
 }
 
 /** OSM/Mapnik avec policy permissive pour autoriser le bulk download depuis Cache Manager.
@@ -72,11 +74,42 @@ private fun osmTileSource(): OnlineTileSourceBase = XYTileSource(
 )
 
 fun FondCarte.suivant() = when (this) {
-    FondCarte.OSM    -> FondCarte.TOPO
-    FondCarte.TOPO   -> FondCarte.SCAN25
-    FondCarte.SCAN25 -> FondCarte.ORTHO
-    FondCarte.ORTHO  -> FondCarte.OSM
+    FondCarte.OSM      -> FondCarte.OPENTOPO
+    FondCarte.OPENTOPO -> FondCarte.TOPO
+    FondCarte.TOPO     -> FondCarte.SCAN25
+    FondCarte.SCAN25   -> FondCarte.ORTHO
+    FondCarte.ORTHO    -> FondCarte.ESRI
+    FondCarte.ESRI     -> FondCarte.OSM
 }
+
+/** OpenTopoMap (tuiles XYZ standard z/x/y, CC-BY-SA). Zoom max 17. */
+private fun openTopoTileSource(): OnlineTileSourceBase = XYTileSource(
+    "OpenTopoMap",
+    0, 17, 256, ".png",
+    arrayOf(
+        "https://a.tile.opentopomap.org/",
+        "https://b.tile.opentopomap.org/",
+        "https://c.tile.opentopomap.org/",
+    ),
+    "© OpenTopoMap (CC-BY-SA) · © OpenStreetMap contributors",
+    POLICY_PERMISSIVE,
+)
+
+/** Esri World Imagery. ATTENTION : ordre de tuiles **z/y/x** (y avant x), pas le z/x/y standard —
+ *  d'où une source custom au lieu d'un simple XYTileSource. */
+private fun esriImageryTileSource(): OnlineTileSourceBase =
+    object : OnlineTileSourceBase(
+        "EsriWorldImagery", 0, 19, 256, "", arrayOf(""),
+        "Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community", POLICY_PERMISSIVE,
+    ) {
+        override fun getTileURLString(pMapTileIndex: Long): String {
+            val zoom = MapTileIndex.getZoom(pMapTileIndex)
+            val x    = MapTileIndex.getX(pMapTileIndex)
+            val y    = MapTileIndex.getY(pMapTileIndex)
+            return "https://server.arcgisonline.com/ArcGIS/rest/services/" +
+                "World_Imagery/MapServer/tile/$zoom/$y/$x"
+        }
+    }
 
 fun ignTileSource(layer: String, fmt: String, prive: Boolean): OnlineTileSourceBase =
     object : OnlineTileSourceBase("IGN_$layer", 2, 19, 256, "", arrayOf(""), "", POLICY_PERMISSIVE) {

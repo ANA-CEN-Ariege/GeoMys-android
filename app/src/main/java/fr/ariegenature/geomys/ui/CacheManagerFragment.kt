@@ -558,15 +558,17 @@ class CacheManagerFragment : Fragment() {
      *  OSM/IGN-topo (PNG) ~25 KB, IGN ortho/scan25 (JPEG) ~50 KB. Sert uniquement à
      *  l'estimation affichée à l'utilisateur — pas critique. */
     private fun poidsTuileKbMoyen(fond: FondCarte): Int = when (fond) {
-        FondCarte.OSM, FondCarte.TOPO -> 25
-        FondCarte.SCAN25, FondCarte.ORTHO -> 50
+        FondCarte.OSM, FondCarte.TOPO, FondCarte.OPENTOPO -> 25
+        FondCarte.SCAN25, FondCarte.ORTHO, FondCarte.ESRI -> 50
     }
 
     private fun nomFond(fond: FondCarte): String = when (fond) {
         FondCarte.OSM -> "OSM"
+        FondCarte.OPENTOPO -> "OpenTopoMap"
         FondCarte.TOPO -> "IGN Topo"
         FondCarte.SCAN25 -> "IGN Scan25"
         FondCarte.ORTHO -> "IGN Ortho"
+        FondCarte.ESRI -> "Esri Imagery"
     }
 
     override fun onResume() {

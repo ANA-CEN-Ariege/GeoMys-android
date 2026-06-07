@@ -23,22 +23,28 @@ import fr.ariegenature.geomys.ui.suivant
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
-/** Cycle de rotation du bouton « fond de carte » (OSM → Topo → Scan25 → Ortho → OSM). */
+/** Cycle de rotation du bouton « fond de carte »
+ *  (OSM → OpenTopoMap → IGN Topo → IGN Scan25 → IGN Ortho → Esri → OSM). */
 class FondCarteTest {
 
     @Test
-    fun suivant_parcourt_les_quatre_fonds_en_boucle() {
-        assertEquals(FondCarte.TOPO, FondCarte.OSM.suivant())
+    fun suivant_parcourt_tous_les_fonds_en_boucle() {
+        assertEquals(FondCarte.OPENTOPO, FondCarte.OSM.suivant())
+        assertEquals(FondCarte.TOPO, FondCarte.OPENTOPO.suivant())
         assertEquals(FondCarte.SCAN25, FondCarte.TOPO.suivant())
         assertEquals(FondCarte.ORTHO, FondCarte.SCAN25.suivant())
-        assertEquals(FondCarte.OSM, FondCarte.ORTHO.suivant())
+        assertEquals(FondCarte.ESRI, FondCarte.ORTHO.suivant())
+        assertEquals(FondCarte.OSM, FondCarte.ESRI.suivant())
     }
 
     @Test
-    fun quatre_suivant_consecutifs_reviennent_au_point_de_depart() {
+    fun le_cycle_visite_chaque_fond_une_fois_et_reboucle() {
+        // Robuste à l'ajout de fonds : N suivant() reviennent au départ en visitant chaque fond.
+        val visites = mutableListOf(FondCarte.OSM)
         var f = FondCarte.OSM
-        repeat(4) { f = f.suivant() }
+        repeat(FondCarte.entries.size) { f = f.suivant(); visites.add(f) }
         assertEquals(FondCarte.OSM, f)
+        assertEquals(FondCarte.entries.toSet(), visites.dropLast(1).toSet())
     }
 
     @Test

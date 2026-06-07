@@ -121,6 +121,8 @@ class SaisieRapideFragment : Fragment() {
     private var idDatasetReleveSession: Int? = null
     private var idObservateurReleveSession: Int? = null
     private var nomObservateurReleveSession: String? = null
+    /** Type de regroupement (TYP_GRP) du relevé mono. "" = non renseigné. */
+    private var typGrpReleveSession: String = ""
 
     // Détails par défaut — dénombrement (counting #0 + éventuels countings additionnels)
     private var sexe = ""
@@ -517,7 +519,7 @@ class SaisieRapideFragment : Fragment() {
         binding.btnDetailsReleve.visibility = View.VISIBLE
         binding.btnDetailsReleve.setOnClickListener {
             val defsReleve = fr.ariegenature.geomys.ui.saisie.AdditionalFieldsRenderer
-                .fromJson(gnConfig.additionalFieldsOcctaxJson)
+                .fromJson(gnConfig.additionalFieldsOcctaxJsonActif)
                 .filter { it.appliqueA(fr.ariegenature.geomys.network.AdditionalFieldsObject.RELEVE) }
                 .filter { it.visiblePour(gnConfig.idDataset.toIntOrNull(), emptyList()) }
             val datasets = datasetsPourDetailsReleve(gnConfig)
@@ -532,11 +534,13 @@ class SaisieRapideFragment : Fragment() {
             ouvrirDialogDetailsReleve(
                 requireContext(), emptyList(), datasets, idDsInitial, nomDsInitial,
                 observateurs, idObsInitial, nomObsInitial, defsReleve, additionalFieldsReleve,
+                gnConfig.settingsOcctaxJson, typGrpReleveSession,
             ) { res ->
                 idDatasetReleveSession = res.idDataset
                 idObservateurReleveSession = res.idObservateur
                 nomObservateurReleveSession = res.nomObservateur
                 additionalFieldsReleve = res.additionnels
+                typGrpReleveSession = res.typGrp
             }
         }
 
@@ -836,6 +840,7 @@ class SaisieRapideFragment : Fragment() {
             additionalFieldsCounting0   = additionalFieldsCounting0,
             additionalFieldsReleve      = additionalFieldsReleve,
             idDatasetReleve             = idDatasetReleveSession,
+            typGrpReleve                = typGrpReleveSession.ifEmpty { null },
             observateurReleveId         = idObservateurReleveSession,
             observateurReleveNom        = nomObservateurReleveSession,
             additionalFieldsOccurrence  = additionalFieldsOccurrence,

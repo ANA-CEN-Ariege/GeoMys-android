@@ -110,6 +110,8 @@ data class Observation(
     var observateurReleveId: Int? = null,
     /** Libellé de l'observateur du relevé (affichage). */
     var observateurReleveNom: String? = null,
+    /** Type de regroupement du relevé (nomenclature TYP_GRP). null/"" = non renseigné. */
+    var typGrpReleve: String? = null,
 )
 
 data class Sortie(

@@ -57,7 +57,7 @@ class DetailsReleveFragment : Fragment() {
 
         val args = arguments
         val gnConfig = GeoNatureConfig(requireContext())
-        defs = AdditionalFieldsRenderer.fromJson(gnConfig.additionalFieldsOcctaxJson)
+        defs = AdditionalFieldsRenderer.fromJson(gnConfig.additionalFieldsOcctaxJsonActif)
             .filter { it.appliqueA(AdditionalFieldsObject.RELEVE) }
             .filter { it.visiblePour(gnConfig.idDataset.toIntOrNull(), emptyList()) }
 

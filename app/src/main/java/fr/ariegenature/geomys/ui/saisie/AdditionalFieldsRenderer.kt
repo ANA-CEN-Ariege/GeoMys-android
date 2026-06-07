@@ -41,12 +41,16 @@ import fr.ariegenature.geomys.network.WidgetType
  *  saisies. Réutilisé par CaracterisationFragment (releve/occurrence) et DenombrementFragment. */
 object AdditionalFieldsRenderer {
 
+    // Gson partagé : sa construction (réflexion + registres d'adapters) est coûteuse et était
+    // refaite à chaque ouverture d'écran de saisie.
+    private val gson = Gson()
+
     /** Désérialise le cache JSON additional_fields. */
     fun fromJson(json: String): List<AdditionalFieldDef> {
         if (json.isEmpty()) return emptyList()
         return try {
             val t = object : TypeToken<List<AdditionalFieldDef>>() {}.type
-            Gson().fromJson<List<AdditionalFieldDef>>(json, t) ?: emptyList()
+            gson.fromJson<List<AdditionalFieldDef>>(json, t) ?: emptyList()
         } catch (_: Exception) { emptyList() }
     }
 
@@ -99,23 +103,38 @@ object AdditionalFieldsRenderer {
         for (i in 0 until container.childCount) {
             val view = container.getChildAt(i)
             val tag = view.tag as? FieldTag ?: continue
-            val value: String = when (tag.widget) {
-                WidgetType.TEXT, WidgetType.TEXTAREA, WidgetType.NUMBER, WidgetType.INCONNU ->
-                    (view.findViewWithTag<EditText>("input"))?.text?.toString() ?: ""
-                WidgetType.SELECT, WidgetType.NOMENCLATURE -> {
-                    val spinner = view.findViewWithTag<Spinner>("input") ?: continue
-                    val codes = spinner.getTag(R.id.tag_field_codes) as? List<*>
-                    codes?.getOrNull(spinner.selectedItemPosition) as? String ?: ""
-                }
-                WidgetType.CHECKBOX ->
-                    if (view.findViewWithTag<CheckBox>("input")?.isChecked == true) "true" else "false"
-            }
-            result[tag.fieldName] = value
+            result[tag.fieldName] = valeurChamp(view, tag.widget)
         }
         return result
     }
 
-    private data class FieldTag(val fieldName: String, val widget: WidgetType)
+    /** Libellés des champs additionnels OBLIGATOIRES (required) visibles laissés vides. Sert à
+     *  bloquer la validation côté Occtax (parité avec la garde du moteur monitoring). Les CHECKBOX
+     *  sont exclues (toujours true/false, jamais « vides »). */
+    fun champsObligatoiresVides(container: LinearLayout): List<String> {
+        val manquants = mutableListOf<String>()
+        for (i in 0 until container.childCount) {
+            val view = container.getChildAt(i)
+            val tag = view.tag as? FieldTag ?: continue
+            if (!tag.required || tag.widget == WidgetType.CHECKBOX) continue
+            if (valeurChamp(view, tag.widget).isBlank()) manquants += tag.label
+        }
+        return manquants
+    }
+
+    private fun valeurChamp(view: android.view.View, widget: WidgetType): String = when (widget) {
+        WidgetType.TEXT, WidgetType.TEXTAREA, WidgetType.NUMBER, WidgetType.INCONNU ->
+            (view.findViewWithTag<EditText>("input"))?.text?.toString() ?: ""
+        WidgetType.SELECT, WidgetType.NOMENCLATURE -> {
+            val spinner = view.findViewWithTag<Spinner>("input")
+            val codes = spinner?.getTag(R.id.tag_field_codes) as? List<*>
+            codes?.getOrNull(spinner.selectedItemPosition) as? String ?: ""
+        }
+        WidgetType.CHECKBOX ->
+            if (view.findViewWithTag<CheckBox>("input")?.isChecked == true) "true" else "false"
+    }
+
+    private data class FieldTag(val fieldName: String, val widget: WidgetType, val required: Boolean, val label: String)
 
     private fun buildWidget(ctx: Context, def: AdditionalFieldDef, current: String): LinearLayout {
         val wrapper = LinearLayout(ctx).apply {
@@ -124,7 +143,7 @@ object AdditionalFieldsRenderer {
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).also { it.topMargin = dp(ctx, 8) }
-            tag = FieldTag(def.fieldName, def.widget)
+            tag = FieldTag(def.fieldName, def.widget, def.required, def.fieldLabel)
         }
         // Label
         wrapper.addView(TextView(ctx).apply {

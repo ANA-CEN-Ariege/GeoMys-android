@@ -19,12 +19,14 @@
 package fr.ariegenature.geomys.ui.saisie
 
 import android.content.Context
+import android.view.View
 import android.widget.ArrayAdapter
 import android.widget.LinearLayout
 import android.widget.Spinner
 import android.widget.TextView
 import fr.ariegenature.geomys.R
 import fr.ariegenature.geomys.store.NomenclatureCache
+import fr.ariegenature.geomys.store.OcctaxFieldsConfig.ChampAffichage
 import fr.ariegenature.geomys.store.OcctaxFieldsConfig.OcctaxField
 
 /**
@@ -52,7 +54,7 @@ object OcctaxFieldsRenderer {
      */
     fun rendre(
         container: LinearLayout,
-        champs: List<OcctaxField>,
+        champs: List<ChampAffichage>,
         valeurs: Map<String, String>,
         groupes: Set<String>,
         regno: String,
@@ -60,10 +62,33 @@ object OcctaxFieldsRenderer {
     ) {
         container.removeAllViews()
         val ctx = container.context
-        champs.forEach { champ ->
-            container.addView(
-                buildField(ctx, champ, labelOverrides[champ.code] ?: champ.label, valeurs[champ.code] ?: "", groupes, regno)
-            )
+        fun build(c: ChampAffichage) = buildField(
+            ctx, c.champ, labelOverrides[c.champ.code] ?: c.champ.label,
+            valeurs[c.champ.code] ?: "", groupes, regno, c.lectureSeule,
+        )
+        // Champs principaux (default=true) affichés directement ; champs « avancés » (default=false)
+        // repliés derrière un toggle « Plus de champs ». Tous restent enfants du container (donc
+        // collectés), seuls les avancés démarrent masqués.
+        champs.filter { !it.replie }.forEach { container.addView(build(it)) }
+        val avances = champs.filter { it.replie }.map { build(it).apply { visibility = View.GONE } }
+        if (avances.isNotEmpty()) {
+            val toggle = TextView(ctx).apply {
+                text = "▾ Plus de champs"
+                textSize = 13f
+                setTextColor(ctx.getColor(android.R.color.holo_blue_dark))
+                setPadding(0, dp(ctx, 12), 0, 0)
+                background = null
+                isClickable = true
+                isFocusable = true
+            }
+            container.addView(toggle)
+            avances.forEach { container.addView(it) }
+            var ouvert = false
+            toggle.setOnClickListener {
+                ouvert = !ouvert
+                avances.forEach { it.visibility = if (ouvert) View.VISIBLE else View.GONE }
+                toggle.text = if (ouvert) "▴ Moins de champs" else "▾ Plus de champs"
+            }
         }
     }
 
@@ -82,7 +107,7 @@ object OcctaxFieldsRenderer {
 
     private fun buildField(
         ctx: Context, champ: OcctaxField, label: String, current: String,
-        groupes: Set<String>, regno: String,
+        groupes: Set<String>, regno: String, lectureSeule: Boolean = false,
     ): LinearLayout {
         val wrapper = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
@@ -128,6 +153,9 @@ object OcctaxFieldsRenderer {
         // Défaut serveur (defaults_nomenclatures_value) si pas de valeur explicite portée par l'obs.
         val codeEffectif = current.ifEmpty { NomenclatureCache.defautPour(champ.code) ?: "" }
         spinner.setSelection(codes.indexOf(codeEffectif).coerceAtLeast(0))
+        // Lecture seule (locked) : non éditable, garde la valeur (défaut serveur) qui sera quand
+        // même collectée et envoyée.
+        spinner.isEnabled = !lectureSeule
         wrapper.addView(spinner)
         return wrapper
     }

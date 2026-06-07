@@ -152,6 +152,15 @@ class ConfigGeoNatureFragment : Fragment() {
             sauvegarderChamps()
             chargerToutesLesDonnees()
         }
+        // Appui long = rechargement COMPLET forcé (re-télécharge TaxRef même si la version est
+        // inchangée). Le clic normal saute TaxRef quand il est déjà à jour.
+        binding.btnChargerDonnees.setOnLongClickListener {
+            sauvegarderChamps()
+            android.widget.Toast.makeText(requireContext(),
+                "Rechargement complet forcé (taxons)", android.widget.Toast.LENGTH_SHORT).show()
+            chargerToutesLesDonnees(forcerTaxRef = true)
+            true
+        }
 
         binding.btnViderCache.setOnClickListener {
             viderTousLesCaches()
@@ -271,7 +280,12 @@ class ConfigGeoNatureFragment : Fragment() {
         // OCCTAX que ceux **actifs** ET **rattachés au module OCCTAX**.
         datasets.clear()
         datasets.addAll(result)
-        val proposes = result.filter { it.actif && (it.moduleCodes.isEmpty() || "OCCTAX" in it.moduleCodes) }
+        // Restriction aux datasets CRÉABLES (CRUVED C, comme le web). Set vide ⇒ pas de restriction.
+        val creables = gnConfig.datasetsCreablesOcctax
+        val proposes = result.filter {
+            it.actif && (it.moduleCodes.isEmpty() || "OCCTAX" in it.moduleCodes) &&
+                (creables.isEmpty() || it.id in creables)
+        }
         // Note : moduleCodes vide = on garde le dataset (fallback safe pour les instances qui
         // n'exposent pas le tableau modules — sinon on n'aurait rien à proposer).
         val noms = proposes.map { "${it.nom} (${it.id})" }
@@ -512,7 +526,7 @@ class ConfigGeoNatureFragment : Fragment() {
      *  service ; la progression et le résultat sont reflétés par l'observateur de
      *  [SyncRunner.etat] (cf. [observerSyncEnArrierePlan]). Les caches sont purgés puis réécrits
      *  par [SyncRunner] ; le re-peuplement des spinners se fait à la fin via [restaurerCaches]. */
-    private fun chargerToutesLesDonnees() {
+    private fun chargerToutesLesDonnees(forcerTaxRef: Boolean = false) {
         demanderPermissionNotifSiBesoin()
         // Purge un éventuel état terminal résiduel pour ne pas le rejouer en bandeau.
         SyncRunner.accuserReception()
@@ -520,9 +534,10 @@ class ConfigGeoNatureFragment : Fragment() {
         binding.btnTesterConnexion.isEnabled = false
         binding.progressSync.visibility = View.VISIBLE
         binding.tvSyncResultat.visibility = View.VISIBLE
-        binding.tvSyncResultat.text = "Démarrage de la synchronisation…"
+        binding.tvSyncResultat.text =
+            if (forcerTaxRef) "Rechargement complet (taxons forcés)…" else "Démarrage de la synchronisation…"
         binding.tvSyncResultat.setTextColor(couleurSurOnSurface(requireContext()))
-        SyncForegroundService.start(requireContext())
+        SyncForegroundService.start(requireContext(), forcerTaxRef)
     }
 
     /** Reflète l'état de la synchro de fond ([SyncRunner.etat]) dans l'UI de l'écran de config :

@@ -109,7 +109,7 @@ class SaisieObservationFragment : Fragment() {
     )
 
     private val pendingObs = mutableListOf<PendingObs>()
-    /** Index de la PendingObs dont on édite les détails via ObservationDetailsFragment. */
+    /** Index de la PendingObs dont on édite les détails (Caractérisation / Dénombrement). */
     private var editingDetailsIndex: Int? = null
 
     /** Champs additionnels niveau OCCTAX_RELEVE — partagés par toutes les espèces du
@@ -123,6 +123,8 @@ class SaisieObservationFragment : Fragment() {
     private var idDatasetReleveSession: Int? = null
     private var idObservateurReleveSession: Int? = null
     private var nomObservateurReleveSession: String? = null
+    /** Type de regroupement (TYP_GRP) du relevé, commun à toutes les obs. "" = non renseigné. */
+    private var typGrpReleveSession: String = ""
 
     /** Géométrie du relevé courant : "Point" (défaut), "LineString", "Polygon". Null = Point.
      *  Partagée par toutes les obs (un relevé = une géométrie + N occurrences). */
@@ -199,6 +201,7 @@ class SaisieObservationFragment : Fragment() {
                 idDatasetReleveSession = premier.idDatasetReleve
                 idObservateurReleveSession = premier.observateurReleveId
                 nomObservateurReleveSession = premier.observateurReleveNom
+                typGrpReleveSession = premier.typGrpReleve ?: ""
                 geometryTypeSession = premier.geometryType
                 geometryCoordsJsonSession = premier.geometryCoordsJson
                 obsRelevExistants.forEach { obsExistante ->
@@ -309,7 +312,7 @@ class SaisieObservationFragment : Fragment() {
         // OCCTAX_RELEVE déclarés par le serveur pour le dataset courant.
         binding.btnDetailsReleve.setOnClickListener {
             val defsReleveSession = AdditionalFieldsRenderer
-                .fromJson(gnConfig.additionalFieldsOcctaxJson)
+                .fromJson(gnConfig.additionalFieldsOcctaxJsonActif)
                 .filter { it.appliqueA(fr.ariegenature.geomys.network.AdditionalFieldsObject.RELEVE) }
                 .filter { it.visiblePour(gnConfig.idDataset.toIntOrNull(), emptyList()) }
             ouvrirDetailsReleve(defsReleveSession)
@@ -406,11 +409,13 @@ class SaisieObservationFragment : Fragment() {
         ouvrirDialogDetailsReleve(
             requireContext(), infos, datasets, idDsInitial, nomDsInitial,
             observateurs, idObsInitial, nomObsInitial, defs, additionalFieldsReleveSession,
+            gnConfig.settingsOcctaxJson, typGrpReleveSession,
         ) { res ->
             idDatasetReleveSession = res.idDataset
             idObservateurReleveSession = res.idObservateur
             nomObservateurReleveSession = res.nomObservateur
             additionalFieldsReleveSession = res.additionnels
+            typGrpReleveSession = res.typGrp
         }
     }
 
@@ -841,6 +846,7 @@ class SaisieObservationFragment : Fragment() {
                 idDatasetReleve           = idDatasetReleveSession,
                 observateurReleveId       = idObservateurReleveSession,
                 observateurReleveNom      = nomObservateurReleveSession,
+                typGrpReleve              = typGrpReleveSession.ifEmpty { null },
                 geometryType              = geometryTypeSession,
                 geometryCoordsJson        = geometryCoordsJsonSession,
                 additionalFieldsOccurrence = obs.additionalFieldsOccurrence,

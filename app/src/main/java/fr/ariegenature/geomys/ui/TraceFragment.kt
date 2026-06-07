@@ -341,7 +341,7 @@ class TraceFragment : Fragment() {
             // deviennent le défaut de session, commun à toutes les obs enregistrées ensuite).
             traceViewModel.typeSaisieLabel = getString(R.string.saisie_mono_taxons)
             val aDesChampsReleve = fr.ariegenature.geomys.ui.saisie.AdditionalFieldsRenderer
-                .aDesChampsReleve(gnConfig.additionalFieldsOcctaxJson, gnConfig.idDataset.toIntOrNull())
+                .aDesChampsReleve(gnConfig.additionalFieldsOcctaxJsonActif, gnConfig.idDataset.toIntOrNull())
             if (aDesChampsReleve) {
                 findNavController().navigate(
                     R.id.action_trace_to_details_releve,
@@ -418,7 +418,7 @@ class TraceFragment : Fragment() {
                 // courant, on intercale l'écran "Détails du relevé" : il valide les champs
                 // required avant de passer à la saisie des espèces.
                 val aDesChampsReleve = fr.ariegenature.geomys.ui.saisie.AdditionalFieldsRenderer
-                    .aDesChampsReleve(gnConfig.additionalFieldsOcctaxJson, gnConfig.idDataset.toIntOrNull())
+                    .aDesChampsReleve(gnConfig.additionalFieldsOcctaxJsonActif, gnConfig.idDataset.toIntOrNull())
                 val cible = if (aDesChampsReleve) R.id.action_trace_to_details_releve
                             else R.id.action_trace_to_saisie
                 findNavController().navigate(cible, bundle)

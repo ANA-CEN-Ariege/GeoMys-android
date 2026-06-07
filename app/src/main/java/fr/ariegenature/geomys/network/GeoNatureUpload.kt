@@ -179,6 +179,11 @@ object GeoNatureUpload {
                     put("t_occurrences_occtax", JSONArray())
                     if (idRole != null) put("id_digitiser", idRole)
                     if (observerGroupe != null) put("observers", JSONArray().put(observerGroupe))
+                    // Type de regroupement (nomenclature TYP_GRP, niveau relevé).
+                    groupe.first().typGrpReleve?.takeIf { it.isNotEmpty() }?.let { code ->
+                        resolverIdNomenclature(code, "TYP_GRP", emptyMap(), nomenclatures)
+                            ?.let { put("id_nomenclature_grp_typ", it) }
+                    }
                 }
 
                 // Construction de la géométrie selon le type stocké côté Observation.

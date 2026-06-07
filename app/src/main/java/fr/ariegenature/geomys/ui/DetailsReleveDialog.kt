@@ -31,7 +31,9 @@ import fr.ariegenature.geomys.network.AdditionalFieldDef
 import fr.ariegenature.geomys.network.GeoNatureDataset
 import fr.ariegenature.geomys.network.GeoNatureObservateur
 import fr.ariegenature.geomys.store.GeoNatureConfig
+import fr.ariegenature.geomys.store.OcctaxFieldsConfig
 import fr.ariegenature.geomys.ui.saisie.AdditionalFieldsRenderer
+import fr.ariegenature.geomys.ui.saisie.OcctaxFieldsRenderer
 
 private val gsonDetailsReleve = Gson()
 
@@ -41,8 +43,11 @@ fun datasetsPourDetailsReleve(config: GeoNatureConfig): List<Pair<Int, String>> 
     try {
         val t = object : TypeToken<List<GeoNatureDataset>>() {}.type
         val l: List<GeoNatureDataset> = gsonDetailsReleve.fromJson(config.datasetsCacheJson, t) ?: emptyList()
-        l.filter { it.actif && (it.moduleCodes.isEmpty() || "OCCTAX" in it.moduleCodes) }
-            .map { it.id to "${it.nom} (${it.id})" }
+        val creables = config.datasetsCreablesOcctax
+        l.filter {
+            it.actif && (it.moduleCodes.isEmpty() || "OCCTAX" in it.moduleCodes) &&
+                (creables.isEmpty() || it.id in creables)
+        }.map { it.id to "${it.nom} (${it.id})" }
     } catch (_: Exception) { emptyList() }
 
 /** Observateurs proposables dans « Détails du relevé », depuis le cache local. */
@@ -60,6 +65,8 @@ data class DetailsReleveResult(
     val idObservateur: Int?,
     val nomObservateur: String?,
     val additionnels: Map<String, String>,
+    /** Code nomenclature TYP_GRP (type de regroupement du relevé), "" si non renseigné/masqué. */
+    val typGrp: String = "",
 )
 
 /** Dialog "Détails du relevé" partagé par la saisie multi-taxons ([SaisieObservationFragment])
@@ -83,6 +90,8 @@ fun ouvrirDialogDetailsReleve(
     nomObservateurInitial: String?,
     defs: List<AdditionalFieldDef>,
     valeursInitiales: Map<String, String>,
+    settingsJson: String,
+    typGrpInitial: String,
     onValider: (DetailsReleveResult) -> Unit,
 ) {
     val density = ctx.resources.displayMetrics.density
@@ -158,6 +167,14 @@ fun ouvrirDialogDetailsReleve(
     // Infos lecture seule restantes (position, géométrie…).
     infos.forEach { (label, valeur) -> if (valeur.isNotBlank()) ligneLecture(label, valeur) }
 
+    // Nomenclature niveau relevé (TYP_GRP) — affichée si le serveur ne la masque pas.
+    val containerReleve = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
+    val champsReleve = OcctaxFieldsConfig.champsAffichage(settingsJson, OcctaxFieldsConfig.Niveau.RELEVE)
+    if (champsReleve.isNotEmpty()) {
+        OcctaxFieldsRenderer.rendre(containerReleve, champsReleve, mapOf("TYP_GRP" to typGrpInitial), emptySet(), "")
+        racine.addView(containerReleve)
+    }
+
     // Champs additionnels éditables — éventuels.
     val containerAdd = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
     if (defs.isNotEmpty()) {
@@ -167,10 +184,23 @@ fun ouvrirDialogDetailsReleve(
     }
 
     val scroll = ScrollView(ctx).apply { addView(racine) }
-    MaterialAlertDialogBuilder(ctx)
+    // Bouton « Valider » posé après show() pour pouvoir BLOQUER la fermeture si un champ
+    // additionnel obligatoire (required) visible est vide (sinon setPositiveButton ferme le dialog).
+    val dialog = MaterialAlertDialogBuilder(ctx)
         .setTitle("Détails du relevé")
         .setView(scroll)
-        .setPositiveButton("Valider") { _, _ ->
+        .setPositiveButton("Valider", null)
+        .setNegativeButton("Annuler", null)
+        .create()
+    dialog.setOnShowListener {
+        dialog.getButton(android.content.DialogInterface.BUTTON_POSITIVE).setOnClickListener {
+            val manquants = if (defs.isNotEmpty()) AdditionalFieldsRenderer.champsObligatoiresVides(containerAdd) else emptyList()
+            if (manquants.isNotEmpty()) {
+                android.widget.Toast.makeText(ctx,
+                    "Champs obligatoires à renseigner : ${manquants.joinToString(", ")}",
+                    android.widget.Toast.LENGTH_LONG).show()
+                return@setOnClickListener
+            }
             val ds = getDataset()
             val obs = getObservateur()
             onValider(
@@ -179,9 +209,11 @@ fun ouvrirDialogDetailsReleve(
                     idObservateur = obs?.first,
                     nomObservateur = obs?.second,
                     additionnels = if (defs.isNotEmpty()) AdditionalFieldsRenderer.collecter(containerAdd) else valeursInitiales,
+                    typGrp = if (champsReleve.isNotEmpty()) (OcctaxFieldsRenderer.collecter(containerReleve)["TYP_GRP"] ?: "") else typGrpInitial,
                 )
             )
+            dialog.dismiss()
         }
-        .setNegativeButton("Annuler", null)
-        .show()
+    }
+    dialog.show()
 }

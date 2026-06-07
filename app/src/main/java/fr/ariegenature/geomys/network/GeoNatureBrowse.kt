@@ -61,17 +61,34 @@ data class ObsExplorer(
 
 object GeoNatureBrowse {
 
+    /** IDs des jeux de données sur lesquels l'utilisateur a le droit de **créer** des observations
+     *  pour [moduleCode] (CRUVED C), via `POST /api/meta/datasets` body `{"create":"OCCTAX"}` —
+     *  exactement le filtre du formulaire web (cf. app officielle gn_mobile_core). Sert à NE proposer
+     *  en saisie que les datasets créables. Set vide en cas d'échec → pas de restriction (filet). */
+    suspend fun chargerIdsDatasetsCreables(config: GeoNatureConfig, moduleCode: String = "OCCTAX"): Set<Int> =
+        withContext(Dispatchers.IO) {
+            try {
+                val base = config.urlServeur.trim().trimEnd('/')
+                val (token, _) = GeoNatureAuth.login(base, config.login, config.motDePasse) ?: return@withContext emptySet()
+                val conn = HttpClient.postJson(URL("$base/api/meta/datasets?active=true"), token, timeoutMs = 10000)
+                conn.outputStream.use { it.write("""{"create":"$moduleCode"}""".toByteArray(Charsets.UTF_8)) }
+                if (conn.responseCode != 200) return@withContext emptySet()
+                val arr = conn.inputStream.bufferedReader().readText().parserTableauJson("data", "items", "results") ?: return@withContext emptySet()
+                (0 until arr.length()).mapNotNull { arr.getJSONObject(it).optInt("id_dataset", -1).takeIf { id -> id > 0 } }.toSet()
+            } catch (_: Exception) { emptySet() }
+        }
+
     suspend fun chargerDatasets(config: GeoNatureConfig): List<GeoNatureDataset> =
         withContext(Dispatchers.IO) {
             val base = config.urlServeur.trim().trimEnd('/')
             val (token, _) = GeoNatureAuth.login(base, config.login, config.motDePasse)
                 ?: throw GNErreur.AuthEchouee(401)
 
-            // Filtre serveur : `active=true` + `module_code=OCCTAX`. Le filtre par module
-            // applique aussi le CRUVED côté backend GeoNature → on ne récupère que les
-            // datasets sur lesquels l'utilisateur connecté a effectivement les droits de
-            // saisie, c'est ce que fait le formulaire web. `fields=modules` ramène le
-            // tableau des modules rattachés (utile au tracking).
+            // Filtre serveur : `active=true` + `module_code=OCCTAX` (périmètre LECTURE — on garde
+            // large pour que le cache serve aussi à la résolution des noms côté monitoring).
+            // La restriction aux datasets CRÉABLES (CRUVED C) est appliquée à l'AFFICHAGE Occtax
+            // via [chargerIdsDatasetsCreables] + GeoNatureConfig.datasetsCreablesOcctax.
+            // `fields=modules` ramène le tableau des modules rattachés (utile au tracking).
             val url = URL("$base/api/meta/datasets?active=true&module_code=OCCTAX&fields=modules")
             val conn = HttpClient.get(url, token, timeoutMs = 10000)
 

@@ -44,7 +44,7 @@ import com.google.gson.JsonParser
  */
 object OcctaxFieldsConfig {
 
-    enum class Niveau { INFORMATION, COUNTING }
+    enum class Niveau { RELEVE, INFORMATION, COUNTING }
 
     /**
      * Catalogue d'UN champ de nomenclature standard Occtax — source unique du mnémonique et de
@@ -74,6 +74,15 @@ object OcctaxFieldsConfig {
     )
 
     val REGISTRE: List<OcctaxField> = listOf(
+        // ── Niveau RELEVE ──
+        OcctaxField(
+            "TYP_GRP", "Type de regroupement", Niveau.RELEVE,
+            svKey = "typGrp", uploadKey = "id_nomenclature_grp_typ",
+            uploadLabels = emptyMap(),
+            fallbackLabels = listOf("Non renseigné"),
+            fallbackCodes = listOf(""),
+        ),
+        // ── Niveau INFORMATION (occurrence) ──
         OcctaxField(
             "STATUT_OBS", "Statut d'observation", Niveau.INFORMATION,
             svKey = "statutObs", uploadKey = "id_nomenclature_observation_status",
@@ -184,21 +193,69 @@ object OcctaxFieldsConfig {
 
     private fun registrePour(niveau: Niveau): List<OcctaxField> = REGISTRE.filter { it.niveau == niveau }
 
-    /** Une entrée de config serveur : mnémonique + visibilité. */
-    private data class PropertySettings(val key: String, val visible: Boolean)
+    /** Une entrée de config serveur (PropertySettings de l'app officielle) : mnémonique + flags. */
+    private data class PropertySettings(
+        val key: String,
+        val visible: Boolean,
+        val default: Boolean,
+        val locked: Boolean,
+    )
+
+    /** Un champ à afficher + ses flags d'affichage issus du serveur.
+     *  @param replie      `default=false` côté serveur → champ « avancé », masqué derrière un toggle.
+     *  @param lectureSeule `locked=true` côté serveur → champ non éditable (prend la valeur par défaut). */
+    data class ChampAffichage(
+        val champ: OcctaxField,
+        val replie: Boolean,
+        val lectureSeule: Boolean,
+    )
+
+    /** Clé de liste settings pour un niveau. RELEVE et INFORMATION partagent `information`
+     *  (l'app officielle déclare TYP_GRP dans cette liste), filtrés ensuite par niveau du registre. */
+    private fun cleListe(niveau: Niveau): String = if (niveau == Niveau.COUNTING) "counting" else "information"
 
     /**
-     * Champs à afficher pour [niveau], dans l'ordre, d'après la config serveur [settingsJson]
-     * (le JSON de l'objet `nomenclature` du settings.json, tel que mis en cache). Liste serveur
-     * vide/absente ⇒ tout le registre du niveau.
+     * Champs à afficher pour [niveau], dans l'ordre, d'après la config serveur [settingsJson].
+     * Liste serveur vide/absente ⇒ tout le registre du niveau (visibles, dépliés, éditables).
+     * Liste non vide ⇒ whitelist ordonnée, en honorant `visible`/`default`/`locked`.
      */
-    fun champsVisibles(settingsJson: String, niveau: Niveau): List<OcctaxField> {
-        val cle = if (niveau == Niveau.INFORMATION) "information" else "counting"
-        val props = parserListe(settingsJson, cle)
+    fun champsAffichage(settingsJson: String, niveau: Niveau): List<ChampAffichage> {
         val registre = registrePour(niveau)
-        if (props.isEmpty()) return registre
-        val parCode = registre.associateBy { it.code }
-        return props.filter { it.visible }.mapNotNull { parCode[it.key] }
+        val props = parserListe(settingsJson, cleListe(niveau))
+        if (props.isEmpty()) return registre.map { ChampAffichage(it, replie = false, lectureSeule = false) }
+        val parCodeNiveau = registre.associateBy { it.code }
+        return props.filter { it.visible }.mapNotNull { p ->
+            parCodeNiveau[p.key]?.let { ChampAffichage(it, replie = !p.default, lectureSeule = p.locked) }
+        }
+    }
+
+    /**
+     * Honneur du flag serveur `nomenclature.additional_fields` du settings.json : faut-il afficher
+     * les champs additionnels gn_commons ? Défaut `true` (absent/illisible), comme l'app officielle.
+     */
+    fun afficherChampsAdditionnels(settingsJson: String): Boolean = lireBool(settingsJson, "additional_fields", true)
+
+    /**
+     * Honneur du flag serveur `nomenclature.save_default_values` : faut-il mémoriser les dernières
+     * valeurs saisies comme défauts de session (cf. [OcctaxDefautsSession]) ? Défaut `false`.
+     */
+    fun sauvegarderValeursDefaut(settingsJson: String): Boolean = lireBool(settingsJson, "save_default_values", false)
+
+    private fun lireBool(settingsJson: String, cle: String, defaut: Boolean): Boolean {
+        if (settingsJson.isBlank()) return defaut
+        return try {
+            val racine = JsonParser.parseString(settingsJson)
+            if (!racine.isJsonObject) return defaut
+            val obj = racine.asJsonObject
+            val porteur = when {
+                obj.has(cle) -> obj
+                obj.has("nomenclature") && obj.get("nomenclature").isJsonObject -> obj.getAsJsonObject("nomenclature")
+                else -> return defaut
+            }
+            porteur.get(cle)?.takeIf { it.isJsonPrimitive }?.asBoolean ?: defaut
+        } catch (_: Exception) {
+            defaut
+        }
     }
 
     /**
@@ -220,15 +277,16 @@ object OcctaxFieldsConfig {
                 else -> return emptyList()
             }
             val arr = nomenclature.getAsJsonArray(cle) ?: return emptyList()
+            fun bool(o: com.google.gson.JsonObject, c: String, defaut: Boolean) =
+                o.get(c)?.takeIf { it.isJsonPrimitive }?.asBoolean ?: defaut
             arr.mapNotNull { el ->
                 when {
                     el.isJsonPrimitive && el.asJsonPrimitive.isString ->
-                        PropertySettings(el.asString, visible = true)
+                        PropertySettings(el.asString, visible = true, default = true, locked = false)
                     el.isJsonObject -> {
                         val o = el.asJsonObject
                         val key = o.get("key")?.takeIf { it.isJsonPrimitive }?.asString ?: return@mapNotNull null
-                        val visible = o.get("visible")?.takeIf { it.isJsonPrimitive }?.asBoolean ?: true
-                        PropertySettings(key, visible)
+                        PropertySettings(key, bool(o, "visible", true), bool(o, "default", true), bool(o, "locked", false))
                     }
                     else -> null
                 }

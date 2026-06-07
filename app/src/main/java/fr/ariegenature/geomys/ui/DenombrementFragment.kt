@@ -30,7 +30,11 @@ import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
+import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import com.google.android.material.textfield.TextInputEditText
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
@@ -41,6 +45,7 @@ import fr.ariegenature.geomys.model.Taxon
 import fr.ariegenature.geomys.network.AdditionalFieldDef
 import fr.ariegenature.geomys.network.AdditionalFieldsObject
 import fr.ariegenature.geomys.store.GeoNatureConfig
+import fr.ariegenature.geomys.store.OcctaxDefautsSession
 import fr.ariegenature.geomys.store.OcctaxFieldsConfig
 import fr.ariegenature.geomys.store.TaxRefCache
 import fr.ariegenature.geomys.ui.saisie.AdditionalFieldsRenderer
@@ -63,7 +68,9 @@ class DenombrementFragment : Fragment() {
     private lateinit var groupes: Set<String>
     private var regno: String = ""
     /** Champs de nomenclature du dénombrement à afficher (registre filtré par la config serveur). */
-    private var champsCounting: List<OcctaxFieldsConfig.OcctaxField> = emptyList()
+    private var champsCounting: List<OcctaxFieldsConfig.ChampAffichage> = emptyList()
+    /** Flag serveur save_default_values (mémorisation des dernières valeurs de session). */
+    private var sauverDefauts = false
     /** Définitions des champs additionnels OCCTAX_DENOMBREMENT (chargées depuis le cache config). */
     private var defsCounting: List<AdditionalFieldDef> = emptyList()
 
@@ -86,10 +93,22 @@ class DenombrementFragment : Fragment() {
         pickMediaTargetIndex = -1
         if (uris.isNullOrEmpty() || targetIdx < 0 || targetIdx >= items.size) return
         collecter()
-        val locales = uris.mapIndexedNotNull { i, u -> importerMedia(u, defaultMime, i) }
-        if (locales.isEmpty()) return
-        items[targetIdx] = items[targetIdx].copy(mediaUris = items[targetIdx].mediaUris + locales)
-        rafraichir()
+        // Import + RECOMPRESSION (decode/scale/EXIF/JPEG) hors thread UI : en multi-sélection
+        // c'est N images à traiter, ce qui gèlerait l'UI (risque ANR) si fait sur le main.
+        val appCtx = requireContext().applicationContext
+        viewLifecycleOwner.lifecycleScope.launch {
+            val locales = withContext(Dispatchers.IO) {
+                uris.mapIndexedNotNull { i, u -> MediaImport.importer(appCtx, u, defaultMime, i) }
+            }
+            if (_binding == null) return@launch
+            if (locales.size < uris.size) {
+                android.widget.Toast.makeText(requireContext(), "Import média échoué", android.widget.Toast.LENGTH_LONG).show()
+            }
+            if (locales.isNotEmpty() && targetIdx < items.size) {
+                items[targetIdx] = items[targetIdx].copy(mediaUris = items[targetIdx].mediaUris + locales)
+                rafraichir()
+            }
+        }
     }
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
@@ -120,13 +139,14 @@ class DenombrementFragment : Fragment() {
         val idDataset = gnConfig.idDataset.toIntOrNull()
         val cdNom = (a?.getInt("cdNom", -1) ?: -1).takeIf { it > 0 }
         val listesDuTaxon = cdNom?.let { TaxRefCache.listesPourCdNom(it) } ?: emptyList()
-        defsCounting = AdditionalFieldsRenderer.fromJson(gnConfig.additionalFieldsOcctaxJson)
+        defsCounting = AdditionalFieldsRenderer.fromJson(gnConfig.additionalFieldsOcctaxJsonActif)
             .filter { it.appliqueA(AdditionalFieldsObject.COUNTING) }
             .filter { it.visiblePour(idDataset, listesDuTaxon) }
         // Champs de nomenclature du dénombrement : visibilité/ordre pilotés par la config serveur.
-        champsCounting = OcctaxFieldsConfig.champsVisibles(
+        champsCounting = OcctaxFieldsConfig.champsAffichage(
             gnConfig.settingsOcctaxJson, OcctaxFieldsConfig.Niveau.COUNTING
         )
+        sauverDefauts = OcctaxFieldsConfig.sauvegarderValeursDefaut(gnConfig.settingsOcctaxJson)
 
         val type = object : TypeToken<List<Denombrement>>() {}.type
         val initial: List<Denombrement> = try { gson.fromJson(denombrementsJson, type) ?: emptyList() } catch (_: Exception) { emptyList() }
@@ -145,7 +165,27 @@ class DenombrementFragment : Fragment() {
         }
 
         binding.btnOk.setOnClickListener {
+            // Blocage si un champ additionnel obligatoire (required) visible est vide, sur n'importe
+            // quel dénombrement de la liste.
+            val manquants = (0 until binding.llDenombrements.childCount).flatMap { i ->
+                val container = binding.llDenombrements.getChildAt(i)
+                    .findViewById<LinearLayout>(R.id.ll_add_counting)
+                AdditionalFieldsRenderer.champsObligatoiresVides(container)
+            }
+            if (manquants.isNotEmpty()) {
+                android.widget.Toast.makeText(requireContext(),
+                    "Champs obligatoires à renseigner : ${manquants.distinct().joinToString(", ")}",
+                    android.widget.Toast.LENGTH_LONG).show()
+                return@setOnClickListener
+            }
             collecter()
+            // save_default_values : mémorise les nomenclatures choisies (toutes lignes) pour pré-remplir.
+            if (sauverDefauts) {
+                for (i in 0 until binding.llDenombrements.childCount) {
+                    val c = binding.llDenombrements.getChildAt(i).findViewById<LinearLayout>(R.id.ll_counting_nomenclatures)
+                    OcctaxDefautsSession.memoriser(OcctaxFieldsRenderer.collecter(c))
+                }
+            }
             val sv = findNavController().previousBackStackEntry?.savedStateHandle ?: return@setOnClickListener
             sv.set("denombrementsJson", gson.toJson(items))
             findNavController().navigateUp()
@@ -203,7 +243,10 @@ class DenombrementFragment : Fragment() {
             )
             OcctaxFieldsRenderer.rendre(
                 row.findViewById(R.id.ll_counting_nomenclatures), champsCounting,
-                champsCounting.associate { it.code to (valBySvKey[it.svKey] ?: "") },
+                champsCounting.associate { ca ->
+                    ca.champ.code to valBySvKey[ca.champ.svKey].orEmpty()
+                        .ifEmpty { if (sauverDefauts) OcctaxDefautsSession.valeur(ca.champ.code) else "" }
+                },
                 groupes, regno, labelOverrides,
             )
 
@@ -239,20 +282,6 @@ class DenombrementFragment : Fragment() {
 
             binding.llDenombrements.addView(row)
         }
-    }
-
-    /** Copie le fichier sélectionné (photo ou audio) dans le storage privé pour avoir un chemin stable.
-     *  Le préfixe de nom (photo_/audio_) sert juste de hint humain ; le mime réel est déduit
-     *  côté upload via guessContentTypeFromName. */
-    private fun importerMedia(source: Uri, defaultMime: String, index: Int = 0): String? {
-        // Copie locale + RECOMPRESSION des images (2048 px max, JPEG q85, orientation EXIF),
-        // audio copié tel quel — partagé avec le flux monitoring, cf. MediaImport.
-        val uri = MediaImport.importer(requireContext(), source, defaultMime, index)
-        if (uri == null) {
-            android.widget.Toast.makeText(requireContext(),
-                "Import média échoué", android.widget.Toast.LENGTH_LONG).show()
-        }
-        return uri
     }
 
     private fun supprimerFichierLocal(uri: String) {

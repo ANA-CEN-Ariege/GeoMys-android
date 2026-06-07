@@ -29,6 +29,7 @@ import fr.ariegenature.geomys.databinding.FragmentCaracterisationBinding
 import fr.ariegenature.geomys.model.Taxon
 import fr.ariegenature.geomys.network.AdditionalFieldsObject
 import fr.ariegenature.geomys.store.GeoNatureConfig
+import fr.ariegenature.geomys.store.OcctaxDefautsSession
 import fr.ariegenature.geomys.store.OcctaxFieldsConfig
 import fr.ariegenature.geomys.store.TaxRefCache
 import fr.ariegenature.geomys.ui.saisie.AdditionalFieldsRenderer
@@ -73,7 +74,7 @@ class CaracterisationFragment : Fragment() {
         val idDataset = gnConfig.idDataset.toIntOrNull()
         val cdNom = (a?.getInt("cdNom", -1) ?: -1).takeIf { it > 0 }
         val listesDuTaxon = cdNom?.let { TaxRefCache.listesPourCdNom(it) } ?: emptyList()
-        val defsOcc = AdditionalFieldsRenderer.fromJson(gnConfig.additionalFieldsOcctaxJson)
+        val defsOcc = AdditionalFieldsRenderer.fromJson(gnConfig.additionalFieldsOcctaxJsonActif)
             .filter { it.visiblePour(idDataset, listesDuTaxon) }
             .filter { it.appliqueA(AdditionalFieldsObject.OCCURRENCE) }
         val gson = Gson()
@@ -91,19 +92,33 @@ class CaracterisationFragment : Fragment() {
         // Champs et valeurs courantes dérivés du registre unique : chaque champ porte son svKey
         // (= clé d'argument et champ d'obs), donc plus aucun mnémonique listé ici.
         val (groupes, regno) = ChampsTaxon.groupesEtRegno(taxon, groupe2Inpn)
-        val champs = OcctaxFieldsConfig.champsVisibles(
-            gnConfig.settingsOcctaxJson, OcctaxFieldsConfig.Niveau.INFORMATION
-        )
-        val valeursNom = champs.associate { it.code to (a?.getString(it.svKey) ?: "") }
+        val settingsJson = gnConfig.settingsOcctaxJson
+        val champs = OcctaxFieldsConfig.champsAffichage(settingsJson, OcctaxFieldsConfig.Niveau.INFORMATION)
+        // save_default_values : un champ vide d'une nouvelle obs reprend la dernière valeur de session.
+        val sauverDefauts = OcctaxFieldsConfig.sauvegarderValeursDefaut(settingsJson)
+        val valeursNom = champs.associate { ca ->
+            val depuisArg = a?.getString(ca.champ.svKey) ?: ""
+            ca.champ.code to depuisArg.ifEmpty { if (sauverDefauts) OcctaxDefautsSession.valeur(ca.champ.code) else "" }
+        }
         OcctaxFieldsRenderer.rendre(binding.llCaracterisation, champs, valeursNom, groupes, regno)
 
         binding.btnOk.setOnClickListener {
+            // Blocage si un champ additionnel obligatoire (required) visible est vide.
+            val manquants = AdditionalFieldsRenderer.champsObligatoiresVides(binding.llAddOccurrence)
+            if (manquants.isNotEmpty()) {
+                android.widget.Toast.makeText(requireContext(),
+                    "Champs obligatoires à renseigner : ${manquants.joinToString(", ")}",
+                    android.widget.Toast.LENGTH_LONG).show()
+                return@setOnClickListener
+            }
             val sv = findNavController().previousBackStackEntry?.savedStateHandle ?: return@setOnClickListener
             // Seuls les champs effectivement rendus sont reportés : un champ masqué par la config
             // serveur n'écrase pas la valeur éventuellement déjà portée par l'obs.
-            OcctaxFieldsRenderer.collecter(binding.llCaracterisation).forEach { (code, valeur) ->
+            val choix = OcctaxFieldsRenderer.collecter(binding.llCaracterisation)
+            choix.forEach { (code, valeur) ->
                 OcctaxFieldsConfig.parCode[code]?.svKey?.let { sv.set(it, valeur) }
             }
+            if (sauverDefauts) OcctaxDefautsSession.memoriser(choix)
             sv.set("determinateur",  binding.etDeterminateur.text.toString())
             sv.set("notes",          binding.etNotes.text.toString())
             // Seul le niveau OCCURRENCE est édité ici ; le niveau RELEVE est géré

@@ -28,7 +28,7 @@ import org.junit.Test
 class OcctaxFieldsConfigTest {
 
     private fun codes(niveau: Niveau, json: String) =
-        OcctaxFieldsConfig.champsVisibles(json, niveau).map { it.code }
+        OcctaxFieldsConfig.champsAffichage(json, niveau).map { it.champ.code }
 
     @Test
     fun json_vide_renvoie_tout_le_registre_du_niveau() {

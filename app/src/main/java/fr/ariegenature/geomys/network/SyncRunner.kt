@@ -69,16 +69,16 @@ object SyncRunner {
     /** Exécute la synchro complète. Idempotent vis-à-vis d'un appel concurrent : si une synchro
      *  est déjà en cours, retourne immédiatement. Ne lève pas — les échecs d'étape sont agrégés
      *  dans l'[Etat] terminal. */
-    suspend fun executer(context: Context) {
+    suspend fun executer(context: Context, forcerTaxRef: Boolean = false) {
         // Garde atomique : un seul executer() à la fois, même appelé concurremment.
         if (!enCours.compareAndSet(false, true)) return
         try {
             val config = GeoNatureConfig(context.applicationContext)
             publier("Préparation…")
 
-            // Ardoise propre côté local avant de recharger (parité avec l'ancien
-            // viderTousLesCaches() en tête de chargerToutesLesDonnees).
-            TaxRefCache.vider()
+            // Ardoise propre pour les caches toujours rafraîchis. TaxRef N'EST PAS vidé ici :
+            // synchroniserTaxRef décide de le conserver (version+listes inchangées) ou de le vider
+            // lui-même avant rechargement. Ça permet de sauter le re-téléchargement lourd de TaxRef.
             NomenclatureCache.vider()
             MonitoringCache.vider()
             MonitoringApi.invaliderCaches()
@@ -103,6 +103,12 @@ object SyncRunner {
                         if (r.isNotEmpty()) { config.datasetsCacheJson = gson.toJson(r); null }
                         else "Aucun jeu de données"
                     } catch (e: Exception) { e.message ?: "Erreur datasets" }
+                }
+                // Datasets CRÉABLES en Occtax (CRUVED C) — pour aligner la liste proposée sur le web.
+                // Best-effort : si indisponible, set vide = pas de restriction.
+                val dsCre = async {
+                    config.datasetsCreablesOcctax = GeoNatureBrowse.chargerIdsDatasetsCreables(config)
+                    null
                 }
                 val li = async {
                     try {
@@ -138,6 +144,7 @@ object SyncRunner {
                     "Observateurs" to obs.await(),
                     "Champs additionnels" to add.await(),
                     "Config champs OCCTAX" to set.await(),
+                    "Datasets créables" to dsCre.await(),
                 ).forEach { (nom, err) -> if (err != null) echecs += "$nom ($err)" }
                 protocolListIds = mod.await()
             }
@@ -154,7 +161,7 @@ object SyncRunner {
             var msgSuivis = ""
             coroutineScope {
                 val taxJob = async {
-                    GeoNatureSync.synchroniserTaxRef(config, protocolListIds) { fait, listeIdx, listesTotales ->
+                    GeoNatureSync.synchroniserTaxRef(config, protocolListIds, forcerTaxRef) { fait, listeIdx, listesTotales ->
                         publier(
                             if (listesTotales == 0) "Récupération des taxons…"
                             else "Liste $listeIdx/$listesTotales — $fait taxons cumulés…"

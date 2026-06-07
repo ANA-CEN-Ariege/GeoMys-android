@@ -49,9 +49,13 @@ class SyncForegroundService : Service() {
         const val CHANNEL_ID = "GeoMys_sync"
         private const val NOTIF_ID = 2
 
-        fun start(context: Context) {
+        private const val EXTRA_FORCE = "forcer_taxref"
+
+        /** @param forcerTaxRef recharge TaxRef même si version+listes inchangées (forçage manuel). */
+        fun start(context: Context, forcerTaxRef: Boolean = false) {
             ContextCompat.startForegroundService(
                 context, Intent(context, SyncForegroundService::class.java)
+                    .putExtra(EXTRA_FORCE, forcerTaxRef)
             )
         }
     }
@@ -82,11 +86,12 @@ class SyncForegroundService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (!demarre) {
             demarre = true
+            val forcer = intent?.getBooleanExtra(EXTRA_FORCE, false) ?: false
             // La coroutine du service exécute la synchro (SyncRunner ignore un appel concurrent)
             // PUIS arrête le service. Le scope du service survit aux changements d'écran ; il
             // n'est annulé qu'à l'arrêt du service.
             scope.launch {
-                SyncRunner.executer(applicationContext)
+                SyncRunner.executer(applicationContext, forcer)
                 arreter()
             }
         }

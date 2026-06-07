@@ -98,22 +98,19 @@ class NouvelleVisiteFragment : Fragment() {
         val cb = attendCallbackMedia
         attendCallbackMedia = null
         if (uris.isNullOrEmpty() || cb == null) { cb?.invoke(emptyList()); return@registerForActivityResult }
-        val locales = uris.mapIndexedNotNull { i, u -> importerMedia(u, defaultMime = "image/jpeg", index = i) }
-        cb(locales)
-    }
-
-    /** Copie le contenu de l'URI fourni par le picker dans `filesDir/medias/photo_<ts>.<ext>`
-     *  pour le rendre indépendant du cycle de vie de l'Uri système. Retourne l'URI String du
-     *  fichier copié ou null en cas d'échec. Pattern repris de DenombrementFragment.importerMedia. */
-    private fun importerMedia(source: android.net.Uri, defaultMime: String, index: Int = 0): String? {
-        // Copie locale + RECOMPRESSION des images (2048 px max, JPEG q85, orientation EXIF) —
-        // partagé avec le flux OCCTAX, cf. MediaImport.
-        val uri = MediaImport.importer(requireContext(), source, defaultMime, index)
-        if (uri == null) {
-            android.widget.Toast.makeText(requireContext(),
-                "Import média échoué", android.widget.Toast.LENGTH_LONG).show()
+        // Import + RECOMPRESSION (decode/scale/EXIF/JPEG) hors thread UI : en multi-sélection
+        // c'est N images à traiter, ce qui gèlerait l'UI (risque ANR) si fait sur le main.
+        val appCtx = requireContext().applicationContext
+        viewLifecycleOwner.lifecycleScope.launch {
+            val locales = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                uris.mapIndexedNotNull { i, u -> MediaImport.importer(appCtx, u, "image/jpeg", i) }
+            }
+            if (!isAdded) return@launch
+            if (locales.size < uris.size) {
+                android.widget.Toast.makeText(requireContext(), "Import média échoué", android.widget.Toast.LENGTH_LONG).show()
+            }
+            cb(locales)
         }
-        return uri
     }
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {

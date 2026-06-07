@@ -29,19 +29,10 @@ class GeoNatureConfig(context: Context) {
 
     // Prefs chiffrées pour le mot de passe (clé maître dans l'Android Keystore). null si le
     // Keystore est indisponible → on NE persiste PAS le mot de passe en clair (cf. [motDePasse]).
-    private val securePrefs: SharedPreferences? = try {
-        val masterKey = MasterKey.Builder(context)
-            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-            .build()
-        EncryptedSharedPreferences.create(
-            context, "gn_secure", masterKey,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-        )
-    } catch (e: Exception) {
-        Log.w("GeoNatureConfig", "EncryptedSharedPreferences indisponible — mot de passe gardé en mémoire seulement", e)
-        null
-    }
+    // Mises en cache au niveau process : la création (MasterKey + EncryptedSharedPreferences,
+    // opération Keystore de plusieurs dizaines de ms) ne se fait qu'UNE fois, alors que
+    // GeoNatureConfig est instancié très fréquemment (souvent sur le thread UI).
+    private val securePrefs: SharedPreferences? = securePrefs(context.applicationContext)
 
     init {
         // Hygiène : si le chiffrement est (re)disponible, on purge un éventuel mot de passe en
@@ -124,6 +115,13 @@ class GeoNatureConfig(context: Context) {
         get() = prefs.getString("gn_cache_listes", "") ?: ""
         set(v) = prefs.edit().putString("gn_cache_listes", v).apply()
 
+    /** IDs des jeux de données CRÉABLES en Occtax (CRUVED C) — pour ne proposer en saisie que
+     *  ceux-là, comme le web. Vide ⇒ pas de restriction (filet : offline / endpoint indisponible). */
+    var datasetsCreablesOcctax: Set<Int>
+        get() = (prefs.getString("gn_cache_ds_creables", "") ?: "")
+            .split(",").mapNotNull { it.trim().toIntOrNull() }.toSet()
+        set(v) = prefs.edit().putString("gn_cache_ds_creables", v.joinToString(",")).apply()
+
     /** Cache JSON des observateurs chargés (List<GeoNatureObservateur>). */
     var observateursCacheJson: String
         get() = prefs.getString("gn_cache_obs", "") ?: ""
@@ -140,6 +138,12 @@ class GeoNatureConfig(context: Context) {
     var settingsOcctaxJson: String
         get() = prefs.getString("gn_cache_settings_occtax", "") ?: ""
         set(v) = prefs.edit().putString("gn_cache_settings_occtax", v).apply()
+
+    /** Cache des champs additionnels Occtax filtré par le flag serveur `additional_fields` du
+     *  settings : renvoie "" (donc aucun champ additionnel rendu) si le serveur les désactive. À
+     *  utiliser dans tous les contextes d'AFFICHAGE des champs additionnels. */
+    val additionalFieldsOcctaxJsonActif: String
+        get() = if (OcctaxFieldsConfig.afficherChampsAdditionnels(settingsOcctaxJson)) additionalFieldsOcctaxJson else ""
 
     /** false quand le dernier test de connexion a détecté une version GeoNature inférieure
      *  à la minimale supportée ([fr.ariegenature.geomys.network.VERSION_GEONATURE_MINIMALE]).
@@ -247,5 +251,33 @@ class GeoNatureConfig(context: Context) {
         // indisponible — jamais persisté en clair sur disque. Process-wide car GeoNatureConfig
         // est ré-instancié à chaque usage ; perdu au redémarrage du process (re-saisie).
         @Volatile private var motDePasseMemoire: String? = null
+
+        @Volatile private var securePrefsCache: SharedPreferences? = null
+        @Volatile private var secureInitTente = false
+
+        /** EncryptedSharedPreferences partagé (créé une seule fois au niveau process). Renvoie null
+         *  si le Keystore est indisponible — sans retenter à chaque appel. Évite de refaire la
+         *  création coûteuse (MasterKey + Keystore AES) à chaque `GeoNatureConfig(context)`. */
+        private fun securePrefs(appContext: Context): SharedPreferences? {
+            securePrefsCache?.let { return it }
+            synchronized(this) {
+                securePrefsCache?.let { return it }
+                if (secureInitTente) return null
+                secureInitTente = true
+                return try {
+                    val masterKey = MasterKey.Builder(appContext)
+                        .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                        .build()
+                    EncryptedSharedPreferences.create(
+                        appContext, "gn_secure", masterKey,
+                        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                        EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
+                    ).also { securePrefsCache = it }
+                } catch (e: Exception) {
+                    Log.w("GeoNatureConfig", "EncryptedSharedPreferences indisponible — mot de passe gardé en mémoire seulement", e)
+                    null
+                }
+            }
+        }
     }
 }

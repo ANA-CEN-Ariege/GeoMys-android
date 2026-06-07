@@ -130,6 +130,8 @@ object GeoNatureSync {
         /** id_list_taxonomy des protocoles accessibles (déjà filtrés CRUVED), fournis par
          *  l'appelant pour éviter un appel `chargerModules` redondant ici. Vide = aucun. */
         protocolListIds: Set<Int> = emptySet(),
+        /** Si true, recharge TaxRef même si la version + les listes sont inchangées (forçage manuel). */
+        forcerReload: Boolean = false,
         progression: (Int, Int, Int) -> Unit
     ): Pair<Int, String> = withContext(Dispatchers.IO) {
         val base = config.urlServeur.trim().trimEnd('/')
@@ -182,6 +184,18 @@ object GeoNatureSync {
         }
         if (listesAFetcher.isEmpty()) {
             return@withContext Pair(0, "Aucune liste de taxons trouvée sur le serveur (/api/taxhub/api/biblistes).")
+        }
+
+        // ── Saut si déjà à jour ──
+        // On évite le (lourd) re-téléchargement de TaxRef si : la version serveur == version locale,
+        // le cache n'est pas vide, ET toutes les listes à charger sont déjà couvertes par le cache
+        // (un nouveau dataset/protocole ajoutant une liste force le rechargement). Forçable manuellement.
+        val versionServeur = if (forcerReload) null else verifierVersionTaxRef(config)
+        if (!forcerReload && versionServeur != null && versionServeur == TaxRefCache.versionSauvegardee &&
+            TaxRefCache.count > 0 && dejaPrevues.all { it in TaxRefCache.listesSynchronisees.toSet() }
+        ) {
+            progression(TaxRefCache.count, listesAFetcher.size, listesAFetcher.size)
+            return@withContext Pair(TaxRefCache.nbTaxonsUniques, "Taxons déjà à jour (v$versionServeur) — non rechargés")
         }
 
         // Accumulateurs globaux — on fusionne au fil des listes. Map<key, entry> garantit
@@ -250,6 +264,11 @@ object GeoNatureSync {
             return@withContext Pair(0, "Aucun taxon récupéré sur ${listesAFetcher.size} liste(s).")
         }
 
+        // Rechargement validé (téléchargement non vide) : on repart d'un cache PROPRE juste avant
+        // de réécrire, pour ne pas conserver des taxons/listes retirés côté serveur (le merge
+        // additif ne les supprimerait pas). Sur échec total, on est déjà ressorti plus haut sans
+        // toucher au cache existant.
+        TaxRefCache.vider()
         TaxRefCache.ajouter(entrees)
         if (groupeMap.isNotEmpty()) TaxRefCache.ajouterGroupes(groupeMap)
         if (groupe1Map.isNotEmpty() || regneMap.isNotEmpty()) TaxRefCache.ajouterGroupes1etRegnes(groupe1Map, regneMap)
@@ -271,7 +290,7 @@ object GeoNatureSync {
         // (pas de fusion sur l'existant) : sinon un groupe disparu du serveur garderait son ancien
         // compte fantôme quand la sync est relancée sans purge préalable.
         TaxRefCache.comptesGroupes = comptesTousGroupes.filterValues { it > 0 }
-        verifierVersionTaxRef(config)?.let { TaxRefCache.versionSauvegardee = it }
+        (versionServeur ?: verifierVersionTaxRef(config))?.let { TaxRefCache.versionSauvegardee = it }
 
         val nbO  = comptesTousGroupes["Oiseaux"] ?: 0
         val nbM  = comptesTousGroupes["Mammifères"] ?: 0

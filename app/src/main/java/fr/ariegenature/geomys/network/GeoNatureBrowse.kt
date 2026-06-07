@@ -238,14 +238,22 @@ object GeoNatureBrowse {
         val (token, _) = GeoNatureAuth.login(base, config.login, config.motDePasse)
             ?: throw GNErreur.AuthEchouee(401)
 
-        val dateLow = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+        val dateMin = SimpleDateFormat("yyyy-MM-dd", Locale.US)
             .format(Date(System.currentTimeMillis() - 365L * 24 * 3600 * 1000))
 
-        val bboxJson = """{"type":"Polygon","coordinates":[[[$minLon,$minLat],[$maxLon,$minLat],[$maxLon,$maxLat],[$minLon,$maxLat],[$minLon,$minLat]]]}"""
-        val bboxEncoded = java.net.URLEncoder.encode(bboxJson, "UTF-8")
+        // `/synthese/for_web` lit ses filtres dans le CORPS JSON (`request.json`) — comme le web.
+        // En GET ils sont IGNORÉS (le serveur renvoyait les 1000 premières obs de TOUTE la synthèse,
+        // ensuite filtrées seulement côté client). On POST donc :
+        //  - `geoIntersection` : l'emprise visible, en **Feature** GeoJSON (le backend refuse une
+        //    géométrie nue : seuls `Feature`/`FeatureCollection` sont acceptés) ;
+        //  - `date_min` : borne basse (1 an).
+        // `limit` reste en paramètre d'URL (lu dans request.args).
+        val emprise = """{"type":"Feature","properties":{},"geometry":{"type":"Polygon","coordinates":[[[$minLon,$minLat],[$maxLon,$minLat],[$maxLon,$maxLat],[$minLon,$maxLat],[$minLon,$minLat]]]}}"""
+        val body = """{"geoIntersection":$emprise,"date_min":"$dateMin"}"""
 
-        val url = URL("$base/api/synthese/for_web?bounding_box=$bboxEncoded&date_low=$dateLow&limit=1000")
-        val conn = HttpClient.get(url, token, timeoutMs = 20000)
+        val url = URL("$base/api/synthese/for_web?limit=1000")
+        val conn = HttpClient.postJson(url, token, timeoutMs = 20000)
+        conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
 
         if (conn.responseCode != 200) throw GNErreur.EnvoiEchoue(conn.responseCode, "Erreur synthèse")
 

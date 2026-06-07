@@ -20,9 +20,11 @@ package fr.ariegenature.geomys.network
 
 /** Version minimale de GeoNature supportée par l'application.
  *
- *  Justification : l'app appelle TaxHub via `<URL_GEONATURE>/api/taxhub/…`, ce qui suppose
- *  TaxHub INTÉGRÉ à GeoNature (2.15+) — sur une instance plus ancienne (TaxHub séparé), la
- *  synchro des taxons échoue. L'endpoint `/api/gn_commons/config` qui permet de détecter la
+ *  Justification : l'app appelle TaxHub via [GeoNatureConfig.urlTaxhub] — l'URL publiée par le
+ *  serveur (`t_mobile_apps` → `settings.sync.taxhub_url`) si présente, sinon `<URL_GEONATURE>/api/taxhub`
+ *  (TaxHub INTÉGRÉ, 2.15+). Une instance qui héberge TaxHub ailleurs et le publie reste donc gérée ;
+ *  une instance ancienne (TaxHub séparé non publié) verra la synchro des taxons échouer.
+ *  L'endpoint `/api/gn_commons/config` qui permet de détecter la
  *  version existe lui depuis la 2.12 : en dessous, la version n'est pas détectable et le
  *  test de connexion l'indique sans bloquer (bénéfice du doute — proxy filtrant possible).
  *

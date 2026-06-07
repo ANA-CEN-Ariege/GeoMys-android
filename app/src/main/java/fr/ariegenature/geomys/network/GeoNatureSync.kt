@@ -41,8 +41,7 @@ object GeoNatureSync {
     suspend fun verifierVersionTaxRef(config: GeoNatureConfig): String? =
         withContext(Dispatchers.IO) {
             try {
-                val base = config.urlServeur.trim().trimEnd('/')
-                val url = URL("$base/api/taxhub/api/taxref/version")
+                val url = URL("${config.urlTaxhub}/api/taxref/version")
                 val conn = HttpClient.get(url, timeoutMs = 5000)
                 if (conn.responseCode != 200) return@withContext null
                 val obj = JSONObject(conn.inputStream.bufferedReader().readText())
@@ -71,14 +70,14 @@ object GeoNatureSync {
 
     /** Télécharge tous les taxons d'une liste (paginé). Ne touche AUCUN état partagé → peut
      *  tourner en parallèle ; l'agrégation est faite ensuite séquentiellement par l'appelant. */
-    private suspend fun fetchListeTaxons(base: String, idListe: Int, pageSize: Int): ResultatListe =
+    private suspend fun fetchListeTaxons(taxhubBase: String, idListe: Int, pageSize: Int): ResultatListe =
         withContext(Dispatchers.IO) {
             val items = mutableListOf<ItemTaxon>()
             var complete = false
             var page = 1
             while (true) {
                 val conn = HttpClient.get(
-                    URL("$base/api/taxhub/api/taxref?orderby=cd_nom&fields=listes&id_liste=$idListe&limit=$pageSize&page=$page"),
+                    URL("$taxhubBase/api/taxref?orderby=cd_nom&fields=listes&id_liste=$idListe&limit=$pageSize&page=$page"),
                     timeoutMs = 60000,
                 )
                 try {
@@ -183,7 +182,7 @@ object GeoNatureSync {
             if (dejaPrevues.add(id)) listesAFetcher.add(GeoNatureListe(id, "Liste $id (via dataset/protocole)"))
         }
         if (listesAFetcher.isEmpty()) {
-            return@withContext Pair(0, "Aucune liste de taxons trouvée sur le serveur (/api/taxhub/api/biblistes).")
+            return@withContext Pair(0, "Aucune liste de taxons trouvée sur le serveur (${config.urlTaxhub}/api/biblistes).")
         }
 
         // ── Saut si déjà à jour ──
@@ -221,7 +220,7 @@ object GeoNatureSync {
             listesAFetcher.map { liste ->
                 async {
                     semaphore.withPermit {
-                        val res = fetchListeTaxons(base, liste.id, pageSize)
+                        val res = fetchListeTaxons(config.urlTaxhub, liste.id, pageSize)
                         val cumul = taxonsCumules.addAndGet(res.items.size)
                         progression(cumul, faites.incrementAndGet(), listesAFetcher.size)
                         res
@@ -440,13 +439,19 @@ object GeoNatureSync {
                     return@withContext Pair(0, "t_mobile_apps HTTP ${conn.responseCode}")
                 val text = conn.inputStream.bufferedReader().readText()
                 val arr = JSONArray(text)
-                var nomenclature: JSONObject? = null
+                var settings: JSONObject? = null
                 for (i in 0 until arr.length()) {
                     val app = arr.getJSONObject(i)
                     if (!app.optString("app_code", "").equals("OCCTAX", ignoreCase = true)) continue
-                    nomenclature = app.optJSONObject("settings")?.optJSONObject("nomenclature")
+                    settings = app.optJSONObject("settings")
                     break
                 }
+                // URL TaxHub publiée par le serveur (sync.taxhub_url) — TOUJOURS rafraîchie (y compris
+                // remise à "" si absente), pour ne pas garder la valeur d'un ancien serveur. La
+                // résolution/fallback est faite par config.urlTaxhub.
+                config.taxhubUrlCache =
+                    settings?.optJSONObject("sync")?.optString("taxhub_url", "")?.trim().orEmpty()
+                val nomenclature = settings?.optJSONObject("nomenclature")
                 if (nomenclature == null) {
                     config.settingsOcctaxJson = ""
                     return@withContext Pair(0, "Aucune config OCCTAX dans t_mobile_apps (registre par défaut)")

@@ -139,6 +139,19 @@ class GeoNatureConfig(context: Context) {
         get() = prefs.getString("gn_cache_settings_occtax", "") ?: ""
         set(v) = prefs.edit().putString("gn_cache_settings_occtax", v).apply()
 
+    /** URL de base de TaxHub publiée par le serveur (`t_mobile_apps` OCCTAX → `settings.sync.taxhub_url`),
+     *  rafraîchie à chaque synchro des settings. Vide ⇒ on déduit `<URL_GeoNature>/api/taxhub`. */
+    var taxhubUrlCache: String
+        get() = prefs.getString("gn_taxhub_url", "") ?: ""
+        set(v) = prefs.edit().putString("gn_taxhub_url", v).apply()
+
+    /** Base TaxHub RÉSOLUE pour tous les appels TaxRef/biblistes : l'URL publiée par le serveur si
+     *  présente (gère les instances où TaxHub est hébergé ailleurs), sinon déduite de l'URL GeoNature.
+     *  Sans slash final ; les appelants ajoutent `/api/taxref…` ou `/api/biblistes`. */
+    val urlTaxhub: String
+        get() = taxhubUrlCache.trim().trimEnd('/')
+            .ifEmpty { urlServeur.trim().trimEnd('/') + "/api/taxhub" }
+
     /** Cache des champs additionnels Occtax filtré par le flag serveur `additional_fields` du
      *  settings : renvoie "" (donc aucun champ additionnel rendu) si le serveur les désactive. À
      *  utiliser dans tous les contextes d'AFFICHAGE des champs additionnels. */

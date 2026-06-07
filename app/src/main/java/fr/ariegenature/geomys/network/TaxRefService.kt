@@ -74,7 +74,6 @@ object TaxRefService {
     private suspend fun rechercherViaGeoNature(nom: String, taxon: Taxon?, config: GeoNatureConfig): TaxRefStatut? =
         withContext(Dispatchers.IO) {
             try {
-                val base = config.urlServeur.trim().trimEnd('/')
                 val encoded = nom.trim().replace(" ", "%20")
                 
                 val regneParam = when(taxon) {
@@ -85,7 +84,7 @@ object TaxRefService {
                     null -> ""
                 }
 
-                val url = URL("$base/api/taxhub/api/taxref/?nom_cite=$encoded&limit=10$regneParam")
+                val url = URL("${config.urlTaxhub}/api/taxref/?nom_cite=$encoded&limit=10$regneParam")
                 val conn = HttpClient.get(url, timeoutMs = 5000)
                 if (conn.responseCode != 200) return@withContext null
                 val array = JSONArray(conn.inputStream.bufferedReader().readText())

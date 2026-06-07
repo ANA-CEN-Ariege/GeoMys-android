@@ -132,8 +132,7 @@ object GeoNatureBrowse {
 
     suspend fun chargerListesTaxons(config: GeoNatureConfig): List<GeoNatureListe> =
         withContext(Dispatchers.IO) {
-            val base = config.urlServeur.trim().trimEnd('/')
-            val url = URL("$base/api/taxhub/api/biblistes")
+            val url = URL("${config.urlTaxhub}/api/biblistes")
             val conn = HttpClient.get(url, timeoutMs = 10000)
             val code = conn.responseCode
             if (code != 200) throw GNErreur.EnvoiEchoue(code, "Listes taxons : HTTP $code")

@@ -134,7 +134,8 @@ object GeoNatureSync {
         progression: (Int, Int, Int) -> Unit
     ): Pair<Int, String> = withContext(Dispatchers.IO) {
         val base = config.urlServeur.trim().trimEnd('/')
-        val pageSize = 1000
+        // Taille de page pilotée serveur (settings.sync.page_size), défaut 1000.
+        val pageSize = config.taxrefPageSize
 
         progression(0, 0, 0)
 
@@ -451,6 +452,13 @@ object GeoNatureSync {
                 // résolution/fallback est faite par config.urlTaxhub.
                 config.taxhubUrlCache =
                     settings?.optJSONObject("sync")?.optString("taxhub_url", "")?.trim().orEmpty()
+                // Réglages mobiles, toujours rafraîchis (repli sur les défauts si absents) :
+                //  - profondeur d'historique de l'Explorer (jours),
+                //  - taille de page pour la pagination TaxRef.
+                config.dureeObservationJours =
+                    settings?.optDouble("area_observation_duration", 0.0)?.toInt()?.takeIf { it > 0 } ?: 365
+                config.taxrefPageSize =
+                    settings?.optJSONObject("sync")?.optInt("page_size", 0)?.takeIf { it > 0 } ?: 1000
                 val nomenclature = settings?.optJSONObject("nomenclature")
                 if (nomenclature == null) {
                     config.settingsOcctaxJson = ""

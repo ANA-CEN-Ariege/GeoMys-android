@@ -237,8 +237,9 @@ object GeoNatureBrowse {
         val (token, _) = GeoNatureAuth.login(base, config.login, config.motDePasse)
             ?: throw GNErreur.AuthEchouee(401)
 
+        // Profondeur d'historique pilotée serveur (settings.area_observation_duration), défaut 365 j.
         val dateMin = SimpleDateFormat("yyyy-MM-dd", Locale.US)
-            .format(Date(System.currentTimeMillis() - 365L * 24 * 3600 * 1000))
+            .format(Date(System.currentTimeMillis() - config.dureeObservationJours * 86_400_000L))
 
         // `/synthese/for_web` lit ses filtres dans le CORPS JSON (`request.json`) — comme le web.
         // En GET ils sont IGNORÉS (le serveur renvoyait les 1000 premières obs de TOUTE la synthèse,

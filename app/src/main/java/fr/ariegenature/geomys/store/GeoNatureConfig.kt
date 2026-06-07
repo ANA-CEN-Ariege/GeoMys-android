@@ -152,6 +152,17 @@ class GeoNatureConfig(context: Context) {
         get() = taxhubUrlCache.trim().trimEnd('/')
             .ifEmpty { urlServeur.trim().trimEnd('/') + "/api/taxhub" }
 
+    /** Profondeur d'historique de l'Explorer, en jours (`settings.area_observation_duration` du
+     *  serveur). Défaut 365 si non publié. */
+    var dureeObservationJours: Int
+        get() = prefs.getInt("gn_obs_duration_days", 365)
+        set(v) = prefs.edit().putInt("gn_obs_duration_days", v).apply()
+
+    /** Taille de page pour la pagination TaxRef (`settings.sync.page_size` du serveur). Défaut 1000. */
+    var taxrefPageSize: Int
+        get() = prefs.getInt("gn_taxref_page_size", 1000)
+        set(v) = prefs.edit().putInt("gn_taxref_page_size", v).apply()
+
     /** Cache des champs additionnels Occtax filtré par le flag serveur `additional_fields` du
      *  settings : renvoie "" (donc aucun champ additionnel rendu) si le serveur les désactive. À
      *  utiliser dans tous les contextes d'AFFICHAGE des champs additionnels. */

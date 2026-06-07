@@ -109,7 +109,10 @@ object OcctaxFieldsRenderer {
         // Déduplication par libellé : certains types GeoNature renvoient déjà une valeur
         // « Non renseigné », qui ferait doublon avec le placeholder à code vide qu'on préfixe.
         // On garde la PREMIÈRE occurrence (donc le placeholder « ne pas envoyer »).
-        val (labels, codes) = dedupParLabel(labelsBruts, codesBruts)
+        val (labelsDedup, codesDedup) = dedupParLabel(labelsBruts, codesBruts)
+        // Tri alphabétique (français, insensible casse/accents), le placeholder à code vide
+        // restant en tête.
+        val (labels, codes) = trierAlphabetique(labelsDedup, codesDedup)
 
         val spinner = Spinner(ctx).apply {
             layoutParams = LinearLayout.LayoutParams(
@@ -142,6 +145,19 @@ object OcctaxFieldsRenderer {
             }
         }
         return Pair(l, c)
+    }
+
+    // Tri français insensible à la casse et aux accents (PRIMARY).
+    private val collator = java.text.Collator.getInstance(java.util.Locale.FRENCH)
+        .apply { strength = java.text.Collator.PRIMARY }
+
+    /** Trie les entrées par libellé (alphabétique français), en gardant en tête celles à code
+     *  vide (placeholder « Non renseigné »). Préserve l'alignement labels/codes. */
+    private fun trierAlphabetique(labels: List<String>, codes: List<String>): Pair<List<String>, List<String>> {
+        val paires = labels.indices.map { labels[it] to codes.getOrElse(it) { "" } }
+        val (placeholders, autres) = paires.partition { it.second.isEmpty() }
+        val triees = placeholders + autres.sortedWith(compareBy(collator) { it.first })
+        return Pair(triees.map { it.first }, triees.map { it.second })
     }
 
     private fun dp(ctx: Context, v: Int): Int = (v * ctx.resources.displayMetrics.density).toInt()

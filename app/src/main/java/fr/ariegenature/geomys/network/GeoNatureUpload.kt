@@ -155,8 +155,9 @@ object GeoNatureUpload {
                 val additionalReleve = jsonDepuisMap(groupe.first().additionalFieldsReleve)
                 // Override par relevé (saisis via « Détails du relevé »), sinon valeurs par défaut :
                 //  - jeu de données : obs.idDatasetReleve sinon le dataset de la config ;
-                //  - observateur : obs.observateurReleveId sinon l'utilisateur connecté (id_digitiser
-                //    reste l'auteur de la saisie côté app).
+                //  - observateurs : obs.observateursReleveIds (tableau, multi-observateurs) sinon
+                //    l'unique legacy obs.observateurReleveId, sinon l'utilisateur connecté
+                //    (id_digitiser reste l'auteur de la saisie côté app).
                 val datasetGroupe = groupe.first().idDatasetReleve?.takeIf { it > 0 } ?: datasetId
                 // Garde sur l'override de relevé : un jeu de données choisi dans « Détails du
                 // relevé » mais absent du serveur courant part en FK invalide → 500 opaque. On le
@@ -167,7 +168,11 @@ object GeoNatureUpload {
                     derniereErreur = "Jeu de données $datasetGroupe (choisi dans « Détails du relevé ») introuvable sur ce serveur."
                     continue
                 }
-                val observerGroupe = groupe.first().observateurReleveId?.takeIf { it > 0 } ?: idRole
+                val observateursGroupe = groupe.first().let { o ->
+                    o.observateursReleveIds.filter { it > 0 }
+                        .ifEmpty { listOfNotNull(o.observateurReleveId?.takeIf { it > 0 }) }
+                        .ifEmpty { listOfNotNull(idRole) }
+                }
                 val properties = JSONObject().apply {
                     put("id_dataset", datasetGroupe)
                     put("date_min", dateFmt.format(dateMin))
@@ -178,7 +183,13 @@ object GeoNatureUpload {
                     put("meta_device_entry", "mobile")
                     put("t_occurrences_occtax", JSONArray())
                     if (idRole != null) put("id_digitiser", idRole)
-                    if (observerGroupe != null) put("observers", JSONArray().put(observerGroupe))
+                    if (observateursGroupe.isNotEmpty()) {
+                        put("observers", JSONArray().apply { observateursGroupe.forEach { put(it) } })
+                    }
+                    // Commentaire libre du relevé.
+                    groupe.first().commentReleve?.takeIf { it.isNotBlank() }?.let { put("comment", it) }
+                    // Habitat du relevé (code HABREF).
+                    groupe.first().cdHabReleve?.takeIf { it > 0 }?.let { put("cd_hab", it) }
                     // Type de regroupement (nomenclature TYP_GRP, niveau relevé).
                     groupe.first().typGrpReleve?.takeIf { it.isNotEmpty() }?.let { code ->
                         resolverIdNomenclature(code, "TYP_GRP", emptyMap(), nomenclatures)

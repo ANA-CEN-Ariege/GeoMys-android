@@ -119,8 +119,11 @@ class SaisieRapideFragment : Fragment() {
     /** Override du relevé édités via « Détails du relevé » (jeu de données + observateur).
      *  null = valeur par défaut (config / login). Communs à toutes les obs de la session mono. */
     private var idDatasetReleveSession: Int? = null
-    private var idObservateurReleveSession: Int? = null
-    private var nomObservateurReleveSession: String? = null
+    private var observateursReleveIdsSession: List<Int> = emptyList()
+    private var observateursReleveNomsSession: List<String> = emptyList()
+    private var commentReleveSession: String = ""
+    private var cdHabReleveSession: Int? = null
+    private var habitatReleveLabelSession: String? = null
     /** Type de regroupement (TYP_GRP) du relevé mono. "" = non renseigné. */
     private var typGrpReleveSession: String = ""
 
@@ -233,8 +236,11 @@ class SaisieRapideFragment : Fragment() {
         // jeu de données / observateur choisis seraient silencieusement réinitialisés).
         savedInstanceState?.let { st ->
             if (st.containsKey("rs_ds")) idDatasetReleveSession = st.getInt("rs_ds")
-            if (st.containsKey("rs_obs")) idObservateurReleveSession = st.getInt("rs_obs")
-            st.getString("rs_obsnom")?.let { nomObservateurReleveSession = it }
+            st.getIntArray("rs_obs")?.let { observateursReleveIdsSession = it.toList() }
+            st.getStringArrayList("rs_obsnom")?.let { observateursReleveNomsSession = it.toList() }
+            st.getString("rs_comment")?.let { commentReleveSession = it }
+            if (st.containsKey("rs_cdhab")) cdHabReleveSession = st.getInt("rs_cdhab")
+            st.getString("rs_habnom")?.let { habitatReleveLabelSession = it }
             st.getString("rs_add")?.let { json ->
                 additionalFieldsReleve = try {
                     Gson().fromJson(json, object : TypeToken<Map<String, String>>() {}.type) ?: additionalFieldsReleve
@@ -525,21 +531,34 @@ class SaisieRapideFragment : Fragment() {
             val datasets = datasetsPourDetailsReleve(gnConfig)
             val observateurs = observateursPourDetailsReleve(gnConfig)
             val idDsInitial = idDatasetReleveSession ?: gnConfig.idDataset.toIntOrNull()
-            val idObsInitial = idObservateurReleveSession
-                ?: gnConfig.observateurDefautId.toIntOrNull()
-                ?: gnConfig.idRoleUtilisateur.takeIf { it > 0 }
+            val idsObsInitial = observateursReleveIdsSession.ifEmpty {
+                listOfNotNull(
+                    gnConfig.observateurDefautId.toIntOrNull()
+                        ?: gnConfig.idRoleUtilisateur.takeIf { it > 0 }
+                )
+            }
+            val nomsObsInitial = observateursReleveNomsSession.ifEmpty {
+                listOfNotNull(
+                    gnConfig.observateurDefautNom.ifEmpty { gnConfig.nomUtilisateur.ifEmpty { gnConfig.login } }
+                        .takeIf { it.isNotBlank() }
+                )
+            }
             val nomDsInitial = gnConfig.nomDataset.takeIf { it.isNotEmpty() }
-            val nomObsInitial = nomObservateurReleveSession
-                ?: gnConfig.observateurDefautNom.ifEmpty { gnConfig.nomUtilisateur.ifEmpty { gnConfig.login } }
             ouvrirDialogDetailsReleve(
                 requireContext(), emptyList(), datasets, idDsInitial, nomDsInitial,
-                observateurs, idObsInitial, nomObsInitial, defsReleve, additionalFieldsReleve,
-                gnConfig.settingsOcctaxJson, typGrpReleveSession,
+                observateurs, idsObsInitial, nomsObsInitial, defsReleve, additionalFieldsReleve,
+                gnConfig.settingsOcctaxJson, typGrpReleveSession, commentReleveSession,
+                cdHabReleveSession, habitatReleveLabelSession,
+                viewLifecycleOwner.lifecycleScope,
+                { terme -> fr.ariegenature.geomys.network.HabitatService.rechercher(gnConfig.urlServeur, terme) },
             ) { res ->
                 idDatasetReleveSession = res.idDataset
-                idObservateurReleveSession = res.idObservateur
-                nomObservateurReleveSession = res.nomObservateur
+                observateursReleveIdsSession = res.idsObservateurs
+                observateursReleveNomsSession = res.nomsObservateurs
                 additionalFieldsReleve = res.additionnels
+                commentReleveSession = res.comment
+                cdHabReleveSession = res.cdHab
+                habitatReleveLabelSession = res.habitatLabel
                 typGrpReleveSession = res.typGrp
             }
         }
@@ -841,8 +860,11 @@ class SaisieRapideFragment : Fragment() {
             additionalFieldsReleve      = additionalFieldsReleve,
             idDatasetReleve             = idDatasetReleveSession,
             typGrpReleve                = typGrpReleveSession.ifEmpty { null },
-            observateurReleveId         = idObservateurReleveSession,
-            observateurReleveNom        = nomObservateurReleveSession,
+            observateursReleveIds       = observateursReleveIdsSession,
+            observateursReleveNoms      = observateursReleveNomsSession,
+            commentReleve               = commentReleveSession.ifEmpty { null },
+            cdHabReleve                 = cdHabReleveSession,
+            habitatReleveLabel          = habitatReleveLabelSession,
             additionalFieldsOccurrence  = additionalFieldsOccurrence,
             denombrementsAdditionnels   = denombrementsAdditionnels,
         )
@@ -1078,8 +1100,13 @@ class SaisieRapideFragment : Fragment() {
         super.onSaveInstanceState(outState)
         // Overrides « Détails du relevé » — survivent à la rotation / process-death.
         idDatasetReleveSession?.let { outState.putInt("rs_ds", it) }
-        idObservateurReleveSession?.let { outState.putInt("rs_obs", it) }
-        nomObservateurReleveSession?.let { outState.putString("rs_obsnom", it) }
+        if (observateursReleveIdsSession.isNotEmpty())
+            outState.putIntArray("rs_obs", observateursReleveIdsSession.toIntArray())
+        if (observateursReleveNomsSession.isNotEmpty())
+            outState.putStringArrayList("rs_obsnom", ArrayList(observateursReleveNomsSession))
+        if (commentReleveSession.isNotEmpty()) outState.putString("rs_comment", commentReleveSession)
+        cdHabReleveSession?.let { outState.putInt("rs_cdhab", it) }
+        habitatReleveLabelSession?.let { outState.putString("rs_habnom", it) }
         if (additionalFieldsReleve.isNotEmpty()) outState.putString("rs_add", Gson().toJson(additionalFieldsReleve))
     }
 

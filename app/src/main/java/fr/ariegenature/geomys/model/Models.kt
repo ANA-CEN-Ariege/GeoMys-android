@@ -106,10 +106,21 @@ data class Observation(
     //    d'un même releveId. null = on retombe sur les valeurs par défaut de la config / du login. ──
     /** Jeu de données du relevé. null → `config.idDataset`. */
     var idDatasetReleve: Int? = null,
-    /** Observateur du relevé (→ `observers`). null → utilisateur connecté. */
+    /** Observateurs du relevé (→ `observers`, tableau d'id_role). Vide → utilisateur connecté. */
+    var observateursReleveIds: List<Int> = emptyList(),
+    /** Libellés des observateurs du relevé (affichage), alignés sur [observateursReleveIds]. */
+    var observateursReleveNoms: List<String> = emptyList(),
+    /** Observateur unique du relevé — legacy (saisies d'avant le multi-observateurs). Lu en repli
+     *  si [observateursReleveIds] est vide ; plus jamais écrit. */
     var observateurReleveId: Int? = null,
-    /** Libellé de l'observateur du relevé (affichage). */
+    /** Libellé de l'observateur du relevé — legacy (cf. [observateurReleveId]). */
     var observateurReleveNom: String? = null,
+    /** Commentaire libre du relevé (→ `comment` des properties). null/"" = non renseigné. */
+    var commentReleve: String? = null,
+    /** Habitat du relevé — code HABREF (→ `cd_hab`). null = non renseigné. */
+    var cdHabReleve: Int? = null,
+    /** Libellé de l'habitat (affichage), aligné sur [cdHabReleve]. */
+    var habitatReleveLabel: String? = null,
     /** Type de regroupement du relevé (nomenclature TYP_GRP). null/"" = non renseigné. */
     var typGrpReleve: String? = null,
 )

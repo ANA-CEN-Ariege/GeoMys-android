@@ -121,8 +121,11 @@ class SaisieObservationFragment : Fragment() {
     /** Override du relevé édités via « Détails du relevé » (jeu de données + observateur),
      *  communs à toutes les obs de la session. null = valeur par défaut (config / login). */
     private var idDatasetReleveSession: Int? = null
-    private var idObservateurReleveSession: Int? = null
-    private var nomObservateurReleveSession: String? = null
+    private var observateursReleveIdsSession: List<Int> = emptyList()
+    private var observateursReleveNomsSession: List<String> = emptyList()
+    private var commentReleveSession: String = ""
+    private var cdHabReleveSession: Int? = null
+    private var habitatReleveLabelSession: String? = null
     /** Type de regroupement (TYP_GRP) du relevé, commun à toutes les obs. "" = non renseigné. */
     private var typGrpReleveSession: String = ""
 
@@ -199,8 +202,13 @@ class SaisieObservationFragment : Fragment() {
                 // niveau RELEVE et la même géométrie — on prend la première comme source.
                 additionalFieldsReleveSession = premier.additionalFieldsReleve
                 idDatasetReleveSession = premier.idDatasetReleve
-                idObservateurReleveSession = premier.observateurReleveId
-                nomObservateurReleveSession = premier.observateurReleveNom
+                observateursReleveIdsSession = premier.observateursReleveIds
+                    .ifEmpty { listOfNotNull(premier.observateurReleveId) }
+                observateursReleveNomsSession = premier.observateursReleveNoms
+                    .ifEmpty { listOfNotNull(premier.observateurReleveNom) }
+                commentReleveSession = premier.commentReleve ?: ""
+                cdHabReleveSession = premier.cdHabReleve
+                habitatReleveLabelSession = premier.habitatReleveLabel
                 typGrpReleveSession = premier.typGrpReleve ?: ""
                 geometryTypeSession = premier.geometryType
                 geometryCoordsJsonSession = premier.geometryCoordsJson
@@ -392,7 +400,7 @@ class SaisieObservationFragment : Fragment() {
         defs: List<fr.ariegenature.geomys.network.AdditionalFieldDef>,
     ) {
         val infos = buildList {
-            add("Position" to "%.5f, %.5f".format(latitude, longitude))
+            // (Ligne « Position » retirée à la demande — la position reste visible sur la carte.)
             geometryTypeSession?.takeIf { it.isNotEmpty() && it != "Point" }?.let {
                 add("Géométrie" to it)
             }
@@ -400,21 +408,36 @@ class SaisieObservationFragment : Fragment() {
         val datasets = datasetsPourDetailsReleve(gnConfig)
         val observateurs = observateursPourDetailsReleve(gnConfig)
         val idDsInitial = idDatasetReleveSession ?: gnConfig.idDataset.toIntOrNull()
-        val idObsInitial = idObservateurReleveSession
-            ?: gnConfig.observateurDefautId.toIntOrNull()
-            ?: gnConfig.idRoleUtilisateur.takeIf { it > 0 }
+        // Multi-observateurs : la session prime ; à défaut, l'observateur par défaut / l'utilisateur
+        // connecté pré-rempli (un seul élément).
+        val idsObsInitial = observateursReleveIdsSession.ifEmpty {
+            listOfNotNull(
+                gnConfig.observateurDefautId.toIntOrNull()
+                    ?: gnConfig.idRoleUtilisateur.takeIf { it > 0 }
+            )
+        }
+        val nomsObsInitial = observateursReleveNomsSession.ifEmpty {
+            listOfNotNull(
+                gnConfig.observateurDefautNom.ifEmpty { gnConfig.nomUtilisateur.ifEmpty { gnConfig.login } }
+                    .takeIf { it.isNotBlank() }
+            )
+        }
         val nomDsInitial = gnConfig.nomDataset.takeIf { it.isNotEmpty() }
-        val nomObsInitial = nomObservateurReleveSession
-            ?: gnConfig.observateurDefautNom.ifEmpty { gnConfig.nomUtilisateur.ifEmpty { gnConfig.login } }
         ouvrirDialogDetailsReleve(
             requireContext(), infos, datasets, idDsInitial, nomDsInitial,
-            observateurs, idObsInitial, nomObsInitial, defs, additionalFieldsReleveSession,
-            gnConfig.settingsOcctaxJson, typGrpReleveSession,
+            observateurs, idsObsInitial, nomsObsInitial, defs, additionalFieldsReleveSession,
+            gnConfig.settingsOcctaxJson, typGrpReleveSession, commentReleveSession,
+            cdHabReleveSession, habitatReleveLabelSession,
+            viewLifecycleOwner.lifecycleScope,
+            { terme -> fr.ariegenature.geomys.network.HabitatService.rechercher(gnConfig.urlServeur, terme) },
         ) { res ->
             idDatasetReleveSession = res.idDataset
-            idObservateurReleveSession = res.idObservateur
-            nomObservateurReleveSession = res.nomObservateur
+            observateursReleveIdsSession = res.idsObservateurs
+            observateursReleveNomsSession = res.nomsObservateurs
             additionalFieldsReleveSession = res.additionnels
+            commentReleveSession = res.comment
+            cdHabReleveSession = res.cdHab
+            habitatReleveLabelSession = res.habitatLabel
             typGrpReleveSession = res.typGrp
         }
     }
@@ -486,8 +509,11 @@ class SaisieObservationFragment : Fragment() {
         // Restaure les overrides « Détails du relevé » après rotation / process-death.
         savedInstanceState?.let { st ->
             if (st.containsKey("rs_ds")) idDatasetReleveSession = st.getInt("rs_ds")
-            if (st.containsKey("rs_obs")) idObservateurReleveSession = st.getInt("rs_obs")
-            st.getString("rs_obsnom")?.let { nomObservateurReleveSession = it }
+            st.getIntArray("rs_obs")?.let { observateursReleveIdsSession = it.toList() }
+            st.getStringArrayList("rs_obsnom")?.let { observateursReleveNomsSession = it.toList() }
+            st.getString("rs_comment")?.let { commentReleveSession = it }
+            if (st.containsKey("rs_cdhab")) cdHabReleveSession = st.getInt("rs_cdhab")
+            st.getString("rs_habnom")?.let { habitatReleveLabelSession = it }
             st.getString("rs_add")?.let { json ->
                 additionalFieldsReleveSession = try {
                     com.google.gson.Gson().fromJson(
@@ -505,8 +531,13 @@ class SaisieObservationFragment : Fragment() {
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         idDatasetReleveSession?.let { outState.putInt("rs_ds", it) }
-        idObservateurReleveSession?.let { outState.putInt("rs_obs", it) }
-        nomObservateurReleveSession?.let { outState.putString("rs_obsnom", it) }
+        if (observateursReleveIdsSession.isNotEmpty())
+            outState.putIntArray("rs_obs", observateursReleveIdsSession.toIntArray())
+        if (observateursReleveNomsSession.isNotEmpty())
+            outState.putStringArrayList("rs_obsnom", ArrayList(observateursReleveNomsSession))
+        if (commentReleveSession.isNotEmpty()) outState.putString("rs_comment", commentReleveSession)
+        cdHabReleveSession?.let { outState.putInt("rs_cdhab", it) }
+        habitatReleveLabelSession?.let { outState.putString("rs_habnom", it) }
         if (additionalFieldsReleveSession.isNotEmpty())
             outState.putString("rs_add", com.google.gson.Gson().toJson(additionalFieldsReleveSession))
     }
@@ -844,8 +875,11 @@ class SaisieObservationFragment : Fragment() {
                 mediaUrisCounting0        = obs.mediaUrisCounting0,
                 additionalFieldsReleve    = additionalFieldsReleveSession,
                 idDatasetReleve           = idDatasetReleveSession,
-                observateurReleveId       = idObservateurReleveSession,
-                observateurReleveNom      = nomObservateurReleveSession,
+                observateursReleveIds     = observateursReleveIdsSession,
+                observateursReleveNoms    = observateursReleveNomsSession,
+                commentReleve             = commentReleveSession.ifEmpty { null },
+                cdHabReleve               = cdHabReleveSession,
+                habitatReleveLabel        = habitatReleveLabelSession,
                 typGrpReleve              = typGrpReleveSession.ifEmpty { null },
                 geometryType              = geometryTypeSession,
                 geometryCoordsJson        = geometryCoordsJsonSession,

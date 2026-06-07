@@ -19,8 +19,13 @@
 package fr.ariegenature.geomys.ui
 
 import android.content.Context
+import android.text.Editable
+import android.text.InputType
+import android.text.TextWatcher
 import android.widget.ArrayAdapter
 import android.widget.AutoCompleteTextView
+import android.widget.EditText
+import android.widget.Filter
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -30,12 +35,48 @@ import com.google.gson.reflect.TypeToken
 import fr.ariegenature.geomys.network.AdditionalFieldDef
 import fr.ariegenature.geomys.network.GeoNatureDataset
 import fr.ariegenature.geomys.network.GeoNatureObservateur
+import fr.ariegenature.geomys.network.HabitatSuggestion
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import fr.ariegenature.geomys.store.GeoNatureConfig
 import fr.ariegenature.geomys.store.OcctaxFieldsConfig
 import fr.ariegenature.geomys.ui.saisie.AdditionalFieldsRenderer
 import fr.ariegenature.geomys.ui.saisie.OcctaxFieldsRenderer
 
 private val gsonDetailsReleve = Gson()
+
+/** Minuscule + diacritiques retirés, pour comparer « emile » et « Émile » indifféremment. */
+private fun normaliserAccents(s: String): String =
+    java.text.Normalizer.normalize(s, java.text.Normalizer.Form.NFD)
+        .replace("\\p{Mn}+".toRegex(), "")
+        .lowercase()
+
+/** Adaptateur d'autocomplétion sur une liste finie (jeu de données, observateurs) :
+ *  - filtrage **insensible aux accents et à la casse**, par *contains* (pas seulement le préfixe) ;
+ *  - contrainte vide ⇒ **toute la liste** (permet de déployer le menu au clic, façon spinner).
+ *  Le filtrage par défaut d'`AutoCompleteTextView` (préfixe, sensible aux accents) est ainsi remplacé. */
+private class AdaptateurAutocomplete(context: Context, private val tous: List<String>) :
+    ArrayAdapter<String>(context, android.R.layout.simple_dropdown_item_1line, ArrayList(tous)) {
+    private val filtre = object : android.widget.Filter() {
+        override fun performFiltering(constraint: CharSequence?): FilterResults {
+            val c = constraint?.toString()?.let { normaliserAccents(it) }.orEmpty()
+            val res = if (c.isEmpty()) tous else tous.filter { normaliserAccents(it).contains(c) }
+            return FilterResults().apply { values = res; count = res.size }
+        }
+        @Suppress("UNCHECKED_CAST")
+        override fun publishResults(constraint: CharSequence?, results: FilterResults?) {
+            setNotifyOnChange(false)
+            clear()
+            (results?.values as? List<String>)?.let { addAll(it) }
+            notifyDataSetChanged()
+        }
+        override fun convertResultToString(resultValue: Any?): CharSequence =
+            resultValue as? CharSequence ?: ""
+    }
+    override fun getFilter(): android.widget.Filter = filtre
+}
 
 /** Jeux de données proposables dans « Détails du relevé » : actifs + rattachés OCCTAX (ou sans
  *  module déclaré), lus depuis le cache local. Couples (id, "nom (id)") pour le dropdown. */
@@ -62,9 +103,17 @@ fun observateursPourDetailsReleve(config: GeoNatureConfig): List<Pair<Int, Strin
  *  observateur) + les champs additionnels OCCTAX_RELEVE collectés. */
 data class DetailsReleveResult(
     val idDataset: Int?,
-    val idObservateur: Int?,
-    val nomObservateur: String?,
+    /** Observateurs sélectionnés (ids), dans l'ordre d'ajout. Vide = aucun (→ utilisateur connecté). */
+    val idsObservateurs: List<Int>,
+    /** Libellés des observateurs sélectionnés, alignés sur [idsObservateurs]. */
+    val nomsObservateurs: List<String>,
     val additionnels: Map<String, String>,
+    /** Commentaire libre du relevé, "" si vide. */
+    val comment: String = "",
+    /** Code HABREF de l'habitat sélectionné, null si aucun. */
+    val cdHab: Int? = null,
+    /** Libellé de l'habitat sélectionné, null si aucun. */
+    val habitatLabel: String? = null,
     /** Code nomenclature TYP_GRP (type de regroupement du relevé), "" si non renseigné/masqué. */
     val typGrp: String = "",
 )
@@ -86,12 +135,17 @@ fun ouvrirDialogDetailsReleve(
     idDatasetInitial: Int?,
     nomDatasetInitial: String?,
     observateurs: List<Pair<Int, String>>,
-    idObservateurInitial: Int?,
-    nomObservateurInitial: String?,
+    idsObservateursInitial: List<Int>,
+    nomsObservateursInitial: List<String>,
     defs: List<AdditionalFieldDef>,
     valeursInitiales: Map<String, String>,
     settingsJson: String,
     typGrpInitial: String,
+    commentInitial: String,
+    cdHabInitial: Int?,
+    habitatLabelInitial: String?,
+    scope: CoroutineScope,
+    chercherHabitats: suspend (String) -> List<HabitatSuggestion>,
     onValider: (DetailsReleveResult) -> Unit,
 ) {
     val density = ctx.resources.displayMetrics.density
@@ -142,11 +196,14 @@ fun ouvrirDialogDetailsReleve(
         racine.addView(titre(label))
         val labels = options.map { it.second }
         val champ = AutoCompleteTextView(ctx).apply {
-            setAdapter(ArrayAdapter(ctx, android.R.layout.simple_dropdown_item_1line, labels))
+            val ad = AdaptateurAutocomplete(ctx, labels)
+            setAdapter(ad)
             threshold = 1
             isSingleLine = true
-            // Clic = ré-ouvre la liste complète pour changer facilement.
-            setOnClickListener { showDropDown() }
+            // Clic / prise de focus = déploie TOUTE la liste (contrainte vide), façon spinner —
+            // sans quoi le filtre la réduirait à la valeur déjà affichée.
+            setOnClickListener { ad.filter.filter(null) { showDropDown() } }
+            setOnFocusChangeListener { _, aFocus -> if (aFocus) ad.filter.filter(null) { showDropDown() } }
             val idx = options.indexOfFirst { it.first == idInitial }
             // Affiche la sélection initiale même si elle n'est pas (ou plus) dans les options.
             if (idx >= 0) setText(labels[idx], false)
@@ -161,8 +218,78 @@ fun ouvrirDialogDetailsReleve(
         }
     }
 
+    // Sélecteur MULTIPLE (observateurs) : un champ de recherche qui AJOUTE à une liste affichée
+    // dessous (chaque entrée retirable via « ✕ »). Renvoie un getter des couples (id, nom) choisis,
+    // dans l'ordre d'ajout. Si [options] est vide (cache non chargé), retombe en lecture seule.
+    fun selecteurMulti(
+        label: String,
+        options: List<Pair<Int, String>>,
+        idsInitial: List<Int>,
+        nomsInitial: List<String>,
+    ): () -> List<Pair<Int, String>> {
+        racine.addView(titre(label))
+        // LinkedHashMap : conserve l'ordre d'ajout, dédoublonne par id.
+        val choisis = LinkedHashMap<Int, String>()
+        idsInitial.forEachIndexed { i, id ->
+            choisis[id] = options.firstOrNull { it.first == id }?.second
+                ?: nomsInitial.getOrNull(i)?.takeIf { it.isNotBlank() }
+                ?: id.toString()
+        }
+        val liste = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
+        fun rafraichir() {
+            liste.removeAllViews()
+            choisis.forEach { (id, nom) ->
+                liste.addView(LinearLayout(ctx).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = android.view.Gravity.CENTER_VERTICAL
+                    addView(TextView(ctx).apply {
+                        text = nom; textSize = 15f
+                        layoutParams = LinearLayout.LayoutParams(0,
+                            LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                    })
+                    addView(TextView(ctx).apply {
+                        text = "✕"; textSize = 16f
+                        setTextColor(0xFFC62828.toInt())
+                        setPadding((12 * density).toInt(), (4 * density).toInt(),
+                            (4 * density).toInt(), (4 * density).toInt())
+                        isClickable = true
+                        setOnClickListener { choisis.remove(id); rafraichir() }
+                    })
+                })
+            }
+        }
+        if (options.isEmpty()) {
+            // Pas de cache : on affiche seulement les éventuels libellés initiaux, non éditables.
+            if (choisis.isEmpty()) ligneLecture(label, "—")
+            racine.addView(liste); rafraichir()
+            return { choisis.map { (id, nom) -> id to nom } }
+        }
+        val recherche = AutoCompleteTextView(ctx).apply {
+            val ad = AdaptateurAutocomplete(ctx, options.map { it.second })
+            setAdapter(ad)
+            threshold = 1
+            isSingleLine = true
+            hint = "Ajouter un observateur…"
+            // Clic / focus = déploie toute la liste des observateurs (insensible aux accents en frappe).
+            setOnClickListener { ad.filter.filter(null) { showDropDown() } }
+            setOnFocusChangeListener { _, aFocus -> if (aFocus) ad.filter.filter(null) { showDropDown() } }
+            setOnItemClickListener { _, _, pos, _ ->
+                val txt = (adapter.getItem(pos) as? String).orEmpty()
+                options.firstOrNull { it.second == txt }?.let { choisis[it.first] = it.second }
+                setText("", false)
+                rafraichir()
+            }
+            // Même respiration que le champ Habitat (8dp), pour ne pas coller la liste en dessous.
+            setPadding(0, 0, 0, (8 * density).toInt())
+        }
+        racine.addView(recherche)
+        racine.addView(liste)
+        rafraichir()
+        return { choisis.map { (id, nom) -> id to nom } }
+    }
+
     val getDataset = selecteur("Jeu de données", datasets, idDatasetInitial, nomDatasetInitial)
-    val getObservateur = selecteur("Observateur", observateurs, idObservateurInitial, nomObservateurInitial)
+    val getObservateurs = selecteurMulti("Observateurs", observateurs, idsObservateursInitial, nomsObservateursInitial)
 
     // Infos lecture seule restantes (position, géométrie…).
     infos.forEach { (label, valeur) -> if (valeur.isNotBlank()) ligneLecture(label, valeur) }
@@ -183,6 +310,90 @@ fun ouvrirDialogDetailsReleve(
         racine.addView(containerAdd)
     }
 
+    // Habitat (cd_hab) — recherche live sur le référentiel HABREF du serveur. Le serveur filtre
+    // déjà : on neutralise le filtrage client de l'AutoCompleteTextView (sinon il re-masque les
+    // suggestions dont le libellé ne « commence » pas par le terme tapé). Une frappe invalide la
+    // sélection précédente ; seul un clic sur une suggestion (re)fixe le cd_hab.
+    racine.addView(titre("Habitat"))
+    var cdHabChoisi: Int? = cdHabInitial
+    val libellesHabitat = mutableListOf<String>()
+    val cdParLibelle = HashMap<String, Int>()
+    val adapterHabitat = object :
+        ArrayAdapter<String>(ctx, android.R.layout.simple_dropdown_item_1line, libellesHabitat) {
+        private val filtreNeutre = object : Filter() {
+            override fun performFiltering(c: CharSequence?) = FilterResults().apply {
+                values = libellesHabitat; count = libellesHabitat.size
+            }
+            override fun publishResults(c: CharSequence?, r: FilterResults?) = notifyDataSetChanged()
+        }
+        override fun getFilter(): Filter = filtreNeutre
+    }
+    val champHabitat = AutoCompleteTextView(ctx).apply {
+        setAdapter(adapterHabitat)
+        threshold = 0
+        isSingleLine = true
+        hint = "Rechercher un habitat…"
+        setText(habitatLabelInitial.orEmpty(), false)
+        setPadding(0, 0, 0, (8 * density).toInt())
+    }
+    var majHabitatProgrammatique = false
+    var jobHabitat: Job? = null
+    champHabitat.addTextChangedListener(object : TextWatcher {
+        override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+        override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+        override fun afterTextChanged(s: Editable?) {
+            if (majHabitatProgrammatique) return
+            cdHabChoisi = null // toute édition annule la sélection jusqu'à un nouveau choix
+            val terme = s?.toString().orEmpty()
+            jobHabitat?.cancel()
+            if (terme.trim().length < 2) return
+            jobHabitat = scope.launch {
+                delay(300) // anti-rebond : on ne requête pas à chaque frappe
+                val res = chercherHabitats(terme)
+                libellesHabitat.clear(); cdParLibelle.clear()
+                res.forEach { libellesHabitat.add(it.libelle); cdParLibelle[it.libelle] = it.cdHab }
+                adapterHabitat.notifyDataSetChanged()
+                if (libellesHabitat.isNotEmpty() && champHabitat.isFocused) champHabitat.showDropDown()
+            }
+        }
+    })
+    champHabitat.setOnItemClickListener { _, _, pos, _ ->
+        val libelle = adapterHabitat.getItem(pos) ?: return@setOnItemClickListener
+        cdHabChoisi = cdParLibelle[libelle]
+        majHabitatProgrammatique = true
+        champHabitat.setText(libelle, false)
+        majHabitatProgrammatique = false
+    }
+    // Clic = (re)déploie les suggestions. Le référentiel HABREF étant trop volumineux pour être
+    // listé d'un bloc, on déploie les résultats déjà chargés, ou on relance la recherche sur le
+    // texte courant (ex. habitat déjà sélectionné) — sans effacer la sélection.
+    champHabitat.setOnClickListener {
+        if (libellesHabitat.isNotEmpty()) { champHabitat.showDropDown(); return@setOnClickListener }
+        val terme = champHabitat.text?.toString()?.trim().orEmpty()
+        if (terme.length < 2) return@setOnClickListener
+        jobHabitat?.cancel()
+        jobHabitat = scope.launch {
+            val res = chercherHabitats(terme)
+            libellesHabitat.clear(); cdParLibelle.clear()
+            res.forEach { libellesHabitat.add(it.libelle); cdParLibelle[it.libelle] = it.cdHab }
+            adapterHabitat.notifyDataSetChanged()
+            if (libellesHabitat.isNotEmpty()) champHabitat.showDropDown()
+        }
+    }
+    racine.addView(champHabitat)
+
+    // Commentaire libre du relevé (→ properties.comment).
+    racine.addView(titre("Commentaire"))
+    val champCommentaire = EditText(ctx).apply {
+        inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or
+            InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+        setText(commentInitial)
+        isSingleLine = false
+        minLines = 2
+        setPadding(0, 0, 0, (8 * density).toInt())
+    }
+    racine.addView(champCommentaire)
+
     val scroll = ScrollView(ctx).apply { addView(racine) }
     // Bouton « Valider » posé après show() pour pouvoir BLOQUER la fermeture si un champ
     // additionnel obligatoire (required) visible est vide (sinon setPositiveButton ferme le dialog).
@@ -202,13 +413,16 @@ fun ouvrirDialogDetailsReleve(
                 return@setOnClickListener
             }
             val ds = getDataset()
-            val obs = getObservateur()
+            val obs = getObservateurs()
             onValider(
                 DetailsReleveResult(
                     idDataset = ds?.first,
-                    idObservateur = obs?.first,
-                    nomObservateur = obs?.second,
+                    idsObservateurs = obs.map { it.first },
+                    nomsObservateurs = obs.map { it.second },
                     additionnels = if (defs.isNotEmpty()) AdditionalFieldsRenderer.collecter(containerAdd) else valeursInitiales,
+                    comment = champCommentaire.text?.toString()?.trim().orEmpty(),
+                    cdHab = cdHabChoisi,
+                    habitatLabel = cdHabChoisi?.let { champHabitat.text?.toString()?.trim() },
                     typGrp = if (champsReleve.isNotEmpty()) (OcctaxFieldsRenderer.collecter(containerReleve)["TYP_GRP"] ?: "") else typGrpInitial,
                 )
             )

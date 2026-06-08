@@ -214,6 +214,10 @@ object GeoNatureUpload {
                         resolverIdNomenclature(code, "NAT_OBJ_GEO", emptyMap(), nomenclatures)
                             ?.let { put("id_nomenclature_geo_object_nature", it) }
                     }
+                    extraReleve["tech_collect"]?.takeIf { it.isNotEmpty() }?.let { code ->
+                        resolverIdNomenclature(code, "TECHNIQUE_OBS", emptyMap(), nomenclatures)
+                            ?.let { put("id_nomenclature_tech_collect_campanule", it) }
+                    }
                 }
 
                 // Construction de la géométrie selon le type stocké côté Observation.
@@ -445,6 +449,9 @@ object GeoNatureUpload {
                 "methDetermin" to obs.methDetermin,
                 "preuveExist" to obs.preuveExist,
                 "naturalite" to obs.naturalite,
+                // Champs occurrence pilotés form_fields (portés dans champsOccExtra par clé form_fields).
+                "sourceStatus" to (obs.champsOccExtra["source_status"] ?: ""),
+                "blurring" to (obs.champsOccExtra["blurring"] ?: ""),
             )
             OcctaxFieldsConfig.REGISTRE
                 .filter { it.niveau == OcctaxFieldsConfig.Niveau.INFORMATION }
@@ -455,6 +462,9 @@ object GeoNatureUpload {
                     }
                 }
             obs.determinateur?.takeIf { it.isNotEmpty() }?.let { put("determiner", it) }
+            // Preuves (texte) pilotées form_fields.
+            obs.champsOccExtra["digital_proof"]?.takeIf { it.isNotEmpty() }?.let { put("digital_proof", it) }
+            obs.champsOccExtra["non_digital_proof"]?.takeIf { it.isNotEmpty() }?.let { put("non_digital_proof", it) }
             if (obs.additionalFieldsOccurrence.isNotEmpty()) {
                 put("additional_fields", jsonDepuisMap(obs.additionalFieldsOccurrence))
             }

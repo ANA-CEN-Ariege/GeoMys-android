@@ -38,6 +38,14 @@
             android:layout_height="wrap_content"
             android:orientation="vertical" />
 
+        <!-- Champs occurrence pilotés par form_fields du serveur (statut de la source, floutage,
+             preuves numérique / non numérique) — rendus dynamiquement selon la config serveur. -->
+        <LinearLayout
+            android:id="@+id/ll_caracterisation_form_fields"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical" />
+
         <com.google.android.material.textfield.TextInputLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

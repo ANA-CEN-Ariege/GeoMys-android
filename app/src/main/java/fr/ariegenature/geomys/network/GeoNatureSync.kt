@@ -438,7 +438,10 @@ object GeoNatureSync {
                 // tout champ dont le type de nomenclature manque au cache. Sans cet avertissement,
                 // un type absent du serveur (instance incomplète, renommage entre versions
                 // GeoNature) produirait des envois incomplets invisibles pour l'utilisateur.
-                val typesManquants = typesVoulus - result.keys
+                // Les types OPTIONNELS (champs pilotés form_fields, souvent absents) ne déclenchent
+                // pas d'avertissement s'ils manquent — ils ne sont utilisés que si le serveur les expose.
+                val typesManquants = typesVoulus - result.keys -
+                    fr.ariegenature.geomys.store.OcctaxFieldsConfig.mnemoniquesOptionnels()
                 val msg = buildString {
                     append(resume)
                     if (typesManquants.isNotEmpty()) {

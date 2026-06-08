@@ -32,6 +32,7 @@ import fr.ariegenature.geomys.store.GeoNatureConfig
 import fr.ariegenature.geomys.store.OcctaxDefautsSession
 import fr.ariegenature.geomys.store.OcctaxFieldsConfig
 import fr.ariegenature.geomys.store.TaxRefCache
+import fr.ariegenature.geomys.store.champFormVisible
 import fr.ariegenature.geomys.ui.saisie.AdditionalFieldsRenderer
 import fr.ariegenature.geomys.ui.saisie.ChampsTaxon
 import fr.ariegenature.geomys.ui.saisie.OcctaxFieldsRenderer
@@ -102,6 +103,52 @@ class CaracterisationFragment : Fragment() {
         }
         OcctaxFieldsRenderer.rendre(binding.llCaracterisation, champs, valeursNom, groupes, regno)
 
+        // ── Champs occurrence pilotés DIRECTEMENT par form_fields du serveur (hors curation
+        // settings.json) : nomenclatures statut de la source / floutage + preuves numérique /
+        // non numérique (texte). Portés de bout en bout dans la map unique champsOccExtra (clé =
+        // clé form_fields), comme les champs supplémentaires du relevé. Un champ masqué garde sa
+        // valeur initiale. ──
+        val formFieldsJson = gnConfig.formFieldsJson
+        val occExtraInit: Map<String, String> = try {
+            gson.fromJson(a?.getString("occExtraJson") ?: "{}", mapType) ?: emptyMap()
+        } catch (_: Exception) { emptyMap() }
+        val densite = resources.displayMetrics.density
+        // (a) nomenclatures (STATUT_SOURCE → source_status, DEE_FLOU → blurring)
+        val nomenclOccFF = buildList {
+            listOf("STATUT_SOURCE" to "source_status", "DEE_FLOU" to "blurring").forEach { (code, ffk) ->
+                if (champFormVisible(formFieldsJson, ffk)) OcctaxFieldsConfig.parCode[code]
+                    ?.let { add(OcctaxFieldsConfig.ChampAffichage(it, replie = false, lectureSeule = false)) }
+            }
+        }
+        val containerNomFF = android.widget.LinearLayout(requireContext())
+            .apply { orientation = android.widget.LinearLayout.VERTICAL }
+        binding.llCaracterisationFormFields.addView(containerNomFF)
+        if (nomenclOccFF.isNotEmpty()) {
+            val valeursFF = nomenclOccFF.associate { it.champ.code to (occExtraInit[it.champ.formFieldKey] ?: "") }
+            OcctaxFieldsRenderer.rendre(containerNomFF, nomenclOccFF, valeursFF, groupes, regno)
+        }
+        // (b) textes : preuve numérique (URL) / preuve non numérique
+        val editsProof = LinkedHashMap<String, android.widget.EditText>()
+        listOf(
+            Triple("digital_proof", "Preuve numérique (URL)", true),
+            Triple("non_digital_proof", "Preuve non numérique", false),
+        ).forEach { (key, label, estUrl) ->
+            if (!champFormVisible(formFieldsJson, key)) return@forEach
+            binding.llCaracterisationFormFields.addView(android.widget.TextView(requireContext()).apply {
+                text = label; textSize = 13f
+                setTextColor(requireContext().getColor(android.R.color.darker_gray))
+                setPadding(0, (12 * densite).toInt(), 0, 0)
+            })
+            val ed = android.widget.EditText(requireContext()).apply {
+                inputType = if (estUrl) android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI
+                    else android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
+                setText(occExtraInit[key].orEmpty())
+                isSingleLine = estUrl
+            }
+            binding.llCaracterisationFormFields.addView(ed)
+            editsProof[key] = ed
+        }
+
         binding.btnOk.setOnClickListener {
             // Blocage si un champ additionnel obligatoire (required) visible est vide.
             val manquants = AdditionalFieldsRenderer.champsObligatoiresVides(binding.llAddOccurrence)
@@ -125,6 +172,21 @@ class CaracterisationFragment : Fragment() {
             // dans SaisieObservationFragment via le bouton "Détails du relevé".
             val gsonOut = Gson()
             sv.set("addOccJson", gsonOut.toJson(AdditionalFieldsRenderer.collecter(binding.llAddOccurrence)))
+            // Champs occurrence pilotés form_fields : on repart de l'initial (préserve les champs
+            // masqués) et on surcharge ceux visibles (vide ⇒ retrait de la clé).
+            val occExtra = HashMap(occExtraInit)
+            if (nomenclOccFF.isNotEmpty()) {
+                val collectes = OcctaxFieldsRenderer.collecter(containerNomFF)
+                nomenclOccFF.forEach { ca ->
+                    val v = collectes[ca.champ.code].orEmpty()
+                    if (v.isEmpty()) occExtra.remove(ca.champ.formFieldKey) else occExtra[ca.champ.formFieldKey] = v
+                }
+            }
+            editsProof.forEach { (key, ed) ->
+                val v = ed.text?.toString()?.trim().orEmpty()
+                if (v.isEmpty()) occExtra.remove(key) else occExtra[key] = v
+            }
+            sv.set("occExtraJson", gsonOut.toJson(occExtra))
             findNavController().navigateUp()
         }
     }

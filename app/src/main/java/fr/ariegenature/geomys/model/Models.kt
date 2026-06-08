@@ -98,6 +98,10 @@ data class Observation(
     // ── Champs additionnels (config gn_commons.t_additional_fields, dynamiques par instance) ──
     /** Champs additionnels du relevé (OCCTAX_RELEVE) — partagés entre toutes les obs d'un même releveId. */
     var additionalFieldsReleve: Map<String, String> = emptyMap(),
+    /** Champs OCCURRENCE pilotés par form_fields du serveur (statut de la source, floutage, preuve
+     *  numérique / non numérique). Clé = clé form_fields ; valeur = code nomenclature ou texte.
+     *  Map unique pour ne pas multiplier les champs à travers tout le code. */
+    var champsOccExtra: Map<String, String> = emptyMap(),
     /** Champs additionnels de l'occurrence (OCCTAX_OCCURRENCE). */
     var additionalFieldsOccurrence: Map<String, String> = emptyMap(),
     /** Champs additionnels OCCTAX_DENOMBREMENT pour le counting #0. */

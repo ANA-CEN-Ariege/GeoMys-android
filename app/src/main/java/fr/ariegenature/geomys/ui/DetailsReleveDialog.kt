@@ -444,16 +444,23 @@ fun ouvrirDialogDetailsReleve(
     val containerReleve = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
     val typGrpVisible = champFormVisible(formFieldsJson, "group_type")
     val geoObjVisible = champFormVisible(formFieldsJson, "geo_object_nature")
+    val techCollectVisible = champFormVisible(formFieldsJson, "tech_collect")
     val nomenclReleve = buildList {
         if (typGrpVisible) OcctaxFieldsConfig.parCode["TYP_GRP"]
             ?.let { add(OcctaxFieldsConfig.ChampAffichage(it, replie = false, lectureSeule = false)) }
         if (geoObjVisible) OcctaxFieldsConfig.parCode["NAT_OBJ_GEO"]
             ?.let { add(OcctaxFieldsConfig.ChampAffichage(it, replie = false, lectureSeule = false)) }
+        if (techCollectVisible) OcctaxFieldsConfig.parCode["TECHNIQUE_OBS"]
+            ?.let { add(OcctaxFieldsConfig.ChampAffichage(it, replie = false, lectureSeule = false)) }
     }
     if (nomenclReleve.isNotEmpty()) {
         OcctaxFieldsRenderer.rendre(
             containerReleve, nomenclReleve,
-            mapOf("TYP_GRP" to typGrpInitial, "NAT_OBJ_GEO" to champsExtraInitial["geo_object_nature"].orEmpty()),
+            mapOf(
+                "TYP_GRP" to typGrpInitial,
+                "NAT_OBJ_GEO" to champsExtraInitial["geo_object_nature"].orEmpty(),
+                "TECHNIQUE_OBS" to champsExtraInitial["tech_collect"].orEmpty(),
+            ),
             emptySet(), "",
         )
         racine.addView(containerReleve)
@@ -624,6 +631,10 @@ fun ouvrirDialogDetailsReleve(
             if (geoObjVisible) {
                 val g = nomenclVals["NAT_OBJ_GEO"].orEmpty()
                 if (g.isEmpty()) extra.remove("geo_object_nature") else extra["geo_object_nature"] = g
+            }
+            if (techCollectVisible) {
+                val t = nomenclVals["TECHNIQUE_OBS"].orEmpty()
+                if (t.isEmpty()) extra.remove("tech_collect") else extra["tech_collect"] = t
             }
             onValider(
                 DetailsReleveResult(

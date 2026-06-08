@@ -71,6 +71,10 @@ object OcctaxFieldsConfig {
         val uploadLabels: Map<String, String>,
         val fallbackLabels: List<String>,
         val fallbackCodes: List<String>,
+        /** Clé `form_fields` du serveur. Non vide ⇒ champ piloté DIRECTEMENT par form_fields (rendu
+         *  hors du flux settings.json `champsAffichage`, cf. [registrePour]) et nomenclature
+         *  OPTIONNELLE à la synchro (pas d'avertissement si absente, cf. [mnemoniquesOptionnels]). */
+        val formFieldKey: String = "",
     )
 
     val REGISTRE: List<OcctaxField> = listOf(
@@ -81,6 +85,7 @@ object OcctaxFieldsConfig {
             uploadLabels = emptyMap(),
             fallbackLabels = listOf("Non renseigné"),
             fallbackCodes = listOf(""),
+            formFieldKey = "group_type",
         ),
         OcctaxField(
             "NAT_OBJ_GEO", "Nature de l'objet géographique", Niveau.RELEVE,
@@ -88,6 +93,31 @@ object OcctaxFieldsConfig {
             uploadLabels = emptyMap(),
             fallbackLabels = listOf("Non renseigné"),
             fallbackCodes = listOf(""),
+            formFieldKey = "geo_object_nature",
+        ),
+        OcctaxField(
+            "TECHNIQUE_OBS", "Méthode de collecte", Niveau.RELEVE,
+            svKey = "techCollect", uploadKey = "id_nomenclature_tech_collect_campanule",
+            uploadLabels = emptyMap(),
+            fallbackLabels = listOf("Non renseigné"),
+            fallbackCodes = listOf(""),
+            formFieldKey = "tech_collect",
+        ),
+        OcctaxField(
+            "STATUT_SOURCE", "Statut de la source", Niveau.INFORMATION,
+            svKey = "sourceStatus", uploadKey = "id_nomenclature_source_status",
+            uploadLabels = emptyMap(),
+            fallbackLabels = listOf("Non renseigné"),
+            fallbackCodes = listOf(""),
+            formFieldKey = "source_status",
+        ),
+        OcctaxField(
+            "DEE_FLOU", "Niveau de floutage", Niveau.INFORMATION,
+            svKey = "blurring", uploadKey = "id_nomenclature_blurring",
+            uploadLabels = emptyMap(),
+            fallbackLabels = listOf("Non renseigné"),
+            fallbackCodes = listOf(""),
+            formFieldKey = "blurring",
         ),
         // ── Niveau INFORMATION (occurrence) ──
         OcctaxField(
@@ -198,7 +228,16 @@ object OcctaxFieldsConfig {
      *  TYPE_MEDIA, qui n'est pas un champ de saisie. */
     fun mnemoniques(): List<String> = REGISTRE.map { it.code }
 
-    private fun registrePour(niveau: Niveau): List<OcctaxField> = REGISTRE.filter { it.niveau == niveau }
+    /** Mnémoniques OPTIONNELS : champs pilotés par form_fields, souvent absents des serveurs
+     *  (group_type, geo_object_nature, tech_collect, source_status, blurring…). Synchronisés s'ils
+     *  existent, mais leur absence ne doit PAS déclencher d'avertissement (cf. GeoNatureSync). */
+    fun mnemoniquesOptionnels(): Set<String> = REGISTRE.filter { it.formFieldKey.isNotEmpty() }.map { it.code }.toSet()
+
+    // Les champs pilotés par form_fields sont rendus hors du flux settings.json (champsAffichage) :
+    // ils sont exclus ici pour ne pas apparaître via la curation settings (ni le registre complet
+    // sur un serveur sans listes settings, ce qui divergerait du web qui les masque par défaut).
+    private fun registrePour(niveau: Niveau): List<OcctaxField> =
+        REGISTRE.filter { it.niveau == niveau && it.formFieldKey.isEmpty() }
 
     /** Une entrée de config serveur (PropertySettings de l'app officielle) : mnémonique + flags. */
     private data class PropertySettings(

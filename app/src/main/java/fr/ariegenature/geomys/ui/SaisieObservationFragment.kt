@@ -100,6 +100,8 @@ class SaisieObservationFragment : Fragment() {
         // ── Champs additionnels gn_commons ──
         var additionalFieldsReleve: Map<String, String> = emptyMap(),
         var additionalFieldsOccurrence: Map<String, String> = emptyMap(),
+        /** Champs occurrence pilotés form_fields (statut source, floutage, preuves), clé = clé form_fields. */
+        var champsOccExtra: Map<String, String> = emptyMap(),
         var additionalFieldsCounting0: Map<String, String> = emptyMap(),
         val existingId: String? = null,
         /** Id VM stable de cette espèce — identité pour l'upsert « au fil de l'eau » dans le
@@ -246,6 +248,7 @@ class SaisieObservationFragment : Fragment() {
                         mediaUrisCounting0 = obsExistante.mediaUrisCounting0,
                         additionalFieldsReleve = obsExistante.additionalFieldsReleve,
                         additionalFieldsOccurrence = obsExistante.additionalFieldsOccurrence,
+                        champsOccExtra = obsExistante.champsOccExtra,
                         additionalFieldsCounting0 = obsExistante.additionalFieldsCounting0,
                         existingId = obsExistante.id
                     ))
@@ -478,6 +481,7 @@ class SaisieObservationFragment : Fragment() {
             // Niveau OCCURRENCE uniquement — les champs niveau RELEVE sont édités au
             // niveau de la session via le bouton "Détails du relevé" du présent écran.
             putString("addOccJson", com.google.gson.Gson().toJson(obs.additionalFieldsOccurrence))
+            putString("occExtraJson", com.google.gson.Gson().toJson(obs.champsOccExtra))
         }
         findNavController().navigate(R.id.action_saisie_to_caracterisation, bundle)
     }
@@ -597,6 +601,11 @@ class SaisieObservationFragment : Fragment() {
         val mapType = object : com.google.gson.reflect.TypeToken<Map<String, String>>() {}.type
         consommerString("addOccJson") { v ->
             obs.additionalFieldsOccurrence = try {
+                com.google.gson.Gson().fromJson<Map<String, String>>(v, mapType) ?: emptyMap()
+            } catch (_: Exception) { emptyMap() }
+        }
+        consommerString("occExtraJson") { v ->
+            obs.champsOccExtra = try {
                 com.google.gson.Gson().fromJson<Map<String, String>>(v, mapType) ?: emptyMap()
             } catch (_: Exception) { emptyMap() }
         }
@@ -892,6 +901,7 @@ class SaisieObservationFragment : Fragment() {
                 geometryType              = geometryTypeSession,
                 geometryCoordsJson        = geometryCoordsJsonSession,
                 additionalFieldsOccurrence = obs.additionalFieldsOccurrence,
+                champsOccExtra            = obs.champsOccExtra,
                 additionalFieldsCounting0 = obs.additionalFieldsCounting0,
                 releveId                  = releveId,
             )

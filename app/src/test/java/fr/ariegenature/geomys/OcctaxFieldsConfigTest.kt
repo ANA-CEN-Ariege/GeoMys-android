@@ -36,7 +36,12 @@ class OcctaxFieldsConfigTest {
         val info = codes(Niveau.INFORMATION, "")
         assertTrue("NATURALITE" in info)
         assertTrue("STATUT_OBS" in info)
-        assertEquals(OcctaxFieldsConfig.REGISTRE.count { it.niveau == Niveau.INFORMATION }, info.size)
+        // Les champs pilotés par form_fields (source_status, blurring…) sont rendus hors du flux
+        // settings.json : ils sont exclus du registre « settings » renvoyé ici.
+        assertEquals(
+            OcctaxFieldsConfig.REGISTRE.count { it.niveau == Niveau.INFORMATION && it.formFieldKey.isEmpty() },
+            info.size,
+        )
         val counting = codes(Niveau.COUNTING, "")
         assertEquals(setOf("SEXE", "STADE_VIE", "OBJ_DENBR", "TYP_DENBR"), counting.toSet())
     }

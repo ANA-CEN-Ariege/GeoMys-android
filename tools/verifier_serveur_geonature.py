@@ -71,10 +71,29 @@ def main():
 
     authed = False
     if login:
-        code, _ = call("/auth/login", {"login": login, "password": pwd, "id_application": id_app})
+        code, body = call("/auth/login", {"login": login, "password": pwd, "id_application": id_app})
+        # ⚠ GeoNature renvoie HTTP 200 MÊME avec de mauvais identifiants (refus « soft » sans token).
+        # Le succès se mesure donc à la présence d'un TOKEN : dans le corps JSON, ou via un cookie
+        # `token` posé par le serveur. Sinon → identifiants invalides.
+        token_present = False
         if code == 200:
+            try:
+                j = json.loads(body)
+                token_present = bool(
+                    j.get("token") or j.get("access_token") or (j.get("user") or {}).get("token")
+                )
+            except Exception:  # noqa: BLE001
+                token_present = False
+            if not token_present:
+                token_present = any(c.name == "token" and c.value for c in cj)
+        if code == 200 and token_present:
             authed = True
             show(OK, "Authentification")
+        elif code == 200:
+            show(KO, "Authentification",
+                 "identifiants invalides (HTTP 200 mais aucun token) — endpoints protégés inaccessibles")
+        elif code in (401, 490):
+            show(KO, "Authentification", f"identifiants refusés (HTTP {code})")
         else:
             show(WARN, "Authentification", f"HTTP {code} — poursuite en accès public")
     else:

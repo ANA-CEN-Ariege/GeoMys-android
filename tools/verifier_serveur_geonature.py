@@ -82,6 +82,8 @@ def main():
 
     # 1) Config → version GeoNature + liste d'observateurs + liste habitat configurées (comme le web)
     id_obs = None
+    taxa_list_id = None   # settings.sync.taxa_list_id (liste TaxRef de référence) — pour le test TaxRef
+    first_list_id = None  # 1ʳᵉ liste de biblistes — repli pour le test TaxRef
     code, body = call("/gn_commons/config")
     if code == 200:
         try:
@@ -110,8 +112,9 @@ def main():
         if code == 200:
             try:
                 arr = as_list(body)
-                show(OK, f"users/menu/{id_obs} (observateurs web)",
-                     f"{len(arr)} entrées" + (f", clés={list(arr[0].keys())}" if arr else ""))
+                struct_ok = bool(arr) and isinstance(arr[0], dict) and {"id_role", "nom_complet"} <= set(arr[0].keys())
+                show(OK if struct_ok else WARN, f"users/menu/{id_obs} (observateurs web)",
+                     f"{len(arr)} entrées" + ("" if struct_ok else " ⚠ champs id_role/nom_complet absents"))
             except Exception as e:  # noqa: BLE001
                 show(KO, f"users/menu/{id_obs}", f"JSON inattendu ({e})")
         else:
@@ -149,7 +152,8 @@ def main():
             if occ:
                 s = occ.get("settings") or {}
                 keys = list(s.keys()) if isinstance(s, dict) else type(s).__name__
-                show(OK, "t_mobile_apps (package OCCTAX)", f"settings={keys}")
+                taxa_list_id = (s.get("sync") or {}).get("taxa_list_id") if isinstance(s, dict) else None
+                show(OK, "t_mobile_apps (package OCCTAX)", f"settings={keys}, taxa_list_id={taxa_list_id}")
             else:
                 show(WARN, "t_mobile_apps", "pas de package OCCTAX → réglages par défaut côté app")
         except Exception as e:  # noqa: BLE001
@@ -186,12 +190,55 @@ def main():
     # on teste la forme canonique pour un verdict net. 404 ici = échec probable du chargement des listes.
     code, body = call("/taxhub/api/biblistes/")
     if code == 200 and is_json(body):
-        n = len(as_list(body))
-        show(OK, "taxhub/api/biblistes (listes de taxons)", f"{n} liste(s)")
+        listes = as_list(body)
+        if listes and isinstance(listes[0], dict):
+            first_list_id = listes[0].get("id_liste")
+        struct_ok = bool(listes) and isinstance(listes[0], dict) and "id_liste" in listes[0]
+        show(OK if struct_ok else WARN, "taxhub/api/biblistes (listes de taxons)",
+             f"{len(listes)} liste(s)" + ("" if struct_ok else " ⚠ champ id_liste absent"))
     elif code == 404:
         show(KO, "taxhub/api/biblistes", "404 — endpoint absent (TaxHub mal monté ?) → chargement des listes en échec")
     else:
         show(WARN, "taxhub/api/biblistes", f"HTTP {code}" + ("" if authed else " (login requis ?)"))
+
+    # 10) Nomenclatures (taxonomy) — synchronisées par l'app via /nomenclatures/nomenclatures/taxonomy.
+    code, body = call("/nomenclatures/nomenclatures/taxonomy")
+    if code == 200 and is_json(body):
+        types = as_list(body)
+        struct_ok = (bool(types) and isinstance(types[0], dict)
+                     and "mnemonique" in types[0] and "nomenclatures" in types[0])
+        show(OK if struct_ok else WARN, "nomenclatures/taxonomy",
+             f"{len(types)} type(s)" + ("" if struct_ok else " ⚠ structure inattendue (mnemonique/nomenclatures)"))
+    else:
+        show(WARN, "nomenclatures/taxonomy", f"HTTP {code}" + ("" if authed else " (login requis ?)"))
+
+    # 11) Téléchargement TaxRef — LE gros payload (suspect mémoire/lenteur au chargement). On vise
+    # la liste configurée (taxa_list_id) sinon la 1ʳᵉ de biblistes. URL avec slash final (sans slash
+    # = 308, suivi par l'app Android). Affiche la TAILLE de la liste (total_filtered) + valide les champs.
+    lid = taxa_list_id or first_list_id
+    if lid:
+        code, body = call(f"/taxhub/api/taxref/?orderby=cd_nom&fields=listes&id_liste={lid}&limit=2&page=1")
+        if code == 200 and is_json(body):
+            try:
+                d = json.loads(body)
+                items = d.get("items") if isinstance(d, dict) else d
+                total = d.get("total_filtered") if isinstance(d, dict) else None
+                t0 = items[0] if items else {}
+                struct_ok = isinstance(t0, dict) and "cd_nom" in t0 and ("nom_complet" in t0 or "nom_valide" in t0)
+                detail = (f"liste {lid} : {total} taxons" if total is not None else f"liste {lid}")
+                if total and total > 100000:
+                    detail += " — volumineux (synchro longue, mémoire à surveiller)"
+                if not struct_ok:
+                    detail += " ⚠ champs cd_nom/nom_* absents (parsing risqué)"
+                show(WARN if not struct_ok else OK, "taxhub/api/taxref (téléchargement)", detail)
+            except Exception as e:  # noqa: BLE001
+                show(KO, "taxhub/api/taxref", f"JSON inattendu ({e})")
+        elif code == 404:
+            show(KO, "taxhub/api/taxref", "404 — endpoint absent → chargement des taxons en échec")
+        else:
+            show(WARN, "taxhub/api/taxref", f"HTTP {code}" + ("" if authed else " (login requis ?)"))
+    else:
+        show(WARN, "taxhub/api/taxref (téléchargement)", "aucune liste connue (biblistes vide / taxa_list_id absent)")
 
     print(f"\nLégende : [{OK}] conforme · [{WARN}] repli/dégradation (non bloquant) · [{KO}] à investiguer")
     print("Un ECHEC sur users/menu ou un ATTENTION généralisé = vérifier version GeoNature / droits / config.")

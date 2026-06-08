@@ -159,17 +159,34 @@ object SyncRunner {
             var msgNom = ""
             var nbModulesOk = 0
             var msgSuivis = ""
+            // Chaque étape est isolée : une erreur (y compris OutOfMemoryError sur un gros TaxRef,
+            // ou un JSON inattendu d'un autre serveur) est convertie en (0, "<Type>: <msg>") et
+            // remontée dans `echecs`, au lieu d'aborter toute la synchro ou de planter l'appli.
+            // L'annulation de coroutine (CancellationException) est re-levée (jamais avalée).
+            fun erreurEtape(e: Throwable): Pair<Int, String> =
+                0 to "${e.javaClass.simpleName}: ${e.message?.take(80).orEmpty()}"
             coroutineScope {
                 val taxJob = async {
-                    GeoNatureSync.synchroniserTaxRef(config, protocolListIds, forcerTaxRef) { fait, listeIdx, listesTotales ->
-                        publier(
-                            if (listesTotales == 0) "Récupération des taxons…"
-                            else "Liste $listeIdx/$listesTotales — $fait taxons cumulés…"
-                        )
-                    }
+                    try {
+                        GeoNatureSync.synchroniserTaxRef(config, protocolListIds, forcerTaxRef) { fait, listeIdx, listesTotales ->
+                            publier(
+                                if (listesTotales == 0) "Récupération des taxons…"
+                                else "Liste $listeIdx/$listesTotales — $fait taxons cumulés…"
+                            )
+                        }
+                    } catch (c: kotlinx.coroutines.CancellationException) { throw c
+                    } catch (e: Throwable) { erreurEtape(e) }
                 }
-                val nomJob = async { GeoNatureSync.synchroniserNomenclatures(config) }
-                val suiviJob = async { MonitoringSync.synchroniserSuivis(config) { _, _, _ -> } }
+                val nomJob = async {
+                    try { GeoNatureSync.synchroniserNomenclatures(config) }
+                    catch (c: kotlinx.coroutines.CancellationException) { throw c }
+                    catch (e: Throwable) { erreurEtape(e) }
+                }
+                val suiviJob = async {
+                    try { MonitoringSync.synchroniserSuivis(config) { _, _, _ -> } }
+                    catch (c: kotlinx.coroutines.CancellationException) { throw c }
+                    catch (e: Throwable) { erreurEtape(e) }
+                }
                 taxJob.await().let { (n, m) -> nbTaxons = n; msgTaxRef = m }
                 nomJob.await().let { (n, m) -> nbNom = n; msgNom = m }
                 suiviJob.await().let { (n, m) -> nbModulesOk = n; msgSuivis = m }
@@ -190,10 +207,19 @@ object SyncRunner {
                 if (nbModulesOk > 0 || msgSuivis.startsWith("Aucun")) append("\nSuivis : $msgSuivis")
             }
             _etat.postValue(Etat(enCours = false, texte = "Terminé", termine = true, succes = echecs.isEmpty(), resume = resume))
-        } catch (e: Exception) {
+        } catch (c: kotlinx.coroutines.CancellationException) {
+            // Annulation normale (vue détruite, service arrêté) : on relève, on ne « termine » pas.
+            throw c
+        } catch (e: Throwable) {
+            // Filet de sécurité ULTIME : capture TOUT (y compris les Error comme OutOfMemoryError,
+            // que `catch (Exception)` laissait passer → l'appli plantait au chargement sur certains
+            // serveurs). On affiche un message identifiant le type d'erreur plutôt que de crasher.
+            val type = e.javaClass.simpleName
+            val detail = e.message?.take(120)?.let { " — $it" }.orEmpty()
+            val indice = if (e is OutOfMemoryError) " (données trop volumineuses pour la mémoire)" else ""
             _etat.postValue(
                 Etat(enCours = false, texte = "Échec", termine = true, succes = false,
-                    resume = "Synchronisation interrompue : ${e.message ?: e.javaClass.simpleName}")
+                    resume = "Chargement interrompu : $type$detail$indice\nVous pouvez réessayer « Recharger les données ».")
             )
         } finally {
             enCours.set(false)

@@ -430,7 +430,7 @@ class SaisieObservationFragment : Fragment() {
         ouvrirDialogDetailsReleve(
             requireContext(), infos, datasets, idDsInitial, nomDsInitial,
             observateurs, idsObsInitial, nomsObsInitial, defs, additionalFieldsReleveSession,
-            gnConfig.settingsOcctaxJson, typGrpReleveSession, commentReleveSession,
+            gnConfig.settingsOcctaxJson, gnConfig.formFieldsJson, typGrpReleveSession, commentReleveSession,
             dateDebutReleveSession, dateFinReleveSession, gnConfig.dateAvecHeures, gnConfig.dateAvecFin,
             cdHabReleveSession, habitatReleveLabelSession,
             viewLifecycleOwner.lifecycleScope,

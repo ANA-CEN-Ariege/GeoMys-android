@@ -463,6 +463,16 @@ object GeoNatureSync {
                 val dateCfg = settings?.optJSONObject("input")?.optJSONObject("date")
                 config.dateAvecHeures = dateCfg?.optBoolean("enable_hours", false) ?: false
                 config.dateAvecFin = dateCfg?.optBoolean("enable_end_date", false) ?: false
+                // Visibilité des champs du formulaire serveur (OCCTAX.form_fields de gn_commons/config) —
+                // pour aligner la visibilité par serveur (ex. masquer le type de regroupement). Toujours
+                // rafraîchi ; "" si indisponible ⇒ tout visible (cf. config.champFormVisible).
+                config.formFieldsJson = try {
+                    val c = HttpClient.get(URL("$base/api/gn_commons/config"), token, cookies, 10000)
+                    if (c.responseCode == 200)
+                        JSONObject(c.inputStream.bufferedReader().readText())
+                            .optJSONObject("OCCTAX")?.optJSONObject("form_fields")?.toString().orEmpty()
+                    else ""
+                } catch (_: Exception) { "" }
                 val nomenclature = settings?.optJSONObject("nomenclature")
                 if (nomenclature == null) {
                     config.settingsOcctaxJson = ""

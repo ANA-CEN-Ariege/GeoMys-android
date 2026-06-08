@@ -57,6 +57,13 @@ private fun masquerClavier(champ: android.view.View) {
     champ.clearFocus()
 }
 
+/** Le champ de formulaire serveur [key] (clé de `OCCTAX.form_fields`) est-il visible ? true par
+ *  défaut (config absente ou clé manquante) — on ne masque jamais un champ faute d'info. */
+private fun champFormVisible(formFieldsJson: String, key: String): Boolean = try {
+    if (formFieldsJson.isBlank()) true
+    else org.json.JSONObject(formFieldsJson).optBoolean(key, true)
+} catch (_: Exception) { true }
+
 /** Minuscule + diacritiques retirés, pour comparer « emile » et « Émile » indifféremment. */
 private fun normaliserAccents(s: String): String =
     java.text.Normalizer.normalize(s, java.text.Normalizer.Form.NFD)
@@ -154,6 +161,7 @@ fun ouvrirDialogDetailsReleve(
     defs: List<AdditionalFieldDef>,
     valeursInitiales: Map<String, String>,
     settingsJson: String,
+    formFieldsJson: String,
     typGrpInitial: String,
     commentInitial: String,
     dateDebutInitial: Long?,
@@ -435,10 +443,14 @@ fun ouvrirDialogDetailsReleve(
         return debut to (if (dateAvecFin && finActive) maxOf(calFin.timeInMillis, debut) else debut)
     }
 
-    // Nomenclature niveau relevé (TYP_GRP) — affichée si le serveur ne la masque pas.
+    // Type de regroupement (TYP_GRP) — affiché seulement si le serveur ne le masque pas :
+    //  - non masqué par les settings mobiles (champsAffichage), ET
+    //  - non masqué par la config web du serveur (form_fields.group_type), pour suivre le web
+    //    instance par instance (sur l'ANA, group_type=false ⇒ champ caché).
     val containerReleve = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
     val champsReleve = OcctaxFieldsConfig.champsAffichage(settingsJson, OcctaxFieldsConfig.Niveau.RELEVE)
-    if (champsReleve.isNotEmpty()) {
+    val typGrpVisible = champsReleve.isNotEmpty() && champFormVisible(formFieldsJson, "group_type")
+    if (typGrpVisible) {
         OcctaxFieldsRenderer.rendre(containerReleve, champsReleve, mapOf("TYP_GRP" to typGrpInitial), emptySet(), "")
         racine.addView(containerReleve)
     }
@@ -451,11 +463,17 @@ fun ouvrirDialogDetailsReleve(
         racine.addView(containerAdd)
     }
 
+    // Visibilité des champs Détails pilotée par le serveur (form_fields), par instance. Le champ
+    // est TOUJOURS construit (pour préserver sa valeur initiale dans le résultat) mais n'est ajouté
+    // à l'écran que s'il est visible. true par défaut si le serveur ne publie pas la clé.
+    val habitatVisible = champFormVisible(formFieldsJson, "habitat")
+    val commentVisible = champFormVisible(formFieldsJson, "comment_releve")
+
     // Habitat (cd_hab) — recherche live sur le référentiel HABREF du serveur. Le serveur filtre
     // déjà : on neutralise le filtrage client de l'AutoCompleteTextView (sinon il re-masque les
     // suggestions dont le libellé ne « commence » pas par le terme tapé). Une frappe invalide la
     // sélection précédente ; seul un clic sur une suggestion (re)fixe le cd_hab.
-    racine.addView(titre("Habitat"))
+    if (habitatVisible) racine.addView(titre("Habitat"))
     var cdHabChoisi: Int? = cdHabInitial
     val libellesHabitat = mutableListOf<String>()
     val cdParLibelle = HashMap<String, Int>()
@@ -522,10 +540,9 @@ fun ouvrirDialogDetailsReleve(
             if (libellesHabitat.isNotEmpty()) champHabitat.showDropDown()
         }
     }
-    racine.addView(champHabitat)
+    if (habitatVisible) racine.addView(champHabitat)
 
     // Commentaire libre du relevé (→ properties.comment).
-    racine.addView(titre("Commentaire"))
     val champCommentaire = EditText(ctx).apply {
         inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or
             InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
@@ -534,7 +551,10 @@ fun ouvrirDialogDetailsReleve(
         minLines = 2
         setPadding(0, 0, 0, (8 * density).toInt())
     }
-    racine.addView(champCommentaire)
+    if (commentVisible) {
+        racine.addView(titre("Commentaire"))
+        racine.addView(champCommentaire)
+    }
 
     val scroll = ScrollView(ctx).apply { addView(racine) }
     // Bouton « Valider » posé après show() pour pouvoir BLOQUER la fermeture si un champ
@@ -567,7 +587,7 @@ fun ouvrirDialogDetailsReleve(
                     comment = champCommentaire.text?.toString()?.trim().orEmpty(),
                     cdHab = cdHabChoisi,
                     habitatLabel = cdHabChoisi?.let { champHabitat.text?.toString()?.trim() },
-                    typGrp = if (champsReleve.isNotEmpty()) (OcctaxFieldsRenderer.collecter(containerReleve)["TYP_GRP"] ?: "") else typGrpInitial,
+                    typGrp = if (typGrpVisible) (OcctaxFieldsRenderer.collecter(containerReleve)["TYP_GRP"] ?: "") else typGrpInitial,
                     dateDebut = dDebut,
                     dateFin = dFin,
                 )

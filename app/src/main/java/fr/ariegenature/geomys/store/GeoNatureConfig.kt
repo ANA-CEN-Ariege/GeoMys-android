@@ -158,6 +158,21 @@ class GeoNatureConfig(context: Context) {
         get() = prefs.getInt("gn_obs_duration_days", 365)
         set(v) = prefs.edit().putInt("gn_obs_duration_days", v).apply()
 
+    /** Visibilité des champs du formulaire Occtax DU SERVEUR (`OCCTAX.form_fields`), en JSON brut.
+     *  Vide = non publié ⇒ tout visible. Permet d'aligner la visibilité d'un champ sur le serveur
+     *  (par instance), ex. masquer le type de regroupement si le serveur le masque. */
+    var formFieldsJson: String
+        get() = prefs.getString("gn_form_fields", "") ?: ""
+        set(v) = prefs.edit().putString("gn_form_fields", v).apply()
+
+    /** Le champ de formulaire serveur [key] (clé de `form_fields`, ex. `group_type`) est-il visible ?
+     *  **true par défaut** si la clé est absente ou la config non publiée — on ne masque jamais un
+     *  champ faute d'information (pas de régression sur un serveur qui n'expose pas `form_fields`). */
+    fun champFormVisible(key: String): Boolean = try {
+        if (formFieldsJson.isBlank()) true
+        else org.json.JSONObject(formFieldsJson).optBoolean(key, true)
+    } catch (_: Exception) { true }
+
     /** Taille de page pour la pagination TaxRef (`settings.sync.page_size` du serveur). Défaut 1000. */
     var taxrefPageSize: Int
         get() = prefs.getInt("gn_taxref_page_size", 1000)

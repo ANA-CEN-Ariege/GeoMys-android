@@ -48,6 +48,15 @@ import fr.ariegenature.geomys.ui.saisie.OcctaxFieldsRenderer
 
 private val gsonDetailsReleve = Gson()
 
+/** Masque le clavier logiciel et retire le focus du champ — appelé après une sélection dans un
+ *  menu déroulant pour que le clavier ne reste pas affiché. */
+private fun masquerClavier(champ: android.view.View) {
+    (champ.context.getSystemService(Context.INPUT_METHOD_SERVICE)
+        as? android.view.inputmethod.InputMethodManager)
+        ?.hideSoftInputFromWindow(champ.windowToken, 0)
+    champ.clearFocus()
+}
+
 /** Minuscule + diacritiques retirés, pour comparer « emile » et « Émile » indifféremment. */
 private fun normaliserAccents(s: String): String =
     java.text.Normalizer.normalize(s, java.text.Normalizer.Form.NFD)
@@ -223,6 +232,7 @@ fun ouvrirDialogDetailsReleve(
             // Clic = vide le champ puis déploie toute la liste (comme Paramètres).
             setOnClickListener { setText("", false); showDropDown() }
             setOnItemClickListener { _, _, pos, _ ->
+                masquerClavier(this)
                 val txt = (adapter.getItem(pos) as? String).orEmpty()
                 options.firstOrNull { it.second == txt }?.let { idChoisi = it.first; nomChoisi = it.second }
             }
@@ -287,6 +297,7 @@ fun ouvrirDialogDetailsReleve(
             threshold = 1
             setOnClickListener { setText("", false); showDropDown() }
             setOnItemClickListener { _, _, pos, _ ->
+                masquerClavier(this)
                 val txt = (adapter.getItem(pos) as? String).orEmpty()
                 options.firstOrNull { it.second == txt }?.let { choisis[it.first] = it.second }
                 setText("", false)
@@ -370,6 +381,7 @@ fun ouvrirDialogDetailsReleve(
     })
     champHabitat.setOnItemClickListener { _, _, pos, _ ->
         val libelle = adapterHabitat.getItem(pos) ?: return@setOnItemClickListener
+        masquerClavier(champHabitat)
         cdHabChoisi = cdParLibelle[libelle]
         majHabitatProgrammatique = true
         champHabitat.setText(libelle, false)

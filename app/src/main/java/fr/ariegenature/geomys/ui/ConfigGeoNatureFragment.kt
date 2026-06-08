@@ -295,6 +295,7 @@ class ConfigGeoNatureFragment : Fragment() {
         binding.acDatasets.threshold = 1
         binding.acDatasets.setOnItemClickListener { _, _, position, _ ->
             val labelChoisi = adapter.getItem(position) ?: return@setOnItemClickListener
+            masquerClavier(binding.acDatasets)
             val idx = noms.indexOf(labelChoisi)
             if (idx >= 0) {
                 gnConfig.idDataset = proposes[idx].id.toString()
@@ -375,6 +376,7 @@ class ConfigGeoNatureFragment : Fragment() {
         binding.acListes.threshold = 1
         binding.acListes.setOnItemClickListener { _, _, position, _ ->
             val labelChoisi = adapter.getItem(position) ?: return@setOnItemClickListener
+            masquerClavier(binding.acListes)
             val idx = noms.indexOf(labelChoisi)
             if (idx >= 0) {
                 gnConfig.taxaListeId = listes[idx].id.toString()
@@ -403,6 +405,15 @@ class ConfigGeoNatureFragment : Fragment() {
         }
     }
 
+    /** Masque le clavier logiciel et retire le focus du champ — appelé après une sélection dans un
+     *  menu déroulant des Paramètres, pour que le clavier ne reste pas affiché. */
+    private fun masquerClavier(champ: View) {
+        (requireContext().getSystemService(android.content.Context.INPUT_METHOD_SERVICE)
+            as? android.view.inputmethod.InputMethodManager)
+            ?.hideSoftInputFromWindow(champ.windowToken, 0)
+        champ.clearFocus()
+    }
+
     private fun peuplerSpinnerObservateurs(result: List<GeoNatureObservateur>) {
         observateurs.clear()
         observateurs.addAll(result)
@@ -413,6 +424,7 @@ class ConfigGeoNatureFragment : Fragment() {
         binding.acObservateurs.threshold = 1
         binding.acObservateurs.setOnItemClickListener { _, _, position, _ ->
             val labelChoisi = adapter.getItem(position) ?: return@setOnItemClickListener
+            masquerClavier(binding.acObservateurs)
             val idx = noms.indexOf(labelChoisi)
             if (idx >= 0) {
                 gnConfig.observateurDefautId = observateurs[idx].idRole.toString()

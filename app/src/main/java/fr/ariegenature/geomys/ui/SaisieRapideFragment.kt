@@ -864,7 +864,11 @@ class SaisieRapideFragment : Fragment() {
             statutObs     = statutObs.ifEmpty { null },
             mediaUrisCounting0          = mediaUrisCounting0,
             additionalFieldsCounting0   = additionalFieldsCounting0,
-            additionalFieldsReleve      = additionalFieldsReleve,
+            // Session vide (écran relevé sauté + « Détails » non ouvert) ⇒ valeurs par défaut serveur.
+            additionalFieldsReleve      = additionalFieldsReleve.ifEmpty {
+                fr.ariegenature.geomys.ui.saisie.AdditionalFieldsRenderer
+                    .defautsChampsReleve(gnConfig.additionalFieldsOcctaxJsonActif, gnConfig.idDataset.toIntOrNull())
+            },
             idDatasetReleve             = idDatasetReleveSession,
             typGrpReleve                = typGrpReleveSession.ifEmpty { null },
             observateursReleveIds       = observateursReleveIdsSession,

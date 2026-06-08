@@ -884,7 +884,12 @@ class SaisieObservationFragment : Fragment() {
                 naturalite                = obs.naturalite.ifEmpty { null },
                 determinateur             = obs.determinateur.ifEmpty { null },
                 mediaUrisCounting0        = obs.mediaUrisCounting0,
-                additionalFieldsReleve    = additionalFieldsReleveSession,
+                // Session vide (écran relevé sauté + « Détails » non ouvert) ⇒ on applique les
+                // valeurs par défaut serveur, pour qu'un champ relevé à défaut soit bien envoyé.
+                additionalFieldsReleve    = additionalFieldsReleveSession.ifEmpty {
+                    fr.ariegenature.geomys.ui.saisie.AdditionalFieldsRenderer
+                        .defautsChampsReleve(gnConfig.additionalFieldsOcctaxJsonActif, gnConfig.idDataset.toIntOrNull())
+                },
                 idDatasetReleve           = idDatasetReleveSession,
                 observateursReleveIds     = observateursReleveIdsSession,
                 observateursReleveNoms    = observateursReleveNomsSession,

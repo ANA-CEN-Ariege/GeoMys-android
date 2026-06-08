@@ -336,13 +336,13 @@ class TraceFragment : Fragment() {
         }
 
         binding.btnObservation.setOnLongClickListener {
-            // Saisie mono-taxons : si le serveur déclare des champs additionnels OCCTAX_RELEVE,
-            // on intercale d'abord l'écran "Détails du relevé" (mode mono : ses valeurs
-            // deviennent le défaut de session, commun à toutes les obs enregistrées ensuite).
+            // Saisie mono-taxons : on n'intercale l'écran "Détails du relevé" QUE s'il existe un
+            // champ additionnel OCCTAX_RELEVE obligatoire SANS valeur par défaut (sinon inutile :
+            // les champs restent éditables via « Détails », et un required avec défaut est satisfait).
             traceViewModel.typeSaisieLabel = getString(R.string.saisie_mono_taxons)
-            val aDesChampsReleve = fr.ariegenature.geomys.ui.saisie.AdditionalFieldsRenderer
-                .aDesChampsReleve(gnConfig.additionalFieldsOcctaxJsonActif, gnConfig.idDataset.toIntOrNull())
-            if (aDesChampsReleve) {
+            val ecranReleveNecessaire = fr.ariegenature.geomys.ui.saisie.AdditionalFieldsRenderer
+                .aDesChampsReleveRequisSansDefaut(gnConfig.additionalFieldsOcctaxJsonActif, gnConfig.idDataset.toIntOrNull())
+            if (ecranReleveNecessaire) {
                 findNavController().navigate(
                     R.id.action_trace_to_details_releve,
                     Bundle().apply { putBoolean("mono", true) },
@@ -414,12 +414,13 @@ class TraceFragment : Fragment() {
                 modePositionnement = false
                 resetSaisieGeom()
                 updateModePositionnement()
-                // Si le serveur déclare des champs additionnels OCCTAX_RELEVE pour le dataset
-                // courant, on intercale l'écran "Détails du relevé" : il valide les champs
-                // required avant de passer à la saisie des espèces.
-                val aDesChampsReleve = fr.ariegenature.geomys.ui.saisie.AdditionalFieldsRenderer
-                    .aDesChampsReleve(gnConfig.additionalFieldsOcctaxJsonActif, gnConfig.idDataset.toIntOrNull())
-                val cible = if (aDesChampsReleve) R.id.action_trace_to_details_releve
+                // On n'intercale l'écran "Détails du relevé" que s'il existe un champ additionnel
+                // OCCTAX_RELEVE obligatoire SANS valeur par défaut (qu'il faut donc saisir avant les
+                // espèces). Sinon on va directement aux espèces : les champs restent éditables via
+                // « Détails », et un required avec défaut est déjà satisfait.
+                val ecranReleveNecessaire = fr.ariegenature.geomys.ui.saisie.AdditionalFieldsRenderer
+                    .aDesChampsReleveRequisSansDefaut(gnConfig.additionalFieldsOcctaxJsonActif, gnConfig.idDataset.toIntOrNull())
+                val cible = if (ecranReleveNecessaire) R.id.action_trace_to_details_releve
                             else R.id.action_trace_to_saisie
                 findNavController().navigate(cible, bundle)
             }

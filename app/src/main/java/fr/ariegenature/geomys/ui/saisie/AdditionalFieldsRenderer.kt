@@ -62,6 +62,27 @@ object AdditionalFieldsRenderer {
             .filter { it.appliqueA(fr.ariegenature.geomys.network.AdditionalFieldsObject.RELEVE) }
             .any { it.visiblePour(idDataset, emptyList()) }
 
+    /** Vrai s'il existe au moins un champ additionnel relevé visible **obligatoire ET SANS valeur
+     *  par défaut** — seul cas qui justifie d'intercaler l'écran « Détails du relevé » avant la
+     *  saisie. Un required AVEC défaut est déjà satisfait, et tous ces champs restent de toute
+     *  façon éditables via le bouton « Détails » de l'écran de saisie. */
+    fun aDesChampsReleveRequisSansDefaut(additionalFieldsOcctaxJson: String, idDataset: Int?): Boolean =
+        fromJson(additionalFieldsOcctaxJson)
+            .filter { it.appliqueA(fr.ariegenature.geomys.network.AdditionalFieldsObject.RELEVE) }
+            .filter { it.visiblePour(idDataset, emptyList()) }
+            .any { it.required && it.defaultValue.isNullOrBlank() }
+
+    /** Valeurs par défaut des champs additionnels relevé visibles (`fieldName` → defaultValue non
+     *  vide). Sert à pré-remplir la session quand on SAUTE l'écran « Détails du relevé » : un champ
+     *  avec défaut (notamment required) porte ainsi sa valeur jusqu'à l'envoi sans qu'on ait à
+     *  ouvrir « Détails ». */
+    fun defautsChampsReleve(additionalFieldsOcctaxJson: String, idDataset: Int?): Map<String, String> =
+        fromJson(additionalFieldsOcctaxJson)
+            .filter { it.appliqueA(fr.ariegenature.geomys.network.AdditionalFieldsObject.RELEVE) }
+            .filter { it.visiblePour(idDataset, emptyList()) }
+            .mapNotNull { def -> def.defaultValue?.takeIf { it.isNotBlank() }?.let { def.fieldName to it } }
+            .toMap()
+
     /** Vide le container et rend tous les champs définis dans `defs`.
      *  Les valeurs courantes sont lues depuis `valeurs` (Map<field_name, valeur stringifiée>).
      *  Tolère un `valeurs == null` (cas Gson : champ absent du JSON désérialisé). */

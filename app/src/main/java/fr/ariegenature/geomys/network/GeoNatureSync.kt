@@ -459,6 +459,10 @@ object GeoNatureSync {
                     settings?.optDouble("area_observation_duration", 0.0)?.toInt()?.takeIf { it > 0 } ?: 365
                 config.taxrefPageSize =
                     settings?.optJSONObject("sync")?.optInt("page_size", 0)?.takeIf { it > 0 } ?: 1000
+                // Réglages de saisie de la date du relevé (input.date) : heures + date de fin.
+                val dateCfg = settings?.optJSONObject("input")?.optJSONObject("date")
+                config.dateAvecHeures = dateCfg?.optBoolean("enable_hours", false) ?: false
+                config.dateAvecFin = dateCfg?.optBoolean("enable_end_date", false) ?: false
                 val nomenclature = settings?.optJSONObject("nomenclature")
                 if (nomenclature == null) {
                     config.settingsOcctaxJson = ""

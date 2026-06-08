@@ -126,6 +126,10 @@ data class DetailsReleveResult(
     val habitatLabel: String? = null,
     /** Code nomenclature TYP_GRP (type de regroupement du relevé), "" si non renseigné/masqué. */
     val typGrp: String = "",
+    /** Date+heure de début du relevé (epoch millis), null si non géré. */
+    val dateDebut: Long? = null,
+    /** Date+heure de fin du relevé (epoch millis), null si non géré. */
+    val dateFin: Long? = null,
 )
 
 /** Dialog "Détails du relevé" partagé par la saisie multi-taxons ([SaisieObservationFragment])
@@ -152,6 +156,10 @@ fun ouvrirDialogDetailsReleve(
     settingsJson: String,
     typGrpInitial: String,
     commentInitial: String,
+    dateDebutInitial: Long?,
+    dateFinInitial: Long?,
+    dateAvecHeures: Boolean,
+    dateAvecFin: Boolean,
     cdHabInitial: Int?,
     habitatLabelInitial: String?,
     scope: CoroutineScope,
@@ -316,6 +324,117 @@ fun ouvrirDialogDetailsReleve(
     // Infos lecture seule restantes (position, géométrie…).
     infos.forEach { (label, valeur) -> if (valeur.isNotBlank()) ligneLecture(label, valeur) }
 
+    // ── Date du relevé (saisie a posteriori possible) ── pilotée serveur (input.date) :
+    //    date de début toujours ; heure et/ou date de fin selon ce que le serveur active.
+    val calDebut = java.util.Calendar.getInstance().apply {
+        timeInMillis = dateDebutInitial ?: System.currentTimeMillis()
+    }
+    val calFin = java.util.Calendar.getInstance().apply {
+        timeInMillis = dateFinInitial ?: calDebut.timeInMillis
+    }
+    val fmtDate = java.text.SimpleDateFormat("dd/MM/yyyy", java.util.Locale.FRANCE)
+    val fmtHeure = java.text.SimpleDateFormat("HH:mm", java.util.Locale.FRANCE)
+    fun champDateHeure(): TextView = TextView(ctx).apply {
+        textSize = 15f
+        setPadding((10 * density).toInt(), (8 * density).toInt(), (10 * density).toInt(), (8 * density).toInt())
+        isClickable = true
+        background = android.graphics.drawable.GradientDrawable().apply {
+            cornerRadius = 6 * density
+            setStroke((1 * density).toInt(), couleurSecondaire(ctx))
+        }
+    }
+    fun ligneDate(): LinearLayout = LinearLayout(ctx).apply {
+        orientation = LinearLayout.HORIZONTAL
+        setPadding(0, 0, 0, (8 * density).toInt())
+    }
+    fun choisirDate(cal: java.util.Calendar, onSet: () -> Unit) {
+        android.app.DatePickerDialog(ctx, { _, y, m, d ->
+            cal.set(java.util.Calendar.YEAR, y); cal.set(java.util.Calendar.MONTH, m)
+            cal.set(java.util.Calendar.DAY_OF_MONTH, d); onSet()
+        }, cal.get(java.util.Calendar.YEAR), cal.get(java.util.Calendar.MONTH),
+            cal.get(java.util.Calendar.DAY_OF_MONTH))
+            .apply { datePicker.maxDate = System.currentTimeMillis() } // pas de date future
+            .show()
+    }
+    fun choisirHeure(cal: java.util.Calendar, onSet: () -> Unit) {
+        android.app.TimePickerDialog(ctx, { _, h, min ->
+            cal.set(java.util.Calendar.HOUR_OF_DAY, h); cal.set(java.util.Calendar.MINUTE, min); onSet()
+        }, cal.get(java.util.Calendar.HOUR_OF_DAY), cal.get(java.util.Calendar.MINUTE), true).show()
+    }
+    fun ecart() = android.view.View(ctx).apply {
+        layoutParams = LinearLayout.LayoutParams((8 * density).toInt(), 1)
+    }
+    // Date de fin repliée par défaut (comme le web : un « + » la révèle) ; dépliée d'emblée si on
+    // édite un relevé qui porte déjà une fin distincte du début.
+    var finActive = dateAvecFin && dateFinInitial != null && dateFinInitial != dateDebutInitial
+
+    racine.addView(titre("Date du relevé"))
+    val ligneDebut = ligneDate()
+    ligneDebut.addView(champDateHeure().apply {
+        text = fmtDate.format(calDebut.time)
+        setOnClickListener { choisirDate(calDebut) { text = fmtDate.format(calDebut.time) } }
+    })
+    if (dateAvecHeures) {
+        ligneDebut.addView(ecart())
+        ligneDebut.addView(champDateHeure().apply {
+            text = fmtHeure.format(calDebut.time)
+            setOnClickListener { choisirHeure(calDebut) { text = fmtHeure.format(calDebut.time) } }
+        })
+    }
+
+    // Bloc « date de fin » (titre + ligne), masqué tant qu'on ne l'a pas ajouté via « ＋ ».
+    val titreFin = titre("Date de fin")
+    val ligneFin = ligneDate()
+    val champDateFin = champDateHeure().apply {
+        text = fmtDate.format(calFin.time)
+        setOnClickListener { choisirDate(calFin) { text = fmtDate.format(calFin.time) } }
+    }
+    val champHeureFin = if (dateAvecHeures) champDateHeure().apply {
+        text = fmtHeure.format(calFin.time)
+        setOnClickListener { choisirHeure(calFin) { text = fmtHeure.format(calFin.time) } }
+    } else null
+    ligneFin.addView(champDateFin)
+    champHeureFin?.let { ligneFin.addView(ecart()); ligneFin.addView(it) }
+
+    val btnAjouterFin = champDateHeure().apply { text = "＋" }
+    val btnRetirerFin = champDateHeure().apply {
+        text = "✕"; setTextColor(0xFFC62828.toInt()); background = null
+    }
+    fun majAffichageFin() {
+        titreFin.visibility = if (finActive) android.view.View.VISIBLE else android.view.View.GONE
+        ligneFin.visibility = if (finActive) android.view.View.VISIBLE else android.view.View.GONE
+        btnAjouterFin.visibility =
+            if (dateAvecFin && !finActive) android.view.View.VISIBLE else android.view.View.GONE
+    }
+    btnAjouterFin.setOnClickListener {
+        calFin.timeInMillis = calDebut.timeInMillis // la fin démarre sur le début
+        champDateFin.text = fmtDate.format(calFin.time)
+        champHeureFin?.text = fmtHeure.format(calFin.time)
+        finActive = true; majAffichageFin()
+    }
+    btnRetirerFin.setOnClickListener { finActive = false; majAffichageFin() }
+    if (dateAvecFin) {
+        ligneDebut.addView(ecart()); ligneDebut.addView(btnAjouterFin)
+        ligneFin.addView(ecart()); ligneFin.addView(btnRetirerFin)
+    }
+    racine.addView(ligneDebut)
+    racine.addView(titreFin)
+    racine.addView(ligneFin)
+    majAffichageFin()
+
+    // Renvoie (début, fin) en millis. Sans heures : journée entière (00:00 → 23:59). Date de fin non
+    // ajoutée ⇒ fin = début. La fin est bornée à ≥ début.
+    fun getDates(): Pair<Long, Long> {
+        if (!dateAvecHeures) {
+            calDebut.set(java.util.Calendar.HOUR_OF_DAY, 0); calDebut.set(java.util.Calendar.MINUTE, 0)
+            calDebut.set(java.util.Calendar.SECOND, 0)
+            calFin.set(java.util.Calendar.HOUR_OF_DAY, 23); calFin.set(java.util.Calendar.MINUTE, 59)
+            calFin.set(java.util.Calendar.SECOND, 0)
+        }
+        val debut = calDebut.timeInMillis
+        return debut to (if (dateAvecFin && finActive) maxOf(calFin.timeInMillis, debut) else debut)
+    }
+
     // Nomenclature niveau relevé (TYP_GRP) — affichée si le serveur ne la masque pas.
     val containerReleve = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
     val champsReleve = OcctaxFieldsConfig.champsAffichage(settingsJson, OcctaxFieldsConfig.Niveau.RELEVE)
@@ -438,6 +557,7 @@ fun ouvrirDialogDetailsReleve(
             }
             val ds = getDataset()
             val obs = getObservateurs()
+            val (dDebut, dFin) = getDates()
             onValider(
                 DetailsReleveResult(
                     idDataset = ds?.first,
@@ -448,6 +568,8 @@ fun ouvrirDialogDetailsReleve(
                     cdHab = cdHabChoisi,
                     habitatLabel = cdHabChoisi?.let { champHabitat.text?.toString()?.trim() },
                     typGrp = if (champsReleve.isNotEmpty()) (OcctaxFieldsRenderer.collecter(containerReleve)["TYP_GRP"] ?: "") else typGrpInitial,
+                    dateDebut = dDebut,
+                    dateFin = dFin,
                 )
             )
             dialog.dismiss()

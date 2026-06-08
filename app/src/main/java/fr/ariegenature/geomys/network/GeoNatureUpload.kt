@@ -145,9 +145,13 @@ object GeoNatureUpload {
                 // un batch multi-taxons issu de SaisieObservationFragment).
                 val lat = groupe.first().latitude
                 val lon = groupe.first().longitude
-                // Plage temporelle couvrant toutes les obs du groupe (date_min/max).
-                val dateMin = Date(groupe.minOf { it.date })
-                val dateMax = Date(groupe.maxOf { it.date })
+                // Plage temporelle : par défaut, couvre toutes les obs du groupe (dates de saisie).
+                // Si « Détails du relevé » porte une date explicite (dateDebutReleve), elle PRIME
+                // (saisie a posteriori) ; dateFinReleve borne la fin, sinon = début.
+                val debutOverride = groupe.first().dateDebutReleve
+                val dateMin = debutOverride?.let { Date(it) } ?: Date(groupe.minOf { it.date })
+                val dateMax = (groupe.first().dateFinReleve ?: debutOverride)?.let { Date(it) }
+                    ?: Date(groupe.maxOf { it.date })
 
                 // additional_fields du relevé : on prend les valeurs portées par la 1re obs du
                 // groupe (toutes les obs d'un même releveId portent la même copie — édition côté

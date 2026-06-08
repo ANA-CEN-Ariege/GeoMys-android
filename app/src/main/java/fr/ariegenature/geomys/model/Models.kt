@@ -123,6 +123,11 @@ data class Observation(
     var habitatReleveLabel: String? = null,
     /** Type de regroupement du relevé (nomenclature TYP_GRP). null/"" = non renseigné. */
     var typGrpReleve: String? = null,
+    /** Date+heure de DÉBUT du relevé (epoch millis), saisie dans « Détails ». null = on utilise les
+     *  dates de saisie des obs (→ `date_min`/`hour_min`). */
+    var dateDebutReleve: Long? = null,
+    /** Date+heure de FIN du relevé (epoch millis). null = même que le début (→ `date_max`/`hour_max`). */
+    var dateFinReleve: Long? = null,
 )
 
 data class Sortie(

@@ -163,6 +163,16 @@ class GeoNatureConfig(context: Context) {
         get() = prefs.getInt("gn_taxref_page_size", 1000)
         set(v) = prefs.edit().putInt("gn_taxref_page_size", v).apply()
 
+    /** Saisie de l'HEURE du relevé activée (`settings.input.date.enable_hours`). Défaut false. */
+    var dateAvecHeures: Boolean
+        get() = prefs.getBoolean("gn_date_hours", false)
+        set(v) = prefs.edit().putBoolean("gn_date_hours", v).apply()
+
+    /** Saisie d'une DATE DE FIN du relevé activée (`settings.input.date.enable_end_date`). Défaut false. */
+    var dateAvecFin: Boolean
+        get() = prefs.getBoolean("gn_date_end", false)
+        set(v) = prefs.edit().putBoolean("gn_date_end", v).apply()
+
     /** Cache des champs additionnels Occtax filtré par le flag serveur `additional_fields` du
      *  settings : renvoie "" (donc aucun champ additionnel rendu) si le serveur les désactive. À
      *  utiliser dans tous les contextes d'AFFICHAGE des champs additionnels. */

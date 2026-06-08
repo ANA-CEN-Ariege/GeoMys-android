@@ -124,6 +124,8 @@ class SaisieRapideFragment : Fragment() {
     private var commentReleveSession: String = ""
     private var cdHabReleveSession: Int? = null
     private var habitatReleveLabelSession: String? = null
+    private var dateDebutReleveSession: Long? = null
+    private var dateFinReleveSession: Long? = null
     /** Type de regroupement (TYP_GRP) du relevé mono. "" = non renseigné. */
     private var typGrpReleveSession: String = ""
 
@@ -241,6 +243,8 @@ class SaisieRapideFragment : Fragment() {
             st.getString("rs_comment")?.let { commentReleveSession = it }
             if (st.containsKey("rs_cdhab")) cdHabReleveSession = st.getInt("rs_cdhab")
             st.getString("rs_habnom")?.let { habitatReleveLabelSession = it }
+            if (st.containsKey("rs_datedeb")) dateDebutReleveSession = st.getLong("rs_datedeb")
+            if (st.containsKey("rs_datefin")) dateFinReleveSession = st.getLong("rs_datefin")
             st.getString("rs_add")?.let { json ->
                 additionalFieldsReleve = try {
                     Gson().fromJson(json, object : TypeToken<Map<String, String>>() {}.type) ?: additionalFieldsReleve
@@ -548,6 +552,7 @@ class SaisieRapideFragment : Fragment() {
                 requireContext(), emptyList(), datasets, idDsInitial, nomDsInitial,
                 observateurs, idsObsInitial, nomsObsInitial, defsReleve, additionalFieldsReleve,
                 gnConfig.settingsOcctaxJson, typGrpReleveSession, commentReleveSession,
+                dateDebutReleveSession, dateFinReleveSession, gnConfig.dateAvecHeures, gnConfig.dateAvecFin,
                 cdHabReleveSession, habitatReleveLabelSession,
                 viewLifecycleOwner.lifecycleScope,
                 { terme -> fr.ariegenature.geomys.network.HabitatService.rechercher(gnConfig.urlServeur, terme) },
@@ -559,6 +564,8 @@ class SaisieRapideFragment : Fragment() {
                 commentReleveSession = res.comment
                 cdHabReleveSession = res.cdHab
                 habitatReleveLabelSession = res.habitatLabel
+                dateDebutReleveSession = res.dateDebut
+                dateFinReleveSession = res.dateFin
                 typGrpReleveSession = res.typGrp
             }
         }
@@ -865,6 +872,8 @@ class SaisieRapideFragment : Fragment() {
             commentReleve               = commentReleveSession.ifEmpty { null },
             cdHabReleve                 = cdHabReleveSession,
             habitatReleveLabel          = habitatReleveLabelSession,
+            dateDebutReleve             = dateDebutReleveSession,
+            dateFinReleve               = dateFinReleveSession,
             additionalFieldsOccurrence  = additionalFieldsOccurrence,
             denombrementsAdditionnels   = denombrementsAdditionnels,
         )
@@ -1107,6 +1116,8 @@ class SaisieRapideFragment : Fragment() {
         if (commentReleveSession.isNotEmpty()) outState.putString("rs_comment", commentReleveSession)
         cdHabReleveSession?.let { outState.putInt("rs_cdhab", it) }
         habitatReleveLabelSession?.let { outState.putString("rs_habnom", it) }
+        dateDebutReleveSession?.let { outState.putLong("rs_datedeb", it) }
+        dateFinReleveSession?.let { outState.putLong("rs_datefin", it) }
         if (additionalFieldsReleve.isNotEmpty()) outState.putString("rs_add", Gson().toJson(additionalFieldsReleve))
     }
 

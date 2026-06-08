@@ -126,6 +126,8 @@ class SaisieObservationFragment : Fragment() {
     private var commentReleveSession: String = ""
     private var cdHabReleveSession: Int? = null
     private var habitatReleveLabelSession: String? = null
+    private var dateDebutReleveSession: Long? = null
+    private var dateFinReleveSession: Long? = null
     /** Type de regroupement (TYP_GRP) du relevé, commun à toutes les obs. "" = non renseigné. */
     private var typGrpReleveSession: String = ""
 
@@ -209,6 +211,8 @@ class SaisieObservationFragment : Fragment() {
                 commentReleveSession = premier.commentReleve ?: ""
                 cdHabReleveSession = premier.cdHabReleve
                 habitatReleveLabelSession = premier.habitatReleveLabel
+                dateDebutReleveSession = premier.dateDebutReleve
+                dateFinReleveSession = premier.dateFinReleve
                 typGrpReleveSession = premier.typGrpReleve ?: ""
                 geometryTypeSession = premier.geometryType
                 geometryCoordsJsonSession = premier.geometryCoordsJson
@@ -427,6 +431,7 @@ class SaisieObservationFragment : Fragment() {
             requireContext(), infos, datasets, idDsInitial, nomDsInitial,
             observateurs, idsObsInitial, nomsObsInitial, defs, additionalFieldsReleveSession,
             gnConfig.settingsOcctaxJson, typGrpReleveSession, commentReleveSession,
+            dateDebutReleveSession, dateFinReleveSession, gnConfig.dateAvecHeures, gnConfig.dateAvecFin,
             cdHabReleveSession, habitatReleveLabelSession,
             viewLifecycleOwner.lifecycleScope,
             { terme -> fr.ariegenature.geomys.network.HabitatService.rechercher(gnConfig.urlServeur, terme) },
@@ -438,6 +443,8 @@ class SaisieObservationFragment : Fragment() {
             commentReleveSession = res.comment
             cdHabReleveSession = res.cdHab
             habitatReleveLabelSession = res.habitatLabel
+            dateDebutReleveSession = res.dateDebut
+            dateFinReleveSession = res.dateFin
             typGrpReleveSession = res.typGrp
         }
     }
@@ -514,6 +521,8 @@ class SaisieObservationFragment : Fragment() {
             st.getString("rs_comment")?.let { commentReleveSession = it }
             if (st.containsKey("rs_cdhab")) cdHabReleveSession = st.getInt("rs_cdhab")
             st.getString("rs_habnom")?.let { habitatReleveLabelSession = it }
+            if (st.containsKey("rs_datedeb")) dateDebutReleveSession = st.getLong("rs_datedeb")
+            if (st.containsKey("rs_datefin")) dateFinReleveSession = st.getLong("rs_datefin")
             st.getString("rs_add")?.let { json ->
                 additionalFieldsReleveSession = try {
                     com.google.gson.Gson().fromJson(
@@ -538,6 +547,8 @@ class SaisieObservationFragment : Fragment() {
         if (commentReleveSession.isNotEmpty()) outState.putString("rs_comment", commentReleveSession)
         cdHabReleveSession?.let { outState.putInt("rs_cdhab", it) }
         habitatReleveLabelSession?.let { outState.putString("rs_habnom", it) }
+        dateDebutReleveSession?.let { outState.putLong("rs_datedeb", it) }
+        dateFinReleveSession?.let { outState.putLong("rs_datefin", it) }
         if (additionalFieldsReleveSession.isNotEmpty())
             outState.putString("rs_add", com.google.gson.Gson().toJson(additionalFieldsReleveSession))
     }
@@ -880,6 +891,8 @@ class SaisieObservationFragment : Fragment() {
                 commentReleve             = commentReleveSession.ifEmpty { null },
                 cdHabReleve               = cdHabReleveSession,
                 habitatReleveLabel        = habitatReleveLabelSession,
+                dateDebutReleve           = dateDebutReleveSession,
+                dateFinReleve             = dateFinReleveSession,
                 typGrpReleve              = typGrpReleveSession.ifEmpty { null },
                 geometryType              = geometryTypeSession,
                 geometryCoordsJson        = geometryCoordsJsonSession,

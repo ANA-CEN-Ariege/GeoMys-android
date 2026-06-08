@@ -130,6 +130,9 @@ class SaisieObservationFragment : Fragment() {
     private var dateFinReleveSession: Long? = null
     /** Type de regroupement (TYP_GRP) du relevé, commun à toutes les obs. "" = non renseigné. */
     private var typGrpReleveSession: String = ""
+    /** Champs relevé supplémentaires pilotés par form_fields (altitude, profondeur, lieu, précision,
+     *  technique de regroupement, nature objet géo) — clé = clé form_fields. */
+    private var champsReleveExtraSession: Map<String, String> = emptyMap()
 
     /** Géométrie du relevé courant : "Point" (défaut), "LineString", "Polygon". Null = Point.
      *  Partagée par toutes les obs (un relevé = une géométrie + N occurrences). */
@@ -214,6 +217,7 @@ class SaisieObservationFragment : Fragment() {
                 dateDebutReleveSession = premier.dateDebutReleve
                 dateFinReleveSession = premier.dateFinReleve
                 typGrpReleveSession = premier.typGrpReleve ?: ""
+                champsReleveExtraSession = premier.champsReleveExtra
                 geometryTypeSession = premier.geometryType
                 geometryCoordsJsonSession = premier.geometryCoordsJson
                 obsRelevExistants.forEach { obsExistante ->
@@ -433,6 +437,7 @@ class SaisieObservationFragment : Fragment() {
             gnConfig.settingsOcctaxJson, gnConfig.formFieldsJson, typGrpReleveSession, commentReleveSession,
             dateDebutReleveSession, dateFinReleveSession, gnConfig.dateAvecHeures, gnConfig.dateAvecFin,
             cdHabReleveSession, habitatReleveLabelSession,
+            champsReleveExtraSession,
             viewLifecycleOwner.lifecycleScope,
             { terme -> fr.ariegenature.geomys.network.HabitatService.rechercher(gnConfig.urlServeur, terme) },
         ) { res ->
@@ -446,6 +451,7 @@ class SaisieObservationFragment : Fragment() {
             dateDebutReleveSession = res.dateDebut
             dateFinReleveSession = res.dateFin
             typGrpReleveSession = res.typGrp
+            champsReleveExtraSession = res.champsExtra
         }
     }
 
@@ -530,6 +536,13 @@ class SaisieObservationFragment : Fragment() {
                     ) ?: additionalFieldsReleveSession
                 } catch (_: Exception) { additionalFieldsReleveSession }
             }
+            st.getString("rs_extra")?.let { json ->
+                champsReleveExtraSession = try {
+                    com.google.gson.Gson().fromJson(
+                        json, object : com.google.gson.reflect.TypeToken<Map<String, String>>() {}.type,
+                    ) ?: champsReleveExtraSession
+                } catch (_: Exception) { champsReleveExtraSession }
+            }
         }
         // Filet de sécurité : on consomme aussi ici au cas où onResume serait trop tardif
         // pour certains cas de figure du cycle de vie Navigation. consommerString supprime
@@ -551,6 +564,8 @@ class SaisieObservationFragment : Fragment() {
         dateFinReleveSession?.let { outState.putLong("rs_datefin", it) }
         if (additionalFieldsReleveSession.isNotEmpty())
             outState.putString("rs_add", com.google.gson.Gson().toJson(additionalFieldsReleveSession))
+        if (champsReleveExtraSession.isNotEmpty())
+            outState.putString("rs_extra", com.google.gson.Gson().toJson(champsReleveExtraSession))
     }
 
     private fun consommerResultatsSousEcrans() {
@@ -873,6 +888,7 @@ class SaisieObservationFragment : Fragment() {
                 dateDebutReleve           = dateDebutReleveSession,
                 dateFinReleve             = dateFinReleveSession,
                 typGrpReleve              = typGrpReleveSession.ifEmpty { null },
+                champsReleveExtra         = champsReleveExtraSession,
                 geometryType              = geometryTypeSession,
                 geometryCoordsJson        = geometryCoordsJsonSession,
                 additionalFieldsOccurrence = obs.additionalFieldsOccurrence,

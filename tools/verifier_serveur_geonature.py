@@ -22,7 +22,7 @@ import http.cookiejar
 import urllib.request
 import urllib.error
 
-G = "\033[32m"; Y = "\033[33m"; R = "\033[31m"; Z = "\033[0m"
+G = "\033[32m"; Y = "\033[33m"; R = "\033[31m"; B = "\033[36m"; Z = "\033[0m"
 OK = f"{G}  OK  {Z}"; WARN = f"{Y}ATTENT{Z}"; KO = f"{R}ECHEC {Z}"
 
 
@@ -44,6 +44,9 @@ def main():
         url = api + path
         data = json.dumps(payload).encode() if payload is not None else None
         headers = {"Content-Type": "application/json"} if data else {}
+        # Affiche l'endpoint EXACT utilisé (méthode + URL complète, query comprise), juste avant
+        # son verdict. Le corps (ex. mot de passe du login) n'est jamais affiché.
+        print(f"    {B}→ {'POST' if data else 'GET'} {url}{Z}")
         req = urllib.request.Request(url, data=data, headers=headers)
         try:
             with opener.open(req, timeout=25) as r:

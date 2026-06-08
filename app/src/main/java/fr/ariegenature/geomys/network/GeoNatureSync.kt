@@ -211,6 +211,10 @@ object GeoNatureSync {
         val cdNomsDejaComptes = mutableSetOf<Int>()
         val listesSynchronisees = mutableListOf<Int>()
         val listesEnEchec = mutableListOf<Int>()
+        // Index COMPLET cd_nom → noms français (sans perte par collision de noms) + cd_nom → nom
+        // scientifique, pour résoudre les noms français APRÈS agrégation (cf. plus bas).
+        val vernsCdNom = mutableMapOf<Int, LinkedHashSet<String>>()
+        val lbNomParCd = mutableMapOf<Int, String>()
 
         // Téléchargement PARALLÈLE des listes (concurrence bornée) — c'est le poste le plus
         // lourd de la synchro. Chaque liste est récupérée indépendamment, sans état partagé.
@@ -230,20 +234,20 @@ object GeoNatureSync {
             }.awaitAll()
         }
 
-        // Fusion SÉQUENTIELLE (ordre des listes préservé par awaitAll) → mêmes invariants que
-        // l'ancienne boucle série : dernier écrit gagne pour un nom partagé, comptage dédupliqué.
-        // Les items d'une liste INTERROMPUE en cours de pagination (res.ok=false) sont fusionnés
-        // quand même — les noms aident l'autocomplétion — mais la liste n'est PAS marquée
-        // synchronisée : le ⚠ ci-dessous la signale et le prochain sync la retentera en entier.
+        // Fusion SÉQUENTIELLE (ordre des listes préservé par awaitAll). Les clés SCIENTIFIQUES sont
+        // posées ici ; les noms FRANÇAIS sont seulement ACCUMULÉS par cd_nom (résolus après la boucle,
+        // une fois l'appartenance aux listes connue — cf. bloc « résolution noms français »). Les
+        // items d'une liste INTERROMPUE (res.ok=false) sont fusionnés quand même — les noms aident
+        // l'autocomplétion — mais la liste n'est PAS marquée synchronisée : le ⚠ ci-dessous la
+        // signale et le prochain sync la retentera en entier.
         for (res in resultats) {
             if (res.ok) listesSynchronisees.add(res.idListe) else listesEnEchec.add(res.idListe)
             for (item in res.items) {
                 for (partie in item.nomVernRaw.split(",")) {
                     val vernNettoye = TaxRefCache.nettoyerSuffixeArticle(partie.trim())
-                    if (vernNettoye.isEmpty()) continue
-                    val cle = TaxRefCache.normaliser(vernNettoye)
-                    if (cle.isNotEmpty()) entrees[cle] = TaxRefEntry(item.cdNom, item.lbNom, vernNettoye)
+                    if (vernNettoye.isNotEmpty()) vernsCdNom.getOrPut(item.cdNom) { LinkedHashSet() }.add(vernNettoye)
                 }
+                lbNomParCd[item.cdNom] = item.lbNom
                 val cleSci = TaxRefCache.normaliser(item.lbNom)
                 if (cleSci.isNotEmpty()) entrees[cleSci] = TaxRefEntry(item.cdNom, item.lbNom, null)
                 if (item.group2.isNotEmpty()) {
@@ -260,6 +264,29 @@ object GeoNatureSync {
             }
         }
 
+        // ── Résolution des noms FRANÇAIS → cd_nom (après agrégation : l'appartenance aux listes est
+        // alors connue). Le cache principal étant indexé par NOM, plusieurs cd_nom partageant un nom
+        // vernaculaire (typiquement une espèce et ses sous-espèces) entrent en collision de clé. On
+        // privilégie alors le cd_nom appartenant à la LISTE CONFIGURÉE pour la saisie (taxaListeId),
+        // puis le plus petit cd_nom (déterministe) — sinon « le dernier écrit » ferait pointer le nom
+        // français sur un cd_nom arbitraire, souvent hors liste (ex. sous-espèce), invisible à la
+        // saisie. On NE remplace PAS une clé scientifique homonyme déjà posée.
+        val listeConfig = config.taxaListeId.trim().toIntOrNull()
+        val candidatsFr = HashMap<String, MutableList<Pair<Int, String>>>()
+        for ((cd, noms) in vernsCdNom) for (nom in noms) {
+            val cle = TaxRefCache.normaliser(nom)
+            if (cle.isNotEmpty()) candidatsFr.getOrPut(cle) { mutableListOf() }.add(cd to nom)
+        }
+        for ((cle, cands) in candidatsFr) {
+            if (cle in entrees) continue
+            val best = cands.minWithOrNull(
+                compareByDescending<Pair<Int, String>> {
+                    listeConfig != null && listeConfig in (listesParCdNom[it.first] ?: emptySet())
+                }.thenBy { it.first }
+            ) ?: continue
+            entrees[cle] = TaxRefEntry(best.first, lbNomParCd[best.first].orEmpty(), best.second)
+        }
+
         if (entrees.isEmpty()) {
             return@withContext Pair(0, "Aucun taxon récupéré sur ${listesAFetcher.size} liste(s).")
         }
@@ -269,7 +296,11 @@ object GeoNatureSync {
         // additif ne les supprimerait pas). Sur échec total, on est déjà ressorti plus haut sans
         // toucher au cache existant.
         TaxRefCache.vider()
-        TaxRefCache.ajouter(entrees)
+        // remplacerTout (et non ajouter) : écriture streaming directe, sans recharger ni copier la
+        // map — évite les pics mémoire sur les gros référentiels (200k+ taxons → OOM avant).
+        TaxRefCache.remplacerTout(entrees)
+        // Index complet cd_nom → noms français (APRÈS remplacerTout qui réinitialise les memo).
+        TaxRefCache.ajouterVerns(vernsCdNom)
         if (groupeMap.isNotEmpty()) TaxRefCache.ajouterGroupes(groupeMap)
         if (groupe1Map.isNotEmpty() || regneMap.isNotEmpty()) TaxRefCache.ajouterGroupes1etRegnes(groupe1Map, regneMap)
         // Sérialise Set<Int> → List<Int> pour stockage. L'ordre n'est pas signifiant.

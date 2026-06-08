@@ -199,6 +199,21 @@ object GeoNatureUpload {
                         resolverIdNomenclature(code, "TYP_GRP", emptyMap(), nomenclatures)
                             ?.let { put("id_nomenclature_grp_typ", it) }
                     }
+                    // Champs relevé supplémentaires pilotés par form_fields : entiers
+                    // (altitude/profondeur/précision), textes (lieu / technique de regroupement) et
+                    // nomenclature (nature de l'objet géo → NAT_OBJ_GEO). Omis si vide/illisible.
+                    val extraReleve = groupe.first().champsReleveExtra
+                    extraReleve["altitude_min"]?.trim()?.toIntOrNull()?.let { put("altitude_min", it) }
+                    extraReleve["altitude_max"]?.trim()?.toIntOrNull()?.let { put("altitude_max", it) }
+                    extraReleve["depth_min"]?.trim()?.toIntOrNull()?.let { put("depth_min", it) }
+                    extraReleve["depth_max"]?.trim()?.toIntOrNull()?.let { put("depth_max", it) }
+                    extraReleve["precision"]?.trim()?.toIntOrNull()?.let { put("precision", it) }
+                    extraReleve["place_name"]?.trim()?.takeIf { it.isNotEmpty() }?.let { put("place_name", it) }
+                    extraReleve["grp_method"]?.trim()?.takeIf { it.isNotEmpty() }?.let { put("grp_method", it) }
+                    extraReleve["geo_object_nature"]?.takeIf { it.isNotEmpty() }?.let { code ->
+                        resolverIdNomenclature(code, "NAT_OBJ_GEO", emptyMap(), nomenclatures)
+                            ?.let { put("id_nomenclature_geo_object_nature", it) }
+                    }
                 }
 
                 // Construction de la géométrie selon le type stocké côté Observation.

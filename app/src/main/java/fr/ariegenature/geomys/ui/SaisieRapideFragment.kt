@@ -128,6 +128,8 @@ class SaisieRapideFragment : Fragment() {
     private var dateFinReleveSession: Long? = null
     /** Type de regroupement (TYP_GRP) du relevé mono. "" = non renseigné. */
     private var typGrpReleveSession: String = ""
+    /** Champs relevé supplémentaires pilotés par form_fields (clé = clé form_fields). */
+    private var champsReleveExtraSession: Map<String, String> = emptyMap()
 
     // Détails par défaut — dénombrement (counting #0 + éventuels countings additionnels)
     private var sexe = ""
@@ -249,6 +251,11 @@ class SaisieRapideFragment : Fragment() {
                 additionalFieldsReleve = try {
                     Gson().fromJson(json, object : TypeToken<Map<String, String>>() {}.type) ?: additionalFieldsReleve
                 } catch (_: Exception) { additionalFieldsReleve }
+            }
+            st.getString("rs_extra")?.let { json ->
+                champsReleveExtraSession = try {
+                    Gson().fromJson(json, object : TypeToken<Map<String, String>>() {}.type) ?: champsReleveExtraSession
+                } catch (_: Exception) { champsReleveExtraSession }
             }
         }
 
@@ -554,6 +561,7 @@ class SaisieRapideFragment : Fragment() {
                 gnConfig.settingsOcctaxJson, gnConfig.formFieldsJson, typGrpReleveSession, commentReleveSession,
                 dateDebutReleveSession, dateFinReleveSession, gnConfig.dateAvecHeures, gnConfig.dateAvecFin,
                 cdHabReleveSession, habitatReleveLabelSession,
+                champsReleveExtraSession,
                 viewLifecycleOwner.lifecycleScope,
                 { terme -> fr.ariegenature.geomys.network.HabitatService.rechercher(gnConfig.urlServeur, terme) },
             ) { res ->
@@ -567,6 +575,7 @@ class SaisieRapideFragment : Fragment() {
                 dateDebutReleveSession = res.dateDebut
                 dateFinReleveSession = res.dateFin
                 typGrpReleveSession = res.typGrp
+                champsReleveExtraSession = res.champsExtra
             }
         }
 
@@ -871,6 +880,7 @@ class SaisieRapideFragment : Fragment() {
             },
             idDatasetReleve             = idDatasetReleveSession,
             typGrpReleve                = typGrpReleveSession.ifEmpty { null },
+            champsReleveExtra           = champsReleveExtraSession,
             observateursReleveIds       = observateursReleveIdsSession,
             observateursReleveNoms      = observateursReleveNomsSession,
             commentReleve               = commentReleveSession.ifEmpty { null },
@@ -1123,6 +1133,7 @@ class SaisieRapideFragment : Fragment() {
         dateDebutReleveSession?.let { outState.putLong("rs_datedeb", it) }
         dateFinReleveSession?.let { outState.putLong("rs_datefin", it) }
         if (additionalFieldsReleve.isNotEmpty()) outState.putString("rs_add", Gson().toJson(additionalFieldsReleve))
+        if (champsReleveExtraSession.isNotEmpty()) outState.putString("rs_extra", Gson().toJson(champsReleveExtraSession))
     }
 
     override fun onDestroyView() {

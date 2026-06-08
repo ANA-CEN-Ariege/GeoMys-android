@@ -82,6 +82,13 @@ object OcctaxFieldsConfig {
             fallbackLabels = listOf("Non renseigné"),
             fallbackCodes = listOf(""),
         ),
+        OcctaxField(
+            "NAT_OBJ_GEO", "Nature de l'objet géographique", Niveau.RELEVE,
+            svKey = "geoObjectNature", uploadKey = "id_nomenclature_geo_object_nature",
+            uploadLabels = emptyMap(),
+            fallbackLabels = listOf("Non renseigné"),
+            fallbackCodes = listOf(""),
+        ),
         // ── Niveau INFORMATION (occurrence) ──
         OcctaxField(
             "STATUT_OBS", "Statut d'observation", Niveau.INFORMATION,

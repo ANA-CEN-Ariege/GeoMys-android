@@ -76,6 +76,10 @@ object TaxRefCache {
     private const val FILE_REGNES = "regnes_v1.json"
     private const val FILE_INDEX_TAXON = "index_taxon_v1.json"
     private const val FILE_LISTES = "listes_v1.json"
+    // Index COMPLET cd_nom → noms français, construit à la synchro. Indispensable car le cache
+    // principal est indexé par NOM : quand plusieurs cd_nom partagent un nom vernaculaire, leurs
+    // clés entrent en collision et tous sauf un perdent l'association. Cet index, lui, est sans perte.
+    private const val FILE_VERNS = "verns_v1.json"
 
     // Anciennes clés SharedPreferences — purgées à l'init pour libérer l'espace
     // après migration vers le stockage fichier.
@@ -191,9 +195,24 @@ object TaxRefCache {
         return parCdNom.also { memEntreesParCdNom = it }
     }
 
-    /** Map cdNom → tous les noms français connus (dérivée du cache, en mémoire). */
+    /** Map cdNom → tous les noms français connus.
+     *  Source PRIORITAIRE : l'index complet [FILE_VERNS] persisté à la synchro (sans perte par
+     *  collision de noms). REPLI (cache ancien sans ce fichier) : dérivation depuis les entrées —
+     *  incomplète quand plusieurs cd_nom partagent un nom vernaculaire, mais préserve l'existant. */
     fun vernsParCdNom(): Map<Int, List<String>> {
         memVernsParCdNom?.let { return it }
+        lireFichier(FILE_VERNS)?.let { json ->
+            runCatching {
+                val type = object : TypeToken<Map<String, List<String>>>() {}.type
+                val m: Map<String, List<String>> = gson.fromJson(json, type) ?: emptyMap()
+                if (m.isNotEmpty()) {
+                    val parInt = HashMap<Int, List<String>>(m.size)
+                    for ((k, v) in m) k.toIntOrNull()?.let { parInt[it] = v }
+                    memVernsParCdNom = parInt
+                    return parInt
+                }
+            }
+        }
         val result = HashMap<Int, LinkedHashSet<String>>()
         for (entry in charger().values) {
             val nomFr = entry.nomFrOriginal ?: continue
@@ -205,13 +224,22 @@ object TaxRefCache {
         return frozen
     }
 
+    /** Persiste l'index COMPLET cd_nom → noms français, construit à la synchro sans collision de
+     *  clés (cf. [FILE_VERNS]). À appeler APRÈS [remplacerTout] (qui réinitialise les memo). */
+    fun ajouterVerns(verns: Map<Int, Collection<String>>) {
+        val asString = verns.entries.associate { it.key.toString() to it.value.toList() }
+        ecrireFichier(FILE_VERNS, gson.toJson(asString))
+        memVernsParCdNom = verns.entries.associate { it.key to it.value.toList() }
+    }
+
     fun getVernaculaireParCdNom(cdNom: Int): String? =
         vernsParCdNom()[cdNom]?.firstOrNull()
 
-    /** Nom à AFFICHER pour un cd_nom : nom français si connu, sinon nom scientifique. Null si le
-     *  taxon n'est pas dans le cache (espèce hors listes synchronisées). */
+    /** Nom à AFFICHER pour un cd_nom : nom français si connu (index complet [vernsParCdNom]), sinon
+     *  nom scientifique. Null si le taxon n'est pas dans le cache (espèce hors listes synchronisées). */
     fun nomAffichageParCdNom(cdNom: Int): String? =
-        entreesParCdNom()[cdNom]?.let { it.nomFrOriginal?.takeIf { n -> n.isNotEmpty() } ?: it.sciNom }
+        vernsParCdNom()[cdNom]?.firstOrNull()?.takeIf { it.isNotEmpty() }
+            ?: entreesParCdNom()[cdNom]?.sciNom
 
     var comptesGroupes: Map<String, Int>
         get() {
@@ -370,7 +398,7 @@ object TaxRefCache {
     }
 
     fun vider() {
-        listOf(FILE_CACHE, FILE_GROUPES, FILE_GROUPES1, FILE_REGNES, FILE_INDEX_TAXON, FILE_LISTES)
+        listOf(FILE_CACHE, FILE_GROUPES, FILE_GROUPES1, FILE_REGNES, FILE_INDEX_TAXON, FILE_LISTES, FILE_VERNS)
             .forEach { runCatching { fichier(it).delete() } }
         prefs.edit()
             .remove(KEY_VERSION)
@@ -429,19 +457,83 @@ object TaxRefCache {
 
     private fun charger(): Map<String, TaxRefEntry> {
         mem?.let { return it }
-        val json = lireFichier(FILE_CACHE) ?: return emptyMap()
+        val f = fichier(FILE_CACHE)
+        if (!f.exists()) return emptyMap()
+        // Lecture en STREAMING : on ne matérialise jamais tout le fichier en une String géante
+        // (sur 200k+ taxons, readText + gson.fromJson = dizaines de Mo → OOM). On lit les classes
+        // de flux de Gson (pur Java → OK aussi en tests Robolectric, contrairement à android.util.*).
         return try {
-            val type = object : TypeToken<Map<String, TaxRefEntry>>() {}.type
-            (gson.fromJson(json, type) ?: emptyMap<String, TaxRefEntry>()).also { mem = it }
-        } catch (e: Exception) { emptyMap() }
+            val map = HashMap<String, TaxRefEntry>(1 shl 18)
+            java.io.BufferedReader(java.io.FileReader(f)).use { br ->
+                com.google.gson.stream.JsonReader(br).use { r ->
+                    r.beginObject()
+                    while (r.hasNext()) {
+                        val nom = r.nextName()
+                        var cd = 0; var sci = ""; var fr: String? = null
+                        r.beginObject()
+                        while (r.hasNext()) {
+                            when (r.nextName()) {
+                                "cdNom" -> cd = r.nextInt()
+                                "sciNom" -> sci = r.nextString()
+                                "nomFrOriginal", "nomFr" ->
+                                    fr = if (r.peek() == com.google.gson.stream.JsonToken.NULL) { r.nextNull(); null }
+                                         else r.nextString().takeIf { it.isNotEmpty() }
+                                else -> r.skipValue()
+                            }
+                        }
+                        r.endObject()
+                        map[nom] = TaxRefEntry(cd, sci, fr)
+                    }
+                    r.endObject()
+                }
+            }
+            map.also { mem = it }
+        } catch (e: Exception) {
+            // Repli tolérant (format atypique / fichier corrompu) : tentative Gson classique.
+            try {
+                val type = object : TypeToken<Map<String, TaxRefEntry>>() {}.type
+                (gson.fromJson(lireFichier(FILE_CACHE), type) ?: emptyMap<String, TaxRefEntry>()).also { mem = it }
+            } catch (_: Exception) { emptyMap() }
+        }
     }
 
+    /** Remplace TOUT le cache (chemin de synchro, après [vider]) — écriture streaming directe, sans
+     *  recharger ni copier la map existante. Évite les pics mémoire sur les gros référentiels. */
+    fun remplacerTout(entries: Map<String, TaxRefEntry>) = sauvegarder(entries)
+
     private fun sauvegarder(cache: Map<String, TaxRefEntry>) {
-        ecrireFichier(FILE_CACHE, gson.toJson(cache))
+        ecrireCacheStream(cache)
         mem = cache
         memEntreesParCdNom = null
         memVernsParCdNom = null
         memTousLesNoms = null
         memNomsParListe = null
+    }
+
+    /** Écrit FILE_CACHE en STREAMING : la String JSON complète n'est jamais construite en mémoire
+     *  (`gson.toJson` sur ~400k entrées = dizaines de Mo → OOM). Même format que la sérialisation
+     *  Gson de Map<String, TaxRefEntry> (champ null omis). Écriture atomique tmp + rename. */
+    private fun ecrireCacheStream(cache: Map<String, TaxRefEntry>) {
+        try {
+            val cible = fichier(FILE_CACHE)
+            val tmp = File(dir, "$FILE_CACHE.tmp")
+            java.io.BufferedWriter(java.io.FileWriter(tmp)).use { bw ->
+                com.google.gson.stream.JsonWriter(bw).use { w ->
+                    w.beginObject()
+                    for ((nom, e) in cache) {
+                        w.name(nom).beginObject()
+                        w.name("cdNom").value(e.cdNom.toLong())
+                        w.name("sciNom").value(e.sciNom)
+                        if (e.nomFrOriginal != null) w.name("nomFrOriginal").value(e.nomFrOriginal)
+                        w.endObject()
+                    }
+                    w.endObject()
+                }
+            }
+            if (!tmp.renameTo(cible)) {
+                if (cible.exists()) cible.delete()
+                tmp.renameTo(cible)
+            }
+        } catch (_: Exception) {}
     }
 }

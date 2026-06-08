@@ -128,6 +128,11 @@ data class Observation(
     var dateDebutReleve: Long? = null,
     /** Date+heure de FIN du relevé (epoch millis). null = même que le début (→ `date_max`/`hour_max`). */
     var dateFinReleve: Long? = null,
+    /** Champs relevé supplémentaires pilotés par `form_fields` du serveur (altitude_min/max,
+     *  depth_min/max, place_name, precision, grp_method, geo_object_nature). Clé = clé `form_fields`,
+     *  valeur = saisie en texte (entier pour les numériques, code mnémonique pour geo_object_nature).
+     *  Vide = aucun renseigné. Map unique pour ne pas multiplier les champs à travers tout le code. */
+    var champsReleveExtra: Map<String, String> = emptyMap(),
 )
 
 data class Sortie(

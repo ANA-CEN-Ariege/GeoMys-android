@@ -17,3 +17,6 @@ keystore.properties
 .externalNativeBuild
 .cxx
 local.properties
+# Python (scripts outils)
+__pycache__/
+*.pyc

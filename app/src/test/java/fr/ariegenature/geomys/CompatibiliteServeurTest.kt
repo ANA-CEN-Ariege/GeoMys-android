@@ -55,7 +55,7 @@ class CompatibiliteServeurTest {
     private val typesObligatoires = listOf(
         "METH_OBS", "STATUT_OBS", "SEXE", "STADE_VIE", "STATUT_BIO", "ETA_BIO",
         "PREUVE_EXIST", "OBJ_DENBR", "TYP_DENBR", "OCC_COMPORTEMENT", "METH_DETERMIN", "TYPE_MEDIA",
-        "NATURALITE", "TYP_GRP",
+        "NATURALITE", "TYP_GRP", "NAT_OBJ_GEO",
     )
 
     @Before

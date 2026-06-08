@@ -54,13 +54,14 @@ object TaxRefLocal {
                     .mapNotNull { parCdNom[it]?.sciNom?.takeIf { s -> s.isNotEmpty() } }
                     .distinct().sorted().toList()
             }
-            // Vernaculaire : on déplie tous les noms français pour ce cd_nom ; fallback
-            // sciNom quand aucun nom français n'est connu (fréquent en flore/fonge/invertébrés).
+            // Vernaculaire : UNIQUEMENT les noms français. Pas de repli sur le nom scientifique —
+            // le mode français ne doit proposer que des noms français (décision produit). Un taxon
+            // sans nom vernaculaire n'apparaît donc pas ici : il faut activer « Noms scientifiques »
+            // pour le trouver. (Avant : repli sciNom, qui polluait le mode français sur les
+            // référentiels à faible couverture vernaculaire — cf. liste « Saisie Occtax » CEN PdL.)
             val result = LinkedHashSet<String>()
             for (cd in cdNoms) {
-                val verns = vernsParCdNom[cd]
-                if (!verns.isNullOrEmpty()) result.addAll(verns)
-                else parCdNom[cd]?.sciNom?.takeIf { it.isNotEmpty() }?.let { result.add(it) }
+                vernsParCdNom[cd]?.let { result.addAll(it) }
             }
             return result.sorted()
         }

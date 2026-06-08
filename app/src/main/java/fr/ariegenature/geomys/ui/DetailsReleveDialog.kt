@@ -122,6 +122,9 @@ data class DetailsReleveResult(
     val dateDebut: Long? = null,
     /** Date+heure de fin du relevé (epoch millis), null si non géré. */
     val dateFin: Long? = null,
+    /** Champs relevé supplémentaires saisis (clé = clé `form_fields`), seulement ceux visibles +
+     *  renseignés ; les champs masqués conservent leur valeur initiale. */
+    val champsExtra: Map<String, String> = emptyMap(),
 )
 
 /** Dialog "Détails du relevé" partagé par la saisie multi-taxons ([SaisieObservationFragment])
@@ -155,6 +158,8 @@ fun ouvrirDialogDetailsReleve(
     dateAvecFin: Boolean,
     cdHabInitial: Int?,
     habitatLabelInitial: String?,
+    /** Valeurs initiales des champs relevé supplémentaires (clé = clé `form_fields`). */
+    champsExtraInitial: Map<String, String>,
     scope: CoroutineScope,
     chercherHabitats: suspend (String) -> List<HabitatSuggestion>,
     onValider: (DetailsReleveResult) -> Unit,
@@ -428,16 +433,58 @@ fun ouvrirDialogDetailsReleve(
         return debut to (if (dateAvecFin && finActive) maxOf(calFin.timeInMillis, debut) else debut)
     }
 
-    // Type de regroupement (TYP_GRP) — affiché seulement si le serveur ne le masque pas :
-    //  - non masqué par les settings mobiles (champsAffichage), ET
-    //  - non masqué par la config web du serveur (form_fields.group_type), pour suivre le web
-    //    instance par instance (sur l'ANA, group_type=false ⇒ champ caché).
+    // ── Champs niveau RELEVE pilotés par la config serveur `form_fields` (comme le web Occtax). ──
+    // GeoNature n'expose QUE la visibilité (form_fields = {clé: booléen}) ; le type de widget est
+    // connu côté client, exactement comme le frontend Angular et l'app mobile officielle. On honore
+    // ici la visibilité instance par instance ; un champ masqué garde sa valeur initiale (jamais
+    // perdue). NB : group_type est gaté par form_fields seul (et non par la liste settings mobile),
+    // pour coller au web qui l'affiche dès que group_type=true.
+
+    // (a) Nomenclatures relevé (TYP_GRP, NAT_OBJ_GEO) — spinners alimentés par NomenclatureCache.
     val containerReleve = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
-    val champsReleve = OcctaxFieldsConfig.champsAffichage(settingsJson, OcctaxFieldsConfig.Niveau.RELEVE)
-    val typGrpVisible = champsReleve.isNotEmpty() && champFormVisible(formFieldsJson, "group_type")
-    if (typGrpVisible) {
-        OcctaxFieldsRenderer.rendre(containerReleve, champsReleve, mapOf("TYP_GRP" to typGrpInitial), emptySet(), "")
+    val typGrpVisible = champFormVisible(formFieldsJson, "group_type")
+    val geoObjVisible = champFormVisible(formFieldsJson, "geo_object_nature")
+    val nomenclReleve = buildList {
+        if (typGrpVisible) OcctaxFieldsConfig.parCode["TYP_GRP"]
+            ?.let { add(OcctaxFieldsConfig.ChampAffichage(it, replie = false, lectureSeule = false)) }
+        if (geoObjVisible) OcctaxFieldsConfig.parCode["NAT_OBJ_GEO"]
+            ?.let { add(OcctaxFieldsConfig.ChampAffichage(it, replie = false, lectureSeule = false)) }
+    }
+    if (nomenclReleve.isNotEmpty()) {
+        OcctaxFieldsRenderer.rendre(
+            containerReleve, nomenclReleve,
+            mapOf("TYP_GRP" to typGrpInitial, "NAT_OBJ_GEO" to champsExtraInitial["geo_object_nature"].orEmpty()),
+            emptySet(), "",
+        )
         racine.addView(containerReleve)
+    }
+
+    // (b) Champs simples relevé : nombres (altitude/profondeur/précision) et textes (lieu, technique
+    //     de regroupement). (clé form_fields, libellé, numérique ?). Chaque champ n'est ajouté que
+    //     si form_fields l'autorise ; un champ masqué garde sa valeur initiale au moment de collecter.
+    // Libellés alignés sur le web Occtax (fichiers i18n du frontend) pour la cohérence d'instance.
+    val champsSimplesReleve = listOf(
+        Triple("altitude_min", "Altitude min", true),
+        Triple("altitude_max", "Altitude max", true),
+        Triple("depth_min", "Profondeur min", true),
+        Triple("depth_max", "Profondeur max", true),
+        Triple("place_name", "Nom du lieu", false),
+        Triple("precision", "Précision du pointage (m)", true),
+        Triple("grp_method", "Méthode de regroupement", false),
+    )
+    val editsReleveSimples = LinkedHashMap<String, EditText>()
+    champsSimplesReleve.forEach { (key, label, numerique) ->
+        if (!champFormVisible(formFieldsJson, key)) return@forEach
+        racine.addView(titre(label))
+        val ed = EditText(ctx).apply {
+            inputType = if (numerique) InputType.TYPE_CLASS_NUMBER
+                else InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+            setText(champsExtraInitial[key].orEmpty())
+            isSingleLine = true
+            setPadding(0, 0, 0, (8 * density).toInt())
+        }
+        racine.addView(ed)
+        editsReleveSimples[key] = ed
     }
 
     // Champs additionnels éditables — éventuels.
@@ -563,6 +610,21 @@ fun ouvrirDialogDetailsReleve(
             val ds = getDataset()
             val obs = getObservateurs()
             val (dDebut, dFin) = getDates()
+            // Nomenclatures relevé : valeur collectée si le champ est visible, sinon valeur initiale
+            // conservée (un champ masqué ne doit pas écraser une valeur déjà saisie).
+            val nomenclVals = if (nomenclReleve.isNotEmpty()) OcctaxFieldsRenderer.collecter(containerReleve) else emptyMap()
+            val typGrpVal = if (typGrpVisible) (nomenclVals["TYP_GRP"] ?: "") else typGrpInitial
+            // Champs relevé supplémentaires : on repart de l'initial (préserve les champs masqués),
+            // on surcharge ceux visibles (vide ⇒ on retire la clé), idem geo_object_nature.
+            val extra = HashMap(champsExtraInitial)
+            editsReleveSimples.forEach { (k, ed) ->
+                val v = ed.text?.toString()?.trim().orEmpty()
+                if (v.isEmpty()) extra.remove(k) else extra[k] = v
+            }
+            if (geoObjVisible) {
+                val g = nomenclVals["NAT_OBJ_GEO"].orEmpty()
+                if (g.isEmpty()) extra.remove("geo_object_nature") else extra["geo_object_nature"] = g
+            }
             onValider(
                 DetailsReleveResult(
                     idDataset = ds?.first,
@@ -572,9 +634,10 @@ fun ouvrirDialogDetailsReleve(
                     comment = champCommentaire.text?.toString()?.trim().orEmpty(),
                     cdHab = cdHabChoisi,
                     habitatLabel = cdHabChoisi?.let { champHabitat.text?.toString()?.trim() },
-                    typGrp = if (typGrpVisible) (OcctaxFieldsRenderer.collecter(containerReleve)["TYP_GRP"] ?: "") else typGrpInitial,
+                    typGrp = typGrpVal,
                     dateDebut = dDebut,
                     dateFin = dFin,
+                    champsExtra = extra,
                 )
             )
             dialog.dismiss()

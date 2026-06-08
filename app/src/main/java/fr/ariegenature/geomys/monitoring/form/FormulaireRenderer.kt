@@ -366,9 +366,6 @@ class FormulaireRenderer(
         return valeurs
     }
 
-    /** Notification publique : à appeler après une modification "externe" d'un champ
-     *  (par ex. depuis le code appelant qui pré-remplit des valeurs avant rendu). */
-    fun reevaluerVisibilites() = appliquerVisibiliteConditionnelle()
 
     /** Lit la valeur courante de chaque champ. Renvoie une Map code → valeur typée :
      *  - TEXT / TEXTAREA → String (vide si non rempli)

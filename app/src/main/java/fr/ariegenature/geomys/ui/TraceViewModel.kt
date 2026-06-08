@@ -49,11 +49,6 @@ class TraceViewModel(application: Application) : AndroidViewModel(application) {
     var sortieEnEditionId: String? = null
         private set
 
-    val estActive: Boolean
-        get() = (locationTracker.estEnCours.value == true)
-            || (locationTracker.parcours.value?.isNotEmpty() == true)
-            || (_observations.value?.isNotEmpty() == true)
-
     fun ajouterObservation(obs: Observation) {
         val list = _observations.value ?: mutableListOf()
         list.add(obs)
@@ -61,15 +56,6 @@ class TraceViewModel(application: Application) : AndroidViewModel(application) {
         persisterBrouillon()
     }
 
-    fun modifierObservation(obs: Observation) {
-        val list = _observations.value ?: return
-        val idx = list.indexOfFirst { it.id == obs.id }
-        if (idx >= 0) {
-            list[idx] = obs
-            _observations.value = list
-            persisterBrouillon()
-        }
-    }
 
     fun supprimerObservation(id: String) {
         val list = _observations.value ?: return

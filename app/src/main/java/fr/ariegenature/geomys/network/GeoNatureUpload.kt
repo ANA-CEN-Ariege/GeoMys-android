@@ -128,7 +128,7 @@ object GeoNatureUpload {
             for (type in typesVoulus) {
                 val fromCache = NomenclatureCache.get(type)
                 nomenclatures[type] = if (fromCache.isNotEmpty()) {
-                    fromCache.associate { it.label.lowercase() to it.id }
+                    fromCache.associate { normaliserLabelNomenclature(it.label) to it.id }
                 } else {
                     resolverNomenclatures(base, token, cookies, type)
                 }
@@ -543,6 +543,18 @@ object GeoNatureUpload {
     // ATTENTION ordre des étapes : les ids serveur passent en PREMIER. Sinon un id serveur
     // qui ressemble à un code interne (ex : Adulte a id=3 côté serveur, alors que notre code
     // interne "3" représente "juvénile") serait mal traduit et on enverrait Juvénile.
+    /** Normalise un libellé de nomenclature pour un appariement ROBUSTE entre instances GeoNature :
+     *  minuscule, sans accents, et sans un éventuel préfixe de code « NN - » (certaines instances
+     *  préfixent le label par un code — ex. l'ANA pour le comportement atlas : « 30 - Nidification… »).
+     *  Évite qu'un champ soit silencieusement omis de l'envoi parce que le libellé du serveur diffère
+     *  du nôtre par ce préfixe ou les accents (repli hors-ligne ; en ligne, c'est l'id serveur qui sert). */
+    internal fun normaliserLabelNomenclature(s: String): String =
+        java.text.Normalizer.normalize(s.trim(), java.text.Normalizer.Form.NFD)
+            .replace("\\p{Mn}+".toRegex(), "")
+            .replace(Regex("^\\s*\\d+\\s*-\\s*"), "")
+            .lowercase()
+            .trim()
+
     internal fun resolverIdNomenclature(
         code: String,
         type: String,
@@ -561,7 +573,7 @@ object GeoNatureUpload {
 
         // 2. Sinon, si c'est un de nos codes internes ("0", "1", "2"…), on résout par le label.
         if (labels.containsKey(code)) {
-            val label = labels[code]!!.lowercase()
+            val label = normaliserLabelNomenclature(labels[code]!!)
             val resolu = nomenclatures[type]?.get(label)
             if (resolu == null) {
                 android.util.Log.w(
@@ -573,7 +585,7 @@ object GeoNatureUpload {
         }
 
         // 3. Fallback : résolution via le texte brut.
-        val resolu = nomenclatures[type]?.get(code.lowercase())
+        val resolu = nomenclatures[type]?.get(normaliserLabelNomenclature(code))
         if (resolu == null) {
             android.util.Log.w(
                 TAG_MEDIA,
@@ -643,7 +655,7 @@ object GeoNatureUpload {
         // créé). Résolution identique au flux OCCTAX : cache TYPE_MEDIA (labels stables entre
         // instances), repli sur la résolution live si le cache est vide.
         val typesMedia = fr.ariegenature.geomys.store.NomenclatureCache.get("TYPE_MEDIA")
-            .associate { it.label.lowercase() to it.id }
+            .associate { normaliserLabelNomenclature(it.label) to it.id }
             .ifEmpty { resolverNomenclatures(base, token, cookies, "TYPE_MEDIA") }
         // Upload séquentiel de chaque fichier, tous rattachés au même objet (uuid_attached_row).
         var nbOk = 0
@@ -846,9 +858,8 @@ object GeoNatureUpload {
             for (i in 0 until array.length()) {
                 val item = array.getJSONObject(i)
                 val id = item.optInt("id_nomenclature", -1).takeIf { it > 0 } ?: continue
-                val label = item.optString("label_default", "")
-                    .ifEmpty { item.optString("label_fr", "") }
-                    .lowercase()
+                val label = normaliserLabelNomenclature(
+                    item.optString("label_default", "").ifEmpty { item.optString("label_fr", "") })
                 if (label.isNotEmpty()) map[label] = id
             }
             return map

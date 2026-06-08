@@ -40,6 +40,7 @@ class SortieStoreTest {
 
     @Before
     fun setup() {
+        SortieStore.reinitialiserCacheMemoire() // le cache statique fuit d'un test à l'autre
         store = SortieStore(ApplicationProvider.getApplicationContext())
     }
 

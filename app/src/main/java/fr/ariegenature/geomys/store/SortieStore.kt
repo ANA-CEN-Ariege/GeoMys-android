@@ -28,10 +28,26 @@ class SortieStore(context: Context) {
     private val gson = Gson()
     private val key = "sorties_sauvegardees"
 
+    companion object {
+        // Cache mémoire process-wide : toutes les instances visent le même fichier de prefs, on
+        // évite donc de RE-DÉSÉRIALISER tout le store à chaque action de saisie (l'auto-save « au
+        // fil de l'eau » appelait charger() plusieurs fois par ajout/suppression d'espèce).
+        // [charger] renvoie une COPIE défensive (les appelants mutent la liste) ; [sauvegarder]
+        // remplace le cache. Le cache n'est invalidé que par une écriture → toujours cohérent.
+        @Volatile private var mem: List<Sortie>? = null
+
+        /** Réinitialise le cache mémoire process-wide. Réservé aux TESTS (le cache statique fuit
+         *  sinon d'un test à l'autre). Inutile en production : le cache n'est invalidé que par une
+         *  écriture, et toutes les instances visent le même fichier de prefs. */
+        @androidx.annotation.VisibleForTesting
+        fun reinitialiserCacheMemoire() { mem = null }
+    }
+
     @Suppress("SENSELESS_COMPARISON") // Gson peut violer la non-nullabilité Kotlin (cf. filtre)
     fun charger(): MutableList<Sortie> {
-        val json = prefs.getString(key, null) ?: return mutableListOf()
-        return try {
+        mem?.let { return ArrayList(it) }
+        val json = prefs.getString(key, null)
+        val parsed: MutableList<Sortie> = if (json == null) mutableListOf() else try {
             val type = object : TypeToken<MutableList<Sortie?>>() {}.type
             (gson.fromJson<MutableList<Sortie?>>(json, type) ?: mutableListOf())
                 .filterNotNull()
@@ -43,9 +59,12 @@ class SortieStore(context: Context) {
         } catch (e: Exception) {
             mutableListOf()
         }
+        mem = parsed
+        return ArrayList(parsed)
     }
 
     fun sauvegarder(sorties: List<Sortie>) {
+        mem = ArrayList(sorties)
         // commit() (synchrone) et non apply() : l'auto-save « au fil de l'eau » doit être
         // durable même sur un kill brutal (SIGKILL via stop Android Studio / force-stop /
         // OOM) qui surviendrait avant le flush disque asynchrone d'apply(). Données petites

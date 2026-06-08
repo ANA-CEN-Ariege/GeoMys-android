@@ -211,17 +211,6 @@ class SuiviDetailFragment : Fragment() {
         return if (typesEnfants.isEmpty()) typesPresents else typesPresents - typesEnfants.toSet()
     }
 
-    /** Ordonne les types pour le résumé : si schéma dispo, parents avant enfants (DAG plat).
-     *  Sans schéma, ordre d'origine — sans hypothèse sur les noms de types. */
-    private fun ordonnerTypes(
-        types: List<String>,
-        schema: Map<String, MonitoringApi.MonitoringSchemaObjet>?,
-    ): List<String> {
-        if (schema == null) return types
-        val racines = schema["module"]?.childrenTypes.orEmpty().filter { it in types }
-        val reste = types.filter { it !in racines }
-        return racines + reste
-    }
 
     /** Libellé d'un object_type : schéma serveur en priorité (label_list pour les listes),
      *  sinon fallback générique. Plus de mapping FR figé ni de logique sites_group/site. */

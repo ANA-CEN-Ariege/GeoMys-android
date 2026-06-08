@@ -405,14 +405,6 @@ class ConfigGeoNatureFragment : Fragment() {
         }
     }
 
-    /** Masque le clavier logiciel et retire le focus du champ — appelé après une sélection dans un
-     *  menu déroulant des Paramètres, pour que le clavier ne reste pas affiché. */
-    private fun masquerClavier(champ: View) {
-        (requireContext().getSystemService(android.content.Context.INPUT_METHOD_SERVICE)
-            as? android.view.inputmethod.InputMethodManager)
-            ?.hideSoftInputFromWindow(champ.windowToken, 0)
-        champ.clearFocus()
-    }
 
     private fun peuplerSpinnerObservateurs(result: List<GeoNatureObservateur>) {
         observateurs.clear()

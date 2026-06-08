@@ -50,13 +50,6 @@ class TaxonSelector(
         updateUI()
     }
 
-    /** Force le taxon courant sans déclencher [onChanged] — utile pour restaurer
-     *  un état hérité (ex : réédition d'une obs existante). */
-    fun setTaxon(t: Taxon) {
-        if (taxon == t) return
-        taxon = t
-        updateUI()
-    }
 
     private fun updateUI() {
         val gray = ContextCompat.getColorStateList(context, android.R.color.darker_gray)

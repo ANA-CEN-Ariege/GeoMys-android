@@ -803,32 +803,6 @@ class SaisieObservationFragment : Fragment() {
     }
 
 
-    // ─── Nombre ───────────────────────────────────────────────────────────────
-
-    private fun showNombrePickerDialog(initial: Int, onResult: (Int) -> Unit) {
-        val view = LayoutInflater.from(requireContext()).inflate(R.layout.dialog_nombre_picker, null)
-        val et = view.findViewById<com.google.android.material.textfield.TextInputEditText>(R.id.et_nombre)
-        val btnMoins = view.findViewById<ImageButton>(R.id.btn_moins)
-        val btnPlus = view.findViewById<ImageButton>(R.id.btn_plus)
-        et.setText(initial.toString())
-        et.setSelection(et.text?.length ?: 0)
-        fun current(): Int = et.text?.toString()?.toIntOrNull()?.coerceIn(1, 999) ?: 1
-        btnMoins.setOnClickListener {
-            val v = (current() - 1).coerceAtLeast(1)
-            et.setText(v.toString()); et.setSelection(et.text?.length ?: 0)
-        }
-        btnPlus.setOnClickListener {
-            val v = (current() + 1).coerceAtMost(999)
-            et.setText(v.toString()); et.setSelection(et.text?.length ?: 0)
-        }
-        androidx.appcompat.app.AlertDialog.Builder(requireContext())
-            .setTitle("Nombre d'individus")
-            .setView(view)
-            .setPositiveButton("OK") { _, _ -> onResult(current()) }
-            .setNegativeButton(R.string.annuler, null)
-            .show()
-    }
-
     // ─── Enregistrement ───────────────────────────────────────────────────────
 
     private fun enregistrer() {

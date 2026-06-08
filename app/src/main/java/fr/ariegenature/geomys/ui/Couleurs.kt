@@ -21,6 +21,15 @@ package fr.ariegenature.geomys.ui
 import android.content.Context
 import com.google.android.material.color.MaterialColors
 
+/** Masque le clavier logiciel et retire le focus du champ — appelé après une sélection dans un
+ *  menu déroulant (Paramètres, Détails du relevé…) pour que le clavier ne reste pas affiché. */
+fun masquerClavier(champ: android.view.View) {
+    (champ.context.getSystemService(Context.INPUT_METHOD_SERVICE)
+        as? android.view.inputmethod.InputMethodManager)
+        ?.hideSoftInputFromWindow(champ.windowToken, 0)
+    champ.clearFocus()
+}
+
 // Helpers de résolution des couleurs thématiques Material. Remplacent les valeurs en dur
 // (#666666, #888888, #C62828…) qui devenaient illisibles sur le fond accueil sombre forcé
 // par v0.9.65. Tous prennent un fallback légacy au cas où le thème n'expose pas l'attribut
@@ -42,12 +51,6 @@ fun couleurSurOnSurface(ctx: Context): Int = MaterialColors.getColor(
  *  @android:color/holo_red_dark. */
 fun couleurErreur(ctx: Context): Int = MaterialColors.getColor(
     ctx, com.google.android.material.R.attr.colorError, 0xFFB00020.toInt(),
-)
-
-/** Couleur d'accent primaire (statut "envoyé", labels mis en avant). Avant : #0D47A1 codé
- *  en dur. */
-fun couleurPrimaire(ctx: Context): Int = MaterialColors.getColor(
-    ctx, com.google.android.material.R.attr.colorPrimary, 0xFF1B6CA8.toInt(),
 )
 
 /** Cadre coloré arrondi sur fond transparent — le marqueur d'état standard des listes

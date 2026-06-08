@@ -67,12 +67,6 @@ object MonitoringCache {
         } catch (_: Exception) {}
     }
 
-    /** Invalide une entrée précise du cache (utile après une création/modification serveur
-     *  pour forcer le re-fetch à la prochaine ouverture de l'objet parent). */
-    fun deleteJson(name: String) {
-        runCatching { fichier(name).delete() }
-    }
-
     fun vider() {
         try {
             if (::dir.isInitialized) dir.listFiles()?.forEach { it.delete() }

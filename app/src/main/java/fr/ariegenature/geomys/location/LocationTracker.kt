@@ -137,10 +137,4 @@ class LocationTracker(private val context: Context) {
         _distanceTotale.postValue(distance)
     }
 
-    /** Démarre l'état "tracking actif" SANS réinitialiser le parcours en cours (contrairement
-     *  à [demarrerParcours] qui efface tout). Utilisé après [restaurerParcours] pour
-     *  continuer une sortie sauvegardée. */
-    fun reprendreParcours() {
-        _estEnCours.postValue(true)
-    }
 }

@@ -24,6 +24,15 @@ import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 
+/** Le champ de formulaire serveur [key] (clé de `OCCTAX.form_fields`, ex. `group_type`) est-il
+ *  visible d'après [formFieldsJson] ? **true par défaut** si la clé est absente ou la config non
+ *  publiée — on ne masque jamais un champ faute d'information. Partagé entre [GeoNatureConfig] et
+ *  l'UI (DetailsReleveDialog). */
+fun champFormVisible(formFieldsJson: String, key: String): Boolean = try {
+    if (formFieldsJson.isBlank()) true
+    else org.json.JSONObject(formFieldsJson).optBoolean(key, true)
+} catch (_: Exception) { true }
+
 class GeoNatureConfig(context: Context) {
     private val prefs = context.getSharedPreferences("gn_config", Context.MODE_PRIVATE)
 
@@ -168,10 +177,7 @@ class GeoNatureConfig(context: Context) {
     /** Le champ de formulaire serveur [key] (clé de `form_fields`, ex. `group_type`) est-il visible ?
      *  **true par défaut** si la clé est absente ou la config non publiée — on ne masque jamais un
      *  champ faute d'information (pas de régression sur un serveur qui n'expose pas `form_fields`). */
-    fun champFormVisible(key: String): Boolean = try {
-        if (formFieldsJson.isBlank()) true
-        else org.json.JSONObject(formFieldsJson).optBoolean(key, true)
-    } catch (_: Exception) { true }
+    fun champFormVisible(key: String): Boolean = champFormVisible(formFieldsJson, key)
 
     /** Taille de page pour la pagination TaxRef (`settings.sync.page_size` du serveur). Défaut 1000. */
     var taxrefPageSize: Int
@@ -247,9 +253,6 @@ class GeoNatureConfig(context: Context) {
         }
     }
 
-    /** Le jeu de données sélectionné est présent dans le cache datasets du serveur courant. */
-    val datasetPresentDansCache: Boolean
-        get() = idPresentDansCache(datasetsCacheJson, idDataset.trim().toIntOrNull(), "id")
 
     /** Le jeu de données sélectionné est présent dans le cache ET marqué ACTIF (`actif=true`).
      *  Un dataset archivé/inactif sur le serveur (cf. `actif:false`) reste présent dans le cache

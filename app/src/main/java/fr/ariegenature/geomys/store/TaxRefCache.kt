@@ -175,8 +175,6 @@ object TaxRefCache {
      *  cohérent avec le détail par liste (où chaque ligne compte des cd_nom). */
     val nbTaxonsUniques: Int get() = entreesParCdNom().size
 
-    fun toutesLesEntrees(): Map<String, TaxRefEntry> = charger()
-
     fun tousLesCdNoms(): Set<Int> = entreesParCdNom().keys
 
     /** Map cdNom → un TaxRefEntry représentatif (préfère ceux avec nomFrOriginal non null). */

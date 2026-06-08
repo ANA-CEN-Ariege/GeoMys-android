@@ -47,6 +47,7 @@ class CacheCorruptionTest {
 
     @Before
     fun setup() {
+        SortieStore.reinitialiserCacheMemoire() // le cache statique fuit d'un test à l'autre
         NomenclatureCache.init(context)
         NomenclatureCache.vider()
         OutboxMonitoring.init(context)

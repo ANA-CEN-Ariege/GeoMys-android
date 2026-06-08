@@ -104,7 +104,9 @@ class BuildOccurrenceTest {
 
     @Test
     fun code_interne_resolu_via_label() {
-        val nomenclatures = mapOf("SEXE" to mapOf("mâle" to 42))
+        // La map serveur est construite avec des libellés NORMALISÉS (sans accents, sans préfixe
+        // "NN - ") ; le résolveur normalise aussi le label interne → appariement robuste inter-serveurs.
+        val nomenclatures = mapOf("SEXE" to mapOf("male" to 42))
         val labels = mapOf("1" to "Mâle")
         assertEquals(42, GeoNatureUpload.resolverIdNomenclature("1", "SEXE", labels, nomenclatures))
     }

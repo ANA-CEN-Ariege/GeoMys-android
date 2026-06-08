@@ -42,27 +42,12 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import fr.ariegenature.geomys.store.GeoNatureConfig
+import fr.ariegenature.geomys.store.champFormVisible
 import fr.ariegenature.geomys.store.OcctaxFieldsConfig
 import fr.ariegenature.geomys.ui.saisie.AdditionalFieldsRenderer
 import fr.ariegenature.geomys.ui.saisie.OcctaxFieldsRenderer
 
 private val gsonDetailsReleve = Gson()
-
-/** Masque le clavier logiciel et retire le focus du champ — appelé après une sélection dans un
- *  menu déroulant pour que le clavier ne reste pas affiché. */
-private fun masquerClavier(champ: android.view.View) {
-    (champ.context.getSystemService(Context.INPUT_METHOD_SERVICE)
-        as? android.view.inputmethod.InputMethodManager)
-        ?.hideSoftInputFromWindow(champ.windowToken, 0)
-    champ.clearFocus()
-}
-
-/** Le champ de formulaire serveur [key] (clé de `OCCTAX.form_fields`) est-il visible ? true par
- *  défaut (config absente ou clé manquante) — on ne masque jamais un champ faute d'info. */
-private fun champFormVisible(formFieldsJson: String, key: String): Boolean = try {
-    if (formFieldsJson.isBlank()) true
-    else org.json.JSONObject(formFieldsJson).optBoolean(key, true)
-} catch (_: Exception) { true }
 
 /** Minuscule + diacritiques retirés, pour comparer « emile » et « Émile » indifféremment. */
 private fun normaliserAccents(s: String): String =

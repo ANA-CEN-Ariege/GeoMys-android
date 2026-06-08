@@ -80,19 +80,29 @@ def main():
     else:
         show(WARN, "Authentification", "non fournie — les endpoints protégés ressortiront en ATTENTION")
 
-    # 1) Config → liste d'observateurs + liste habitat configurées (comme le web)
+    # 1) Config → version GeoNature + liste d'observateurs + liste habitat configurées (comme le web)
     id_obs = None
     code, body = call("/gn_commons/config")
     if code == 200:
         try:
-            occ = (json.loads(body) or {}).get("OCCTAX", {}) or {}
+            cfg = json.loads(body) or {}
+            # Version GeoNature (minimum supporté par l'app : 2.15).
+            version = cfg.get("GEONATURE_VERSION") or "?"
+            try:
+                parts = [int(x) for x in str(version).split(".")[:2]]
+                trop_vieux = parts < [2, 15]
+            except Exception:  # noqa: BLE001
+                trop_vieux = False
+            show(WARN if trop_vieux else OK, "Version GeoNature",
+                 f"{version}" + (" — ⚠ < 2.15, non supporté (TaxHub intégré requis)" if trop_vieux else ""))
+            occ = cfg.get("OCCTAX", {}) or {}
             id_obs = occ.get("id_observers_list")
             show(OK, "gn_commons/config (section OCCTAX)",
                  f"id_observers_list={id_obs}, ID_LIST_HABITAT={occ.get('ID_LIST_HABITAT')}")
         except Exception as e:  # noqa: BLE001
             show(WARN, "gn_commons/config", f"JSON inattendu ({e}) → l'app retombera sur /users/roles")
     else:
-        show(WARN, "gn_commons/config", f"HTTP {code} → l'app retombera sur /users/roles")
+        show(WARN, "gn_commons/config", f"HTTP {code} → version GeoNature indétectable ; l'app retombera sur /users/roles")
 
     # 2) Liste d'observateurs curée (source du web)
     if id_obs:
@@ -162,8 +172,26 @@ def main():
     # 8) Version TaxRef (skip de rechargement)
     code, body = call("/taxhub/api/taxref/version")
     ok8 = code == 200 and not body.lstrip().startswith("<")
-    show(OK if ok8 else WARN, "taxhub/api/taxref/version",
-         "" if ok8 else f"HTTP {code}")
+    detail8 = f"HTTP {code}"
+    if ok8:
+        try:
+            d = json.loads(body)
+            detail8 = f"TaxRef v{d.get('version') or d.get('taxref_version') or body.strip()}"
+        except Exception:  # noqa: BLE001
+            detail8 = body.strip()[:40]
+    show(OK if ok8 else WARN, "taxhub/api/taxref/version", detail8)
+
+    # 9) Listes de taxons TaxHub (bib_listes) — l'app charge les listes via {urlTaxhub}/api/biblistes.
+    # URL canonique avec slash final (la version sans slash fait un 308, suivi par l'app Android) ;
+    # on teste la forme canonique pour un verdict net. 404 ici = échec probable du chargement des listes.
+    code, body = call("/taxhub/api/biblistes/")
+    if code == 200 and is_json(body):
+        n = len(as_list(body))
+        show(OK, "taxhub/api/biblistes (listes de taxons)", f"{n} liste(s)")
+    elif code == 404:
+        show(KO, "taxhub/api/biblistes", "404 — endpoint absent (TaxHub mal monté ?) → chargement des listes en échec")
+    else:
+        show(WARN, "taxhub/api/biblistes", f"HTTP {code}" + ("" if authed else " (login requis ?)"))
 
     print(f"\nLégende : [{OK}] conforme · [{WARN}] repli/dégradation (non bloquant) · [{KO}] à investiguer")
     print("Un ECHEC sur users/menu ou un ATTENTION généralisé = vérifier version GeoNature / droits / config.")

@@ -1,0 +1,10 @@
+<!DOCTYPE html>
+<script>
+fetch('https://api.github.com/repos/ANA-CEN-Ariege/GeoMys-android/releases/latest')
+    .then(r => r.json())
+    .then(data => {
+        const apk = data.assets.find(a => a.name.endsWith('.apk'));
+        if (apk) window.location.href = apk.browser_download_url;
+    });
+</script>
+<body>Téléchargement en cours...</body>

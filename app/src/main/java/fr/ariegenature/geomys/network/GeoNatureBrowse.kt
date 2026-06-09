@@ -21,6 +21,8 @@ package fr.ariegenature.geomys.network
 import fr.ariegenature.geomys.model.Taxon
 import fr.ariegenature.geomys.store.GeoNatureConfig
 import fr.ariegenature.geomys.store.TaxRefCache
+import com.google.gson.stream.JsonReader
+import com.google.gson.stream.JsonToken
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -70,11 +72,15 @@ object GeoNatureBrowse {
             try {
                 val base = config.urlServeur.trim().trimEnd('/')
                 val (token, _) = GeoNatureAuth.login(base, config.login, config.motDePasse) ?: return@withContext emptySet()
-                val conn = HttpClient.postJson(URL("$base/api/meta/datasets?active=true"), token, timeoutMs = 10000)
+                // Read timeout généreux : sur les serveurs à beaucoup de jeux de données (2500+),
+                // la sérialisation côté serveur dépasse largement 10s (cf. chargerDatasets).
+                val conn = HttpClient.postJson(URL("$base/api/meta/datasets?active=true"), token, timeoutMs = 15000, readTimeoutMs = 90000)
                 conn.outputStream.use { it.write("""{"create":"$moduleCode"}""".toByteArray(Charsets.UTF_8)) }
                 if (conn.responseCode != 200) return@withContext emptySet()
-                val arr = conn.inputStream.bufferedReader().readText().parserTableauJson("data", "items", "results") ?: return@withContext emptySet()
-                (0 until arr.length()).mapNotNull { arr.getJSONObject(it).optInt("id_dataset", -1).takeIf { id -> id > 0 } }.toSet()
+                // Streaming (cf. chargerDatasets) : on n'extrait que les id_dataset.
+                java.io.BufferedReader(java.io.InputStreamReader(conn.inputStream, Charsets.UTF_8)).use { br ->
+                    JsonReader(br).use { r -> lireDatasetsStream(r).mapTo(HashSet()) { it.id } }
+                }
             } catch (_: Exception) { emptySet() }
         }
 
@@ -90,38 +96,17 @@ object GeoNatureBrowse {
             // via [chargerIdsDatasetsCreables] + GeoNatureConfig.datasetsCreablesOcctax.
             // `fields=modules` ramène le tableau des modules rattachés (utile au tracking).
             val url = URL("$base/api/meta/datasets?active=true&module_code=OCCTAX&fields=modules")
-            val conn = HttpClient.get(url, token, timeoutMs = 10000)
+            // Read timeout généreux (90s) : `meta/datasets` n'est PAS paginé côté serveur et
+            // `fields=modules` ajoute un joinedload + sérialisation imbriquée PAR jeu de données.
+            // Sur un serveur à 2500+ jeux, la réponse dépasse les 10s par défaut → « blocage »/timeout.
+            val conn = HttpClient.get(url, token, timeoutMs = 15000, readTimeoutMs = 90000)
 
             if (conn.responseCode != 200) throw GNErreur.EnvoiEchoue(conn.responseCode, "Impossible de charger les jeux de données")
 
-            val rawText = conn.inputStream.bufferedReader().readText()
-            val parsed = rawText.parserTableauJson("data", "items", "results") ?: JSONArray()
-
-            val result = mutableListOf<GeoNatureDataset>()
-            for (i in 0 until parsed.length()) {
-                val d = parsed.getJSONObject(i)
-                val id = d.optInt("id_dataset", -1)
-                val nom = d.optString("dataset_name", "")
-                val actif = if (d.has("active") && !d.isNull("active")) d.optBoolean("active", true) else true
-                val idTaxaList = if (d.has("id_taxa_list") && !d.isNull("id_taxa_list"))
-                    d.optInt("id_taxa_list", -1).takeIf { it > 0 } else null
-                // Modules attachés : tableau `modules: [{module_code, ...}]` côté serveur.
-                // Peut aussi se présenter comme `[module_code, …]` (strings) ou être absent
-                // (instances anciennes / payload allégé). On parse défensivement.
-                val modules = mutableListOf<String>()
-                d.optJSONArray("modules")?.let { arr ->
-                    for (j in 0 until arr.length()) {
-                        val mc = when (val item = arr.opt(j)) {
-                            is String -> item
-                            is JSONObject -> item.optString("module_code", "")
-                            else -> ""
-                        }
-                        if (mc.isNotEmpty()) modules.add(mc)
-                    }
-                }
-                if (id > 0 && nom.isNotEmpty()) {
-                    result.add(GeoNatureDataset(id, nom, idTaxaList, actif, modules))
-                }
+            // Lecture en STREAMING (JsonReader) : on ne matérialise pas toute la réponse en une
+            // String géante + JSONArray (crucial sur 2500+ jeux × fields=modules → réponse lourde).
+            val result = java.io.BufferedReader(java.io.InputStreamReader(conn.inputStream, Charsets.UTF_8)).use { br ->
+                JsonReader(br).use { lireDatasetsStream(it) }
             }
             // Tri alphabétique insensible à la casse + diacritiques pour un classement
             // intuitif quel que soit l'ordre serveur.
@@ -129,6 +114,86 @@ object GeoNatureBrowse {
                 strength = java.text.Collator.PRIMARY
             }) { it.nom })
         }
+
+    /** Lit en STREAMING la réponse `meta/datasets` : tolère le tableau à la racine OU enveloppé
+     *  sous `data`/`items`/`results`. Ne charge jamais toute la réponse en mémoire d'un bloc. */
+    private fun lireDatasetsStream(r: JsonReader): MutableList<GeoNatureDataset> {
+        val result = mutableListOf<GeoNatureDataset>()
+        when (r.peek()) {
+            JsonToken.BEGIN_ARRAY -> lireTableauDatasets(r, result)
+            JsonToken.BEGIN_OBJECT -> {
+                r.beginObject()
+                while (r.hasNext()) {
+                    if (result.isEmpty() && r.nextName() in setOf("data", "items", "results") &&
+                        r.peek() == JsonToken.BEGIN_ARRAY
+                    ) lireTableauDatasets(r, result) else r.skipValue()
+                }
+                r.endObject()
+            }
+            else -> r.skipValue()
+        }
+        return result
+    }
+
+    private fun lireTableauDatasets(r: JsonReader, dst: MutableList<GeoNatureDataset>) {
+        r.beginArray()
+        while (r.hasNext()) parseUnDataset(r)?.let(dst::add)
+        r.endArray()
+    }
+
+    private fun parseUnDataset(r: JsonReader): GeoNatureDataset? {
+        var id = -1; var nom = ""; var actif = true; var idTaxaList: Int? = null
+        val modules = mutableListOf<String>()
+        r.beginObject()
+        while (r.hasNext()) {
+            when (r.nextName()) {
+                "id_dataset" -> id = lireIntOuNull(r) ?: -1
+                "dataset_name" -> nom = lireStringOuVide(r)
+                "active" -> actif = lireBoolDefaut(r, true)
+                "id_taxa_list" -> idTaxaList = lireIntOuNull(r)?.takeIf { it > 0 }
+                "modules" -> if (r.peek() == JsonToken.BEGIN_ARRAY) {
+                    r.beginArray()
+                    while (r.hasNext()) {
+                        when (r.peek()) {
+                            JsonToken.STRING -> r.nextString().takeIf { it.isNotEmpty() }?.let(modules::add)
+                            JsonToken.BEGIN_OBJECT -> {
+                                var mc = ""
+                                r.beginObject()
+                                while (r.hasNext()) { if (r.nextName() == "module_code") mc = lireStringOuVide(r) else r.skipValue() }
+                                r.endObject()
+                                if (mc.isNotEmpty()) modules.add(mc)
+                            }
+                            else -> r.skipValue()
+                        }
+                    }
+                    r.endArray()
+                } else r.skipValue()
+                else -> r.skipValue()
+            }
+        }
+        r.endObject()
+        return if (id > 0 && nom.isNotEmpty()) GeoNatureDataset(id, nom, idTaxaList, actif, modules) else null
+    }
+
+    private fun lireIntOuNull(r: JsonReader): Int? = when (r.peek()) {
+        JsonToken.NUMBER -> r.nextInt()
+        JsonToken.STRING -> r.nextString().toIntOrNull()
+        JsonToken.NULL -> { r.nextNull(); null }
+        else -> { r.skipValue(); null }
+    }
+
+    private fun lireStringOuVide(r: JsonReader): String = when (r.peek()) {
+        JsonToken.STRING, JsonToken.NUMBER -> r.nextString()
+        JsonToken.NULL -> { r.nextNull(); "" }
+        else -> { r.skipValue(); "" }
+    }
+
+    private fun lireBoolDefaut(r: JsonReader, defaut: Boolean): Boolean = when (r.peek()) {
+        JsonToken.BOOLEAN -> r.nextBoolean()
+        JsonToken.STRING -> r.nextString().toBoolean()
+        JsonToken.NULL -> { r.nextNull(); defaut }
+        else -> { r.skipValue(); defaut }
+    }
 
     suspend fun chargerListesTaxons(config: GeoNatureConfig): List<GeoNatureListe> =
         withContext(Dispatchers.IO) {

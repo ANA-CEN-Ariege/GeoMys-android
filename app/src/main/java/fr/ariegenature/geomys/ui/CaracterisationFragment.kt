@@ -62,15 +62,10 @@ class CaracterisationFragment : Fragment() {
         val groupe2Inpn = a?.getString("groupe2Inpn") ?: ""
         val determinateurArg = a?.getString("determinateur") ?: ""
         val determinateurDefaut = a?.getString("determinateurDefaut") ?: ""
-        val notes            = a?.getString("notes") ?: ""
+        val notes = a?.getString("notes") ?: ""
 
-        binding.etDeterminateur.setText(determinateurArg.ifEmpty { determinateurDefaut })
-        binding.etNotes.setText(notes)
-
-        // ── Champs additionnels niveau OCCURRENCE uniquement ──
-        // Les champs niveau RELEVE sont édités au niveau de la session via le bouton
-        // "Détails du relevé" de SaisieObservationFragment et partagés entre toutes les
-        // espèces du relevé — ils ne sont donc plus dupliqués dans cet écran par-espèce.
+        // ── Champs additionnels niveau OCCURRENCE uniquement (le niveau RELEVE est édité via
+        // « Détails du relevé », partagé entre toutes les espèces). ──
         val gnConfig = GeoNatureConfig(requireContext())
         val idDataset = gnConfig.idDataset.toIntOrNull()
         val cdNom = (a?.getInt("cdNom", -1) ?: -1).takeIf { it > 0 }
@@ -83,70 +78,128 @@ class CaracterisationFragment : Fragment() {
         val valeursOcc: Map<String, String> = try {
             gson.fromJson(a?.getString("addOccJson") ?: "{}", mapType) ?: emptyMap()
         } catch (_: Exception) { emptyMap() }
-
         binding.tvLabelAddOccurrence.visibility = if (defsOcc.isNotEmpty()) View.VISIBLE else View.GONE
         AdditionalFieldsRenderer.rendre(binding.llAddOccurrence, defsOcc, valeursOcc)
 
-        // Champs de nomenclature de l'occurrence : visibilité/ordre pilotés par la config serveur
-        // (settings.json → information[]), rendus dynamiquement. groupesEtRegno reste par-taxon pour
-        // filtrer les VALEURS de chaque nomenclature.
-        // Champs et valeurs courantes dérivés du registre unique : chaque champ porte son svKey
-        // (= clé d'argument et champ d'obs), donc plus aucun mnémonique listé ici.
+        // ── Formulaire occurrence 100 % piloté par form_fields du serveur (comme le web Occtax),
+        // un SEUL pipeline. Champs « basiques » (technique, état bio) toujours visibles ; tout le
+        // reste dans UNE section « Avancé » repliée derrière UN toggle « Plus de champs », à l'image
+        // de la gn-advanced-section du web. groupesEtRegno reste par-taxon (filtre des VALEURS). ──
         val (groupes, regno) = ChampsTaxon.groupesEtRegno(taxon, groupe2Inpn)
-        val settingsJson = gnConfig.settingsOcctaxJson
-        val champs = OcctaxFieldsConfig.champsAffichage(settingsJson, OcctaxFieldsConfig.Niveau.INFORMATION)
-        // save_default_values : un champ vide d'une nouvelle obs reprend la dernière valeur de session.
-        val sauverDefauts = OcctaxFieldsConfig.sauvegarderValeursDefaut(settingsJson)
-        val valeursNom = champs.associate { ca ->
-            val depuisArg = a?.getString(ca.champ.svKey) ?: ""
-            ca.champ.code to depuisArg.ifEmpty { if (sauverDefauts) OcctaxDefautsSession.valeur(ca.champ.code) else "" }
-        }
-        OcctaxFieldsRenderer.rendre(binding.llCaracterisation, champs, valeursNom, groupes, regno)
-
-        // ── Champs occurrence pilotés DIRECTEMENT par form_fields du serveur (hors curation
-        // settings.json) : nomenclatures statut de la source / floutage + preuves numérique /
-        // non numérique (texte). Portés de bout en bout dans la map unique champsOccExtra (clé =
-        // clé form_fields), comme les champs supplémentaires du relevé. Un champ masqué garde sa
-        // valeur initiale. ──
         val formFieldsJson = gnConfig.formFieldsJson
+        val sauverDefauts = OcctaxFieldsConfig.sauvegarderValeursDefaut(gnConfig.settingsOcctaxJson)
+        val densite = resources.displayMetrics.density
         val occExtraInit: Map<String, String> = try {
             gson.fromJson(a?.getString("occExtraJson") ?: "{}", mapType) ?: emptyMap()
         } catch (_: Exception) { emptyMap() }
-        val densite = resources.displayMetrics.density
-        // (a) nomenclatures (STATUT_SOURCE → source_status, DEE_FLOU → blurring)
-        val nomenclOccFF = buildList {
-            listOf("STATUT_SOURCE" to "source_status", "DEE_FLOU" to "blurring").forEach { (code, ffk) ->
-                if (champFormVisible(formFieldsJson, ffk)) OcctaxFieldsConfig.parCode[code]
-                    ?.let { add(OcctaxFieldsConfig.ChampAffichage(it, replie = false, lectureSeule = false)) }
+
+        // (code nomenclature, clé form_fields) dans l'ordre du web. STATUT_SOURCE/DEE_FLOU sont portés
+        // dans champsOccExtra ; les autres nomenclatures via savedStateHandle (svKey → champ d'obs).
+        val occBasique = listOf("METH_OBS" to "obs_tech", "ETA_BIO" to "bio_condition")
+        val occAvanceNom = listOf(
+            "METH_DETERMIN" to "determination_method",
+            "STATUT_OBS" to "observation_status",
+            "NATURALITE" to "naturalness",
+            "STATUT_BIO" to "bio_status",
+            "OCC_COMPORTEMENT" to "behaviour",
+            "STATUT_SOURCE" to "source_status",
+            "DEE_FLOU" to "blurring",
+            "PREUVE_EXIST" to "exist_proof",
+        )
+        val extraCodes = setOf("STATUT_SOURCE", "DEE_FLOU") // portés dans champsOccExtra
+
+        fun construire(liste: List<Pair<String, String>>): Pair<List<OcctaxFieldsConfig.ChampAffichage>, Map<String, String>> {
+            val champs = liste.mapNotNull { (code, ffk) ->
+                if (!champFormVisible(formFieldsJson, ffk)) return@mapNotNull null
+                OcctaxFieldsConfig.parCode[code]?.let {
+                    OcctaxFieldsConfig.ChampAffichage(it, replie = false, lectureSeule = false)
+                }
             }
+            val valeurs = champs.associate { ca ->
+                val f = ca.champ
+                val init = if (f.code in extraCodes) occExtraInit[f.formFieldKey] ?: ""
+                    else (a?.getString(f.svKey) ?: "").ifEmpty { if (sauverDefauts) OcctaxDefautsSession.valeur(f.code) else "" }
+                f.code to init
+            }
+            return champs to valeurs
         }
-        val containerNomFF = android.widget.LinearLayout(requireContext())
+
+        // Champs basiques (toujours visibles).
+        val (basiqueChamps, basiqueVal) = construire(occBasique)
+        OcctaxFieldsRenderer.rendre(binding.llCaracterisation, basiqueChamps, basiqueVal, groupes, regno)
+
+        // ── Section AVANCÉE (repliée) ──
+        val containerAvance = android.widget.LinearLayout(requireContext()).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            visibility = View.GONE
+        }
+        fun titreAvance(txt: String) = android.widget.TextView(requireContext()).apply {
+            text = txt; textSize = 13f
+            setTextColor(requireContext().getColor(android.R.color.darker_gray))
+            setPadding(0, (12 * densite).toInt(), 0, 0)
+        }
+        // Déterminateur (form_fields.determiner)
+        val edDeterminateur = if (champFormVisible(formFieldsJson, "determiner")) {
+            containerAvance.addView(titreAvance("Déterminateur"))
+            android.widget.EditText(requireContext()).apply {
+                inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PERSON_NAME
+                isSingleLine = true
+                setText(determinateurArg.ifEmpty { determinateurDefaut })
+            }.also { containerAvance.addView(it) }
+        } else null
+        // Nomenclatures avancées
+        val (avanceChamps, avanceVal) = construire(occAvanceNom)
+        val containerAvanceNom = android.widget.LinearLayout(requireContext())
             .apply { orientation = android.widget.LinearLayout.VERTICAL }
-        binding.llCaracterisationFormFields.addView(containerNomFF)
-        if (nomenclOccFF.isNotEmpty()) {
-            val valeursFF = nomenclOccFF.associate { it.champ.code to (occExtraInit[it.champ.formFieldKey] ?: "") }
-            OcctaxFieldsRenderer.rendre(containerNomFF, nomenclOccFF, valeursFF, groupes, regno)
+        containerAvance.addView(containerAvanceNom)
+        if (avanceChamps.isNotEmpty()) {
+            OcctaxFieldsRenderer.rendre(containerAvanceNom, avanceChamps, avanceVal, groupes, regno)
         }
-        // (b) textes : preuve numérique (URL) / preuve non numérique
+        // Preuves numérique (URL) / non numérique (texte)
         val editsProof = LinkedHashMap<String, android.widget.EditText>()
         listOf(
             Triple("digital_proof", "Preuve numérique (URL)", true),
             Triple("non_digital_proof", "Preuve non numérique", false),
         ).forEach { (key, label, estUrl) ->
             if (!champFormVisible(formFieldsJson, key)) return@forEach
-            binding.llCaracterisationFormFields.addView(android.widget.TextView(requireContext()).apply {
-                text = label; textSize = 13f
-                setTextColor(requireContext().getColor(android.R.color.darker_gray))
-                setPadding(0, (12 * densite).toInt(), 0, 0)
-            })
-            val ed = android.widget.EditText(requireContext()).apply {
+            containerAvance.addView(titreAvance(label))
+            android.widget.EditText(requireContext()).apply {
                 inputType = if (estUrl) android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI
                     else android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
                 setText(occExtraInit[key].orEmpty())
                 isSingleLine = estUrl
+            }.also { containerAvance.addView(it); editsProof[key] = it }
+        }
+        // Commentaire occurrence (form_fields.comment_occ)
+        val edNotes = if (champFormVisible(formFieldsJson, "comment_occ")) {
+            containerAvance.addView(titreAvance("Commentaire"))
+            android.widget.EditText(requireContext()).apply {
+                inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
+                minLines = 3
+                setText(notes)
+            }.also { containerAvance.addView(it) }
+        } else null
+
+        // UN seul toggle « Plus de champs » pour toute la section avancée.
+        val aDesChampsAvances = edDeterminateur != null || avanceChamps.isNotEmpty() ||
+            editsProof.isNotEmpty() || edNotes != null
+        if (aDesChampsAvances) {
+            val toggleAvance = android.widget.TextView(requireContext()).apply {
+                text = "▾ Plus de champs"
+                textSize = 13f
+                setTextColor(requireContext().getColor(android.R.color.holo_blue_dark))
+                setPadding(0, (12 * densite).toInt(), 0, 0)
+                isClickable = true
+                isFocusable = true
             }
-            binding.llCaracterisationFormFields.addView(ed)
-            editsProof[key] = ed
+            binding.llCaracterisationFormFields.addView(toggleAvance)
+            binding.llCaracterisationFormFields.addView(containerAvance)
+            var ouvert = false
+            toggleAvance.setOnClickListener {
+                ouvert = !ouvert
+                containerAvance.visibility = if (ouvert) View.VISIBLE else View.GONE
+                toggleAvance.text = if (ouvert) "▴ Moins de champs" else "▾ Plus de champs"
+            }
         }
 
         binding.btnOk.setOnClickListener {
@@ -159,33 +212,30 @@ class CaracterisationFragment : Fragment() {
                 return@setOnClickListener
             }
             val sv = findNavController().previousBackStackEntry?.savedStateHandle ?: return@setOnClickListener
-            // Seuls les champs effectivement rendus sont reportés : un champ masqué par la config
-            // serveur n'écrase pas la valeur éventuellement déjà portée par l'obs.
-            val choix = OcctaxFieldsRenderer.collecter(binding.llCaracterisation)
-            choix.forEach { (code, valeur) ->
-                OcctaxFieldsConfig.parCode[code]?.svKey?.let { sv.set(it, valeur) }
-            }
-            if (sauverDefauts) OcctaxDefautsSession.memoriser(choix)
-            sv.set("determinateur",  binding.etDeterminateur.text.toString())
-            sv.set("notes",          binding.etNotes.text.toString())
-            // Seul le niveau OCCURRENCE est édité ici ; le niveau RELEVE est géré
-            // dans SaisieObservationFragment via le bouton "Détails du relevé".
-            val gsonOut = Gson()
-            sv.set("addOccJson", gsonOut.toJson(AdditionalFieldsRenderer.collecter(binding.llAddOccurrence)))
-            // Champs occurrence pilotés form_fields : on repart de l'initial (préserve les champs
-            // masqués) et on surcharge ceux visibles (vide ⇒ retrait de la clé).
+            // Nomenclatures (basiques + avancées) : routage par code — STATUT_SOURCE/DEE_FLOU →
+            // champsOccExtra ; les autres → svKey (champ d'obs). Un champ masqué n'est pas collecté,
+            // donc n'écrase pas la valeur déjà portée par l'obs.
             val occExtra = HashMap(occExtraInit)
-            if (nomenclOccFF.isNotEmpty()) {
-                val collectes = OcctaxFieldsRenderer.collecter(containerNomFF)
-                nomenclOccFF.forEach { ca ->
-                    val v = collectes[ca.champ.code].orEmpty()
-                    if (v.isEmpty()) occExtra.remove(ca.champ.formFieldKey) else occExtra[ca.champ.formFieldKey] = v
+            val pourDefaut = mutableMapOf<String, String>()
+            (OcctaxFieldsRenderer.collecter(binding.llCaracterisation) +
+                OcctaxFieldsRenderer.collecter(containerAvanceNom)).forEach { (code, valeur) ->
+                val f = OcctaxFieldsConfig.parCode[code] ?: return@forEach
+                if (f.code in extraCodes) {
+                    if (valeur.isEmpty()) occExtra.remove(f.formFieldKey) else occExtra[f.formFieldKey] = valeur
+                } else {
+                    sv.set(f.svKey, valeur)
+                    pourDefaut[code] = valeur
                 }
             }
+            if (sauverDefauts) OcctaxDefautsSession.memoriser(pourDefaut)
+            edDeterminateur?.let { sv.set("determinateur", it.text.toString()) }
+            edNotes?.let { sv.set("notes", it.text.toString()) }
             editsProof.forEach { (key, ed) ->
                 val v = ed.text?.toString()?.trim().orEmpty()
                 if (v.isEmpty()) occExtra.remove(key) else occExtra[key] = v
             }
+            val gsonOut = Gson()
+            sv.set("addOccJson", gsonOut.toJson(AdditionalFieldsRenderer.collecter(binding.llAddOccurrence)))
             sv.set("occExtraJson", gsonOut.toJson(occExtra))
             findNavController().navigateUp()
         }

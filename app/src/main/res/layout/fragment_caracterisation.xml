@@ -38,40 +38,13 @@
             android:layout_height="wrap_content"
             android:orientation="vertical" />
 
-        <!-- Champs occurrence pilotés par form_fields du serveur (statut de la source, floutage,
-             preuves numérique / non numérique) — rendus dynamiquement selon la config serveur. -->
+        <!-- Section « Avancé » occurrence (pilotée par form_fields, repliée par défaut) : déterminateur,
+             nomenclatures avancées, preuves, commentaire — rendus dynamiquement selon la config serveur. -->
         <LinearLayout
             android:id="@+id/ll_caracterisation_form_fields"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical" />
-
-        <com.google.android.material.textfield.TextInputLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:hint="Déterminateur">
-
-            <com.google.android.material.textfield.TextInputEditText
-                android:id="@+id/et_determinateur"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:inputType="textPersonName" />
-        </com.google.android.material.textfield.TextInputLayout>
-
-        <com.google.android.material.textfield.TextInputLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:hint="Commentaire">
-
-            <com.google.android.material.textfield.TextInputEditText
-                android:id="@+id/et_notes"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:inputType="textMultiLine"
-                android:minLines="3" />
-        </com.google.android.material.textfield.TextInputLayout>
 
         <!-- Champs additionnels niveau OCCURRENCE uniquement. Les champs niveau RELEVE
              sont édités au niveau de la session via le bouton "Détails du relevé" de

@@ -49,8 +49,11 @@ data class AdditionalFieldDef(
     val fieldName: String,
     val fieldLabel: String,
     val widget: WidgetType,
-    /** Valeurs proposées pour SELECT — tableau JSON string. */
+    /** Libellés proposés pour SELECT / CHECKBOX multi-valeurs. */
     val fieldValues: List<String> = emptyList(),
+    /** Codes (valeurs réelles) alignés sur [fieldValues] — extraits de `field_values[i].value` quand
+     *  le serveur fournit des objets `{value, label}` (sinon = le libellé). Utilisés pour l'envoi. */
+    val fieldValueCodes: List<String> = emptyList(),
     val required: Boolean = false,
     val description: String? = null,
     val defaultValue: String? = null,
@@ -183,15 +186,20 @@ object AdditionalFieldsApi {
                     }
                     .takeIf { it.isNotEmpty() }
             } else null
-            val fieldValues = mutableListOf<String>()
+            val fieldValues = mutableListOf<String>()      // libellés affichés
+            val fieldValueCodes = mutableListOf<String>()   // valeurs réelles (envoyées)
             item.optJSONArray("field_values")?.let { arr ->
                 for (j in 0 until arr.length()) {
-                    // Soit string nu, soit objet {value, label}.
-                    val v = arr.opt(j)
-                    when (v) {
-                        is String -> fieldValues.add(v)
-                        is JSONObject -> fieldValues.add(v.optString("label", v.optString("value", "")))
-                        else -> v?.toString()?.takeIf { it.isNotEmpty() }?.let { fieldValues.add(it) }
+                    // Soit string nu (code == libellé), soit objet {value, label}.
+                    when (val v = arr.opt(j)) {
+                        is String -> { fieldValues.add(v); fieldValueCodes.add(v) }
+                        is JSONObject -> {
+                            val code = v.opt("value")?.toString()?.takeIf { it.isNotEmpty() }
+                                ?: v.optString("label", "")
+                            val label = v.optString("label", "").ifEmpty { code }
+                            fieldValueCodes.add(code); fieldValues.add(label)
+                        }
+                        else -> v?.toString()?.takeIf { it.isNotEmpty() }?.let { fieldValues.add(it); fieldValueCodes.add(it) }
                     }
                 }
             }
@@ -222,6 +230,7 @@ object AdditionalFieldsApi {
                 fieldLabel = fieldLabel,
                 widget = widget,
                 fieldValues = fieldValues,
+                fieldValueCodes = fieldValueCodes,
                 required = item.optBoolean("required", false),
                 description = item.optString("description", "")
                     .takeIf { it.isNotEmpty() && it != "null" },

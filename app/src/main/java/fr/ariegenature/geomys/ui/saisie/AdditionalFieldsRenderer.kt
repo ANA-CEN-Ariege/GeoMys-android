@@ -151,8 +151,30 @@ object AdditionalFieldsRenderer {
             val codes = spinner?.getTag(R.id.tag_field_codes) as? List<*>
             codes?.getOrNull(spinner.selectedItemPosition) as? String ?: ""
         }
-        WidgetType.CHECKBOX ->
-            if (view.findViewWithTag<CheckBox>("input")?.isChecked == true) "true" else "false"
+        WidgetType.CHECKBOX -> {
+            // Multi-valeurs : plusieurs cases taguées avec leur code → tableau JSON des cochées.
+            // Sinon (case unique tag "input") → booléen "true"/"false" (compat existante).
+            val cases = mutableListOf<CheckBox>()
+            fun scan(v: android.view.View) {
+                if (v is CheckBox && v.getTag(R.id.tag_field_codes) != null) cases.add(v)
+                if (v is android.view.ViewGroup) for (i in 0 until v.childCount) scan(v.getChildAt(i))
+            }
+            scan(view)
+            if (cases.isNotEmpty()) {
+                org.json.JSONArray(cases.filter { it.isChecked }.map { it.getTag(R.id.tag_field_codes).toString() }).toString()
+            } else {
+                if (view.findViewWithTag<CheckBox>("input")?.isChecked == true) "true" else "false"
+            }
+        }
+    }
+
+    /** Codes pré-cochés d'un checkbox multi : tableau JSON (`["1","3"]`) ou valeur simple (défaut). */
+    private fun parseCodesCoches(current: String): Set<String> {
+        if (current.isBlank()) return emptySet()
+        return try {
+            val arr = org.json.JSONArray(current)
+            (0 until arr.length()).map { arr.get(it).toString() }.toSet()
+        } catch (_: Exception) { setOf(current) }
     }
 
     private data class FieldTag(val fieldName: String, val widget: WidgetType, val required: Boolean, val label: String)
@@ -213,10 +235,25 @@ object AdditionalFieldsRenderer {
                 wrapper.addView(spinner)
             }
             WidgetType.CHECKBOX -> {
-                wrapper.addView(CheckBox(ctx).apply {
-                    isChecked = current.equals("true", ignoreCase = true)
-                    tag = "input"
-                })
+                if (def.fieldValues.size > 1) {
+                    // Checkbox MULTI-valeurs (comme le web) : un groupe de cases, une par valeur.
+                    // Résultat = tableau JSON des CODES cochés. Pré-cochage depuis la valeur courante
+                    // (tableau JSON) ou la valeur par défaut (code simple, ex. "2").
+                    val coches = parseCodesCoches(current)
+                    def.fieldValues.forEachIndexed { i, label ->
+                        val code = def.fieldValueCodes.getOrElse(i) { label }
+                        wrapper.addView(CheckBox(ctx).apply {
+                            text = label
+                            isChecked = code in coches
+                            setTag(R.id.tag_field_codes, code)
+                        })
+                    }
+                } else {
+                    wrapper.addView(CheckBox(ctx).apply {
+                        isChecked = current.equals("true", ignoreCase = true)
+                        tag = "input"
+                    })
+                }
             }
             else -> {
                 // TEXT / TEXTAREA / NUMBER / INCONNU → champ texte avec hints adaptés.

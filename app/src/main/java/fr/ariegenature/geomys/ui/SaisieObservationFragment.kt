@@ -438,7 +438,7 @@ class SaisieObservationFragment : Fragment() {
             requireContext(), infos, datasets, idDsInitial, nomDsInitial,
             observateurs, idsObsInitial, nomsObsInitial, defs, additionalFieldsReleveSession,
             gnConfig.settingsOcctaxJson, gnConfig.formFieldsJson, typGrpReleveSession, commentReleveSession,
-            dateDebutReleveSession, dateFinReleveSession, gnConfig.dateAvecHeures, gnConfig.dateAvecFin,
+            dateDebutReleveSession, dateFinReleveSession, gnConfig.heuresVisibles, gnConfig.dateFinVisible,
             cdHabReleveSession, habitatReleveLabelSession,
             champsReleveExtraSession,
             viewLifecycleOwner.lifecycleScope,

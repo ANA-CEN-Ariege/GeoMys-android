@@ -524,6 +524,9 @@ object GeoNatureUpload {
                 v.equals("false", ignoreCase = true) -> put(k, false)
                 v.toIntOrNull() != null -> put(k, v.toInt())
                 v.toDoubleOrNull() != null -> put(k, v.toDouble())
+                // Checkbox multi-valeurs : tableau JSON (ex. ["1","3"]) → vrai JSONArray, pas une string.
+                v.startsWith("[") && v.endsWith("]") ->
+                    try { put(k, JSONArray(v)) } catch (_: Exception) { put(k, v) }
                 else -> put(k, v)
             }
         }

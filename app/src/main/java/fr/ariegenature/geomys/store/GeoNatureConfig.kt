@@ -194,6 +194,14 @@ class GeoNatureConfig(context: Context) {
         get() = prefs.getBoolean("gn_date_end", false)
         set(v) = prefs.edit().putBoolean("gn_date_end", v).apply()
 
+    /** Heures du relevé proposées — pilotées par `form_fields.hour_min` (comme le web Occtax), avec
+     *  repli sur le réglage mobile `settings.input.date.enable_hours` si le serveur n'expose pas la clé. */
+    val heuresVisibles: Boolean get() = champFormVisible("hour_min") && (formFieldsJson.isNotBlank() || dateAvecHeures)
+
+    /** Date de FIN du relevé proposée (le « + » du web) — pilotée par `form_fields.date_max`, avec
+     *  repli sur `settings.input.date.enable_end_date` si le serveur n'expose pas form_fields. */
+    val dateFinVisible: Boolean get() = champFormVisible("date_max") && (formFieldsJson.isNotBlank() || dateAvecFin)
+
     /** Cache des champs additionnels Occtax filtré par le flag serveur `additional_fields` du
      *  settings : renvoie "" (donc aucun champ additionnel rendu) si le serveur les désactive. À
      *  utiliser dans tous les contextes d'AFFICHAGE des champs additionnels. */

@@ -366,7 +366,7 @@ fun ouvrirDialogDetailsReleve(
     // édite un relevé qui porte déjà une fin distincte du début.
     var finActive = dateAvecFin && dateFinInitial != null && dateFinInitial != dateDebutInitial
 
-    racine.addView(titre("Date du relevé"))
+    racine.addView(titre(if (dateAvecFin) "Date de début" else "Date du relevé"))
     val ligneDebut = ligneDate()
     ligneDebut.addView(champDateHeure().apply {
         text = fmtDate.format(calDebut.time)

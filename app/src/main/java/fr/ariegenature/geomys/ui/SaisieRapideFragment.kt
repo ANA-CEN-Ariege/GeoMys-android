@@ -559,7 +559,7 @@ class SaisieRapideFragment : Fragment() {
                 requireContext(), emptyList(), datasets, idDsInitial, nomDsInitial,
                 observateurs, idsObsInitial, nomsObsInitial, defsReleve, additionalFieldsReleve,
                 gnConfig.settingsOcctaxJson, gnConfig.formFieldsJson, typGrpReleveSession, commentReleveSession,
-                dateDebutReleveSession, dateFinReleveSession, gnConfig.dateAvecHeures, gnConfig.dateAvecFin,
+                dateDebutReleveSession, dateFinReleveSession, gnConfig.heuresVisibles, gnConfig.dateFinVisible,
                 cdHabReleveSession, habitatReleveLabelSession,
                 champsReleveExtraSession,
                 viewLifecycleOwner.lifecycleScope,

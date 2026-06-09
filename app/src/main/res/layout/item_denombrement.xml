@@ -39,6 +39,7 @@
         android:orientation="horizontal">
 
         <com.google.android.material.textfield.TextInputLayout
+            android:id="@+id/til_nombre_min"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_marginEnd="6dp"
@@ -53,6 +54,7 @@
         </com.google.android.material.textfield.TextInputLayout>
 
         <com.google.android.material.textfield.TextInputLayout
+            android:id="@+id/til_nombre_max"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_marginStart="6dp"

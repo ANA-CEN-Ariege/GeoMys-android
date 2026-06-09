@@ -45,6 +45,7 @@ import fr.ariegenature.geomys.model.Taxon
 import fr.ariegenature.geomys.network.AdditionalFieldDef
 import fr.ariegenature.geomys.network.AdditionalFieldsObject
 import fr.ariegenature.geomys.store.GeoNatureConfig
+import fr.ariegenature.geomys.store.champFormVisible
 import fr.ariegenature.geomys.store.OcctaxDefautsSession
 import fr.ariegenature.geomys.store.OcctaxFieldsConfig
 import fr.ariegenature.geomys.store.TaxRefCache
@@ -69,6 +70,8 @@ class DenombrementFragment : Fragment() {
     private var regno: String = ""
     /** Champs de nomenclature du dénombrement à afficher (registre filtré par la config serveur). */
     private var champsCounting: List<OcctaxFieldsConfig.ChampAffichage> = emptyList()
+    /** Config form_fields du serveur (visibilité des champs, comme le web). */
+    private var formFieldsJson: String = ""
     /** Flag serveur save_default_values (mémorisation des dernières valeurs de session). */
     private var sauverDefauts = false
     /** Définitions des champs additionnels OCCTAX_DENOMBREMENT (chargées depuis le cache config). */
@@ -142,10 +145,18 @@ class DenombrementFragment : Fragment() {
         defsCounting = AdditionalFieldsRenderer.fromJson(gnConfig.additionalFieldsOcctaxJsonActif)
             .filter { it.appliqueA(AdditionalFieldsObject.COUNTING) }
             .filter { it.visiblePour(idDataset, listesDuTaxon) }
-        // Champs de nomenclature du dénombrement : visibilité/ordre pilotés par la config serveur.
-        champsCounting = OcctaxFieldsConfig.champsAffichage(
-            gnConfig.settingsOcctaxJson, OcctaxFieldsConfig.Niveau.COUNTING
-        )
+        // Champs de nomenclature du dénombrement : visibilité pilotée par form_fields du serveur
+        // (comme le web Occtax), dans l'ordre du formulaire web. Un seul mécanisme, comme l'occurrence.
+        formFieldsJson = gnConfig.formFieldsJson
+        champsCounting = listOf(
+            "OBJ_DENBR" to "obj_count", "TYP_DENBR" to "type_count",
+            "STADE_VIE" to "life_stage", "SEXE" to "sex",
+        ).mapNotNull { (code, ffk) ->
+            if (!champFormVisible(formFieldsJson, ffk)) return@mapNotNull null
+            OcctaxFieldsConfig.parCode[code]?.let {
+                OcctaxFieldsConfig.ChampAffichage(it, replie = false, lectureSeule = false)
+            }
+        }
         sauverDefauts = OcctaxFieldsConfig.sauvegarderValeursDefaut(gnConfig.settingsOcctaxJson)
 
         val type = object : TypeToken<List<Denombrement>>() {}.type
@@ -214,6 +225,11 @@ class DenombrementFragment : Fragment() {
             val etMax = row.findViewById<TextInputEditText>(R.id.et_nombre_max)
             etMin.setText(denom.nombreMin.toString())
             etMax.setText(denom.nombreMax.toString())
+            // Visibilité min/max pilotée par form_fields (count_min/count_max), comme le web.
+            row.findViewById<View>(R.id.til_nombre_min).visibility =
+                if (champFormVisible(formFieldsJson, "count_min")) View.VISIBLE else View.GONE
+            row.findViewById<View>(R.id.til_nombre_max).visibility =
+                if (champFormVisible(formFieldsJson, "count_max")) View.VISIBLE else View.GONE
             // Saisie de Min → recopie automatique dans Max. On ne recopie que si Max
             // « suivait » Min (vide ou égal à l'ancienne valeur de Min) pour ne pas écraser
             // une borne max saisie volontairement (plage min-max). Listener posé APRÈS le

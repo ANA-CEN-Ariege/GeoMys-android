@@ -25,6 +25,7 @@ import android.widget.ArrayAdapter
 import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.LinearLayout
+import android.widget.RadioButton
 import android.widget.Spinner
 import android.widget.TextView
 import androidx.core.view.setMargins
@@ -80,6 +81,9 @@ object AdditionalFieldsRenderer {
         fromJson(additionalFieldsOcctaxJson)
             .filter { it.appliqueA(fr.ariegenature.geomys.network.AdditionalFieldsObject.RELEVE) }
             .filter { it.visiblePour(idDataset, emptyList()) }
+            // Pas de pré-remplissage des CHECKBOX depuis un default_value scalaire : le web ne le fait
+            // pas pour les champs additionnels (sinon une case se retrouverait cochée/envoyée à tort).
+            .filter { it.widget != WidgetType.CHECKBOX }
             .mapNotNull { def -> def.defaultValue?.takeIf { it.isNotBlank() }?.let { def.fieldName to it } }
             .toMap()
 
@@ -151,6 +155,15 @@ object AdditionalFieldsRenderer {
             val codes = spinner?.getTag(R.id.tag_field_codes) as? List<*>
             codes?.getOrNull(spinner.selectedItemPosition) as? String ?: ""
         }
+        WidgetType.RADIO -> {
+            val rbs = mutableListOf<RadioButton>()
+            fun scan(v: android.view.View) {
+                if (v is RadioButton) rbs.add(v)
+                if (v is android.view.ViewGroup) for (i in 0 until v.childCount) scan(v.getChildAt(i))
+            }
+            scan(view)
+            rbs.firstOrNull { it.isChecked }?.getTag(R.id.tag_field_codes)?.toString() ?: ""
+        }
         WidgetType.CHECKBOX -> {
             // Multi-valeurs : plusieurs cases taguées avec leur code → tableau JSON des cochées.
             // Sinon (case unique tag "input") → booléen "true"/"false" (compat existante).
@@ -168,13 +181,15 @@ object AdditionalFieldsRenderer {
         }
     }
 
-    /** Codes pré-cochés d'un checkbox multi : tableau JSON (`["1","3"]`) ou valeur simple (défaut). */
+    /** Codes pré-cochés d'un checkbox multi : UNIQUEMENT depuis une vraie valeur enregistrée
+     *  (tableau JSON `["1","3"]`). Une valeur scalaire = le `default_value` du serveur, que le web
+     *  N'APPLIQUE PAS comme pré-cochage pour un champ additionnel → on ne coche rien (parité web). */
     private fun parseCodesCoches(current: String): Set<String> {
         if (current.isBlank()) return emptySet()
         return try {
             val arr = org.json.JSONArray(current)
             (0 until arr.length()).map { arr.get(it).toString() }.toSet()
-        } catch (_: Exception) { setOf(current) }
+        } catch (_: Exception) { emptySet() }
     }
 
     private data class FieldTag(val fieldName: String, val widget: WidgetType, val required: Boolean, val label: String)
@@ -206,7 +221,10 @@ object AdditionalFieldsRenderer {
                     tag = "input"
                 }
                 val labels = listOf("(non renseigné)") + def.fieldValues
-                val codes = listOf("") + def.fieldValues
+                // Codes = vraies valeurs serveur (field_values[i].value) si disponibles, sinon repli
+                // sur les libellés (anciens caches / field_values en chaînes nues).
+                val valeurs = if (def.fieldValueCodes.size == def.fieldValues.size) def.fieldValueCodes else def.fieldValues
+                val codes = listOf("") + valeurs
                 val adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_item, labels)
                 adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
                 spinner.adapter = adapter
@@ -216,6 +234,30 @@ object AdditionalFieldsRenderer {
                 val idx = codes.indexOf(current).coerceAtLeast(0)
                 spinner.setSelection(idx)
                 wrapper.addView(spinner)
+            }
+            WidgetType.RADIO -> {
+                // Boutons radio (comme le web), choix unique MAIS dé-sélectionnable : re-cliquer la
+                // valeur active la décoche (sémantique « coché / pas coché », cf. toggleValueRadio du
+                // web). Pas d'option « (non renseigné) » : un radio seul = une case qu'on coche ou pas.
+                val container = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL; tag = "input" }
+                val valeurs = if (def.fieldValueCodes.size == def.fieldValues.size) def.fieldValueCodes else def.fieldValues
+                val boutons = mutableListOf<RadioButton>()
+                var selection: String? = current.takeIf { it.isNotEmpty() }
+                def.fieldValues.forEachIndexed { i, label ->
+                    val code = valeurs.getOrElse(i) { label }
+                    val rb = RadioButton(ctx).apply {
+                        text = label
+                        setTag(R.id.tag_field_codes, code)
+                        isChecked = code == selection
+                        setOnClickListener {
+                            selection = if (selection == code) null else code
+                            boutons.forEach { b -> b.isChecked = b.getTag(R.id.tag_field_codes) == selection }
+                        }
+                    }
+                    boutons.add(rb)
+                    container.addView(rb)
+                }
+                wrapper.addView(container)
             }
             WidgetType.NOMENCLATURE -> {
                 val spinner = Spinner(ctx).apply {

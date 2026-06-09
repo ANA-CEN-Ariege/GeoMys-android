@@ -63,6 +63,11 @@ class CaracterisationFragment : Fragment() {
         val determinateurArg = a?.getString("determinateur") ?: ""
         val determinateurDefaut = a?.getString("determinateurDefaut") ?: ""
         val notes = a?.getString("notes") ?: ""
+        // Ouverture AUTO (nidification oiseaux) : on n'affiche QUE le champ Comportement (indice de
+        // nidification), pour une saisie rapide. Le bouton « Détails » (comportementSeul=false) ouvre
+        // au contraire tout le formulaire. En mode comportement seul, on ne touche QUE le comportement
+        // (les autres champs / champs additionnels ne sont ni rendus ni réécrits).
+        val comportementSeul = a?.getBoolean("comportementSeul", false) == true
 
         // ── Champs additionnels niveau OCCURRENCE uniquement (le niveau RELEVE est édité via
         // « Détails du relevé », partagé entre toutes les espèces). ──
@@ -78,8 +83,9 @@ class CaracterisationFragment : Fragment() {
         val valeursOcc: Map<String, String> = try {
             gson.fromJson(a?.getString("addOccJson") ?: "{}", mapType) ?: emptyMap()
         } catch (_: Exception) { emptyMap() }
-        binding.tvLabelAddOccurrence.visibility = if (defsOcc.isNotEmpty()) View.VISIBLE else View.GONE
-        AdditionalFieldsRenderer.rendre(binding.llAddOccurrence, defsOcc, valeursOcc)
+        binding.tvLabelAddOccurrence.visibility =
+            if (!comportementSeul && defsOcc.isNotEmpty()) View.VISIBLE else View.GONE
+        if (!comportementSeul) AdditionalFieldsRenderer.rendre(binding.llAddOccurrence, defsOcc, valeursOcc)
 
         // ── Formulaire occurrence 100 % piloté par form_fields du serveur (comme le web Occtax),
         // un SEUL pipeline. Champs « basiques » (technique, état bio) toujours visibles ; tout le
@@ -95,8 +101,10 @@ class CaracterisationFragment : Fragment() {
 
         // (code nomenclature, clé form_fields) dans l'ordre du web. STATUT_SOURCE/DEE_FLOU sont portés
         // dans champsOccExtra ; les autres nomenclatures via savedStateHandle (svKey → champ d'obs).
-        val occBasique = listOf("METH_OBS" to "obs_tech", "ETA_BIO" to "bio_condition")
-        val occAvanceNom = listOf(
+        // Mode comportement seul : un seul champ basique (le comportement), aucune section avancée.
+        val occBasique = if (comportementSeul) listOf("OCC_COMPORTEMENT" to "behaviour")
+            else listOf("METH_OBS" to "obs_tech", "ETA_BIO" to "bio_condition")
+        val occAvanceNom = if (comportementSeul) emptyList() else listOf(
             "METH_DETERMIN" to "determination_method",
             "STATUT_OBS" to "observation_status",
             "NATURALITE" to "naturalness",
@@ -139,7 +147,7 @@ class CaracterisationFragment : Fragment() {
             setPadding(0, (12 * densite).toInt(), 0, 0)
         }
         // Déterminateur (form_fields.determiner)
-        val edDeterminateur = if (champFormVisible(formFieldsJson, "determiner")) {
+        val edDeterminateur = if (!comportementSeul && champFormVisible(formFieldsJson, "determiner")) {
             containerAvance.addView(titreAvance("Déterminateur"))
             android.widget.EditText(requireContext()).apply {
                 inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PERSON_NAME
@@ -157,7 +165,7 @@ class CaracterisationFragment : Fragment() {
         }
         // Preuves numérique (URL) / non numérique (texte)
         val editsProof = LinkedHashMap<String, android.widget.EditText>()
-        listOf(
+        if (!comportementSeul) listOf(
             Triple("digital_proof", "Preuve numérique (URL)", true),
             Triple("non_digital_proof", "Preuve non numérique", false),
         ).forEach { (key, label, estUrl) ->
@@ -171,7 +179,7 @@ class CaracterisationFragment : Fragment() {
             }.also { containerAvance.addView(it); editsProof[key] = it }
         }
         // Commentaire occurrence (form_fields.comment_occ)
-        val edNotes = if (champFormVisible(formFieldsJson, "comment_occ")) {
+        val edNotes = if (!comportementSeul && champFormVisible(formFieldsJson, "comment_occ")) {
             containerAvance.addView(titreAvance("Commentaire"))
             android.widget.EditText(requireContext()).apply {
                 inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
@@ -234,9 +242,13 @@ class CaracterisationFragment : Fragment() {
                 val v = ed.text?.toString()?.trim().orEmpty()
                 if (v.isEmpty()) occExtra.remove(key) else occExtra[key] = v
             }
-            val gsonOut = Gson()
-            sv.set("addOccJson", gsonOut.toJson(AdditionalFieldsRenderer.collecter(binding.llAddOccurrence)))
-            sv.set("occExtraJson", gsonOut.toJson(occExtra))
+            // En mode comportement seul, les champs additionnels et occExtra ne sont PAS rendus :
+            // on ne les réécrit pas (sinon on écraserait les valeurs déjà portées par l'obs).
+            if (!comportementSeul) {
+                val gsonOut = Gson()
+                sv.set("addOccJson", gsonOut.toJson(AdditionalFieldsRenderer.collecter(binding.llAddOccurrence)))
+                sv.set("occExtraJson", gsonOut.toJson(occExtra))
+            }
             findNavController().navigateUp()
         }
     }

@@ -40,7 +40,7 @@ object AdditionalFieldsObject {
 
 /** Types de widgets supportés (couvrent ~95% des configs Occtax réelles).
  *  Les autres widgets serveur sont rendus en texte libre (best-effort) avec un hint. */
-enum class WidgetType { TEXT, TEXTAREA, NUMBER, SELECT, CHECKBOX, NOMENCLATURE, INCONNU }
+enum class WidgetType { TEXT, TEXTAREA, NUMBER, SELECT, RADIO, CHECKBOX, NOMENCLATURE, INCONNU }
 
 /** Définition d'un champ additionnel récupérée du serveur GeoNature.
  *  Sérialisable (Gson) pour cache en SharedPreferences. */
@@ -171,7 +171,8 @@ object AdditionalFieldsApi {
                 "text" -> WidgetType.TEXT
                 "textarea" -> WidgetType.TEXTAREA
                 "number", "integer", "float" -> WidgetType.NUMBER
-                "select", "radio", "datalist" -> WidgetType.SELECT
+                "radio" -> WidgetType.RADIO
+                "select", "datalist" -> WidgetType.SELECT
                 "checkbox", "bool_checkbox", "bool" -> WidgetType.CHECKBOX
                 "nomenclature" -> WidgetType.NOMENCLATURE
                 else -> WidgetType.INCONNU

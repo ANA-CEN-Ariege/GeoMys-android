@@ -458,11 +458,14 @@ class SaisieObservationFragment : Fragment() {
         }
     }
 
-    private fun ouvrirCaracterisation(index: Int) {
+    private fun ouvrirCaracterisation(index: Int, comportementSeul: Boolean = false) {
         if (index !in pendingObs.indices) return
         val obs = pendingObs[index]
         editingDetailsIndex = index
         val bundle = Bundle().apply {
+            // Ouverture AUTO (nidification oiseaux) : on ne propose QUE le comportement, pour
+            // faciliter la saisie de l'indice de nidification. Le bouton Détails, lui, ouvre tout.
+            putBoolean("comportementSeul",   comportementSeul)
             putString("taxon",               obs.taxon.name)
             putString("groupe2Inpn",         groupe2InpnPour(obs))
             putInt("cdNom",                  obs.cdNom ?: -1)
@@ -822,7 +825,7 @@ class SaisieObservationFragment : Fragment() {
         if (obs.taxon != Taxon.OISEAU) return
         val cdNom = obs.cdNom ?: return
         if (NidificationOiseaux.estEnPeriode(requireContext(), cdNom, moisPertinent())) {
-            ouvrirCaracterisation(index)
+            ouvrirCaracterisation(index, comportementSeul = true)
         }
     }
 

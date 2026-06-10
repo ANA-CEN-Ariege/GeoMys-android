@@ -13,9 +13,9 @@ Application Android de terrain pour la saisie naturaliste connectée à un serve
 
 ## 1. Installation
 
-1. Télécharger la dernière version (`app-debug.apk`) depuis la page [Releases GitHub](https://github.com/ANA-CEN-Ariege/GeoMys-android/releases).
-2. Sur Android, autoriser l'installation depuis des sources inconnues si demandé.
-3. Ouvrir le fichier APK et installer.
+1. Télécharger l'application depuis ce lien [Latest version](https://github.com/ANA-CEN-Ariege/GeoMys-android/releases/latest/download/app-release.apk) ou la dernière version (`app-release.apk`) depuis la page [Releases GitHub](https://github.com/ANA-CEN-Ariege/GeoMys-android/releases) ou .
+3. Sur Android, autoriser l'installation depuis des sources inconnues si demandé.
+4. Ouvrir le fichier APK et installer.
 
 Aucun compte spécifique à créer : on utilise un compte **GeoNature** existant.
 
@@ -29,7 +29,7 @@ Aucun compte spécifique à créer : on utilise un compte **GeoNature** existant
 
 | Champ | Valeur |
 |---|---|
-| URL du serveur | (L'URL de votre serveur GeoNature) |
+| URL du serveur | (L'URL de votre serveur GeoNature, exemple : https://geonature.ariegenature.fr/geonature) |
 | Identifiant | (Votre nom d'utilisateur GeoNature) |
 | Mot de passe | (votre mot de passe GeoNature) |
 

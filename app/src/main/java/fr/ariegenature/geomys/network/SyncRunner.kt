@@ -202,9 +202,11 @@ object SyncRunner {
                     echecs.forEach { append("  • $it\n") }
                     append("Vous pouvez relancer « Recharger les données ».\n\n")
                 }
+                // Détail des compteurs (taxons, protocoles, listes…) affiché dans l'écran Paramètres
+                // (boîte « Chargement des données »), plus dans ce message : on ne garde ici que les
+                // avertissements éventuels (TaxRef partiel, nomenclatures absentes).
                 append(msgTaxRef)
                 if (nbTaxons > 0 && nbNom == 0) append("\n⚠ Nomenclatures : $msgNom")
-                if (nbModulesOk > 0 || msgSuivis.startsWith("Aucun")) append("\nSuivis : $msgSuivis")
             }
             _etat.postValue(Etat(enCours = false, texte = "Terminé", termine = true, succes = echecs.isEmpty(), resume = resume))
         } catch (c: kotlinx.coroutines.CancellationException) {

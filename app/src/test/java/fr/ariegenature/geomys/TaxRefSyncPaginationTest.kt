@@ -105,7 +105,8 @@ class TaxRefSyncPaginationTest {
         router(mapOf(1 to json(page(1, 1000)), 2 to json(page(1001, 5))))
         val (nb, msg) = sync()
         assertEquals("1005 taxons × 2 clés (nom scientifique + vernaculaire)", 2010, nb)
-        assertTrue("la liste doit être comptée synchronisée : $msg", msg.contains("1/1 listes"))
+        // Le message ne contient plus le détail « X/Y listes » (déplacé dans l'écran Paramètres) ;
+        // la liste synchronisée se vérifie directement, et aucun avertissement n'est attendu.
         assertFalse("aucun avertissement attendu : $msg", msg.contains("⚠"))
         assertEquals(listOf(7), TaxRefCache.listesSynchronisees)
     }

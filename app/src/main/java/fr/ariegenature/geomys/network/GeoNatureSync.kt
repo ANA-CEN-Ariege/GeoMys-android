@@ -323,29 +323,12 @@ object GeoNatureSync {
         TaxRefCache.comptesGroupes = comptesTousGroupes.filterValues { it > 0 }
         (versionServeur ?: verifierVersionTaxRef(config))?.let { TaxRefCache.versionSauvegardee = it }
 
-        val nbO  = comptesTousGroupes["Oiseaux"] ?: 0
-        val nbM  = comptesTousGroupes["Mammifères"] ?: 0
-        val nbR  = comptesTousGroupes["Reptiles"] ?: 0
-        val nbB  = comptesTousGroupes["Amphibiens"] ?: 0
-        val nbPo = comptesTousGroupes["Poissons"] ?: 0
-        val nbI  = comptesTousGroupes["Insectes"] ?: 0
-        val nbCh  = regneMap.values.count { it == "Fungi" }
-        val nbMol = groupe1Map.values.count { it == "Mollusques" }
-        val nbInv = maxOf(0, regneMap.values.count { it == "Animalia" } - nbO - nbM - nbR - nbB - nbPo - nbI - nbMol)
-        val nbP = NomenclatureCache.GROUPES_BOTANIQUES.sumOf { comptesTousGroupes[it] ?: 0 }
-        val msg = buildString {
-            append("${entrees.size} taxons indexés sur ${listesSynchronisees.size}/${listesAFetcher.size} listes — $nbO oiseaux")
-            if (nbM > 0) append(", $nbM mammifères")
-            if (nbR > 0) append(", $nbR reptiles")
-            if (nbB > 0) append(", $nbB batraciens")
-            if (nbPo > 0) append(", $nbPo poissons")
-            if (nbI  > 0) append(", $nbI insectes")
-            if (nbCh > 0) append(", $nbCh fonge")
-            if (nbMol > 0) append(", $nbMol mollusques")
-            if (nbInv > 0) append(", $nbInv autres invertébrés")
-            if (nbP > 0) append(", $nbP plantes")
-            if (listesEnEchec.isNotEmpty()) append("\n⚠ ${listesEnEchec.size} liste(s) non ou partiellement chargée(s) : ${listesEnEchec.joinToString(",")}")
-        }
+        // Message minimal : le détail des compteurs (taxons, par groupe, etc.) est désormais
+        // affiché dans l'écran Paramètres (boîte « Chargement des données » + bouton « Détails »).
+        // On ne conserve ici que l'avertissement des listes non/partiellement chargées.
+        val msg = if (listesEnEchec.isNotEmpty())
+            "⚠ ${listesEnEchec.size} liste(s) non ou partiellement chargée(s) : ${listesEnEchec.joinToString(",")}"
+        else ""
         Pair(entrees.size, msg)
     }
 

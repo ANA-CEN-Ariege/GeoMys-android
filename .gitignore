@@ -20,3 +20,6 @@ local.properties
 # Python (scripts outils)
 __pycache__/
 *.pyc
+
+# Outils internes — hors dépôt (non poussés sur GitHub)
+tools/

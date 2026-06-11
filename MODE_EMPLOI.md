@@ -46,7 +46,7 @@ Une fois la connexion validée, le bouton **Charger les données** apparaît. Il
 - les **nomenclatures** (types de comptage, stades de vie, statuts, etc.),
 - les **protocoles de suivi** (`gn_module_monitoring`) auxquels vous avez droit, avec leur schéma et l'arborescence de leurs sites.
 
-⏱️ Compter quelques minutes selon la taille du serveur et la qualité de la connexion. À refaire **avant chaque sortie terrain** s'il y a eu des changements côté serveur.
+⏱️ Compter quelques minutes selon la taille du serveur et la qualité de la connexion. À refaire **avant chaque sortie terrain** s'il y a eu des changements côté serveur. Les taxons ne sont rechargés que si la version a changé.
 
 ### c. Choisir les valeurs par défaut
 

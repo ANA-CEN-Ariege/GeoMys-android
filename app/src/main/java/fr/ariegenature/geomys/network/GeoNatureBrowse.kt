@@ -201,7 +201,17 @@ object GeoNatureBrowse {
     suspend fun chargerTousHabitats(config: GeoNatureConfig): List<HabitatSuggestion> =
         withContext(Dispatchers.IO) {
             val base = config.urlServeur.trim().trimEnd('/')
-            val url = URL("$base/api/habref/habitats/autocomplete?limit=200000")
+            // Si le serveur configure une liste d'habitats (`OCCTAX.ID_LIST_HABITAT`), on s'y restreint
+            // comme le web (`releve.component.html` passe `id_list: config.OCCTAX?.ID_LIST_HABITAT`).
+            // Absent (cas ANA) ou login indisponible → tout HABREF. L'autocomplete étant public, on ne
+            // dépend pas du login pour la liste elle-même : il ne sert qu'à lire la config.
+            val idList = runCatching {
+                val (token, _, cookies) = GeoNatureAuth.loginAvecCookies(base, config.login, config.motDePasse)
+                    ?: return@runCatching null
+                idListHabitatOcctax(base, token, cookies)
+            }.getOrNull()
+            val filtreListe = idList?.let { "&id_list=$it" }.orEmpty()
+            val url = URL("$base/api/habref/habitats/autocomplete?limit=200000$filtreListe")
             try {
                 val conn = HttpClient.get(url, timeoutMs = 20000, readTimeoutMs = 90000)
                 try {
@@ -319,6 +329,17 @@ object GeoNatureBrowse {
             if (conn.responseCode != 200) null
             else JSONObject(conn.inputStream.bufferedReader().readText())
                 .optJSONObject("OCCTAX")?.optInt("id_observers_list", -1)?.takeIf { it > 0 }
+        } catch (_: Exception) { null }
+
+    /** Id de la liste d'habitats HABREF du module Occtax (`/api/gn_commons/config` →
+     *  `OCCTAX.ID_LIST_HABITAT`, défaut `null` côté serveur) — pour restreindre la liste téléchargée
+     *  à la même liste que le web. null si absent/illisible (→ tout le référentiel HABREF). */
+    private fun idListHabitatOcctax(base: String, token: String?, cookies: String): Int? =
+        try {
+            val conn = HttpClient.get(URL("$base/api/gn_commons/config"), token, cookies, 10000)
+            if (conn.responseCode != 200) null
+            else JSONObject(conn.inputStream.bufferedReader().readText())
+                .optJSONObject("OCCTAX")?.optInt("ID_LIST_HABITAT", -1)?.takeIf { it > 0 }
         } catch (_: Exception) { null }
 
     /** Observateurs d'une liste UsersHub (`/api/users/menu/<id>`) : `id_role` + `nom_complet`

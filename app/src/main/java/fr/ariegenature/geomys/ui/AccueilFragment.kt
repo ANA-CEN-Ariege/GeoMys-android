@@ -69,7 +69,6 @@ class AccueilFragment : Fragment() {
         binding.tvVersion.setOnClickListener {
             findNavController().navigate(R.id.action_accueil_to_mise_a_jour)
         }
-        verifierMajAuDemarrage()
         binding.tvLicence.setOnClickListener { afficherLicence() }
 
         val prefs = requireContext().getSharedPreferences("GeoMys_prefs", android.content.Context.MODE_PRIVATE)
@@ -163,6 +162,9 @@ class AccueilFragment : Fragment() {
         updateSuivisVisibility()
         updateSaisieButtonsState()
         updatePastilleMenu()
+        // Re-tente le check de mise à jour tant qu'il n'a pas abouti (réseau revenu depuis le
+        // lancement, ex. mode avion désactivé) — no-op une fois le check réussi.
+        verifierMaj()
     }
 
     /** Pastille rouge sur le bouton menu dès qu'au moins une saisie OU une visite reste à
@@ -182,13 +184,22 @@ class AccueilFragment : Fragment() {
             it.etat == SaisieEnAttente.Etat.PENDING || it.etat == SaisieEnAttente.Etat.ERROR
         }
 
-    /** Vérifie au démarrage s'il existe une release GitHub plus récente ; le cas échéant, affiche
-     *  une pastille rouge à côté du numéro de version (un tap mène à l'écran de mise à jour).
-     *  Silencieux hors-ligne / en cas d'erreur. */
-    private fun verifierMajAuDemarrage() {
+    /** Vrai une fois qu'un check de mise à jour a abouti côté réseau (AJour ou Disponible) : on
+     *  cesse alors de re-vérifier. Tant que c'est faux (hors-ligne / erreur), chaque retour sur
+     *  l'accueil retente — cas typique : app lancée en mode avion, puis réseau réactivé. */
+    private var majVerifiee = false
+
+    /** Vérifie s'il existe une release GitHub plus récente ; le cas échéant, affiche une pastille
+     *  rouge à côté du numéro de version (un tap mène à l'écran de mise à jour). Silencieux
+     *  hors-ligne / en cas d'erreur, et re-tenté au prochain retour sur l'accueil. */
+    private fun verifierMaj() {
+        if (majVerifiee) return
         viewLifecycleOwner.lifecycleScope.launch {
             val r = MiseAJour.verifier(versionName())
             if (_binding == null) return@launch
+            // Erreur réseau (hors-ligne) → on laisse majVerifiee=false pour retenter plus tard.
+            if (r is MiseAJour.Resultat.Erreur) return@launch
+            majVerifiee = true
             if (r is MiseAJour.Resultat.Disponible) {
                 // Version en jaune (comme le lien « Logiciel libre… ») + pastille rouge.
                 binding.tvVersion.setTextColor(ContextCompat.getColor(requireContext(), R.color.jaune_clair))

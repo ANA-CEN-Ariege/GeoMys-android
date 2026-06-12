@@ -567,7 +567,7 @@ class TraceFragment : Fragment() {
                 obsARepositionnerIds.isNotEmpty() -> getString(R.string.repositionner_observation)
                 modeGeom == ModeGeom.LINE -> "Tap sur la carte pour poser chaque sommet (drag pour ajuster)"
                 modeGeom == ModeGeom.POLYGON -> "Tap pour les sommets du polygone (drag pour ajuster)"
-                else -> "Tap sur la carte pour positionner (drag pour ajuster)"
+                else -> "Tap pour positionner, drag pour ajuster"
             }
             // Libellé du bouton de validation dépend du mode (et du repositionnement).
             binding.btnValiderPosition.text = when {

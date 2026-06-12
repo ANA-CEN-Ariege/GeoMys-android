@@ -208,6 +208,12 @@ class SaisieRapideFragment : Fragment() {
     }
     private var fondCarte = FondCarte.OSM
 
+    // Zoom/centre carte mémorisés entre deux affichages de la vue (la vue est détruite/recréée
+    // quand on va éditer Caractérisation/Dénombrement). Sans ça, setupMap rezoomait à 15 au retour
+    // → carte « trop large ». -1 = pas encore mémorisé (1er affichage → zoom par défaut).
+    private var savedMapZoom: Double = -1.0
+    private var savedMapCenter: org.osmdroid.util.GeoPoint? = null
+
     // Carte
     private var locationOverlay: MyLocationNewOverlay? = null
     private val observationMarkers = mutableMapOf<String, Marker>()
@@ -312,11 +318,13 @@ class SaisieRapideFragment : Fragment() {
         fondCarte = chargerFondCarte(requireContext(), fondCarte)
         binding.map.setTileSource(tileSourcePour(fondCarte))
         binding.map.setMultiTouchControls(true)
-        binding.map.controller.setZoom(15.0)
+        // Restaure le zoom/centre mémorisés (retour d'édition Caractérisation/Dénombrement) ; au 1er
+        // affichage seulement, zoom par défaut 15 + centre sur la position courante.
+        binding.map.controller.setZoom(if (savedMapZoom > 0) savedMapZoom else 15.0)
         binding.map.controller.setCenter(
-            traceViewModel.locationTracker.position.value?.let {
-                GeoPoint(it.latitude, it.longitude)
-            } ?: GeoPoint(46.5, 2.5)
+            savedMapCenter
+                ?: traceViewModel.locationTracker.position.value?.let { GeoPoint(it.latitude, it.longitude) }
+                ?: GeoPoint(46.5, 2.5)
         )
         locationOverlay = MyLocationNewOverlay(GpsMyLocationProvider(requireContext()), binding.map).apply {
             setPersonIcon(ContextCompat.getDrawable(requireContext(), R.drawable.ic_gps_blue_dot)?.toBitmap())
@@ -940,6 +948,7 @@ class SaisieRapideFragment : Fragment() {
     private fun updateModeUI() {
         binding.panneauConfig.visibility = if (modeActif) View.GONE else View.VISIBLE
         binding.panneauActif.visibility  = if (modeActif) View.VISIBLE else View.GONE
+        binding.bandeauPositionnement.visibility = if (modeActif) View.VISIBLE else View.GONE
         // Plus de réticule en saisie mono-taxons : le clic "+" prend la position GPS par
         // défaut, et un tap sur la carte permet de poser un point manuel à un endroit
         // précis (matérialisé par un marker "goutte").
@@ -1081,7 +1090,9 @@ class SaisieRapideFragment : Fragment() {
         // ll_carte_controles est en bas → nav bar margin pour ne pas chevaucher la barre
         // de navigation gestuelle. Les paddings/marges XML d'origine sont conservés.
         binding.btnRetour.applyStatusBarMargin()
-        binding.tvCompteur.applyStatusBarMargin()
+        // Même décalage qu'en multi-taxons (status bar en plus du paddingTop XML) pour que le
+        // bandeau de positionnement soit à la même hauteur.
+        binding.bandeauPositionnement.applyStatusBarMargin()
         binding.llCarteControles.applyNavBarMargin()
         binding.panneauConfig.applySystemBarInsets(includeIme = true)
         binding.panneauActif.applyNavBarInset()
@@ -1112,6 +1123,10 @@ class SaisieRapideFragment : Fragment() {
 
     override fun onPause() {
         super.onPause()
+        // Mémorise zoom + centre pour les restaurer si la vue est recréée (retour d'un sous-écran
+        // d'édition) — sinon la carte se réaffiche « trop large » (zoom fixe 15).
+        savedMapZoom = binding.map.zoomLevelDouble
+        savedMapCenter = binding.map.mapCenter.let { org.osmdroid.util.GeoPoint(it.latitude, it.longitude) }
         binding.map.onPause()
         locationOverlay?.disableMyLocation()
         sensorManager?.unregisterListener(compassListener)

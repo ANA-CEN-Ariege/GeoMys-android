@@ -18,6 +18,7 @@
 
 package fr.ariegenature.geomys.network
 
+import fr.ariegenature.geomys.store.HabitatCache
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -33,8 +34,9 @@ data class HabitatSuggestion(val cdHab: Int, val libelle: String)
  *  qui renvoie une liste de `{cd_hab, lb_code, lb_nom_typo, search_name}`. On retient `cd_hab`
  *  (valeur envoyée à l'upload) et `search_name` comme libellé d'affichage (déjà préfixé du code).
  *
- *  Tolérant : terme trop court, erreur réseau ou JSON inattendu → liste vide (le champ reste
- *  simplement sans suggestion, jamais de crash). */
+ *  Tolérant : terme trop court → liste vide ; erreur réseau / serveur indisponible → repli sur le
+ *  cache local [HabitatCache] (habitats déjà rencontrés en ligne → champ utilisable HORS LIGNE),
+ *  jamais de crash. Chaque recherche en ligne alimente ce cache. */
 object HabitatService {
 
     suspend fun rechercher(base: String, terme: String, limite: Int = 20): List<HabitatSuggestion> =
@@ -46,22 +48,28 @@ object HabitatService {
                 "$urlBase/api/habref/habitats/autocomplete" +
                     "?search_name=${URLEncoder.encode(t, "UTF-8")}&limit=$limite"
             )
-            val conn = HttpClient.get(url, timeoutMs = 8000)
+            // Liste complète déjà en cache (téléchargée à la synchro) → recherche LOCALE : marche
+            // hors-ligne et sans round-trip réseau à chaque frappe. Cf. HabitatCache.
+            if (HabitatCache.estDisponible) return@withContext HabitatCache.rechercher(t, limite)
+            // Pas encore synchronisé (cache vide) → requête serveur en direct (repli).
             try {
-                if (conn.responseCode != 200) return@withContext emptyList()
-                val arr = JSONArray(conn.inputStream.bufferedReader().readText())
-                (0 until arr.length()).mapNotNull { i ->
-                    val o = arr.getJSONObject(i)
-                    val cd = o.optInt("cd_hab", -1)
-                    if (cd <= 0) return@mapNotNull null
-                    val libelle = o.optString("search_name").ifBlank { o.optString("lb_code") }
-                        .trim().ifBlank { cd.toString() }
-                    HabitatSuggestion(cd, libelle)
+                val conn = HttpClient.get(url, timeoutMs = 8000)
+                try {
+                    if (conn.responseCode != 200) return@withContext emptyList()
+                    val arr = JSONArray(conn.inputStream.bufferedReader().readText())
+                    (0 until arr.length()).mapNotNull { i ->
+                        val o = arr.getJSONObject(i)
+                        val cd = o.optInt("cd_hab", -1)
+                        if (cd <= 0) return@mapNotNull null
+                        val libelle = o.optString("search_name").ifBlank { o.optString("lb_code") }
+                            .trim().ifBlank { cd.toString() }
+                        HabitatSuggestion(cd, libelle)
+                    }
+                } finally {
+                    conn.disconnect()
                 }
             } catch (_: Exception) {
                 emptyList()
-            } finally {
-                conn.disconnect()
             }
         }
 }

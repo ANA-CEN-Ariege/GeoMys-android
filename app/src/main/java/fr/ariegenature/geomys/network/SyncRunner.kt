@@ -138,6 +138,15 @@ object SyncRunner {
                     GeoNatureSync.synchroniserSettingsOcctax(config)
                     null
                 }
+                // Liste COMPLÈTE des habitats HABREF → cache local, pour que le champ habitat marche
+                // hors-ligne (cf. HabitatCache). Best-effort : on ne casse pas la synchro si échec, et
+                // on n'écrase pas un cache existant si le téléchargement revient vide.
+                val hab = async {
+                    try {
+                        val h = GeoNatureBrowse.chargerTousHabitats(config)
+                        if (h.isNotEmpty()) fr.ariegenature.geomys.store.HabitatCache.remplacerTout(h)
+                    } catch (_: Exception) { /* habitat optionnel */ }
+                }
                 listOf(
                     "Jeux de données" to ds.await(),
                     "Listes de taxons" to li.await(),
@@ -147,6 +156,7 @@ object SyncRunner {
                     "Datasets créables" to dsCre.await(),
                 ).forEach { (nom, err) -> if (err != null) echecs += "$nom ($err)" }
                 protocolListIds = mod.await()
+                hab.await() // habitats : best-effort, pas d'ajout aux échecs
             }
 
             // Étapes 5-7 EN PARALLÈLE : caches indépendants (TaxRef / nomenclatures / monitoring),

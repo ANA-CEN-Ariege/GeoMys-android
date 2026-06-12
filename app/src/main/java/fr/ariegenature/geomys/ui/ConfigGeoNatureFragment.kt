@@ -527,6 +527,7 @@ class ConfigGeoNatureFragment : Fragment() {
     private fun viderTousLesCaches() {
         TaxRefCache.vider()
         NomenclatureCache.vider()
+        fr.ariegenature.geomys.store.HabitatCache.vider()
         MonitoringCache.vider()
         // MonitoringCache.vider() n'efface que le DISQUE. La liste des modules est aussi
         // gardée en mémoire par MonitoringApi (dernierChargement), et countModulesEnCache()

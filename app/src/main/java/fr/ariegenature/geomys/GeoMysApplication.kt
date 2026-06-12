@@ -46,6 +46,7 @@ class GeoMysApplication : Application() {
         AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
         TaxRefCache.init(this)
         NomenclatureCache.init(this)
+        fr.ariegenature.geomys.store.HabitatCache.init(this)
         MonitoringCache.init(this)
         OutboxMonitoring.init(this)
         fr.ariegenature.geomys.store.RelevesOrphelins.init(this)

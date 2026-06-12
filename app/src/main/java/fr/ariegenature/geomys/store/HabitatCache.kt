@@ -42,6 +42,10 @@ object HabitatCache {
     private val gson = Gson()
 
     @Volatile private var mem: List<HabitatSuggestion>? = null
+    // Index de recherche : libellé normalisé (accents/casse retirés) précalculé UNE fois par entrée.
+    // Sans lui, chaque frappe renormalisait les ~29 000 libellés (+ une regex recompilée par entrée),
+    // d'où l'autocomplétion très lente. Aligné sur `mem` (reconstruit à chaque remplacement).
+    @Volatile private var index: List<Pair<HabitatSuggestion, String>>? = null
 
     fun init(context: Context) { dir = context.filesDir }
 
@@ -56,6 +60,7 @@ object HabitatCache {
             val cible = fichier()
             if (!tmp.renameTo(cible)) { cible.delete(); tmp.renameTo(cible) }
             mem = habitats
+            index = null
         } catch (_: Exception) { /* cache best-effort */ }
     }
 
@@ -70,18 +75,24 @@ object HabitatCache {
         } catch (_: Exception) { emptyList() }
     }
 
+    /** Index normalisé, construit paresseusement une seule fois (coûteux : ~29 000 normalisations). */
+    private fun indexer(): List<Pair<HabitatSuggestion, String>> {
+        index?.let { return it }
+        return charger().map { it to normaliser(it.libelle) }.also { index = it }
+    }
+
     /** Vrai si la liste complète a été téléchargée (→ recherche locale possible, y compris hors-ligne). */
     val estDisponible: Boolean get() = charger().isNotEmpty()
 
     val count: Int get() = charger().size
 
     /** Recherche locale : *contains* insensible aux accents/casse sur le libellé, priorité aux
-     *  libellés qui COMMENCENT par le terme, puis tri alphabétique. */
+     *  libellés qui COMMENCENT par le terme, puis tri alphabétique. Les libellés sont normalisés
+     *  une fois pour toutes (cf. [indexer]) — la frappe ne fait plus que filtrer/trier. */
     fun rechercher(terme: String, limite: Int = 20): List<HabitatSuggestion> {
         val t = normaliser(terme)
         if (t.length < 2) return emptyList()
-        val (debut, autres) = charger().asSequence()
-            .map { it to normaliser(it.libelle) }
+        val (debut, autres) = indexer().asSequence()
             .filter { it.second.contains(t) }
             .partition { it.second.startsWith(t) }
         return (debut.sortedBy { it.second } + autres.sortedBy { it.second })
@@ -91,11 +102,14 @@ object HabitatCache {
     fun vider() {
         if (::dir.isInitialized) runCatching { fichier().delete() }
         mem = null
+        index = null
     }
+
+    private val accentsMn = "\\p{Mn}+".toRegex()
 
     private fun normaliser(s: String): String =
         java.text.Normalizer.normalize(s, java.text.Normalizer.Form.NFD)
-            .replace("\\p{Mn}+".toRegex(), "")
+            .replace(accentsMn, "")
             .lowercase()
             .trim()
 }

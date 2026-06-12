@@ -103,7 +103,13 @@ class ConfigGeoNatureFragment : Fragment() {
         // - Sinon → seul le bloc connexion est visible, l'utilisateur doit se connecter
         //   puis cliquer sur "Charger les données".
         val donneesPresentes = TaxRefCache.count > 0
-        binding.llSectionCharger.visibility = if (donneesPresentes) View.VISIBLE else View.GONE
+        // La boîte « Chargement des données » n'apparaît QUE lorsque la connexion a réussi — pas
+        // seulement parce que des données sont en cache. Révélée par le test de connexion (manuel)
+        // OU par la vérification de version au démarrage si le serveur répond (cf. plus bas).
+        binding.llSectionCharger.visibility = View.GONE
+        // Le résumé du cache et les sélecteurs restent liés à la présence de données (utilisables
+        // hors-ligne), mais le résumé étant DANS la boîte 2, il ne s'affiche qu'avec elle.
+        binding.llCacheResume.visibility = if (donneesPresentes) View.VISIBLE else View.GONE
         binding.llSectionDonnees.visibility = if (donneesPresentes) View.VISIBLE else View.GONE
         binding.btnChargerDonnees.text = if (donneesPresentes) "Recharger les données" else "Charger les données"
 
@@ -174,6 +180,7 @@ class ConfigGeoNatureFragment : Fragment() {
             // Sans cache, on repasse en état "Charger les données" — le bouton change
             // de libellé mais la section reste visible si la connexion est OK.
             binding.btnChargerDonnees.text = "Charger les données"
+            binding.llCacheResume.visibility = View.GONE
             binding.llSectionDonnees.visibility = View.GONE
         }
 
@@ -193,17 +200,21 @@ class ConfigGeoNatureFragment : Fragment() {
             viewLifecycleOwner.lifecycleScope.launch {
                 val version = GeoNatureSync.verifierVersionTaxRef(gnConfig)
                 if (version != null) {
+                    // Le serveur a répondu → la connexion fonctionne → on révèle la boîte 2.
+                    binding.llSectionCharger.visibility = View.VISIBLE
+                    // On affiche simplement la version de TaxRef CHARGÉE (= cache local). Si le
+                    // serveur expose une version plus récente, on l'indique discrètement.
                     val cached = TaxRefCache.versionSauvegardee
-                    binding.tvTaxRefVersion.visibility = View.VISIBLE
-                    when {
-                        cached != null && cached != version -> {
-                            binding.tvTaxRefVersion.text = "⚠ TaxRef serveur v$version — cache v$cached. Resynchroniser recommandé."
+                    if (cached != null) {
+                        binding.tvTaxRefVersion.visibility = View.VISIBLE
+                        if (cached != version) {
+                            binding.tvTaxRefVersion.text = "TaxRef v$cached — maj v$version disponible"
                             binding.tvTaxRefVersion.setTextColor(
                                 androidx.core.content.ContextCompat.getColor(requireContext(), android.R.color.holo_orange_dark)
                             )
+                        } else {
+                            binding.tvTaxRefVersion.text = "TaxRef v$cached"
                         }
-                        cached == version -> binding.tvTaxRefVersion.text = "TaxRef v$version — à jour"
-                        else -> binding.tvTaxRefVersion.text = "TaxRef v$version disponible — synchroniser pour utiliser"
                     }
                 }
             }
@@ -516,6 +527,7 @@ class ConfigGeoNatureFragment : Fragment() {
     private fun viderTousLesCaches() {
         TaxRefCache.vider()
         NomenclatureCache.vider()
+        fr.ariegenature.geomys.store.HabitatCache.vider()
         MonitoringCache.vider()
         // MonitoringCache.vider() n'efface que le DISQUE. La liste des modules est aussi
         // gardée en mémoire par MonitoringApi (dernierChargement), et countModulesEnCache()
@@ -570,7 +582,10 @@ class ConfigGeoNatureFragment : Fragment() {
                     binding.btnChargerDonnees.isEnabled = true
                     binding.btnTesterConnexion.isEnabled = true
                     binding.tvSyncResultat.visibility = View.VISIBLE
-                    binding.tvSyncResultat.text = etat.resume ?: etat.texte
+                    // Le détail (compteurs) est dans la boîte « Chargement des données » : ici on
+                    // n'affiche que les avertissements éventuels, sinon un simple « Chargement terminé ».
+                    binding.tvSyncResultat.text =
+                        (etat.resume ?: etat.texte).trim().ifBlank { "Chargement terminé" }
                     binding.tvSyncResultat.setTextColor(
                         if (!etat.succes)
                             com.google.android.material.color.MaterialColors.getColor(
@@ -582,6 +597,7 @@ class ConfigGeoNatureFragment : Fragment() {
                     updateAvertissementListe()
                     updateStatusIndicator()
                     if (TaxRefCache.count > 0) {
+                        binding.llCacheResume.visibility = View.VISIBLE
                         binding.llSectionDonnees.visibility = View.VISIBLE
                         binding.btnChargerDonnees.text = "Recharger les données"
                     }
@@ -663,10 +679,21 @@ class ConfigGeoNatureFragment : Fragment() {
         val nbTaxons = TaxRefCache.nbTaxonsUniques
         val nbNomenclatures = NomenclatureCache.count
         val nbProtocoles = MonitoringApi.countModulesEnCache()
+        // Listes de taxons et observateurs en cache (comptés depuis les caches JSON du serveur).
+        val nbListes = try {
+            val t = object : TypeToken<List<GeoNatureListe>>() {}.type
+            (gson.fromJson<List<GeoNatureListe>>(gnConfig.listesCacheJson, t) ?: emptyList()).size
+        } catch (_: Exception) { 0 }
+        val nbObservateurs = try {
+            val t = object : TypeToken<List<GeoNatureObservateur>>() {}.type
+            (gson.fromJson<List<GeoNatureObservateur>>(gnConfig.observateursCacheJson, t) ?: emptyList()).size
+        } catch (_: Exception) { 0 }
 
         binding.tvCountProtocoles.text = nbProtocoles.toString()
         binding.tvCountNomenclatures.text = nbNomenclatures.toString()
         binding.tvCountTaxons.text = nbTaxons.toString()
+        binding.tvCountListes.text = nbListes.toString()
+        binding.tvCountObservateurs.text = nbObservateurs.toString()
 
         binding.btnTaxonsParGroupe.isEnabled = nbTaxons > 0
         binding.btnViderCache.isEnabled = nbTaxons > 0 || nbNomenclatures > 0 || nbProtocoles > 0

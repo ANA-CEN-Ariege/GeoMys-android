@@ -68,19 +68,27 @@
         android:scaleType="fitCenter"
         android:src="@drawable/coche" />
 
-    <!-- Compteur session (haut centre, mode actif) — n obs. enregistrée(s) cumulées. -->
-    <TextView
-        android:id="@+id/tv_compteur"
-        android:layout_width="wrap_content"
+    <!-- Bandeau d'instruction de positionnement (mode actif) — identique au multi-taxons.
+         Sous le compteur pour ne pas le chevaucher. -->
+    <LinearLayout
+        android:id="@+id/bandeau_positionnement"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_gravity="top|center_horizontal"
-        android:layout_marginTop="16dp"
-        android:background="@drawable/bandeau_dark"
-        android:paddingHorizontal="14dp"
-        android:paddingVertical="7dp"
-        android:textColor="@android:color/white"
-        android:textSize="13sp"
-        android:visibility="gone" />
+        android:layout_gravity="top"
+        android:gravity="center"
+        android:paddingTop="84dp"
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@drawable/bandeau_dark"
+            android:paddingHorizontal="16dp"
+            android:paddingVertical="10dp"
+            android:text="Tap pour positionner, drag pour ajuster"
+            android:textColor="@android:color/white"
+            android:textSize="14sp" />
+    </LinearLayout>
 
     <!-- Stack de contrôles carte (visible uniquement en mode actif) — empilés verticalement
          en BAS À DROITE de la carte. De haut en bas : recentrage GPS, boussole (toggle
@@ -559,8 +567,23 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="10dp"
-            android:gravity="center_vertical|end"
+            android:gravity="center_vertical"
             android:orientation="horizontal">
+
+            <!-- Compteur « n obs. enregistrée(s) » — bas à gauche, au niveau du bouton +. -->
+            <TextView
+                android:id="@+id/tv_compteur"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="?attr/colorControlNormal"
+                android:textSize="13sp"
+                android:visibility="gone" />
+
+            <!-- Spacer toujours présent → le bouton + reste à droite même quand le compteur est masqué. -->
+            <View
+                android:layout_width="0dp"
+                android:layout_height="1dp"
+                android:layout_weight="1" />
 
             <ImageButton
                 android:id="@+id/btn_enregistrer_ici"

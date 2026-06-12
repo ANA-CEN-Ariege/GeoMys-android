@@ -195,6 +195,69 @@ object GeoNatureBrowse {
         else -> { r.skipValue(); defaut }
     }
 
+    /** Télécharge la liste COMPLÈTE des habitats HABREF (sans `search_name` → tout le référentiel,
+     *  ~29 000 entrées / ~5 Mo). Lecture en STREAMING. Pour alimenter [HabitatCache] à la synchro
+     *  et rendre le champ habitat utilisable hors-ligne. Best-effort : [] en cas d'échec. */
+    suspend fun chargerTousHabitats(config: GeoNatureConfig): List<HabitatSuggestion> =
+        withContext(Dispatchers.IO) {
+            val base = config.urlServeur.trim().trimEnd('/')
+            // Si le serveur configure une liste d'habitats (`OCCTAX.ID_LIST_HABITAT`), on s'y restreint
+            // comme le web (`releve.component.html` passe `id_list: config.OCCTAX?.ID_LIST_HABITAT`).
+            // Absent (cas ANA) ou login indisponible → tout HABREF. L'autocomplete étant public, on ne
+            // dépend pas du login pour la liste elle-même : il ne sert qu'à lire la config.
+            val idList = runCatching {
+                val (token, _, cookies) = GeoNatureAuth.loginAvecCookies(base, config.login, config.motDePasse)
+                    ?: return@runCatching null
+                idListHabitatOcctax(base, token, cookies)
+            }.getOrNull()
+            val filtreListe = idList?.let { "&id_list=$it" }.orEmpty()
+            val url = URL("$base/api/habref/habitats/autocomplete?limit=200000$filtreListe")
+            try {
+                val conn = HttpClient.get(url, timeoutMs = 20000, readTimeoutMs = 90000)
+                try {
+                    if (conn.responseCode != 200) return@withContext emptyList()
+                    java.io.BufferedReader(java.io.InputStreamReader(conn.inputStream, Charsets.UTF_8)).use { br ->
+                        JsonReader(br).use { lireHabitatsStream(it) }
+                    }
+                } finally { conn.disconnect() }
+            } catch (_: Exception) { emptyList() }
+        }
+
+    private fun lireHabitatsStream(r: JsonReader): List<HabitatSuggestion> {
+        val out = mutableListOf<HabitatSuggestion>()
+        fun tableau() { r.beginArray(); while (r.hasNext()) parseUnHabitat(r)?.let(out::add); r.endArray() }
+        when (r.peek()) {
+            JsonToken.BEGIN_ARRAY -> tableau()
+            JsonToken.BEGIN_OBJECT -> {
+                r.beginObject()
+                while (r.hasNext()) {
+                    if (out.isEmpty() && r.nextName() in setOf("data", "items", "results") &&
+                        r.peek() == JsonToken.BEGIN_ARRAY) tableau() else r.skipValue()
+                }
+                r.endObject()
+            }
+            else -> r.skipValue()
+        }
+        return out
+    }
+
+    private fun parseUnHabitat(r: JsonReader): HabitatSuggestion? {
+        var cd = -1; var searchName = ""; var lbCode = ""
+        r.beginObject()
+        while (r.hasNext()) {
+            when (r.nextName()) {
+                "cd_hab" -> cd = lireIntOuNull(r) ?: -1
+                "search_name" -> searchName = lireStringOuVide(r)
+                "lb_code" -> lbCode = lireStringOuVide(r)
+                else -> r.skipValue()
+            }
+        }
+        r.endObject()
+        if (cd <= 0) return null
+        val libelle = searchName.ifBlank { lbCode }.trim().ifBlank { cd.toString() }
+        return HabitatSuggestion(cd, libelle)
+    }
+
     suspend fun chargerListesTaxons(config: GeoNatureConfig): List<GeoNatureListe> =
         withContext(Dispatchers.IO) {
             val url = URL("${config.urlTaxhub}/api/biblistes")
@@ -266,6 +329,17 @@ object GeoNatureBrowse {
             if (conn.responseCode != 200) null
             else JSONObject(conn.inputStream.bufferedReader().readText())
                 .optJSONObject("OCCTAX")?.optInt("id_observers_list", -1)?.takeIf { it > 0 }
+        } catch (_: Exception) { null }
+
+    /** Id de la liste d'habitats HABREF du module Occtax (`/api/gn_commons/config` →
+     *  `OCCTAX.ID_LIST_HABITAT`, défaut `null` côté serveur) — pour restreindre la liste téléchargée
+     *  à la même liste que le web. null si absent/illisible (→ tout le référentiel HABREF). */
+    private fun idListHabitatOcctax(base: String, token: String?, cookies: String): Int? =
+        try {
+            val conn = HttpClient.get(URL("$base/api/gn_commons/config"), token, cookies, 10000)
+            if (conn.responseCode != 200) null
+            else JSONObject(conn.inputStream.bufferedReader().readText())
+                .optJSONObject("OCCTAX")?.optInt("ID_LIST_HABITAT", -1)?.takeIf { it > 0 }
         } catch (_: Exception) { null }
 
     /** Observateurs d'une liste UsersHub (`/api/users/menu/<id>`) : `id_role` + `nom_complet`

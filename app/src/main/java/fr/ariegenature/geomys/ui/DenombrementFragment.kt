@@ -35,7 +35,6 @@ import androidx.navigation.fragment.findNavController
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import com.google.android.material.textfield.TextInputEditText
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import fr.ariegenature.geomys.R
@@ -221,8 +220,8 @@ class DenombrementFragment : Fragment() {
                 }
             }
 
-            val etMin = row.findViewById<TextInputEditText>(R.id.et_nombre_min)
-            val etMax = row.findViewById<TextInputEditText>(R.id.et_nombre_max)
+            val etMin = row.findViewById<android.widget.EditText>(R.id.et_nombre_min)
+            val etMax = row.findViewById<android.widget.EditText>(R.id.et_nombre_max)
             etMin.setText(denom.nombreMin.toString())
             etMax.setText(denom.nombreMax.toString())
             // Visibilité min/max pilotée par form_fields (count_min/count_max), comme le web.
@@ -248,6 +247,24 @@ class DenombrementFragment : Fragment() {
                     }
                 }
             })
+
+            // Incrémenteurs −/+. Min planché à 1 ; Max ≥ valeur de Min courante. On passe par
+            // setText (et non par un calcul direct) pour réutiliser la recopie Min→Max ci-dessus
+            // et garder le curseur en fin de champ.
+            fun ajuste(champ: android.widget.EditText, delta: Int, plancher: Int) {
+                val courant = champ.text?.toString()?.toIntOrNull() ?: plancher
+                val nouveau = (courant + delta).coerceAtLeast(plancher)
+                champ.setText(nouveau.toString())
+                champ.setSelection(champ.text.length)
+            }
+            row.findViewById<View>(R.id.btn_min_moins).setOnClickListener { ajuste(etMin, -1, 1) }
+            row.findViewById<View>(R.id.btn_min_plus).setOnClickListener { ajuste(etMin, +1, 1) }
+            row.findViewById<View>(R.id.btn_max_moins).setOnClickListener {
+                ajuste(etMax, -1, etMin.text?.toString()?.toIntOrNull()?.coerceAtLeast(1) ?: 1)
+            }
+            row.findViewById<View>(R.id.btn_max_plus).setOnClickListener {
+                ajuste(etMax, +1, etMin.text?.toString()?.toIntOrNull()?.coerceAtLeast(1) ?: 1)
+            }
 
             // Nomenclatures du dénombrement (sexe/stade/objet/type) rendues dynamiquement, valeurs
             // dérivées du registre via svKey. Le label "Stade de vie" devient "Stade phénologique"
@@ -308,8 +325,8 @@ class DenombrementFragment : Fragment() {
     private fun collecter() {
         for (i in items.indices) {
             val row = binding.llDenombrements.getChildAt(i) ?: continue
-            val min = row.findViewById<TextInputEditText>(R.id.et_nombre_min).text?.toString()?.toIntOrNull()?.coerceAtLeast(1) ?: 1
-            val maxRaw = row.findViewById<TextInputEditText>(R.id.et_nombre_max).text?.toString()?.toIntOrNull() ?: min
+            val min = row.findViewById<android.widget.EditText>(R.id.et_nombre_min).text?.toString()?.toIntOrNull()?.coerceAtLeast(1) ?: 1
+            val maxRaw = row.findViewById<android.widget.EditText>(R.id.et_nombre_max).text?.toString()?.toIntOrNull() ?: min
             val max = maxRaw.coerceAtLeast(min)
             // Un champ masqué par la config serveur n'est pas rendu : on préserve alors la valeur
             // existante au lieu de l'écraser (absent de la map collectée). Valeurs ré-indexées par

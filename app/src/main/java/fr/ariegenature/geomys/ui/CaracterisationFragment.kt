@@ -125,8 +125,13 @@ class CaracterisationFragment : Fragment() {
             }
             val valeurs = champs.associate { ca ->
                 val f = ca.champ
+                // Le comportement (indice de nidification) ne se pré-remplit depuis le défaut de
+                // session QUE dans l'écran auto-nidification (comportementSeul). Sur une espèce
+                // ordinaire, il reste « Non renseigné » et ne traîne pas la valeur de la précédente.
+                val utiliserDefaut = sauverDefauts &&
+                    (f.code != "OCC_COMPORTEMENT" || comportementSeul)
                 val init = if (f.code in extraCodes) occExtraInit[f.formFieldKey] ?: ""
-                    else (a?.getString(f.svKey) ?: "").ifEmpty { if (sauverDefauts) OcctaxDefautsSession.valeur(f.code) else "" }
+                    else (a?.getString(f.svKey) ?: "").ifEmpty { if (utiliserDefaut) OcctaxDefautsSession.valeur(f.code) else "" }
                 f.code to init
             }
             return champs to valeurs
@@ -232,7 +237,9 @@ class CaracterisationFragment : Fragment() {
                     if (valeur.isEmpty()) occExtra.remove(f.formFieldKey) else occExtra[f.formFieldKey] = valeur
                 } else {
                     sv.set(f.svKey, valeur)
-                    pourDefaut[code] = valeur
+                    // Idem pré-remplissage : le comportement n'alimente le défaut de session que
+                    // depuis l'écran auto-nidification, pour ne pas se propager aux autres espèces.
+                    if (code != "OCC_COMPORTEMENT" || comportementSeul) pourDefaut[code] = valeur
                 }
             }
             if (sauverDefauts) OcctaxDefautsSession.memoriser(pourDefaut)

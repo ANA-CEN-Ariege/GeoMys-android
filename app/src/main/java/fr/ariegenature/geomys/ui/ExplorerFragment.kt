@@ -289,8 +289,10 @@ class ExplorerFragment : Fragment() {
         for ((taxon, btn) in boutonsParTaxon()) {
             val couleur = couleurParTaxon(taxon)
             val actif = taxonFiltre == taxon
+            // Groupe sélectionné : pastille de la couleur du taxon. Non sélectionnés : icône CLAIRE
+            // (blanche) sur fond transparent → discrets sur le bandeau translucide, le sélectionné ressort.
             btn.backgroundTintList = if (actif) android.content.res.ColorStateList.valueOf(couleur) else transparent
-            btn.iconTint = if (actif) white else android.content.res.ColorStateList.valueOf(couleur)
+            btn.iconTint = white
         }
     }
 

@@ -39,7 +39,10 @@ import java.util.Date
 import java.util.Locale
 
 /** Liste les saisies monitoring (visites + obs) en attente d'envoi vers le serveur.
- *  Envoi exclusivement à la demande via le FAB "Envoyer tout" — aucun envoi auto. */
+ *  Envoi exclusivement à la demande, et **par groupe** : l'icône ➤ d'une racine (ou l'option
+ *  "Envoyer ce groupe") appelle [OutboxEnvoi.envoyerGroupe] pour cette saisie + ses descendants
+ *  locaux. Aucun envoi automatique, et pas d'envoi global ici (OutboxEnvoi.envoyerTout existe et
+ *  est couvert par les tests, mais n'est pas câblé à cet écran). */
 class SaisiesEnAttenteFragment : Fragment() {
     private var _binding: FragmentSaisiesEnAttenteBinding? = null
     private val binding get() = _binding!!

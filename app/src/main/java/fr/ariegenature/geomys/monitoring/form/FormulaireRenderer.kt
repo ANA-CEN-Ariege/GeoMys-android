@@ -84,6 +84,10 @@ class FormulaireRenderer(
     /** code → TextView qui affiche le message d'erreur de validation sous le champ (créé
      *  vide pour chaque NUMBER ayant min/max, GONE tant qu'il n'y a pas de violation). */
     private val erreursParCode = linkedMapOf<String, TextView>()
+    /** code → TextView du LIBELLÉ du champ — pour rafraîchir l'astérisque « obligatoire » de
+     *  façon DYNAMIQUE (un `required` conditionnel ne doit marquer le champ que quand sa
+     *  condition est vraie au regard des valeurs courantes). */
+    private val labelsParCode = linkedMapOf<String, TextView>()
     /** Callback notifié à chaque modification d'un champ (saisie, sélection, picker…).
      *  Utilisé par l'écran appelant pour piloter l'état du bouton de submit selon que
      *  les champs obligatoires sont remplis ou non. */
@@ -120,6 +124,7 @@ class FormulaireRenderer(
         fieldsParCode.clear()
         wrappersParCode.clear()
         erreursParCode.clear()
+        labelsParCode.clear()
         dernieresValeursAuto.clear()
         fields.forEach { field ->
             fieldsParCode[field.code] = field
@@ -335,13 +340,28 @@ class FormulaireRenderer(
         }
     }
 
-    /** Évalue chaque expression `hidden` et met à jour la visibilité du wrapper. */
+    /** Évalue chaque expression `hidden` et met à jour la visibilité du wrapper. Rafraîchit
+     *  aussi l'astérisque « obligatoire » (dépend des mêmes valeurs courantes). */
     private fun appliquerVisibiliteConditionnelle() {
         val valeurs = valeursPourExpressions()
         fieldsParCode.forEach { (code, field) ->
-            val expr = field.hiddenExpr ?: return@forEach
-            val masquer = HiddenExpr.masquer(expr, valeurs)
-            wrappersParCode[code]?.visibility = if (masquer) View.GONE else View.VISIBLE
+            field.hiddenExpr?.let { expr ->
+                wrappersParCode[code]?.visibility =
+                    if (HiddenExpr.masquer(expr, valeurs)) View.GONE else View.VISIBLE
+            }
+        }
+        rafraichirObligatoires(valeurs)
+    }
+
+    /** Met à jour le « * » de chaque libellé selon que le champ est RÉELLEMENT requis pour les
+     *  valeurs courantes : obligatoire statique, ou `required` conditionnel évalué vrai. Évite
+     *  qu'un champ à `required` conditionnel (ex. POPAmphibien turbidite/rives, requis seulement
+     *  si accessibility='Oui' ET num_passage='1er passage') paraisse obligatoire en permanence. */
+    private fun rafraichirObligatoires(valeurs: Map<String, Any?> = valeursPourExpressions()) {
+        fieldsParCode.forEach { (code, field) ->
+            val requis = field.obligatoire ||
+                (field.obligatoireExpr != null && HiddenExpr.evaluerBooleen(field.obligatoireExpr, valeurs))
+            labelsParCode[code]?.text = if (requis) "${field.label} *" else field.label
         }
     }
 
@@ -424,14 +444,16 @@ class FormulaireRenderer(
             )
         }
         val labelTv = TextView(ctx).apply {
-            // « * » pour un obligatoire statique OU conditionnel (required dynamique : dans
-            // les schémas observés, la condition d'obligation suit celle de visibilité —
-            // quand le champ est affiché, il est requis).
-            text = if (field.obligatoire || field.obligatoireExpr != null) "${field.label} *" else field.label
+            // « * » UNIQUEMENT si le champ est réellement requis : obligatoire statique, ou
+            // `required` conditionnel ÉVALUÉ vrai. Le conditionnel est rafraîchi en live par
+            // [rafraichirObligatoires] (à chaque changement) — ici on pose l'état statique de
+            // départ, l'évaluation initiale ayant lieu juste après le rendu.
+            text = if (field.obligatoire) "${field.label} *" else field.label
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
             setTextColor(couleurSecondaire)
             setPadding(0, 0, 0, (4 * density).toInt())
         }
+        labelsParCode[field.code] = labelTv
         container.addView(labelTv)
         val editable: View = when (field.viewType) {
             ViewType.TEXT -> creerEditText(field, InputType.TYPE_CLASS_TEXT)

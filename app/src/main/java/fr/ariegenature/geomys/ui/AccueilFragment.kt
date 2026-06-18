@@ -86,14 +86,16 @@ class AccueilFragment : Fragment() {
         }
 
         binding.btnSaisieRapide.setOnClickListener {
-            // Saisie mono-taxons : si le serveur déclare des champs additionnels OCCTAX_RELEVE,
-            // on intercale d'abord l'écran "Détails du relevé" (mode mono : ses valeurs
-            // deviennent le défaut de session, commun à toutes les obs enregistrées ensuite).
+            // Saisie mono-taxons : on n'intercale l'écran "Détails du relevé" QUE s'il existe un
+            // champ additionnel OCCTAX_RELEVE obligatoire SANS valeur par défaut (même règle que
+            // TraceFragment — sinon inutile : les champs restent éditables via « Détails », et un
+            // required avec défaut est déjà satisfait via defautsChampsReleve). En mode mono, les
+            // valeurs saisies deviennent le défaut de session, commun à toutes les obs suivantes.
             traceViewModel.reinitialiser()
             traceViewModel.typeSaisieLabel = getString(R.string.saisie_mono_taxons)
-            val aDesChampsReleve = fr.ariegenature.geomys.ui.saisie.AdditionalFieldsRenderer
-                .aDesChampsReleve(gnConfig.additionalFieldsOcctaxJsonActif, gnConfig.idDataset.toIntOrNull())
-            if (aDesChampsReleve) {
+            val ecranReleveNecessaire = fr.ariegenature.geomys.ui.saisie.AdditionalFieldsRenderer
+                .aDesChampsReleveRequisSansDefaut(gnConfig.additionalFieldsOcctaxJsonActif, gnConfig.idDataset.toIntOrNull())
+            if (ecranReleveNecessaire) {
                 findNavController().navigate(
                     R.id.action_accueil_to_details_releve,
                     Bundle().apply { putBoolean("mono", true) },

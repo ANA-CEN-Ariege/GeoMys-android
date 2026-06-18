@@ -1176,7 +1176,7 @@ class SaisieRapideFragment : Fragment() {
         val peutEnvoyerGn = gnConfig.estConfiguree && obs.any { it.cdNom != null }
         val options = mutableListOf(getString(R.string.enregistrer_quitter))
         if (peutEnvoyerGn) options.add(getString(R.string.enregistrer_envoyer_gn))
-        options.add(getString(R.string.supprimer_sortie))
+        // Plus de « Supprimer la sortie » ici : la suppression reste possible depuis « Mes saisies ».
         options.add(getString(R.string.continuer_sortie))
 
         androidx.appcompat.app.AlertDialog.Builder(requireContext())
@@ -1185,14 +1185,7 @@ class SaisieRapideFragment : Fragment() {
                 when (options[which]) {
                     getString(R.string.enregistrer_quitter) -> terminerSaisie(envoyerGN = false)
                     getString(R.string.enregistrer_envoyer_gn) -> terminerSaisie(envoyerGN = true)
-                    getString(R.string.supprimer_sortie) -> {
-                        // Purge aussi le brouillon auto-sauvé (sinon il resterait dans « À envoyer »).
-                        traceViewModel.sortieEnEditionId?.let { sortieStore.supprimer(it) }
-                        traceViewModel.reinitialiser()
-                        LocationForegroundService.stop(requireContext())
-                        findNavController().navigateUp()
-                    }
-                    // Continuer : ne rien faire, fermer le dialog
+                    // « Continuer la saisie » : ne rien faire, fermer le dialog
                 }
             }.show()
     }

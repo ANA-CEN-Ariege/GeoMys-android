@@ -1044,7 +1044,7 @@ class TraceFragment : Fragment() {
             getString(R.string.enregistrer_quitter),
         )
         if (peutEnvoyerGn) options.add(getString(R.string.enregistrer_envoyer_gn))
-        options.add(getString(R.string.supprimer_sortie))
+        // Plus de « Supprimer la sortie » ici : la suppression reste possible depuis « Mes saisies ».
         options.add(getString(R.string.continuer_sortie))
 
         AlertDialog.Builder(requireContext())
@@ -1053,15 +1053,7 @@ class TraceFragment : Fragment() {
                 when (options[which]) {
                     getString(R.string.enregistrer_quitter) -> terminerSortie(envoyerGN = false)
                     getString(R.string.enregistrer_envoyer_gn) -> terminerSortie(envoyerGN = true)
-                    getString(R.string.supprimer_sortie) -> {
-                        // En mode reprise : supprimer aussi l'entrée du store, sinon la
-                        // sortie reste dans la liste avec ses anciennes obs/trace.
-                        traceViewModel.sortieEnEditionId?.let { sortieStore.supprimer(it) }
-                        traceViewModel.locationTracker.arreterParcours()
-                        traceViewModel.reinitialiser()
-                        LocationForegroundService.stop(requireContext())
-                        findNavController().navigateUp()
-                    }
+                    // « Continuer la saisie » : aucun traitement, le dialogue se ferme et on reste sur la carte.
                 }
             }.show()
     }

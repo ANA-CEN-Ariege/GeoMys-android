@@ -29,7 +29,6 @@ import fr.ariegenature.geomys.databinding.FragmentCaracterisationBinding
 import fr.ariegenature.geomys.model.Taxon
 import fr.ariegenature.geomys.network.AdditionalFieldsObject
 import fr.ariegenature.geomys.store.GeoNatureConfig
-import fr.ariegenature.geomys.store.OcctaxDefautsSession
 import fr.ariegenature.geomys.store.OcctaxFieldsConfig
 import fr.ariegenature.geomys.store.TaxRefCache
 import fr.ariegenature.geomys.store.champFormVisible
@@ -93,7 +92,6 @@ class CaracterisationFragment : Fragment() {
         // de la gn-advanced-section du web. groupesEtRegno reste par-taxon (filtre des VALEURS). ──
         val (groupes, regno) = ChampsTaxon.groupesEtRegno(taxon, groupe2Inpn)
         val formFieldsJson = gnConfig.formFieldsJson
-        val sauverDefauts = OcctaxFieldsConfig.sauvegarderValeursDefaut(gnConfig.settingsOcctaxJson)
         val densite = resources.displayMetrics.density
         val occExtraInit: Map<String, String> = try {
             gson.fromJson(a?.getString("occExtraJson") ?: "{}", mapType) ?: emptyMap()
@@ -125,13 +123,11 @@ class CaracterisationFragment : Fragment() {
             }
             val valeurs = champs.associate { ca ->
                 val f = ca.champ
-                // Le comportement (indice de nidification) ne se pré-remplit depuis le défaut de
-                // session QUE dans l'écran auto-nidification (comportementSeul). Sur une espèce
-                // ordinaire, il reste « Non renseigné » et ne traîne pas la valeur de la précédente.
-                val utiliserDefaut = sauverDefauts &&
-                    (f.code != "OCC_COMPORTEMENT" || comportementSeul)
+                // Pas de report des valeurs d'une espèce à l'autre : chaque nouvelle obs repart de
+                // sa propre valeur (édition) ou vide → le renderer applique alors le DÉFAUT SERVEUR
+                // (NomenclatureCache.defautPour). Aucun défaut de session (save_default_values ignoré).
                 val init = if (f.code in extraCodes) occExtraInit[f.formFieldKey] ?: ""
-                    else (a?.getString(f.svKey) ?: "").ifEmpty { if (utiliserDefaut) OcctaxDefautsSession.valeur(f.code) else "" }
+                    else a?.getString(f.svKey) ?: ""
                 f.code to init
             }
             return champs to valeurs
@@ -229,20 +225,17 @@ class CaracterisationFragment : Fragment() {
             // champsOccExtra ; les autres → svKey (champ d'obs). Un champ masqué n'est pas collecté,
             // donc n'écrase pas la valeur déjà portée par l'obs.
             val occExtra = HashMap(occExtraInit)
-            val pourDefaut = mutableMapOf<String, String>()
             (OcctaxFieldsRenderer.collecter(binding.llCaracterisation) +
                 OcctaxFieldsRenderer.collecter(containerAvanceNom)).forEach { (code, valeur) ->
                 val f = OcctaxFieldsConfig.parCode[code] ?: return@forEach
                 if (f.code in extraCodes) {
                     if (valeur.isEmpty()) occExtra.remove(f.formFieldKey) else occExtra[f.formFieldKey] = valeur
                 } else {
+                    // Aucune mémorisation des valeurs comme défaut de session : pas de report
+                    // d'une espèce à l'autre (cf. valeurs initiales ci-dessus).
                     sv.set(f.svKey, valeur)
-                    // Idem pré-remplissage : le comportement n'alimente le défaut de session que
-                    // depuis l'écran auto-nidification, pour ne pas se propager aux autres espèces.
-                    if (code != "OCC_COMPORTEMENT" || comportementSeul) pourDefaut[code] = valeur
                 }
             }
-            if (sauverDefauts) OcctaxDefautsSession.memoriser(pourDefaut)
             edDeterminateur?.let { sv.set("determinateur", it.text.toString()) }
             edNotes?.let { sv.set("notes", it.text.toString()) }
             editsProof.forEach { (key, ed) ->

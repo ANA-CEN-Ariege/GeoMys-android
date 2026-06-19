@@ -281,12 +281,6 @@ object OcctaxFieldsConfig {
      */
     fun afficherChampsAdditionnels(settingsJson: String): Boolean = lireBool(settingsJson, "additional_fields", true)
 
-    /**
-     * Honneur du flag serveur `nomenclature.save_default_values` : faut-il mémoriser les dernières
-     * valeurs saisies comme défauts de session (cf. [OcctaxDefautsSession]) ? Défaut `false`.
-     */
-    fun sauvegarderValeursDefaut(settingsJson: String): Boolean = lireBool(settingsJson, "save_default_values", false)
-
     private fun lireBool(settingsJson: String, cle: String, defaut: Boolean): Boolean {
         if (settingsJson.isBlank()) return defaut
         return try {

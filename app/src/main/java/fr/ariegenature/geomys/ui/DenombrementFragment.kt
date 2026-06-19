@@ -45,7 +45,6 @@ import fr.ariegenature.geomys.network.AdditionalFieldDef
 import fr.ariegenature.geomys.network.AdditionalFieldsObject
 import fr.ariegenature.geomys.store.GeoNatureConfig
 import fr.ariegenature.geomys.store.champFormVisible
-import fr.ariegenature.geomys.store.OcctaxDefautsSession
 import fr.ariegenature.geomys.store.OcctaxFieldsConfig
 import fr.ariegenature.geomys.store.TaxRefCache
 import fr.ariegenature.geomys.ui.saisie.AdditionalFieldsRenderer
@@ -71,8 +70,6 @@ class DenombrementFragment : Fragment() {
     private var champsCounting: List<OcctaxFieldsConfig.ChampAffichage> = emptyList()
     /** Config form_fields du serveur (visibilité des champs, comme le web). */
     private var formFieldsJson: String = ""
-    /** Flag serveur save_default_values (mémorisation des dernières valeurs de session). */
-    private var sauverDefauts = false
     /** Définitions des champs additionnels OCCTAX_DENOMBREMENT (chargées depuis le cache config). */
     private var defsCounting: List<AdditionalFieldDef> = emptyList()
 
@@ -156,8 +153,6 @@ class DenombrementFragment : Fragment() {
                 OcctaxFieldsConfig.ChampAffichage(it, replie = false, lectureSeule = false)
             }
         }
-        sauverDefauts = OcctaxFieldsConfig.sauvegarderValeursDefaut(gnConfig.settingsOcctaxJson)
-
         val type = object : TypeToken<List<Denombrement>>() {}.type
         val initial: List<Denombrement> = try { gson.fromJson(denombrementsJson, type) ?: emptyList() } catch (_: Exception) { emptyList() }
         // Normalisation : Gson ne respecte pas les valeurs par défaut Kotlin lors de la
@@ -189,13 +184,8 @@ class DenombrementFragment : Fragment() {
                 return@setOnClickListener
             }
             collecter()
-            // save_default_values : mémorise les nomenclatures choisies (toutes lignes) pour pré-remplir.
-            if (sauverDefauts) {
-                for (i in 0 until binding.llDenombrements.childCount) {
-                    val c = binding.llDenombrements.getChildAt(i).findViewById<LinearLayout>(R.id.ll_counting_nomenclatures)
-                    OcctaxDefautsSession.memoriser(OcctaxFieldsRenderer.collecter(c))
-                }
-            }
+            // Aucune mémorisation des valeurs en défaut de session : pas de report d'une espèce à
+            // l'autre (chaque dénombrement repart vide ou sur le défaut serveur).
             val sv = findNavController().previousBackStackEntry?.savedStateHandle ?: return@setOnClickListener
             sv.set("denombrementsJson", gson.toJson(items))
             findNavController().navigateUp()
@@ -276,10 +266,9 @@ class DenombrementFragment : Fragment() {
             )
             OcctaxFieldsRenderer.rendre(
                 row.findViewById(R.id.ll_counting_nomenclatures), champsCounting,
-                champsCounting.associate { ca ->
-                    ca.champ.code to valBySvKey[ca.champ.svKey].orEmpty()
-                        .ifEmpty { if (sauverDefauts) OcctaxDefautsSession.valeur(ca.champ.code) else "" }
-                },
+                // Valeur propre au dénombrement (édition) ou vide → le renderer applique le défaut
+                // serveur. Pas de report de l'espèce précédente (pas de défaut de session).
+                champsCounting.associate { ca -> ca.champ.code to valBySvKey[ca.champ.svKey].orEmpty() },
                 groupes, regno, labelOverrides,
             )
 

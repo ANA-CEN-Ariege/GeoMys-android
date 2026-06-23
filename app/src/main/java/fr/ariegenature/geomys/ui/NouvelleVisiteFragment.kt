@@ -150,7 +150,9 @@ class NouvelleVisiteFragment : Fragment() {
         // Titre par défaut avant chargement du schéma (le type exact arrive dans
         // chargerSchemaEtRendre). En édition, on garde "Modifier la saisie" en attendant
         // de pouvoir formuler "Édition de la visite / du passage / de l'observation".
-        binding.tvTitre.text = if (modeEdition) "Modifier la saisie" else "Nouvelle visite"
+        // Placeholder neutre (« saisie » est féminin → toujours correct) en attendant le label
+        // exact + son genre, qui arrivent du schéma dans chargerSchemaEtRendre.
+        binding.tvTitre.text = if (modeEdition) "Modifier la saisie" else "Nouvelle saisie"
         // Fil d'Ariane : reçu de l'écran appelant (drill-down) ou reconstruit depuis le cache
         // (édition depuis « Saisies en attente »). Tous les segments sont des ancêtres
         // cliquables — le formulaire lui-même n'est pas un niveau du fil. Vide si aucun
@@ -313,7 +315,7 @@ class NouvelleVisiteFragment : Fragment() {
             // édition d'une saisie outbox). Le `genre` du schéma permet d'accorder l'article.
             val labelType = visitSchema.label ?: visitSchema.type.replaceFirstChar { it.uppercase() }
             binding.tvTitre.text = if (editUuid != null) titreEdition(labelType, visitSchema.genre)
-                else "Nouvelle $labelType"
+                else titreNouvelle(labelType, visitSchema.genre)
             val constructionBrute: FormulaireConstruction = construireFormulaire(visitSchema)
             // Cache le champ de sélection du parent (id_base_site / id_dalle / id_circuit…) :
             // l'utilisateur a déjà choisi son parent via le drill-down qui amène ici, l'interface
@@ -825,6 +827,23 @@ class NouvelleVisiteFragment : Fragment() {
             else -> "de la "
         }
         return "Édition $article$mot"
+    }
+
+    /** Titre de création accordé au `genre` du type (déclaré par le schéma) : « Nouvelle visite »
+     *  (féminin, défaut), « Nouveau passage » (masculin), « Nouvel inventaire » (masculin + voyelle).
+     *  Genre absent → féminin par défaut (cas le plus courant : visite/observation). */
+    private fun titreNouvelle(label: String, genre: String?): String {
+        val mot = label.lowercase()
+        val masculin = genre.equals("M", ignoreCase = true)
+        val commenceParVoyelle = mot.firstOrNull()?.let { c ->
+            c in setOf('a', 'à', 'â', 'e', 'é', 'è', 'ê', 'i', 'î', 'o', 'ô', 'u', 'ù', 'û', 'h', 'y')
+        } == true
+        val adjectif = when {
+            !masculin -> "Nouvelle"
+            commenceParVoyelle -> "Nouvel"
+            else -> "Nouveau"
+        }
+        return "$adjectif $mot"
     }
 
     /** Fallback démo quand le schéma serveur n'est pas exploitable — affiche les valeurs

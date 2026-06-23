@@ -25,8 +25,11 @@ jobs:
       - name: Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      # Depuis l'introduction des flavors (github/play), `testDebugUnitTest` n'existe plus :
+      # on cible le flavor github (canal principal). Les tests vivent dans le source set
+      # partagé `src/test`, donc identiques aux deux flavors — un seul suffit comme filet.
       - name: Tests unitaires
-        run: ./gradlew testDebugUnitTest
+        run: ./gradlew testGithubDebugUnitTest
 
       # Rapport JUnit publié en artefact quand ça casse (diagnostic sans re-run local).
       - name: Rapport de tests (en échec)
@@ -34,4 +37,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: rapports-tests
-          path: app/build/reports/tests/testDebugUnitTest/
+          path: app/build/reports/tests/testGithubDebugUnitTest/

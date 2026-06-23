@@ -31,6 +31,7 @@ import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
 import androidx.navigation.fragment.findNavController
+import fr.ariegenature.geomys.BuildConfig
 import fr.ariegenature.geomys.R
 import fr.ariegenature.geomys.databinding.FragmentAccueilBinding
 import androidx.lifecycle.lifecycleScope
@@ -66,8 +67,12 @@ class AccueilFragment : Fragment() {
 
         binding.tvVersion.text = "v${versionName()}"
         // Tap sur le numéro de version → écran de mise à jour de l'application.
-        binding.tvVersion.setOnClickListener {
-            findNavController().navigate(R.id.action_accueil_to_mise_a_jour)
+        // Réservé au flavor github : la version Play Store se met à jour via le Store
+        // (la politique Google interdit qu'une appli télécharge/installe un APK).
+        if (BuildConfig.MAJ_GITHUB) {
+            binding.tvVersion.setOnClickListener {
+                findNavController().navigate(R.id.action_accueil_to_mise_a_jour)
+            }
         }
         binding.tvLicence.setOnClickListener { afficherLicence() }
 
@@ -195,6 +200,8 @@ class AccueilFragment : Fragment() {
      *  rouge à côté du numéro de version (un tap mène à l'écran de mise à jour). Silencieux
      *  hors-ligne / en cas d'erreur, et re-tenté au prochain retour sur l'accueil. */
     private fun verifierMaj() {
+        // Flavor play : aucun polling des releases GitHub (MAJ gérée par le Store).
+        if (!BuildConfig.MAJ_GITHUB) return
         if (majVerifiee) return
         viewLifecycleOwner.lifecycleScope.launch {
             val r = MiseAJour.verifier(versionName())

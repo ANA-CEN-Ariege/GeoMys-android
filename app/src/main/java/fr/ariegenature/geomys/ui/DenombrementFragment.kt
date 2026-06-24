@@ -18,6 +18,8 @@
 
 package fr.ariegenature.geomys.ui
 
+import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.view.LayoutInflater
@@ -28,6 +30,7 @@ import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
 import androidx.lifecycle.lifecycleScope
@@ -77,6 +80,11 @@ class DenombrementFragment : Fragment() {
      *  Partagé entre photo et audio puisqu'ils ne tournent jamais en parallèle. */
     private var pickMediaTargetIndex: Int = -1
 
+    /** Fichier cache temporaire + URI FileProvider de la dernière prise de photo (appareil photo
+     *  système). Consommés au retour de [takePhotoLauncher], puis remis à null. */
+    private var captureUri: Uri? = null
+    private var captureFichier: File? = null
+
     private val pickPhotoLauncher = registerForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
         consommerPickerResult(uris, defaultMime = "image/jpeg")
     }
@@ -85,20 +93,55 @@ class DenombrementFragment : Fragment() {
         consommerPickerResult(uris, defaultMime = "audio/mp4")
     }
 
-    /** Importe TOUTES les URIs sélectionnées (multi-sélection) et les ajoute aux médias du
-     *  counting ciblé. */
-    private fun consommerPickerResult(uris: List<android.net.Uri>?, defaultMime: String) {
+    /** Prise de photo directe. Le contrat ajoute FLAG_GRANT_WRITE_URI_PERMISSION pour que l'appli
+     *  appareil photo puisse écrire dans notre URI FileProvider (sans le flag, certains OEM
+     *  échouent en SecurityException). */
+    private val takePhotoLauncher = registerForActivityResult(
+        object : ActivityResultContracts.TakePicture() {
+            override fun createIntent(context: Context, input: Uri): Intent =
+                super.createIntent(context, input).addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        }
+    ) { succes ->
+        val uri = captureUri
+        val fichier = captureFichier
+        captureUri = null
+        captureFichier = null
         val targetIdx = pickMediaTargetIndex
         pickMediaTargetIndex = -1
-        if (uris.isNullOrEmpty() || targetIdx < 0 || targetIdx >= items.size) return
+        if (succes && uri != null) {
+            importerMedias(listOf(uri), "image/jpeg", targetIdx) { fichier?.delete() }
+        } else {
+            fichier?.delete()
+        }
+    }
+
+    /** Importe TOUTES les URIs sélectionnées (multi-sélection) et les ajoute aux médias du
+     *  counting ciblé. */
+    private fun consommerPickerResult(uris: List<Uri>?, defaultMime: String) {
+        val targetIdx = pickMediaTargetIndex
+        pickMediaTargetIndex = -1
+        if (uris.isNullOrEmpty()) return
+        importerMedias(uris, defaultMime, targetIdx)
+    }
+
+    /** Importe + RECOMPRESSE [uris] (decode/scale/EXIF/JPEG) hors thread UI — N images en
+     *  multi-sélection gèleraient l'UI (risque ANR) sur le main — puis ajoute les copies locales
+     *  aux médias du counting [targetIdx]. [apresImport] s'exécute une fois l'import terminé (ex.
+     *  suppression du fichier de capture temporaire, à ne pas faire avant la lecture). */
+    private fun importerMedias(
+        uris: List<Uri>,
+        defaultMime: String,
+        targetIdx: Int,
+        apresImport: () -> Unit = {},
+    ) {
+        if (targetIdx < 0 || targetIdx >= items.size) { apresImport(); return }
         collecter()
-        // Import + RECOMPRESSION (decode/scale/EXIF/JPEG) hors thread UI : en multi-sélection
-        // c'est N images à traiter, ce qui gèlerait l'UI (risque ANR) si fait sur le main.
         val appCtx = requireContext().applicationContext
         viewLifecycleOwner.lifecycleScope.launch {
             val locales = withContext(Dispatchers.IO) {
                 uris.mapIndexedNotNull { i, u -> MediaImport.importer(appCtx, u, defaultMime, i) }
             }
+            apresImport()
             if (_binding == null) return@launch
             if (locales.size < uris.size) {
                 android.widget.Toast.makeText(requireContext(), "Import média échoué", android.widget.Toast.LENGTH_LONG).show()
@@ -107,6 +150,35 @@ class DenombrementFragment : Fragment() {
                 items[targetIdx] = items[targetIdx].copy(mediaUris = items[targetIdx].mediaUris + locales)
                 rafraichir()
             }
+        }
+    }
+
+    /** Petit menu au tap sur « + Photo » : prise directe par l'appareil photo, ou choix dans la
+     *  galerie (= comportement historique). */
+    private fun choisirSourcePhoto() {
+        AlertDialog.Builder(requireContext())
+            .setTitle("Ajouter une photo")
+            .setItems(arrayOf("Prendre une photo", "Choisir dans la galerie")) { _, choix ->
+                if (choix == 0) lancerAppareilPhoto() else pickPhotoLauncher.launch("image/*")
+            }
+            .setOnCancelListener { pickMediaTargetIndex = -1 }
+            .show()
+    }
+
+    /** Lance l'appareil photo système ; la photo est écrite via FileProvider dans un fichier cache
+     *  temporaire, puis importée/recompressée comme une photo de galerie. */
+    private fun lancerAppareilPhoto() {
+        val (fichier, uri) = PhotoCapture.nouvelleCible(requireContext())
+        captureFichier = fichier
+        captureUri = uri
+        try {
+            takePhotoLauncher.launch(uri)
+        } catch (e: Exception) {
+            captureFichier = null
+            captureUri = null
+            pickMediaTargetIndex = -1
+            fichier.delete()
+            android.widget.Toast.makeText(requireContext(), "Aucune application appareil photo", android.widget.Toast.LENGTH_LONG).show()
         }
     }
 
@@ -290,7 +362,7 @@ class DenombrementFragment : Fragment() {
             row.findViewById<Button>(R.id.btn_ajouter_photo).setOnClickListener {
                 collecter()
                 pickMediaTargetIndex = index
-                pickPhotoLauncher.launch("image/*")
+                choisirSourcePhoto()
             }
             row.findViewById<Button>(R.id.btn_ajouter_audio).setOnClickListener {
                 collecter()

@@ -18,6 +18,9 @@
 
 package fr.ariegenature.geomys.ui
 
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -39,6 +42,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import java.io.File
 
 /** POC du form renderer dynamique. Charge le schéma du protocole, identifie le type `visit`
  *  (ou `visite`), construit la liste des champs via [construireFormulaire] et les rend via
@@ -110,6 +114,76 @@ class NouvelleVisiteFragment : Fragment() {
                 android.widget.Toast.makeText(requireContext(), "Import média échoué", android.widget.Toast.LENGTH_LONG).show()
             }
             cb(locales)
+        }
+    }
+
+    /** Fichier cache temporaire + URI FileProvider de la dernière prise de photo. */
+    private var captureUri: Uri? = null
+    private var captureFichier: File? = null
+
+    /** Prise de photo directe. Le contrat ajoute FLAG_GRANT_WRITE_URI_PERMISSION pour que l'appli
+     *  appareil photo puisse écrire dans notre URI FileProvider (sans le flag, certains OEM
+     *  échouent en SecurityException). Au retour, la photo est importée/recompressée comme une
+     *  photo de galerie et la même lambda de callback ([attendCallbackMedia]) est invoquée. */
+    private val takePhotoLauncher = registerForActivityResult(
+        object : androidx.activity.result.contract.ActivityResultContracts.TakePicture() {
+            override fun createIntent(context: Context, input: Uri): Intent =
+                super.createIntent(context, input).addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        }
+    ) { succes ->
+        val uri = captureUri
+        val fichier = captureFichier
+        captureUri = null
+        captureFichier = null
+        val cb = attendCallbackMedia
+        attendCallbackMedia = null
+        if (!succes || uri == null || cb == null) {
+            fichier?.delete()
+            cb?.invoke(emptyList())
+            return@registerForActivityResult
+        }
+        val appCtx = requireContext().applicationContext
+        viewLifecycleOwner.lifecycleScope.launch {
+            val locale = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                MediaImport.importer(appCtx, uri, "image/jpeg")
+            }
+            fichier?.delete()
+            if (!isAdded) return@launch
+            if (locale == null) {
+                android.widget.Toast.makeText(requireContext(), "Import média échoué", android.widget.Toast.LENGTH_LONG).show()
+                cb(emptyList())
+            } else {
+                cb(listOf(locale))
+            }
+        }
+    }
+
+    /** Petit menu au choix d'une photo dans le formulaire : prise directe par l'appareil photo,
+     *  ou choix dans la galerie (= comportement historique). */
+    private fun choisirSourcePhoto() {
+        AlertDialog.Builder(requireContext())
+            .setTitle("Ajouter une photo")
+            .setItems(arrayOf("Prendre une photo", "Choisir dans la galerie")) { _, choix ->
+                if (choix == 0) lancerAppareilPhoto() else pickPhotoLauncher.launch("image/*")
+            }
+            .setOnCancelListener { attendCallbackMedia?.invoke(emptyList()); attendCallbackMedia = null }
+            .show()
+    }
+
+    /** Lance l'appareil photo système ; la photo est écrite via FileProvider dans un fichier cache
+     *  temporaire, puis importée/recompressée comme une photo de galerie. */
+    private fun lancerAppareilPhoto() {
+        val (fichier, uri) = PhotoCapture.nouvelleCible(requireContext())
+        captureFichier = fichier
+        captureUri = uri
+        try {
+            takePhotoLauncher.launch(uri)
+        } catch (e: Exception) {
+            captureFichier = null
+            captureUri = null
+            fichier.delete()
+            attendCallbackMedia?.invoke(emptyList()); attendCallbackMedia = null
+            android.widget.Toast.makeText(requireContext(), "Aucune application appareil photo", android.widget.Toast.LENGTH_LONG).show()
         }
     }
 
@@ -232,7 +306,7 @@ class NouvelleVisiteFragment : Fragment() {
         // de retour et déclenche le launcher photo. Cardinalité MVP : une seule photo.
         renderer.setOnChoixMedia { _, callback ->
             attendCallbackMedia = callback
-            pickPhotoLauncher.launch("image/*")
+            choisirSourcePhoto()
         }
 
         if (moduleCode.isEmpty()) {

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Manifeste spécifique au flavor github (distribution hors Store, par APK des releases GitHub).
+  Il est fusionné avec src/main/AndroidManifest.xml UNIQUEMENT pour les variantes github.
+
+  REQUEST_INSTALL_PACKAGES n'existe QUE dans ce flavor : elle permet à la mise à jour intégrée
+  (network/MiseAJour, présent en src/github) d'installer l'APK téléchargé. Le flavor play (.aab
+  du Google Store) ne la déclare pas — interdite par la politique Google, MAJ gérée par le Store.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
+</manifest>

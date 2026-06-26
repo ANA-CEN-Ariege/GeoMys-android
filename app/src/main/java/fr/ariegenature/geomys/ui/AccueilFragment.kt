@@ -31,13 +31,9 @@ import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
 import androidx.navigation.fragment.findNavController
-import fr.ariegenature.geomys.BuildConfig
 import fr.ariegenature.geomys.R
 import fr.ariegenature.geomys.databinding.FragmentAccueilBinding
-import androidx.lifecycle.lifecycleScope
-import fr.ariegenature.geomys.network.MiseAJour
 import fr.ariegenature.geomys.network.MonitoringApi
-import kotlinx.coroutines.launch
 import fr.ariegenature.geomys.store.GeoNatureConfig
 import fr.ariegenature.geomys.store.OutboxMonitoring
 import fr.ariegenature.geomys.store.SaisieEnAttente
@@ -66,14 +62,10 @@ class AccueilFragment : Fragment() {
         binding.accueilContent.applySystemBarInsets()
 
         binding.tvVersion.text = "v${versionName()}"
-        // Tap sur le numéro de version → écran de mise à jour de l'application.
-        // Réservé au flavor github : la version Play Store se met à jour via le Store
-        // (la politique Google interdit qu'une appli télécharge/installe un APK).
-        if (BuildConfig.MAJ_GITHUB) {
-            binding.tvVersion.setOnClickListener {
-                findNavController().navigate(R.id.action_accueil_to_mise_a_jour)
-            }
-        }
+        // Tap sur le numéro de version → écran de MAJ + vérification réseau des releases.
+        // Implémenté PAR FLAVOR : réel côté github, vide côté play — tout le code de MAJ est
+        // ABSENT du binaire .aab (la version Store se met à jour via Google Play).
+        MiseAJourAccueil.configurer(this, binding.tvVersion)
         binding.tvLicence.setOnClickListener { afficherLicence() }
 
         val prefs = requireContext().getSharedPreferences("GeoMys_prefs", android.content.Context.MODE_PRIVATE)
@@ -169,9 +161,9 @@ class AccueilFragment : Fragment() {
         updateSuivisVisibility()
         updateSaisieButtonsState()
         updatePastilleMenu()
-        // Re-tente le check de mise à jour tant qu'il n'a pas abouti (réseau revenu depuis le
-        // lancement, ex. mode avion désactivé) — no-op une fois le check réussi.
-        verifierMaj()
+        // Re-tente le check de MAJ tant qu'il n'a pas abouti (réseau revenu, ex. mode avion
+        // désactivé) — no-op une fois réussi, et no-op total côté play.
+        MiseAJourAccueil.reverifier(this)
     }
 
     /** Pastille rouge sur le bouton menu dès qu'au moins une saisie OU une visite reste à
@@ -191,31 +183,20 @@ class AccueilFragment : Fragment() {
             it.etat == SaisieEnAttente.Etat.PENDING || it.etat == SaisieEnAttente.Etat.ERROR
         }
 
-    /** Vrai une fois qu'un check de mise à jour a abouti côté réseau (AJour ou Disponible) : on
-     *  cesse alors de re-vérifier. Tant que c'est faux (hors-ligne / erreur), chaque retour sur
-     *  l'accueil retente — cas typique : app lancée en mode avion, puis réseau réactivé. */
-    private var majVerifiee = false
-
-    /** Vérifie s'il existe une release GitHub plus récente ; le cas échéant, affiche une pastille
-     *  rouge à côté du numéro de version (un tap mène à l'écran de mise à jour). Silencieux
-     *  hors-ligne / en cas d'erreur, et re-tenté au prochain retour sur l'accueil. */
-    private fun verifierMaj() {
-        // Flavor play : aucun polling des releases GitHub (MAJ gérée par le Store).
-        if (!BuildConfig.MAJ_GITHUB) return
-        if (majVerifiee) return
-        viewLifecycleOwner.lifecycleScope.launch {
-            val r = MiseAJour.verifier(versionName())
-            if (_binding == null) return@launch
-            // Erreur réseau (hors-ligne) → on laisse majVerifiee=false pour retenter plus tard.
-            if (r is MiseAJour.Resultat.Erreur) return@launch
-            majVerifiee = true
-            if (r is MiseAJour.Resultat.Disponible) {
-                // Version en jaune (comme le lien « Logiciel libre… ») + pastille rouge.
-                binding.tvVersion.setTextColor(ContextCompat.getColor(requireContext(), R.color.jaune_clair))
-                binding.tvVersion.text = titreAvecPastille("v${versionName()}", true)
-            }
-        }
+    /** Affiche la pastille « MAJ disponible » sur le numéro de version (jaune + point rouge).
+     *  Appelée par le code de MAJ spécifique au flavor github ([MiseAJourAccueil]) ; jamais
+     *  déclenchée côté play (implémentation vide). */
+    internal fun afficherPastilleMaj() {
+        if (_binding == null) return
+        binding.tvVersion.setTextColor(ContextCompat.getColor(requireContext(), R.color.jaune_clair))
+        binding.tvVersion.text = titreAvecPastille("v${versionName()}", true)
     }
+
+    /** Version affichée (sans le préfixe « v ») — fournie au check MAJ du flavor github. */
+    internal fun versionAffichee(): String = versionName()
+
+    /** Vrai tant que la vue n'est pas détruite — garde le code MAJ asynchrone du flavor github. */
+    internal fun vueVivante(): Boolean = _binding != null
 
     /** Renvoie [titre] suffixé d'une pastille ronde rouge "●" quand [afficher] est vrai, pour
      *  signaler des éléments en attente d'envoi sur une entrée du menu déplié. */

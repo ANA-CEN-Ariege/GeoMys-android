@@ -46,14 +46,14 @@ Une fois la connexion validée, le bouton **Charger les données** apparaît. Il
 - les **nomenclatures** (types de comptage, stades de vie, statuts, etc.),
 - les **protocoles de suivi** (`gn_module_monitoring`) auxquels vous avez droit, avec leur schéma et l'arborescence de leurs sites.
 
-⏱️ Compter quelques minutes selon la taille du serveur et la qualité de la connexion. À refaire **avant chaque sortie terrain** s'il y a eu des changements côté serveur. Les taxons ne sont rechargés que si la version a changé.
+⏱️ Compter quelques minutes selon la taille du serveur et la qualité de la connexion. À refaire périodiquement au cas où y a eu des changements côté serveur. Les taxons ne sont rechargés que si nécessaire (changement de version).
 
 ### c. Choisir les valeurs par défaut
 
 Trois listes déroulantes apparaissent une fois le chargement terminé :
 
 - **Jeu de données** — celui sur lequel vos saisies OccTax seront rattachées.
-- **Liste de taxons** — restreint l'autocomplétion aux espèces autorisées pour le jeu de données. Si le dataset impose une liste, elle est automatiquement sélectionnée et verrouillée.
+- **Liste de taxons** — restreint la liste des espèces autorisées. Si le jeu de données impose une liste, elle est automatiquement sélectionnée et verrouillée.
 - **Observateur par défaut** — votre nom : pré-rempli dans toutes les saisies.
 
 ### d. Panneau « Données en cache »
@@ -78,46 +78,62 @@ Valider en haut à droite avec la **coche verte** : la configuration est sauvega
 
 Trois entrées principales :
 
-- **Saisie multi-taxons** — relevé OccTax complet avec géométrie (point / ligne / polygone), plusieurs taxons, photos.
-- **Saisie mono-taxon (« rapide »)** — relevé éclair : photo + taxon + envoi.
-- **Suivis** — accès aux protocoles `gn_module_monitoring`.
+- **Saisie multi-taxons** — relevés OccTax pour plusieurs taxons.
+- **Saisie mono-taxon (« rapide »)** — relevés éclair pour un taxon.
+- **Suivis** — accès aux protocoles. Cette entrée n'est affichée que si vous avez les droits nécessaires pour au moins un protocole.
 
 **Menu burger** (en haut à gauche) :
 
-- **Mes saisies** — sorties OccTax enregistrées (GPX).
-- **Mes visites** — saisies monitoring en attente d'envoi.
-- **Explorer** — vue carte des sorties passées.
-- **Cache Manager** — télécharge un fond de carte pour usage hors réseau.
+- **Mes saisies** — sorties OccTax enregistrées en attente d'envoi.
+- **Mes visites** — saisies monitoring enregistrée en attente d'envoi.
+- **Explorer** — affichage sur la carte des relevés du serveur enregistrés sur le serveur geonature dans la dernière année.
+- **Cache Manager** — téléchargent des fonds de carte pour usage hors réseau.
 
+**Enregistrer la trace**
+- si cette coche est activé, lors d'une saisie dans les saisies multi-taxons, on peut démarrer et enregistrer la trace GPX du parcours.
 ---
 
 ## 4. Saisie multi-taxons (OccTax)
 
 ### Démarrer une sortie
 
-Taper **Saisie multi-taxons** → l'app demande la permission de localisation (à accepter pour l'enregistrement du parcours).
+Taper **Saisie multi-taxons** → la 1ère fois après l'installation, l'app demande la permission de localisation (à accepter pour l'enregistrement du parcours).
 
-Un service en **arrière-plan** trace votre déplacement (icône GPS dans la barre de notifications). Vous pouvez verrouiller l'écran sans perdre la trace.
+Si "Enregistrer la trace" est activée sur l'écran d'accueil, vous pouvez démarrer la trace de votre déplacement avec le bouton "Play".
 
-### Ajouter une observation
+Cliquer sur **➕** pour démarrer les saisies.
 
-À tout moment pendant la sortie :
+Pour positionner une localisation, vous pouvez soit utiliser votre position GPS, soit, en tapant sur la carte positionner un point GPS.
 
-1. Taper **➕ Observation**.
-2. **Géométrie** : point GPS courant (par défaut), ou tracer une ligne/un polygone sur la carte au doigt.
-3. **Taxon** : taper les premières lettres du nom (FR ou scientifique). L'autocomplétion propose les espèces de la liste sélectionnée.
-4. **Détails** : stade, comportement, dénombrement, photo, commentaire. Tous les champs sont optionnels sauf le taxon.
-5. **Valider** (✓) — l'observation est ajoutée à la sortie en cours.
+Cliquer sur **Valider ce point** pour séléctionner la position.
 
-Une sortie peut contenir **plusieurs observations**. Elles partagent le contexte (date, observateur, jeu de données, parcours GPS).
+L'écran **Nouveau relevé** permet de sélectionner une ou plusieurs espèces, soit par leur nom français, soit par leur nom scientifique.
+
+Tapez quelques lettres, et l'autocomplétion vous proposera une liste de taxons.
+
+Les taxons proposés dépendront du groupe selectionné (bandeau défilant avec les icones des groupes) : oiseaux, Mammifères, reptiles, amphibiens, mollusques, poissons, insectes, autres invertébrés, flore, champignons.
+
+Chaque observation est listée avec à droite 3 boutons : "Dénombrement", "Caractérisation" et "Supprimer".
+
+### Dénombrement
+
+Ce formulaire vous permet d'indiquer le nombre d'individus ainsi que d'autres informations (objet du dénombrement, type de dénombrement, stade de vie, sexe) . Il permet également d'ajouter une ou plusieurs photos ou des enregistrements sonores.
+
+### Caractérisation
+
+Ce formulaire vous permet de préciser des informations sur l'obervation : technique d'observation, état biologique, ...
+
+A la fin du retevé, cliquez sur la coche verte en haut à droite pour revenir sur la carte précédente.
+
+Sur cette carte, vous pouvez soit faire un nouveau relevé, soit terminer la sortiee avec la coche verte en haut à droite.
+
+Les sorties, avec leurs relevés, sont automatiquement enregistrées. Vous pouvez les retrouver à partir de l'écran d'accueil, dans le menu burger en haut à gauche, dans "Mes saisies"
 
 ### Photo
 
 Taper l'icône appareil. La photo est **rattachée à l'observation** et envoyée avec elle. Plusieurs photos par observation possibles.
 
-### Dénombrement
 
-Pour préciser le nombre d'individus par sexe/stade : taper sur le champ **Dénombrement** → grille interactive avec boutons + / −.
 
 ### Terminer la sortie
 

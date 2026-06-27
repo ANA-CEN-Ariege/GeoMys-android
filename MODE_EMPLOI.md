@@ -123,25 +123,13 @@ Ce formulaire vous permet d'indiquer le nombre d'individus ainsi que d'autres in
 
 Ce formulaire vous permet de préciser des informations sur l'obervation : technique d'observation, état biologique, ...
 
+### Terminer une sortie
+
 A la fin du retevé, cliquez sur la coche verte en haut à droite pour revenir sur la carte précédente.
 
-Sur cette carte, vous pouvez soit faire un nouveau relevé, soit terminer la sortiee avec la coche verte en haut à droite.
+Sur cette carte, vous pouvez soit faire un nouveau relevé, soit terminer la sortie avec la coche verte en haut à droite.
 
-Les sorties, avec leurs relevés, sont automatiquement enregistrées. Vous pouvez les retrouver à partir de l'écran d'accueil, dans le menu burger en haut à gauche, dans "Mes saisies"
-
-### Photo
-
-Taper l'icône appareil. La photo est **rattachée à l'observation** et envoyée avec elle. Plusieurs photos par observation possibles.
-
-
-
-### Terminer la sortie
-
-Taper **Terminer** → la sortie est enregistrée localement en **brouillon**. À ce stade rien n'est encore envoyé au serveur.
-
-### Auto-save au fil de l'eau
-
-Depuis la v0.9.54, l'app enregistre **automatiquement** votre brouillon à chaque modification (avec un délai de quelques secondes). Si le téléphone se coupe ou plante, vous retrouvez le travail au démarrage suivant.
+Les sorties, avec leurs relevés, sont automatiquement enregistrées. Vous pouvez les retrouver à partir de l'écran d'accueil, dans le menu burger en haut à gauche, dans "Mes saisies". À ce stade rien n'est encore envoyé au serveur.
 
 ### Envoyer
 
@@ -149,7 +137,7 @@ Dans **Mes saisies** :
 
 1. Choisir la sortie à envoyer.
 2. Vérifier le récap (taxons, photos, parcours).
-3. Taper **Envoyer** → l'app pousse vers `/api/occtax/releve` puis chaque média.
+3. Cliquez sur la flèche verte → l'app pousse vers le serveur puis chaque média.
 
 Si la connexion tombe pendant l'envoi, la sortie reste en local — il suffit de relancer plus tard.
 
@@ -161,12 +149,15 @@ Depuis le détail d'une sortie : bouton **Exporter** → fichier `.gpx` partagea
 
 ## 5. Saisie rapide (mono-taxon)
 
-Conçue pour les contacts ponctuels qu'on veut noter sans interrompre une marche.
+Permet de saisir des observations multiple d'un seul taxon.
 
 1. Taper **Saisie mono-taxon** sur l'écran d'accueil.
-2. La position GPS est captée immédiatement.
-3. Taxon (autocomplétion) + photo (optionnelle) + commentaire.
-4. **Valider** : la saisie est créée comme une sortie autonome (un seul relevé, un seul taxon) prête à envoyer.
+2. Sélectionnez l'espèce et cliquez sur "Démarrer la saisie".
+3. la carte s'affiche et vous pouvez localiser une obs soit en utilisant votre position GPS soit en sélectionnant une position par un tap sur la carte.
+4. Cliquez sur "+" pour valider.
+5. Vous pouvez continuer à enchainer la saisie d'autre obs ou terminer en cluqant sur la coche verte en haut à droite.
+
+Comme pour les saisies multi-taxons, ces saisies sont enregistrées au fil de l'eau et vous pourrez les retrouver dans "Mes saisies".
 
 ---
 

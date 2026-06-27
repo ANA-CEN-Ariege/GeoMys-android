@@ -74,7 +74,7 @@ class SuivisFragment : Fragment() {
             "majBandeauAttente : countEnAttente=$n, totalOutbox=$total")
         if (n > 0) {
             binding.btnSaisiesAttente.visibility = View.VISIBLE
-            binding.btnSaisiesAttente.text = "Saisies en attente d'envoi ($n)"
+            binding.btnSaisiesAttente.text = "Données en attente d'envoi ($n)"
         } else {
             binding.btnSaisiesAttente.visibility = View.GONE
         }

@@ -422,7 +422,8 @@ class FicheObjetFragment : Fragment() {
                     imageTintList = android.content.res.ColorStateList.valueOf(
                         androidx.core.content.ContextCompat.getColor(ctx, R.color.jaune_clair))
                     setBackgroundResource(borderless)
-                    contentDescription = "Nouvelle saisie"
+                    contentDescription = fr.ariegenature.geomys.network.MonitoringApi
+                        .libelleNouveau(objet.moduleCode, typeSaisieEnfantServeur)
                     layoutParams = LinearLayout.LayoutParams((40 * density).toInt(), (40 * density).toInt())
                     setOnClickListener {
                         if (e.id > 0) {
@@ -533,7 +534,8 @@ class FicheObjetFragment : Fragment() {
                 imageTintList = android.content.res.ColorStateList.valueOf(
                     androidx.core.content.ContextCompat.getColor(ctx, R.color.jaune_clair))
                 setBackgroundResource(borderlessId)
-                contentDescription = "Nouvelle $label"
+                contentDescription = fr.ariegenature.geomys.network.MonitoringApi
+                    .libelleNouveau(objet.moduleCode, type)
                 layoutParams = LinearLayout.LayoutParams(
                     (40 * density).toInt(), (40 * density).toInt(),
                 )
@@ -616,8 +618,10 @@ class FicheObjetFragment : Fragment() {
             else -> "⏳"
         }
         val fmt = java.text.SimpleDateFormat("dd/MM HH:mm", java.util.Locale.FRANCE)
+        val labelLocal = fr.ariegenature.geomys.network.MonitoringApi
+            .labelTypeEnCache(saisie.moduleCode, saisie.objectType) ?: "Donnée"
         bloc.addView(TextView(ctx).apply {
-            text = "$icone Saisie locale"
+            text = "$icone $labelLocal (local)"
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
         })
         bloc.addView(TextView(ctx).apply {
@@ -639,7 +643,8 @@ class FicheObjetFragment : Fragment() {
                 imageTintList = android.content.res.ColorStateList.valueOf(
                     androidx.core.content.ContextCompat.getColor(ctx, R.color.jaune_clair))
                 setBackgroundResource(borderless)
-                contentDescription = "Nouvelle saisie"
+                contentDescription = fr.ariegenature.geomys.network.MonitoringApi
+                    .libelleNouveau(objet.moduleCode, typeSaisieEnfant)
                 layoutParams = LinearLayout.LayoutParams((40 * density).toInt(), (40 * density).toInt())
                 setOnClickListener {
                     findNavController().navigate(
@@ -648,7 +653,7 @@ class FicheObjetFragment : Fragment() {
                             "moduleCode" to objet.moduleCode,
                             "parentObjectType" to type,
                             "parentUuidLocal" to saisie.uuid,
-                            "titreSite" to "Saisie locale du ${fmt.format(java.util.Date(saisie.dateLocale))}",
+                            "titreSite" to "$labelLocal (local) du ${fmt.format(java.util.Date(saisie.dateLocale))}",
                             "childObjectType" to typeSaisieEnfant,
                             "fil" to encoderFil(filCourant),
                         )

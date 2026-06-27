@@ -439,7 +439,7 @@ class CarteGeometrieFragment : Fragment() {
             actions.add("Voir la fiche" to { naviguerVersFiche(moduleCode, item, filCible) })
         }
         if (typeSaisieEnfant != null) {
-            actions.add("Nouvelle saisie" to {
+            actions.add(MonitoringApi.libelleNouveau(moduleCode, typeSaisieEnfant) to {
                 naviguerVersNouvelleSaisie(moduleCode, item, typeSaisieEnfant, filCible)
             })
         }

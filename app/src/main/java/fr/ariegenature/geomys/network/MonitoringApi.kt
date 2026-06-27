@@ -538,6 +538,29 @@ object MonitoringApi {
         } catch (_: Exception) { null }
     }
 
+    /** Lit dans le schéma cache de [moduleCode] le `genre` ("M"/"F") d'un type d'objet, pour
+     *  accorder les phrases (« cette visite » / « ce passage »). Null si absent. Pas de réseau. */
+    fun genreTypeEnCache(moduleCode: String, type: String): String? {
+        val json = MonitoringCache.getJson(MonitoringCache.keySchema(moduleCode)) ?: return null
+        return try {
+            JSONObject(json).optJSONObject(type)?.optString("genre", "")?.takeIf { it.isNotEmpty() }
+        } catch (_: Exception) { null }
+    }
+
+    /** Libellé d'action « Nouvelle visite » / « Nouveau passage » / « Nouvel inventaire » pour
+     *  créer un objet de type [type] dans [moduleCode], accordé au genre déclaré par le schéma
+     *  (label serveur via [labelTypeEnCache], genre via [genreTypeEnCache]). Repli « Nouvelle
+     *  entrée » si le type n'a pas de label en cache. Sert aux écrans carte/fiche/suivi. */
+    fun libelleNouveau(moduleCode: String, type: String): String {
+        val mot = labelTypeEnCache(moduleCode, type)?.lowercase() ?: return "Nouvelle entrée"
+        val masculin = genreTypeEnCache(moduleCode, type).equals("M", ignoreCase = true)
+        val voyelle = mot.firstOrNull()?.let {
+            it in setOf('a', 'à', 'â', 'e', 'é', 'è', 'ê', 'i', 'î', 'o', 'ô', 'u', 'ù', 'û', 'h', 'y')
+        } == true
+        val adj = when { !masculin -> "Nouvelle"; voyelle -> "Nouvel"; else -> "Nouveau" }
+        return "$adj $mot"
+    }
+
     /** Lit dans le schéma cache de [moduleCode] le couple (parent_type, id_field_name du
      *  parent) pour un type donné. Retourne null si le schéma n'est pas dispo ou si l'objet
      *  n'a pas de parent. L'idFieldName est porté par le SCHÉMA DU PARENT — c'est le nom de

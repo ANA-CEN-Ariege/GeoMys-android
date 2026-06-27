@@ -58,6 +58,11 @@ class NouvelleVisiteFragment : Fragment() {
      *  utilisées par [envoyerVisite] au moment du submit pour construire l'URL et le
      *  lien parent. Null tant que le schéma serveur n'a pas été chargé (fallback démo). */
     private var visitObjectType: String? = null
+    /** Label serveur du type créé (ex. « Visite », « Passage ») et son genre, mémorisés au
+     *  chargement du schéma pour accorder les phrases (dialogues, toast). Null tant que le schéma
+     *  n'est pas chargé → repli « saisie » (féminin) dans les helpers. */
+    private var labelVisite: String? = null
+    private var genreVisite: String? = null
     /** Type d'enfant « saisie » du type créé (ex. observation pour une visite), résolu depuis
      *  le schéma. Si non-null, l'enregistrement enchaîne directement sur la création de cet
      *  enfant au lieu de revenir à la liste. */
@@ -221,12 +226,17 @@ class NouvelleVisiteFragment : Fragment() {
         val moduleCode = arguments?.getString("moduleCode").orEmpty()
         val modeEdition = editUuid != null
 
-        // Titre par défaut avant chargement du schéma (le type exact arrive dans
-        // chargerSchemaEtRendre). En édition, on garde "Modifier la saisie" en attendant
-        // de pouvoir formuler "Édition de la visite / du passage / de l'observation".
-        // Placeholder neutre (« saisie » est féminin → toujours correct) en attendant le label
-        // exact + son genre, qui arrivent du schéma dans chargerSchemaEtRendre.
-        binding.tvTitre.text = if (modeEdition) "Modifier la saisie" else "Nouvelle saisie"
+        // Titre par défaut avant le label exact (chargerSchemaEtRendre). Si le type à créer est
+        // connu (childObjectType passé par l'appelant), on affiche directement son libellé serveur
+        // (« Nouvelle visite / Nouveau passage ») — plus de « saisie » générique. Repli neutre
+        // sinon (édition : remplacé par « Édition de la visite/du passage » ; type inconnu / démo).
+        val typeACreer = arguments?.getString("childObjectType").orEmpty()
+        binding.tvTitre.text = when {
+            modeEdition -> "Modifier…"
+            typeACreer.isNotEmpty() && moduleCode.isNotEmpty() ->
+                MonitoringApi.libelleNouveau(moduleCode, typeACreer)
+            else -> "Nouvelle entrée"
+        }
         // Fil d'Ariane : reçu de l'écran appelant (drill-down) ou reconstruit depuis le cache
         // (édition depuis « Saisies en attente »). Tous les segments sont des ancêtres
         // cliquables — le formulaire lui-même n'est pas un niveau du fil. Vide si aucun
@@ -260,21 +270,22 @@ class NouvelleVisiteFragment : Fragment() {
                         return
                     }
                     val dialog = AlertDialog.Builder(requireContext())
-                        .setTitle("Saisie non enregistrée")
+                        .setTitle("${labelTypeCap()} non enregistré${accordE()}")
                         .setNegativeButton("Quitter sans enregistrer") { _, _ ->
                             isEnabled = false
                             findNavController().navigateUp()
                         }
-                        .setNeutralButton("Continuer la saisie", null)
+                        .setNeutralButton("Continuer ${avecArticleType()}", null)
                     if (binding.btnSubmit.isEnabled) {
-                        dialog.setMessage("Enregistrer la saisie en cours avant de quitter ?")
+                        dialog.setMessage("Enregistrer ${avecArticleType()} en cours avant de quitter ?")
                             .setPositiveButton("Enregistrer et quitter") { _, _ ->
                                 envoyerVisite(puisTerminer = true)
                             }
                     } else {
                         dialog.setMessage(
-                            "La saisie en cours est incomplète (champs obligatoires manquants) " +
-                                "et ne peut pas être enregistrée.")
+                            "${avecArticleType().replaceFirstChar { it.uppercase() }} en cours est " +
+                                "${if (typeMasculin()) "incomplet" else "incomplète"} (champs obligatoires " +
+                                "manquants) et ne peut pas être enregistré${accordE()}.")
                     }
                     dialog.show()
                 }
@@ -329,12 +340,14 @@ class NouvelleVisiteFragment : Fragment() {
             !modifie -> findNavController().navigateUp()
             binding.btnSubmit.isEnabled -> envoyerVisite(puisTerminer = true)
             else -> AlertDialog.Builder(requireContext())
-                .setTitle("Saisie non enregistrée")
+                .setTitle("${labelTypeCap()} non enregistré${accordE()}")
                 .setMessage(
-                    "La saisie en cours est incomplète (champs obligatoires manquants) " +
-                        "et ne peut pas être enregistrée. Quitter et la perdre ?")
+                    "${avecArticleType().replaceFirstChar { it.uppercase() }} en cours est " +
+                        "${if (typeMasculin()) "incomplet" else "incomplète"} (champs obligatoires " +
+                        "manquants) et ne peut pas être enregistré${accordE()}. Quitter et " +
+                        "${if (typeMasculin()) "le" else "la"} perdre ?")
                 .setPositiveButton("Quitter") { _, _ -> findNavController().navigateUp() }
-                .setNegativeButton("Continuer la saisie", null)
+                .setNegativeButton("Continuer ${avecArticleType()}", null)
                 .show()
         }
     }
@@ -388,6 +401,8 @@ class NouvelleVisiteFragment : Fragment() {
             // Titre adapté au type courant (visite / observation / …) ET au mode (création vs
             // édition d'une saisie outbox). Le `genre` du schéma permet d'accorder l'article.
             val labelType = visitSchema.label ?: visitSchema.type.replaceFirstChar { it.uppercase() }
+            labelVisite = labelType
+            genreVisite = visitSchema.genre
             binding.tvTitre.text = if (editUuid != null) titreEdition(labelType, visitSchema.genre)
                 else titreNouvelle(labelType, visitSchema.genre)
             val constructionBrute: FormulaireConstruction = construireFormulaire(visitSchema)
@@ -756,10 +771,10 @@ class NouvelleVisiteFragment : Fragment() {
         )
         fr.ariegenature.geomys.store.OutboxMonitoring.ajouter(saisie)
 
-        val labelType = visitType.replaceFirstChar { it.uppercase() }
+        val labelType = labelTypeCap()
         android.widget.Toast.makeText(
             requireContext(),
-            "$labelType enregistré(e) localement — envoi à la demande depuis « Saisies en attente »",
+            "$labelType enregistré${accordE()} localement — envoi à la demande depuis « Mes visites »",
             android.widget.Toast.LENGTH_LONG,
         ).show()
 
@@ -783,7 +798,7 @@ class NouvelleVisiteFragment : Fragment() {
                     "parentObjectType" to visitType,
                     "parentUuidLocal" to saisie.uuid,
                     "childObjectType" to enfant,
-                    "titreSite" to "$labelType (saisie locale)",
+                    "titreSite" to "$labelType (local)",
                     "fil" to arguments?.getString("fil").orEmpty(),
                 ),
             )
@@ -918,6 +933,28 @@ class NouvelleVisiteFragment : Fragment() {
             else -> "Nouveau"
         }
         return "$adjectif $mot"
+    }
+
+    // ── Accord des phrases du flux (dialogues, toast) à partir du label serveur mémorisé
+    //    [labelVisite]/[genreVisite]. Repli « saisie » (féminin) avant chargement du schéma —
+    //    grammaticalement sûr. ──────────────────────────────────────────────────────────────
+    /** Genre masculin du type (déclaré par le schéma) ; féminin par défaut. */
+    private fun typeMasculin(): Boolean = genreVisite.equals("M", ignoreCase = true)
+
+    /** « Visite » / « Passage » (capitalisé) ; repli « Saisie » avant chargement du schéma. */
+    private fun labelTypeCap(): String = (labelVisite ?: "entrée").replaceFirstChar { it.uppercase() }
+
+    /** Suffixe d'accord : « e » au féminin, rien au masculin (participe passé / adjectif). */
+    private fun accordE(): String = if (typeMasculin()) "" else "e"
+
+    /** « la visite » / « le passage » / « l'observation » (article défini accordé + élision). */
+    private fun avecArticleType(): String {
+        val mot = (labelVisite ?: "entrée").lowercase()
+        val voyelle = mot.firstOrNull()?.let {
+            it in setOf('a', 'à', 'â', 'e', 'é', 'è', 'ê', 'i', 'î', 'o', 'ô', 'u', 'ù', 'û', 'h', 'y')
+        } == true
+        val art = when { voyelle -> "l'"; typeMasculin() -> "le "; else -> "la " }
+        return "$art$mot"
     }
 
     /** Fallback démo quand le schéma serveur n'est pas exploitable — affiche les valeurs

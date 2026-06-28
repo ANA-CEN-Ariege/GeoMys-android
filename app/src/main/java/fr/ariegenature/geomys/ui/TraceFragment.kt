@@ -250,6 +250,13 @@ class TraceFragment : Fragment() {
         fondCarte = chargerFondCarte(requireContext(), fondCarte)
         binding.map.setTileSource(tileSourcePour(fondCarte))
         binding.map.setMultiTouchControls(true)
+        // Boutons de zoom osmdroid par défaut DÉSACTIVÉS au profit de nos boutons +/- (cluster
+        // bas-gauche, au-dessus du bandeau du bas) — placement maîtrisé, symétrique du cluster
+        // de droite (centrer/boussole/fond).
+        binding.map.zoomController.setVisibility(
+            org.osmdroid.views.CustomZoomButtonsController.Visibility.NEVER)
+        binding.btnZoomIn.setOnClickListener { binding.map.controller.zoomIn() }
+        binding.btnZoomOut.setOnClickListener { binding.map.controller.zoomOut() }
         binding.map.controller.setZoom(savedMapZoom)
         if (doitCentrerSurObs) {
             // Reprise d'une sortie : on cadre sur les obs/trace existantes et on NE suit PAS
@@ -1171,6 +1178,7 @@ class TraceFragment : Fragment() {
         binding.btnRetour.applyStatusBarMargin()
         binding.bandeauPositionnement.applyStatusBarMargin()
         binding.llCarteControles.applyNavBarMargin()
+        binding.llZoom.applyNavBarMargin()
         binding.panneauControle.applyNavBarMargin()
         binding.panneauValidationPosition.applyNavBarMargin()
         binding.infoBarre.applyNavBarMargin()

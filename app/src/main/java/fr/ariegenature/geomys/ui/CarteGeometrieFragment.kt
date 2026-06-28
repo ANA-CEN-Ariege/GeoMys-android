@@ -77,6 +77,7 @@ class CarteGeometrieFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
         binding.tvFil.applyStatusBarMargin()
         binding.btnFondCarte.applyNavBarMargin()
+        binding.llZoom.applyNavBarMargin()
         // tvTitre est positionné sous le fil par garderMargeSousFil (fil.bottom inclut déjà
         // la marge de status bar) — pas d'applyStatusBarMargin ici, sinon double comptage.
 
@@ -100,6 +101,11 @@ class CarteGeometrieFragment : Fragment() {
         fondCarte = chargerFondCarte(requireContext(), fondCarte)
         binding.map.setTileSource(tileSourcePour(fondCarte))
         binding.map.setMultiTouchControls(true)
+        // Boutons de zoom osmdroid désactivés au profit de nos boutons +/- (cluster bas-gauche).
+        binding.map.zoomController.setVisibility(
+            org.osmdroid.views.CustomZoomButtonsController.Visibility.NEVER)
+        binding.btnZoomIn.setOnClickListener { binding.map.controller.zoomIn() }
+        binding.btnZoomOut.setOnClickListener { binding.map.controller.zoomOut() }
 
         // Position GPS du téléphone : même look bleu que les autres cartes de l'app
         // (TraceFragment, SaisieRapideFragment). N'auto-centre PAS sur la position courante

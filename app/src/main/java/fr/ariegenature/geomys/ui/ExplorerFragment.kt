@@ -112,6 +112,7 @@ class ExplorerFragment : Fragment() {
         binding.bandeauSaisie.root.applyStatusBarMargin()
         binding.barreFiltres.applyStatusBarMargin()
         binding.ctrlDroite.applyNavBarMargin()
+        binding.llZoom.applyNavBarMargin()
         binding.tvCompteur.applyNavBarMargin()
         binding.overlayChargement.applyNavBarMargin()
         binding.tvNonConfigure.applyNavBarMargin()
@@ -132,6 +133,11 @@ class ExplorerFragment : Fragment() {
     private fun setupMap() {
         binding.map.setTileSource(tileSourcePour(fondCarte))
         binding.map.setMultiTouchControls(true)
+        // Boutons de zoom osmdroid désactivés au profit de nos boutons +/- (cluster bas-gauche).
+        binding.map.zoomController.setVisibility(
+            org.osmdroid.views.CustomZoomButtonsController.Visibility.NEVER)
+        binding.btnZoomIn.setOnClickListener { binding.map.controller.zoomIn() }
+        binding.btnZoomOut.setOnClickListener { binding.map.controller.zoomOut() }
         val lastLoc = try {
             val lm = requireContext().getSystemService(android.content.Context.LOCATION_SERVICE) as LocationManager
             @Suppress("MissingPermission")

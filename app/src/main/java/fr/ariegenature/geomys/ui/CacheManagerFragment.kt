@@ -99,6 +99,11 @@ class CacheManagerFragment : Fragment() {
         fondCarte = chargerFondCarte(requireContext(), fondCarte)
         binding.map.setTileSource(tileSourcePour(fondCarte))
         binding.map.setMultiTouchControls(true)
+        // Boutons de zoom osmdroid désactivés au profit de nos boutons +/- (cluster bas-gauche).
+        binding.map.zoomController.setVisibility(
+            org.osmdroid.views.CustomZoomButtonsController.Visibility.NEVER)
+        binding.btnZoomIn.setOnClickListener { binding.map.controller.zoomIn() }
+        binding.btnZoomOut.setOnClickListener { binding.map.controller.zoomOut() }
         binding.map.minZoomLevel = 2.0
         binding.map.maxZoomLevel = ZOOM_MAX_DEFAUT.toDouble()
         // Vue initiale provisoire : centre Ariège, en attendant le premier point GPS

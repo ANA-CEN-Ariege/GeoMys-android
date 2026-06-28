@@ -100,6 +100,35 @@
             android:visibility="gone" />
     </LinearLayout>
 
+    <!-- Zoom +/- (vertical, bas-gauche, au-dessus du panneau bas — symétrique de conteneur_actions).
+         Remplace les boutons osmdroid (désactivés côté code). -->
+    <LinearLayout
+        android:id="@+id/ll_zoom"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_margin="12dp"
+        android:orientation="vertical"
+        app:layout_constraintBottom_toTopOf="@id/panel_bas"
+        app:layout_constraintStart_toStartOf="parent">
+
+        <ImageButton
+            android:id="@+id/btn_zoom_in"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:background="@drawable/btn_circle_white"
+            android:contentDescription="Zoom avant"
+            android:src="@drawable/ic_add" />
+
+        <ImageButton
+            android:id="@+id/btn_zoom_out"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:layout_marginTop="8dp"
+            android:background="@drawable/btn_circle_white"
+            android:contentDescription="Zoom arrière"
+            android:src="@drawable/ic_remove" />
+    </LinearLayout>
+
     <!-- Panneau bas : infos surface/tuiles/poids + bouton télécharger.
          Utilise le fond par défaut de l'app (dégradé accueil sombre) → texte clair. -->
     <LinearLayout

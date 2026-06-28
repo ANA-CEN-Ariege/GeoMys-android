@@ -318,6 +318,11 @@ class SaisieRapideFragment : Fragment() {
         fondCarte = chargerFondCarte(requireContext(), fondCarte)
         binding.map.setTileSource(tileSourcePour(fondCarte))
         binding.map.setMultiTouchControls(true)
+        // Boutons de zoom osmdroid désactivés au profit de nos boutons +/- (cluster bas-gauche).
+        binding.map.zoomController.setVisibility(
+            org.osmdroid.views.CustomZoomButtonsController.Visibility.NEVER)
+        binding.btnZoomIn.setOnClickListener { binding.map.controller.zoomIn() }
+        binding.btnZoomOut.setOnClickListener { binding.map.controller.zoomOut() }
         // Restaure le zoom/centre mémorisés (retour d'édition Caractérisation/Dénombrement) ; au 1er
         // affichage seulement, zoom par défaut 15 + centre sur la position courante.
         binding.map.controller.setZoom(if (savedMapZoom > 0) savedMapZoom else 15.0)
@@ -968,6 +973,7 @@ class SaisieRapideFragment : Fragment() {
         // pour son état actif/inactif (rotation map ou non).
         binding.map.visibility           = if (modeActif) View.VISIBLE else View.GONE
         binding.llCarteControles.visibility = if (modeActif) View.VISIBLE else View.GONE
+        binding.llZoom.visibility = if (modeActif) View.VISIBLE else View.GONE
         // Coche « Terminer » (haut droite) : utile seulement sur la carte (mode actif). En
         // mode config (écran de sélection du taxon) elle ne sert à rien — on quitte par le
         // bouton retour système — donc on la masque pour ne pas surcharger l'écran.
@@ -1100,6 +1106,7 @@ class SaisieRapideFragment : Fragment() {
         // bandeau de positionnement soit à la même hauteur.
         binding.bandeauPositionnement.applyStatusBarMargin()
         binding.llCarteControles.applyNavBarMargin()
+        binding.llZoom.applyNavBarMargin()
         binding.panneauConfig.applySystemBarInsets(includeIme = true)
         binding.panneauActif.applyNavBarInset()
     }

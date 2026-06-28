@@ -19,8 +19,11 @@
 package fr.ariegenature.geomys.ui.saisie
 
 import android.Manifest
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.os.Bundle
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
@@ -65,7 +68,11 @@ class SpeechToTextHelper(
         demarrerEcoute()
     }
 
-    fun demarrerEcoute() {
+    fun demarrerEcoute(forcerOffline: Boolean? = null) {
+        // Hors couverture (zone blanche), on tente la reconnaissance EMBARQUÉE (modèle vocal
+        // hors-ligne du téléphone) ; en couverture, on reste en ligne (meilleure précision sur
+        // les noms d'espèces). [forcerOffline] non-null = tentative de repli (pas de re-bascule).
+        val offline = forcerOffline ?: !reseauDispo()
         recognizer?.destroy()
         recognizer = SpeechRecognizer.createSpeechRecognizer(fragment.requireContext()).apply {
             setRecognitionListener(object : RecognitionListener {
@@ -83,15 +90,28 @@ class SpeechToTextHelper(
                 }
                 override fun onError(error: Int) {
                     til.setEndIconDrawable(R.drawable.ic_mic)
+                    // Bascule auto une seule fois : si le mode choisi échoue sur une erreur réseau
+                    // (modèle hors-ligne absent en couverture, ou réseau faible en ligne), on
+                    // retente dans l'AUTRE mode avant d'abandonner.
+                    if (forcerOffline == null &&
+                        (error == SpeechRecognizer.ERROR_NETWORK ||
+                            error == SpeechRecognizer.ERROR_NETWORK_TIMEOUT)
+                    ) {
+                        demarrerEcoute(forcerOffline = !offline)
+                        return
+                    }
                     val msg = when (error) {
                         SpeechRecognizer.ERROR_NO_MATCH       -> "Aucune correspondance — réessayez"
                         SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "Aucune voix détectée"
                         SpeechRecognizer.ERROR_NETWORK,
-                        SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "Erreur réseau — connexion requise"
+                        SpeechRecognizer.ERROR_NETWORK_TIMEOUT ->
+                            if (offline) "Dictée hors-ligne indisponible : installez le modèle vocal " +
+                                "« Français » hors connexion (paramètres de saisie vocale du téléphone)."
+                            else "Erreur réseau — connexion requise"
                         SpeechRecognizer.ERROR_AUDIO          -> "Erreur microphone"
                         else -> "Erreur reconnaissance ($error)"
                     }
-                    Toast.makeText(fragment.requireContext(), msg, Toast.LENGTH_SHORT).show()
+                    Toast.makeText(fragment.requireContext(), msg, Toast.LENGTH_LONG).show()
                 }
                 override fun onBeginningOfSpeech() {}
                 override fun onRmsChanged(rmsdB: Float) {}
@@ -107,12 +127,25 @@ class SpeechToTextHelper(
                 override fun onEvent(eventType: Int, params: Bundle?) {}
             })
             startListening(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_WEB_SEARCH)
+                // FREE_FORM hors-ligne (modèle de dictée embarqué) ; WEB_SEARCH en ligne (court,
+                // adapté aux noms d'espèces — comportement d'origine conservé en couverture).
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                    if (offline) RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
+                    else RecognizerIntent.LANGUAGE_MODEL_WEB_SEARCH)
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE, "fr-FR")
                 putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
                 putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+                putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, offline)
             })
         }
+    }
+
+    /** Réseau internet actuellement disponible ? (permission ACCESS_NETWORK_STATE déjà déclarée). */
+    private fun reseauDispo(): Boolean {
+        val cm = fragment.requireContext()
+            .getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return false
+        val caps = cm.getNetworkCapabilities(cm.activeNetwork ?: return false) ?: return false
+        return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
     }
 
     fun destroy() {

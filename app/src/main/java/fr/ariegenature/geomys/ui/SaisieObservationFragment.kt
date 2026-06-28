@@ -216,7 +216,11 @@ class SaisieObservationFragment : Fragment() {
                 commentReleveSession = premier.commentReleve ?: ""
                 cdHabReleveSession = premier.cdHabReleve
                 habitatReleveLabelSession = premier.habitatReleveLabel
-                dateDebutReleveSession = premier.dateDebutReleve
+                // En réédition : si la date du relevé n'a jamais été fixée à la main
+                // (dateDebutReleve null), on retombe sur la date de CRÉATION de la sortie
+                // (premier.date) — sinon le dialogue « Détails » afficherait/écraserait avec
+                // « maintenant » (bug : une session de la veille passait à aujourd'hui).
+                dateDebutReleveSession = premier.dateDebutReleve ?: premier.date
                 dateFinReleveSession = premier.dateFinReleve
                 typGrpReleveSession = premier.typGrpReleve ?: ""
                 champsReleveExtraSession = premier.champsReleveExtra

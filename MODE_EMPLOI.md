@@ -80,7 +80,7 @@ Trois entrées principales :
 
 - **Saisie multi-taxons** — relevés OccTax pour plusieurs taxons.
 - **Saisie mono-taxon (« rapide »)** — relevés éclair pour un taxon.
-- **Suivis** — accès aux protocoles. Cette entrée n'est affichée que si vous avez les droits nécessaires pour au moins un protocole.
+- **Monitoring** — accès aux protocoles. Cette entrée n'est affichée que si vous avez les droits nécessaires pour au moins un protocole.
 
 **Menu burger** (en haut à gauche) :
 
@@ -97,7 +97,7 @@ Trois entrées principales :
 
 ### Démarrer une sortie
 
-Taper **Saisie multi-taxons** → la 1ère fois après l'installation, l'app demande la permission de localisation (à accepter pour l'enregistrement du parcours).
+Cliquez sur **Saisie multi-taxons** → la 1ère fois après l'installation, l'app demande la permission de localisation (à accepter pour l'enregistrement du parcours).
 
 Si "Enregistrer la trace" est activée sur l'écran d'accueil, vous pouvez démarrer la trace de votre déplacement avec le bouton "Play".
 
@@ -161,13 +161,15 @@ Comme pour les saisies multi-taxons, ces saisies sont enregistrées au fil de l'
 
 ---
 
-## 6. Suivis protocolés (gn_module_monitoring)
+## 6. Monitoring
+
+Ce bouton n'est visle uniquement si vous avez les droits nécessaires sur au moins un protocole.
 
 ### Liste des protocoles
 
-Taper **Suivis** sur l'accueil. La liste affiche uniquement les protocoles auxquels **votre compte** a droit (filtrage CRUVED côté serveur + cache local).
+Taper **Monitoring** sur l'accueil. La liste affiche uniquement les protocoles auxquels **votre compte** a droit.
 
-> 💡 Si tu n'as accès à aucun protocole, le bouton **Suivis** et l'entrée **Mes visites** du menu burger disparaissent automatiquement — la place est laissée aux deux saisies OccTax.
+> 💡 Si tu n'as accès à aucun protocole, le bouton **Monitoring** et l'entrée **Mes visites** du menu burger disparaissent automatiquement — la place est laissée aux deux saisies OccTax.
 
 Pour chaque protocole : icône **ℹ️** (fiche) ou **🗺️** (carte de tous les sites du protocole).
 
@@ -177,7 +179,7 @@ La fiche liste les **sites** (ou groupes de sites) avec leur nom et leurs propri
 
 - **ℹ️ Détails** — drill dans le site (sa fiche, ses visites/observations).
 - **🗺️ Carte** — affiche la géométrie du site et de ses points d'écoute / sous-objets.
-- **➕** — démarre directement une saisie (visite ou observation selon le schéma) sur ce site.
+- **➕** — démarre directement une saisie (visite ou observation selon le schéma) sur ce site. Ne s'affiche que pour les objets pour lesquels on eput créer une visite, un passge, etc.
 
 ### Navigation par fil d'Ariane
 
@@ -189,7 +191,7 @@ En haut de chaque écran de suivi : un **fil d'Ariane cliquable**
 Sur la carte d'un protocole ou d'un site, **un tap sur un marker / polygone** ouvre un dialog qui propose :
 
 - **Voir la fiche** de l'objet cliqué,
-- **Nouvelle saisie** (visite, observation, …) si le protocole le permet.
+- **Nouvelle visite** (visite, passage, observation, …) si le protocole le permet.
 
 Le fil d'Ariane qui en résulte respecte la hiérarchie réelle de l'objet, quel que soit le chemin emprunté pour arriver à la carte.
 

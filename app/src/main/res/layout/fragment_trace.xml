@@ -167,6 +167,36 @@
             android:src="@drawable/ic_map" />
     </LinearLayout>
 
+    <!-- Zoom +/- (vertical, bas-gauche, au-dessus du bandeau du bas — même hauteur que le
+         cluster de droite). Remplace les boutons osmdroid par défaut, désactivés côté code,
+         pour un placement maîtrisé. -->
+    <LinearLayout
+        android:id="@+id/ll_zoom"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|start"
+        android:layout_marginStart="12dp"
+        android:layout_marginBottom="100dp"
+        android:orientation="vertical">
+
+        <ImageButton
+            android:id="@+id/btn_zoom_in"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:background="@drawable/btn_circle_white"
+            android:contentDescription="Zoom avant"
+            android:src="@drawable/ic_add" />
+
+        <ImageButton
+            android:id="@+id/btn_zoom_out"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:layout_marginTop="12dp"
+            android:background="@drawable/btn_circle_white"
+            android:contentDescription="Zoom arrière"
+            android:src="@drawable/ic_remove" />
+    </LinearLayout>
+
     <!-- Barre d'info parcours -->
     <LinearLayout
         android:id="@+id/info_barre"

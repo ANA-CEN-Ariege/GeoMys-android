@@ -23,30 +23,29 @@ android {
         // pour distribuer deux applis distinctes depuis une seule base de code.
         minSdk = 24
         targetSdk = 36
-        versionCode = 147
-        versionName = "1.2.0"
+        versionCode = 149
+        versionName = "1.2.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     // Deux canaux de distribution depuis le MÊME code (namespace inchangé = aucun fichier
     // déplacé, aucun import touché) ; seul l'applicationId — l'identité d'install — diffère.
-    //   - github : APK signé publié en release GitHub, MAJ via l'écran intégré (actuel).
-    //   - play   : .aab publié sur le Google Store, MAJ gérée par le Store ; la fonction de
-    //              MAJ intégrée est désactivée (BuildConfig.MAJ_GITHUB=false) car la politique
-    //              Google interdit qu'une appli télécharge/installe elle-même un APK.
+    //   - github : APK signé publié en release GitHub, MAJ via l'écran intégré.
+    //   - play   : .aab publié sur le Google Store, MAJ gérée par le Store. Le code de MAJ
+    //              (network/MiseAJour + ui/MiseAJourFragment + MiseAJourAccueil) vit dans
+    //              src/github et est donc ABSENT du .aab — la politique Google interdit qu'une
+    //              appli télécharge/installe un APK. src/play fournit un MiseAJourAccueil no-op.
     // Les deux applicationId distincts permettent aussi de cohabiter sur un même téléphone.
     flavorDimensions += "distribution"
     productFlavors {
         create("github") {
             dimension = "distribution"
             applicationId = "fr.ariegenature.geomys"
-            buildConfigField("boolean", "MAJ_GITHUB", "true")
         }
         create("play") {
             dimension = "distribution"
             applicationId = "fr.ariegenature.public.geomys"
-            buildConfigField("boolean", "MAJ_GITHUB", "false")
         }
     }
 

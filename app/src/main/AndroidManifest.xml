@@ -15,8 +15,10 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.VIBRATE" />
-    <!-- Auto-mise à jour : installer l'APK téléchargé depuis les releases GitHub. -->
-    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- REQUEST_INSTALL_PACKAGES : déclarée UNIQUEMENT dans src/github/AndroidManifest.xml
+         (mise à jour intégrée = installation de l'APK des releases GitHub). Volontairement
+         ABSENTE du .aab Play : interdite par la politique Google, et la MAJ y est gérée par
+         le Store. Cf. la séparation du code de MAJ en source set src/github. -->
 
     <application
         android:name=".GeoMysApplication"

@@ -69,18 +69,48 @@ class SaisiesEnAttenteFragment : Fragment() {
         val enAttente = toutes.count { it.etat == SaisieEnAttente.Etat.PENDING || it.etat == SaisieEnAttente.Etat.ERROR }
         val envoyees = toutes.count { it.etat == SaisieEnAttente.Etat.SENT }
         binding.tvResume.text = when {
-            toutes.isEmpty() -> "Aucune saisie locale."
-            enAttente == 0 -> "Toutes les saisies ont été envoyées ($envoyees)."
+            toutes.isEmpty() -> "Aucune donnée locale."
+            enAttente == 0 -> "Toutes les données ont été envoyées ($envoyees)."
             else -> "$enAttente en attente · $envoyees envoyées"
         }
         peuplerListe(toutes)
+    }
+
+    // ── Terminologie monitoring : chaque item est nommé par le LABEL SERVEUR de son type
+    //    (« visite », « passage », « observation »…), accordé en genre, au lieu d'un « saisie »
+    //    générique. Les messages portant sur l'ENSEMBLE (liste hétérogène) utilisent le terme
+    //    neutre « donnée ». ─────────────────────────────────────────────────────────────────
+    private fun labelDuType(s: SaisieEnAttente): String =
+        fr.ariegenature.geomys.network.MonitoringApi.labelTypeEnCache(s.moduleCode, s.objectType)
+            ?: s.objectType.replaceFirstChar { it.uppercase() }
+
+    private fun typeMasculin(s: SaisieEnAttente): Boolean =
+        fr.ariegenature.geomys.network.MonitoringApi
+            .genreTypeEnCache(s.moduleCode, s.objectType).equals("M", ignoreCase = true)
+
+    private fun voyelleInitiale(mot: String): Boolean = mot.firstOrNull()?.let {
+        it in setOf('a', 'à', 'â', 'e', 'é', 'è', 'ê', 'i', 'î', 'o', 'ô', 'u', 'ù', 'û', 'h', 'y')
+    } == true
+
+    /** « cette visite » / « ce passage » / « cet inventaire » / « cette observation ». */
+    private fun ceTypeDe(s: SaisieEnAttente): String {
+        val mot = labelDuType(s).lowercase()
+        val dem = when { !typeMasculin(s) -> "cette"; voyelleInitiale(mot) -> "cet"; else -> "ce" }
+        return "$dem $mot"
+    }
+
+    /** « la visite » / « le passage » / « l'observation » (article défini accordé + élision). */
+    private fun leTypeDe(s: SaisieEnAttente): String {
+        val mot = labelDuType(s).lowercase()
+        val art = when { voyelleInitiale(mot) -> "l'"; typeMasculin(s) -> "le "; else -> "la " }
+        return "$art$mot"
     }
 
     private fun peuplerListe(saisies: List<SaisieEnAttente>) {
         binding.llSaisies.removeAllViews()
         if (saisies.isEmpty()) {
             binding.llSaisies.addView(TextView(requireContext()).apply {
-                text = "Les saisies que tu enregistres apparaîtront ici jusqu'à leur envoi."
+                text = "Les données que tu enregistres apparaîtront ici jusqu'à leur envoi."
                 setTextColor(couleurSecondaire(requireContext()))
                 textSize = 13f
             })
@@ -304,7 +334,7 @@ class SaisiesEnAttenteFragment : Fragment() {
             // (l'objet créé n'est jamais re-POSTé, cf. SaisieEnAttente.objetCree).
             header.addView(creerIconeAction(
                 fr.ariegenature.geomys.R.drawable.ic_send,
-                "Envoyer les saisies restantes",
+                "Envoyer les données restantes",
                 tintBleu = true,
             ) { lancerEnvoiGroupe(s.uuid) })
         }
@@ -353,12 +383,12 @@ class SaisiesEnAttenteFragment : Fragment() {
         }
         parent.addView(creerIconeAction(
             fr.ariegenature.geomys.R.drawable.ic_edit,
-            "Éditer cette saisie",
+            "Éditer ${ceTypeDe(s)}",
             tintBleu = true,
         ) { ouvrirEdition(s) })
         parent.addView(creerIconeAction(
             fr.ariegenature.geomys.R.drawable.ic_delete,
-            "Supprimer cette saisie",
+            "Supprimer ${ceTypeDe(s)}",
             tintBleu = false,
         ) {
             val nbEnfants = OutboxMonitoring.descendants(s.uuid).size
@@ -458,13 +488,13 @@ class SaisiesEnAttenteFragment : Fragment() {
         if (nbEnfants > 0 &&
             (s.etat == SaisieEnAttente.Etat.PENDING || s.etat == SaisieEnAttente.Etat.ERROR)
         ) {
-            actions.add("Envoyer ce groupe (${nbEnfants + 1} saisies)")
+            actions.add("Envoyer ce groupe (${nbEnfants + 1} données)")
         }
-        if (s.etat != SaisieEnAttente.Etat.SENT) actions.add("Supprimer cette saisie")
+        if (s.etat != SaisieEnAttente.Etat.SENT) actions.add("Supprimer ${ceTypeDe(s)}")
         if (s.etat == SaisieEnAttente.Etat.SENT) actions.add("Retirer de la liste")
         if (actions.isEmpty()) return
         AlertDialog.Builder(ctx)
-            .setTitle("${s.objectType} · ${SimpleDateFormat("dd/MM HH:mm", Locale.FRANCE).format(Date(s.dateLocale))}")
+            .setTitle("${labelDuType(s)} · ${SimpleDateFormat("dd/MM HH:mm", Locale.FRANCE).format(Date(s.dateLocale))}")
             .setItems(actions.toTypedArray()) { _, idx ->
                 val choix = actions[idx]
                 when {
@@ -475,7 +505,7 @@ class SaisiesEnAttenteFragment : Fragment() {
                         rafraichir()
                     }
                     choix.startsWith("Envoyer ce groupe") -> lancerEnvoiGroupe(s.uuid)
-                    choix == "Supprimer cette saisie" -> demanderSuppression(s, nbEnfants)
+                    choix.startsWith("Supprimer") -> demanderSuppression(s, nbEnfants)
                     choix == "Retirer de la liste" -> {
                         OutboxMonitoring.supprimer(s.uuid)
                         rafraichir()
@@ -496,16 +526,16 @@ class SaisiesEnAttenteFragment : Fragment() {
             return
         }
         AlertDialog.Builder(requireContext())
-            .setTitle("Supprimer cette saisie ?")
+            .setTitle("Supprimer ${ceTypeDe(s)} ?")
             .setMessage(
-                "Cette ${s.objectType} a $nbEnfants saisie(s) locale(s) rattachée(s) " +
-                    "(par ex. des observations). Sans son parent, elles ne pourront plus être " +
-                    "envoyées.\n\nSupprimer la ${s.objectType} ET ses $nbEnfants enfant(s) ?"
+                "${ceTypeDe(s).replaceFirstChar { it.uppercase() }} a $nbEnfants donnée(s) locale(s) " +
+                    "rattachée(s) (par ex. des observations). Sans son parent, elles ne pourront " +
+                    "plus être envoyées.\n\nSupprimer ${leTypeDe(s)} ET ses $nbEnfants enfant(s) ?"
             )
             .setPositiveButton("Tout supprimer") { _, _ ->
                 val n = OutboxMonitoring.supprimerCascade(s.uuid)
                 android.widget.Toast.makeText(
-                    requireContext(), "$n saisie(s) supprimée(s)",
+                    requireContext(), "$n donnée(s) supprimée(s)",
                     android.widget.Toast.LENGTH_SHORT,
                 ).show()
                 rafraichir()

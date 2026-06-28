@@ -402,7 +402,8 @@ class SuiviDetailFragment : Fragment() {
                         imageTintList = android.content.res.ColorStateList.valueOf(
                             androidx.core.content.ContextCompat.getColor(ctx, R.color.jaune_clair))
                         setBackgroundResource(borderless)
-                        contentDescription = "Nouvelle saisie"
+                        contentDescription = fr.ariegenature.geomys.network.MonitoringApi
+                            .libelleNouveau(moduleCode, typeSaisieEnfant)
                         layoutParams = LinearLayout.LayoutParams(
                             (40 * density).toInt(), (40 * density).toInt(),
                         )

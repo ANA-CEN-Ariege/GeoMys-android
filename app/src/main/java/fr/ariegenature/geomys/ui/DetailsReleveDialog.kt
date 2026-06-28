@@ -241,6 +241,10 @@ fun ouvrirDialogDetailsReleve(
                 masquerClavier(this)
                 val txt = (adapter.getItem(pos) as? String).orEmpty()
                 options.firstOrNull { it.second == txt }?.let { idChoisi = it.first; nomChoisi = it.second }
+                // Ré-affiche EXPLICITEMENT la sélection. Sur ce widget, onDismiss peut courir
+                // AVANT onItemClick : il réaffichait alors l'ANCIENNE valeur (la nouvelle était
+                // pourtant bien mémorisée et validée → confusion « ça garde l'ancien »).
+                setText(nomChoisi.orEmpty(), false)
             }
             // Fermeture sans (re)choix : on réaffiche le libellé de la sélection courante.
             setOnDismissListener { setText(nomChoisi.orEmpty(), false) }

@@ -37,6 +37,14 @@ object MiseAJourAccueil {
      *  Réinitialisé à chaque nouvelle vue d'accueil par [configurer] pour re-tester. */
     private var verifiee = false
 
+    /** Ancre de compilation : [MiseAJourFragment] n'est cité QUE par le nav_graph (chaîne
+     *  `android:name`), sans aucune référence Kotlin entrante. Dans cet état, la compilation
+     *  INCRÉMENTALE a déjà « oublié » la classe (absente du dex → ClassNotFoundException = crash
+     *  au tap sur le numéro de version, vu en v1.2.x). Cette référence dure force la classe à
+     *  toujours être compilée/dexée. (Le filet définitif reste le build `clean` en release.) */
+    @Suppress("unused")
+    private val ancreCompilation: Class<MiseAJourFragment> = MiseAJourFragment::class.java
+
     /** Tap sur le numéro de version → écran de mise à jour. */
     fun configurer(fragment: AccueilFragment, tvVersion: TextView) {
         verifiee = false

@@ -94,6 +94,32 @@ class LocationTracker(private val context: Context) {
         listening = true
     }
 
+    /** Meilleure position connue IMMÉDIATEMENT : la dernière reçue, sinon le cache système
+     *  (GPS puis réseau). Pour que le bouton « centrer » ne reste jamais muet quand les mises à
+     *  jour continues dorment (stationnaire + minDistance, ou 1er fix pas encore arrivé). */
+    @SuppressLint("MissingPermission")
+    fun positionConnue(): Location? = _position.value
+        ?: runCatching { locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER) }.getOrNull()
+        ?: runCatching { locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER) }.getOrNull()
+
+    /** Force un fix ponctuel frais (les updates continues peuvent dormir : stationnaire +
+     *  minDistance, ou provider lent). Pousse d'abord la position du cache dans [position] (recentre
+     *  tout de suite), puis demande un fix unique dont le résultat arrive aussi via [position].
+     *  Remplace le contournement « couper/remettre le GPS ». */
+    @SuppressLint("MissingPermission")
+    fun rafraichirPosition() {
+        val gpsOk = locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)
+        val netOk = locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
+        val provider = when {
+            gpsOk -> LocationManager.GPS_PROVIDER
+            netOk -> LocationManager.NETWORK_PROVIDER
+            else -> return
+        }
+        positionConnue()?.let { _position.postValue(it) }
+        @Suppress("DEPRECATION")
+        locationManager.requestSingleUpdate(provider, locationListener, null)
+    }
+
     fun arreter() {
         if (!listening) return
         locationManager.removeUpdates(locationListener)

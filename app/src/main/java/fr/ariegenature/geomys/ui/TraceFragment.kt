@@ -360,9 +360,15 @@ class TraceFragment : Fragment() {
         binding.btnCentrer.setOnClickListener {
             suivrePosition = true
             binding.btnCentrer.setImageResource(R.drawable.ic_location_on)
-            traceViewModel.locationTracker.position.value?.let {
-                binding.map.controller.animateTo(GeoPoint(it.latitude, it.longitude))
+            val pos = traceViewModel.locationTracker.positionConnue()
+            if (pos != null) {
+                binding.map.controller.animateTo(GeoPoint(pos.latitude, pos.longitude))
+            } else {
+                android.widget.Toast.makeText(requireContext(), "Acquisition GPS en cours…", android.widget.Toast.LENGTH_SHORT).show()
             }
+            // Force un fix frais : si la position dormait, elle arrive via l'observer (suivrePosition)
+            // qui recentre — plus besoin de couper/remettre le GPS.
+            traceViewModel.locationTracker.rafraichirPosition()
         }
 
         binding.btnRetour.setOnClickListener {

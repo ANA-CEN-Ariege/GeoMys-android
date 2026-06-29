@@ -21,10 +21,6 @@ C'est le point de départ. Tout part d'ici.
 - **Ouvrir les Paramètres** (engrenage, en haut à droite). Une pastille **verte** = tout est prêt pour saisir ; **rouge** = la configuration est incomplète.
 - **Voir le numéro de version** (en bas). En le touchant, vous ouvrez l'écran de mise à jour (une pastille apparaît quand une nouvelle version est disponible).
 
-<p align="center"><img src="Images/accueil_menu.jpg" alt="Menu de navigation" width="240"></p>
-
-*Le menu (icône en haut à gauche) donne accès à : Mes saisies, Mes visites, Explorer, Gestion des cartes.*
-
 ---
 
 ## Paramètres (engrenage)
@@ -160,32 +156,6 @@ Pour noter rapidement une seule espèce sur plusieurs points.
 
 ---
 
-## Mes saisies
-
-Vos sorties OccTax enregistrées dans le téléphone (saisies multi et mono-taxons).
-
-<p align="center"><img src="Images/mes_saisies_1.jpg" alt="Mes saisies" width="240"></p>
-
-**Vous pouvez :**
-- **Voir vos sorties**, classées : *à envoyer*, *envoyées*, *importées*.
-- **Continuer une sortie** (la rouvrir pour la compléter).
-- **Envoyer une sortie** au serveur (flèche). Si la connexion coupe en cours d'envoi, la sortie reste en local : vous relancez plus tard.
-- **Supprimer une sortie**.
-- **Ouvrir le détail** d'une sortie.
-
----
-
-## Détail d'une sortie
-
-Le récapitulatif d'une sortie avant envoi.
-
-**Vous pouvez :**
-- **Voir la carte** (tracé + points) et la **liste des espèces**.
-- **Envoyer** la sortie au serveur.
-- **Exporter en GPX** un fichier partageable (mail, Drive…).
-
----
-
 ## Monitoring (liste des protocoles)
 
 L'entrée vers les suivis protocolés. Visible seulement si vous avez accès à au moins un protocole.
@@ -247,6 +217,38 @@ Le formulaire de saisie d'un suivi. Son contenu dépend du protocole.
 - Les **champs obligatoires** sont marqués d'une étoile **\*** ; le bouton **Enregistrer** reste grisé tant qu'ils ne sont pas remplis.
 - **Ajouter une photo**.
 - **Enregistrer** (dans le téléphone). L'application propose ensuite d'**enchaîner** directement l'observation suivante.
+
+---
+
+<p align="center"><img src="Images/accueil_menu.jpg" alt="Menu de navigation" width="240"></p>
+
+*Les écrans suivants — Mes saisies, Mes visites, Explorer, Gestion des cartes — s'ouvrent depuis le menu (icône en haut à gauche de l'accueil).*
+
+---
+
+## Mes saisies
+
+Vos sorties OccTax enregistrées dans le téléphone (saisies multi et mono-taxons).
+
+<p align="center"><img src="Images/mes_saisies_1.jpg" alt="Mes saisies" width="240"></p>
+
+**Vous pouvez :**
+- **Voir vos sorties**, classées : *à envoyer*, *envoyées*, *importées*.
+- **Continuer une sortie** (la rouvrir pour la compléter).
+- **Envoyer une sortie** au serveur (flèche). Si la connexion coupe en cours d'envoi, la sortie reste en local : vous relancez plus tard.
+- **Supprimer une sortie**.
+- **Ouvrir le détail** d'une sortie.
+
+---
+
+## Détail d'une sortie
+
+Le récapitulatif d'une sortie avant envoi.
+
+**Vous pouvez :**
+- **Voir la carte** (tracé + points) et la **liste des espèces**.
+- **Envoyer** la sortie au serveur.
+- **Exporter en GPX** un fichier partageable (mail, Drive…).
 
 ---
 

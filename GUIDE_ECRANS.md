@@ -17,8 +17,8 @@ C'est le point de départ. Tout part d'ici.
 - **Démarrer une saisie « mono-taxon » (OccTax, « rapide »)** — pour noter une seule espèce, sur plusieurs points, rapidement.
 - **Ouvrir « Monitoring »** (suivis de protocoles, `gn_module_monitoring`) — uniquement si votre compte a accès à au moins un protocole (sinon le bouton n'apparaît pas).
 - **Activer/désactiver « Enregistrer la trace »** — quand c'est activé, l'application peut enregistrer le tracé GPS de votre déplacement pendant une saisie multi-taxons.
-- **Ouvrir le menu** (icône en haut à gauche) : *Mes saisies*, *Mes visites*, *Explorer*, *Gestion des cartes*. Une **pastille rouge** signale qu'il vous reste des observations à envoyer.
-- **Ouvrir les Paramètres** (engrenage, en haut à droite). Une pastille **verte** = tout est prêt pour saisir ; **rouge** = la configuration est incomplète.
+- **Ouvrir le menu** <img class="ico" src="Images/icones/ic_menu.png" alt="menu" height="20"> (en haut à gauche) : *Mes saisies*, *Mes visites*, *Explorer*, *Gestion des cartes*. Une **pastille rouge** signale qu'il vous reste des observations à envoyer.
+- **Ouvrir les Paramètres** <img class="ico" src="Images/icones/ic_parametres.png" alt="paramètres" height="20"> (en haut à droite). Une pastille **verte** = tout est prêt pour saisir ; **rouge** = la configuration est incomplète.
 - **Voir le numéro de version** (en bas). En le touchant, vous ouvrez l'écran de mise à jour (une pastille apparaît quand une nouvelle version est disponible).
 
 ---
@@ -41,7 +41,7 @@ C'est le point de départ. Tout part d'ici.
 - **Choisir vos valeurs par défaut** : le **jeu de données**, la **liste d'espèces** autorisées, votre **nom d'observateur** (pré-rempli dans vos saisies).
 - **Voir ce qui est enregistré dans le téléphone** (nombre de protocoles, d'espèces…) et, via **Détails**, parcourir les espèces par groupe.
 - **Vider le cache** (à n'utiliser qu'en cas de problème : il faudra recharger les données ensuite).
-- **Valider** avec la coche verte en haut à droite.
+- **Valider** avec <img class="ico" src="Images/icones/ic_valider.png" alt="valider" height="20"> (coche verte, en haut à droite).
 
 ---
 
@@ -55,14 +55,14 @@ L'écran carte sur lequel vous vous déplacez et placez vos observations.
 </p>
 
 **Vous pouvez :**
-- **Voir votre position** (point bleu) et **recentrer la carte dessus** (bouton en bas à droite).
-- **Zoomer** avec les boutons **+ / −** (en bas à gauche) ou avec deux doigts.
-- **Changer le fond de carte** (bouton en bas à droite) : plusieurs fonds disponibles (carte générale, fonds IGN, photo aérienne…).
-- **Orienter la carte** avec la boussole.
+- **Voir votre position** sur la carte (le point bleu <img class="ico" src="Images/icones/ic_position.png" alt="point de position" height="20">) et **recentrer dessus** avec <img class="ico" src="Images/icones/ic_centrer.png" alt="bouton centrer" height="20">.
+- **Zoomer** avec <img class="ico" src="Images/icones/ic_zoom_plus.png" alt="zoom avant" height="20"> et <img class="ico" src="Images/icones/ic_zoom_moins.png" alt="zoom arrière" height="20">, ou avec deux doigts.
+- **Changer le fond de carte** avec <img class="ico" src="Images/icones/ic_fond.png" alt="bouton fond de carte" height="20"> : plusieurs fonds disponibles (carte générale, fonds IGN, photo aérienne…).
+- **Orienter la carte** avec la boussole <img class="ico" src="Images/icones/ic_boussole.png" alt="boussole" height="20">.
 - **Démarrer / arrêter l'enregistrement du tracé** de votre déplacement (si « Enregistrer la trace » est activé sur l'accueil). Une barre indique la distance et le nombre d'observations.
 - **Placer le point d'une observation** : soit sur votre position GPS, soit en **touchant la carte** à l'endroit voulu, puis **Valider ce point**.
-- **Ajouter un relevé** (bouton **+**).
-- **Terminer la sortie** (coche verte en haut à droite) : vous choisissez d'enregistrer, de continuer, ou de supprimer. *(La sortie est de toute façon enregistrée au fur et à mesure ; rien n'est encore envoyé.)*
+- **Ajouter un relevé** avec <img class="ico" src="Images/icones/ic_releve_plus.png" alt="bouton ajouter" height="20">.
+- **Terminer la sortie** avec <img class="ico" src="Images/icones/ic_valider.png" alt="valider" height="20"> (en haut à droite) : vous choisissez d'enregistrer, de continuer, ou de supprimer. *(La sortie est de toute façon enregistrée au fur et à mesure ; rien n'est encore envoyé.)*
 
 <p align="center"><img src="Images/saisie_multitaxons_8.jpg" alt="Menu Terminer la sortie" width="240"></p>
 
@@ -80,11 +80,11 @@ L'écran où vous indiquez quelles espèces vous avez observées à ce point.
 **Vous pouvez :**
 - **Choisir le groupe d'espèces** dans le bandeau d'icônes (oiseaux, mammifères, reptiles, amphibiens, mollusques, poissons, insectes, autres invertébrés, flore, champignons) — cela filtre les propositions.
 - **Saisir le nom** d'une espèce (en français ou en scientifique) : des propositions apparaissent au fil de la frappe.
-- **Dicter le nom à la voix** (icône micro) — fonctionne aussi **sans réseau** si le modèle vocal français est installé sur le téléphone.
+- **Dicter le nom à la voix** <img class="ico" src="Images/icones/ic_micro.png" alt="micro" height="20"> — fonctionne aussi **sans réseau** si le modèle vocal français est installé sur le téléphone.
 - **Ajouter plusieurs espèces** au même relevé.
-- Pour chaque espèce, ouvrir : **Dénombrement**, **Caractérisation**, ou la **supprimer**.
+- Pour chaque espèce : **Dénombrement** <img class="ico" src="Images/icones/ic_compteur.png" alt="dénombrement" height="20">, **Caractérisation** <img class="ico" src="Images/icones/ic_caracterisation.png" alt="caractérisation" height="20">, ou **supprimer** <img class="ico" src="Images/icones/ic_supprimer.png" alt="supprimer" height="20">.
 - Ouvrir les **Détails du relevé** (date, observateurs, habitat, commentaire…).
-- **Valider** (coche verte) pour revenir à la carte.
+- **Valider** <img class="ico" src="Images/icones/ic_valider.png" alt="valider" height="20"> pour revenir à la carte.
 
 ---
 
@@ -95,10 +95,10 @@ Pour préciser combien d'individus et ajouter des médias.
 <p align="center"><img src="Images/saisie_multitaxons_5.jpg" alt="Formulaire de dénombrement" width="240"></p>
 
 **Vous pouvez :**
-- **Indiquer le nombre d'individus** (minimum / maximum).
+- **Indiquer le nombre d'individus** (minimum / maximum) avec <img class="ico" src="Images/icones/ic_moins.png" alt="moins" height="20"> et <img class="ico" src="Images/icones/ic_plus.png" alt="plus" height="20">.
 - **Préciser** l'objet du dénombrement, le type de dénombrement, le stade de vie, le sexe…
-- **Ajouter des photos** : **prendre une photo** avec l'appareil photo, ou **en choisir une dans la galerie**.
-- **Ajouter des sons** (enregistrements audio existants).
+- **Ajouter des photos** <img class="ico" src="Images/icones/ic_photo.png" alt="ajouter une photo" height="20"> : **prendre une photo** avec l'appareil, ou **en choisir une dans la galerie**.
+- **Ajouter des sons** <img class="ico" src="Images/icones/ic_audio.png" alt="ajouter un son" height="20"> (enregistrements audio existants).
 
 ---
 
@@ -133,7 +133,7 @@ La liste de tout ce que vous avez noté pendant la sortie.
 
 **Vous pouvez :**
 - **Voir tous les relevés** de la sortie en cours.
-- **Modifier** ou **supprimer** un relevé.
+- **Modifier** <img class="ico" src="Images/icones/ic_editer.png" alt="modifier" height="20"> ou **supprimer** <img class="ico" src="Images/icones/ic_supprimer.png" alt="supprimer" height="20"> un relevé.
 - **Tout effacer**.
 
 ---
@@ -149,10 +149,10 @@ Pour noter rapidement une seule espèce sur plusieurs points.
 
 **Vous pouvez :**
 - **Choisir l'espèce** (une seule) puis **Démarrer la saisie**.
-- **Placer des points** d'observation : position GPS ou tap sur la carte, puis **+** pour valider.
+- **Placer des points** d'observation : position GPS ou tap sur la carte, puis <img class="ico" src="Images/icones/ic_releve_plus.png" alt="ajouter le point" height="20"> pour valider.
 - **Enchaîner** autant de points que nécessaire pour la même espèce.
-- **Zoomer** (+/− en bas à gauche), **recentrer**, **changer le fond de carte**.
-- **Terminer** (coche verte). *(Tout est enregistré au fur et à mesure ; vous retrouvez la saisie dans « Mes saisies ».)*
+- **Zoomer** <img class="ico" src="Images/icones/ic_zoom_plus.png" alt="zoom avant" height="20"> <img class="ico" src="Images/icones/ic_zoom_moins.png" alt="zoom arrière" height="20">, **recentrer** <img class="ico" src="Images/icones/ic_centrer.png" alt="centrer" height="20">, **changer le fond de carte** <img class="ico" src="Images/icones/ic_fond.png" alt="fond de carte" height="20">.
+- **Terminer** <img class="ico" src="Images/icones/ic_valider.png" alt="valider" height="20">. *(Tout est enregistré au fur et à mesure ; vous retrouvez la saisie dans « Mes saisies ».)*
 
 ---
 
@@ -164,7 +164,7 @@ L'entrée vers les suivis protocolés. Visible seulement si vous avez accès à 
 
 **Vous pouvez :**
 - **Voir la liste des protocoles** auxquels votre compte a droit.
-- Pour chaque protocole, ouvrir sa **fiche** (ℹ️) ou sa **carte** (🗺️, tous les sites du protocole).
+- Pour chaque protocole, ouvrir sa **fiche** <img class="ico" src="Images/icones/ic_fiche.png" alt="fiche" height="20"> ou sa **carte** <img class="ico" src="Images/icones/ic_voir_carte.png" alt="voir sur la carte" height="20"> (tous les sites du protocole).
 - Accéder aux **données en attente d'envoi** (bandeau en haut quand il y en a).
 
 ---
@@ -182,8 +182,8 @@ Le même écran sert à tous les niveaux (protocole, site, point d'écoute…). 
 - **Voir les informations** de l'objet courant et la **liste de ses sous-objets** (regroupés par type).
 - **Descendre** dans un sous-objet (**Détails**).
 - **Voir sur la carte** (si l'objet a une géométrie).
-- **Créer une nouvelle visite / un passage / une observation** (bouton **+**), selon ce que le protocole autorise.
-- **Remonter** à n'importe quel niveau via le **fil d'Ariane** (le chemin cliquable en haut de l'écran : `Suivis › Protocole › Site › …`).
+- **Créer une nouvelle visite / un passage / une observation** <img class="ico" src="Images/icones/ic_ajouter.png" alt="créer" height="20">, selon ce que le protocole autorise.
+- **Remonter** à n'importe quel niveau via le **fil d'Ariane** (le chemin cliquable en haut de l'écran : `Monitoring › Protocole › Site › …`).
 
 ---
 
@@ -199,7 +199,7 @@ La carte qui montre la géométrie d'un site et de ses points.
 **Vous pouvez :**
 - **Voir le site et ses points** (points d'écoute, sous-objets…).
 - **Toucher un point** : un menu propose de **voir sa fiche** ou de **créer une nouvelle visite / un passage** sur ce point.
-- **Zoomer** (+/−), **changer le fond de carte**, **recentrer**.
+- **Zoomer** <img class="ico" src="Images/icones/ic_zoom_plus.png" alt="zoom avant" height="20"> <img class="ico" src="Images/icones/ic_zoom_moins.png" alt="zoom arrière" height="20">, **changer le fond de carte** <img class="ico" src="Images/icones/ic_fond.png" alt="fond de carte" height="20">, **recentrer** <img class="ico" src="Images/icones/ic_centrer.png" alt="centrer" height="20">.
 
 ---
 
@@ -215,7 +215,7 @@ Le formulaire de saisie d'un suivi. Son contenu dépend du protocole.
 **Vous pouvez :**
 - **Remplir les champs** définis par le protocole : texte, nombre, date, heure, cases à cocher, listes, et **espèce** (avec propositions et dictée vocale).
 - Les **champs obligatoires** sont marqués d'une étoile **\*** ; le bouton **Enregistrer** reste grisé tant qu'ils ne sont pas remplis.
-- **Ajouter une photo**.
+- **Ajouter une photo** <img class="ico" src="Images/icones/ic_photo.png" alt="ajouter une photo" height="20">.
 - **Enregistrer** (dans le téléphone). L'application propose ensuite d'**enchaîner** directement l'observation suivante.
 
 ---
@@ -234,9 +234,9 @@ Vos sorties OccTax enregistrées dans le téléphone (saisies multi et mono-taxo
 
 **Vous pouvez :**
 - **Voir vos sorties**, classées : *à envoyer*, *envoyées*, *importées*.
-- **Continuer une sortie** (la rouvrir pour la compléter).
-- **Envoyer une sortie** au serveur (flèche). Si la connexion coupe en cours d'envoi, la sortie reste en local : vous relancez plus tard.
-- **Supprimer une sortie**.
+- **Continuer une sortie** <img class="ico" src="Images/icones/ic_editer.png" alt="continuer" height="20"> (la rouvrir pour la compléter).
+- **Envoyer une sortie** au serveur <img class="ico" src="Images/icones/ic_envoyer.png" alt="envoyer" height="20">. Si la connexion coupe en cours d'envoi, la sortie reste en local : vous relancez plus tard.
+- **Supprimer une sortie** <img class="ico" src="Images/icones/ic_supprimer.png" alt="supprimer" height="20">.
 - **Ouvrir le détail** d'une sortie.
 
 ---
@@ -247,7 +247,7 @@ Le récapitulatif d'une sortie avant envoi.
 
 **Vous pouvez :**
 - **Voir la carte** (tracé + points) et la **liste des espèces**.
-- **Envoyer** la sortie au serveur.
+- **Envoyer** la sortie au serveur <img class="ico" src="Images/icones/ic_envoyer.png" alt="envoyer" height="20">.
 - **Exporter en GPX** un fichier partageable (mail, Drive…).
 
 ---
@@ -260,8 +260,8 @@ Vos saisies de suivi (visites, passages, observations) en attente d'envoi.
 
 **Vous pouvez :**
 - **Voir les saisies** en attente, regroupées par protocole, avec leur état (en attente, envoyée, en erreur).
-- **Envoyer un groupe** (une visite et ses observations) — l'envoi est toujours **manuel**, vous décidez quand.
-- **Modifier** ou **supprimer** une saisie.
+- **Envoyer un groupe** <img class="ico" src="Images/icones/ic_envoyer.png" alt="envoyer" height="20"> (une visite et ses observations) — l'envoi est toujours **manuel**, vous décidez quand.
+- **Modifier** <img class="ico" src="Images/icones/ic_editer.png" alt="modifier" height="20"> ou **supprimer** <img class="ico" src="Images/icones/ic_supprimer.png" alt="supprimer" height="20"> une saisie.
 - **Réessayer** une saisie en erreur.
 
 ---
@@ -275,7 +275,7 @@ Pour visualiser les observations déjà présentes sur le serveur.
 **Vous pouvez :**
 - **Voir sur la carte** les observations de la **synthèse** GeoNature (de la dernière année).
 - **Filtrer par groupe d'espèces** (bandeau d'icônes en haut).
-- **Zoomer** (+/−), **changer le fond de carte**, **vous recentrer**.
+- **Zoomer** <img class="ico" src="Images/icones/ic_zoom_plus.png" alt="zoom avant" height="20"> <img class="ico" src="Images/icones/ic_zoom_moins.png" alt="zoom arrière" height="20">, **changer le fond de carte** <img class="ico" src="Images/icones/ic_fond.png" alt="fond de carte" height="20">, **vous recentrer** <img class="ico" src="Images/icones/ic_centrer.png" alt="centrer" height="20">.
 - Voir le **nombre d'observations** affichées (en bas).
 
 ---
@@ -287,8 +287,8 @@ Pour préparer le terrain quand il n'y aura pas de réseau.
 <p align="center"><img src="Images/maps_manager_1.jpg" alt="Gestion des cartes hors-ligne" width="240"></p>
 
 **Vous pouvez :**
-- **Choisir une zone** sur la carte, ou **cadrer automatiquement** sur les sites d'un protocole.
-- **Choisir le fond de carte** et le **niveau de zoom** à télécharger.
+- **Choisir une zone** sur la carte, ou **cadrer automatiquement l'emprise sur un protocole** via le bouton <img class="ico" src="Images/icones/ic_emprise.png" alt="emprise par protocole" height="20"> (en bas à droite) : la carte se cale sur l'étendue des sites de ce protocole.
+- **Choisir le fond de carte** <img class="ico" src="Images/icones/ic_fond.png" alt="fond de carte" height="20"> et le **niveau de zoom** à télécharger.
 - **Télécharger** les cartes pour les consulter ensuite sans réseau.
 - **Voir l'espace utilisé** et **vider** le cache des cartes.
 

@@ -169,6 +169,13 @@ class TraceViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /** Persiste IMMÉDIATEMENT la sortie en cours (observations + trace) dans le store.
+     *  Appelée quand on QUITTE le flux de saisie sans passer par « Terminer » (ex. retour
+     *  à l'accueil via le fil d'Ariane) : sans ça, la trace accumulée depuis le dernier ajout
+     *  d'observation — voire une trace sans aucune observation — serait perdue. Le store
+     *  garde la sortie même si le VM est ensuite réinitialisé au prochain démarrage de saisie. */
+    fun sauvegarderBrouillon() = persisterBrouillon()
+
     fun reinitialiser() {
         _observations.value = mutableListOf()
         locationTracker.reinitialiser()

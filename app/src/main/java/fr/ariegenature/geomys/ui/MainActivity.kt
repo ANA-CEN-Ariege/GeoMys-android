@@ -24,14 +24,21 @@ import android.os.Build
 import android.os.Bundle
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.ViewModelProvider
 import androidx.navigation.NavController
 import androidx.navigation.fragment.NavHostFragment
+import fr.ariegenature.geomys.GeoMysApplication
 import fr.ariegenature.geomys.R
 import fr.ariegenature.geomys.location.LocationForegroundService
 import org.osmdroid.config.Configuration
 
 class MainActivity : AppCompatActivity() {
     private lateinit var navController: NavController
+
+    /** Vrai tant que la destination courante appartient au flux de saisie. Sert à ne couper
+     *  le tracé GPS que sur une VRAIE transition saisie → hors-saisie (et pas sur une simple
+     *  recréation d'Activity qui restaure une destination de saisie). */
+    private var dansFluxSaisie = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
@@ -49,6 +56,27 @@ class MainActivity : AppCompatActivity() {
         val navHostFragment = supportFragmentManager
             .findFragmentById(R.id.nav_host_fragment) as NavHostFragment
         navController = navHostFragment.navController
+
+        // Tracé GPS : le service de premier plan doit SURVIVRE à la mise en arrière-plan /
+        // veille tant qu'on reste dans le flux de saisie, mais s'ARRÊTER dès qu'on navigue
+        // hors de ce flux DANS l'appli (retour accueil, Mes saisies, Explorer, monitoring…).
+        // On se base sur la NAVIGATION (et non sur le cycle de vie de l'Activity, qui se
+        // déclencherait aussi en arrière-plan) ; et seulement sur une vraie TRANSITION
+        // saisie → hors-saisie, pour qu'une recréation d'Activity ne coupe pas le tracé.
+        navController.addOnDestinationChangedListener { _, destination, _ ->
+            val dansSaisie = destination.id in DESTINATIONS_SAISIE
+            if (dansFluxSaisie && !dansSaisie) {
+                // On quitte le flux de saisie DANS l'appli (≠ arrière-plan / veille) :
+                //  1) persister la sortie en cours AVEC sa trace — sinon la trace accumulée
+                //     depuis le dernier ajout d'observation (ou une trace sans observation)
+                //     serait perdue, puisqu'on ne passe pas par « Terminer » ;
+                //  2) puis couper le tracé GPS et le service de premier plan.
+                ViewModelProvider(this)[TraceViewModel::class.java].sauvegarderBrouillon()
+                (application as GeoMysApplication).locationTracker.arreterParcours()
+                LocationForegroundService.stop(this)
+            }
+            dansFluxSaisie = dansSaisie
+        }
     }
 
     override fun onSupportNavigateUp(): Boolean {
@@ -75,5 +103,22 @@ class MainActivity : AppCompatActivity() {
             createNotificationChannel(channel)
             createNotificationChannel(canalSync)
         }
+    }
+
+    companion object {
+        /** Destinations du flux de saisie où le tracé GPS reste actif (y compris app en
+         *  arrière-plan / écran éteint). Naviguer vers toute AUTRE destination dans l'appli
+         *  arrête le service de localisation. Couvre multi-taxons ET mono-taxon (qui utilisent
+         *  tous deux le service), plus leurs sous-écrans (caractérisation, dénombrement,
+         *  détails du relevé, observations). */
+        private val DESTINATIONS_SAISIE = setOf(
+            R.id.traceFragment,
+            R.id.saisieObservationFragment,
+            R.id.saisieRapideFragment,
+            R.id.caracterisationFragment,
+            R.id.denombrementFragment,
+            R.id.detailsReleveFragment,
+            R.id.observationsFragment,
+        )
     }
 }

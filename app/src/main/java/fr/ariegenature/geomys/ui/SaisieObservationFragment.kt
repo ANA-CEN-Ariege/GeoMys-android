@@ -350,7 +350,11 @@ class SaisieObservationFragment : Fragment() {
         // Map cdNom → entrée TaxRef construite une seule fois (pas par ligne) pour résoudre
         // le nom scientifique à afficher sous le nom français.
         val parCdNom = TaxRefCache.entreesParCdNom()
-        pendingObs.forEachIndexed { index, obs ->
+        // Affichage : la DERNIÈRE espèce saisie apparaît en TÊTE de liste. On parcourt
+        // `pendingObs` à l'envers ; l'ordre interne (et donc les index utilisés par les
+        // handlers, la persistance et l'envoi) reste inchangé — seul le rendu est inversé.
+        for (index in pendingObs.indices.reversed()) {
+            val obs = pendingObs[index]
             val row = inflater.inflate(R.layout.item_pending_obs, binding.llPendingObs, false)
             val tvEspece = row.findViewById<TextView>(R.id.tv_espece)
             tvEspece.text = obs.espece

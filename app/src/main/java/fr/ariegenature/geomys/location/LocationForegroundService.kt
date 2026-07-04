@@ -72,7 +72,14 @@ class LocationForegroundService : Service() {
         tracker.demarrer()
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
+    // START_NOT_STICKY : si Android tue le process pendant une saisie, il ne doit PAS
+    // recréer le service SEUL — le système le relançait avec un GPS actif en continu et une
+    // notification « en attente » alors qu'aucune saisie n'existait plus (le ViewModel est
+    // perdu avec le process, et MainActivity ne stoppe le service que sur une TRANSITION
+    // saisie→hors-saisie qui ne se produit jamais après redémarrage) : drain batterie
+    // silencieux sur le terrain. Les écrans de saisie redémarrent le service à chaque
+    // entrée ; les données, elles, sont déjà protégées par l'auto-save au fil de l'eau.
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_NOT_STICKY
 
     override fun onDestroy() {
         super.onDestroy()

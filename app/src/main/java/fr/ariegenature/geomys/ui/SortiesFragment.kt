@@ -89,7 +89,7 @@ class SortiesFragment : Fragment() {
         adapter = SortieAdapter(
             onClick = { sortie ->
                 val bundle = Bundle().apply { putString("sortieId", sortie.id) }
-                findNavController().navigate(R.id.action_sorties_to_detail, bundle)
+                findNavController().naviguerSur(R.id.action_sorties_to_detail, bundle)
             },
             onDelete = { sortie ->
                 confirmerSuppression(sortie)
@@ -99,7 +99,7 @@ class SortiesFragment : Fragment() {
                 // éditée dans cette session (sinon la carte se centrerait sur le GPS).
                 traceViewModel.forcerRepriseAuProchainEcran()
                 val bundle = Bundle().apply { putString("sortieId", sortie.id) }
-                findNavController().navigate(R.id.action_sorties_to_trace, bundle)
+                findNavController().naviguerSur(R.id.action_sorties_to_trace, bundle)
             },
             onEnvoyer = { sortie -> envoyerSortie(sortie) },
         )

@@ -54,7 +54,7 @@ class SuivisFragment : Fragment() {
         gnConfig = GeoNatureConfig(requireContext())
 
         binding.btnSaisiesAttente.setOnClickListener {
-            findNavController().navigate(fr.ariegenature.geomys.R.id.action_suivis_to_attente)
+            findNavController().naviguerSur(fr.ariegenature.geomys.R.id.action_suivis_to_attente)
         }
 
         chargerModules()
@@ -130,13 +130,13 @@ class SuivisFragment : Fragment() {
                 if (emoji != null) { tvPicto.text = emoji; tvPicto.visibility = View.VISIBLE }
             }
             row.findViewById<ImageButton>(R.id.btn_info).setOnClickListener {
-                findNavController().navigate(
+                findNavController().naviguerSur(
                     R.id.action_suivis_to_detail,
                     bundleOf("moduleCode" to m.moduleCode)
                 )
             }
             row.findViewById<ImageButton>(R.id.btn_carte).setOnClickListener {
-                findNavController().navigate(
+                findNavController().naviguerSur(
                     R.id.action_suivis_to_carte,
                     bundleOf(
                         "moduleCode" to m.moduleCode,

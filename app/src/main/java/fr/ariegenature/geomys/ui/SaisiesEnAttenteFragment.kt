@@ -65,6 +65,7 @@ class SaisiesEnAttenteFragment : Fragment() {
     }
 
     private fun rafraichir() {
+        if (_binding == null) return // appelable depuis le callback de progression (cf. lancerEnvoiGroupe)
         val toutes = OutboxMonitoring.tout()
         val enAttente = toutes.count { it.etat == SaisieEnAttente.Etat.PENDING || it.etat == SaisieEnAttente.Etat.ERROR }
         val envoyees = toutes.count { it.etat == SaisieEnAttente.Etat.SENT }
@@ -431,7 +432,7 @@ class SaisiesEnAttenteFragment : Fragment() {
      *  fragment va récupérer les autres meta (parent serveur, type, etc.) directement
      *  depuis [OutboxMonitoring] via l'editUuid — pas besoin de tout passer ici. */
     private fun ouvrirEdition(s: SaisieEnAttente) {
-        findNavController().navigate(
+        findNavController().naviguerSur(
             fr.ariegenature.geomys.R.id.action_attente_to_edition,
             androidx.core.os.bundleOf(
                 "editUuid" to s.uuid,
@@ -554,11 +555,15 @@ class SaisiesEnAttenteFragment : Fragment() {
         viewLifecycleOwner.lifecycleScope.launch {
             val res = OutboxEnvoi.envoyerGroupe(config, uuidRacine) { envoyees, total, msg ->
                 activity?.runOnUiThread {
-                    binding.tvMessageEnvoi.text = "Envoi $envoyees/$total · $msg".trim().trimEnd('·', ' ')
+                    // Le callback vient du bloc Dispatchers.IO d'OutboxEnvoi : il peut être
+                    // posté juste avant l'annulation et s'exécuter APRÈS onDestroyView
+                    // (_binding = null) si l'utilisateur quitte l'écran pendant l'envoi.
+                    val b = _binding ?: return@runOnUiThread
+                    b.tvMessageEnvoi.text = "Envoi $envoyees/$total · $msg".trim().trimEnd('·', ' ')
                     rafraichir()
                 }
             }
-            if (!isAdded) return@launch
+            if (!isAdded || _binding == null) return@launch
             binding.progressEnvoi.visibility = View.GONE
             val recap = buildString {
                 append("Envoi du groupe terminé · ${res.succes} succès, ${res.echecs} échec(s)")

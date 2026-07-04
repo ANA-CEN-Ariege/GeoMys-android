@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Override du source set DEBUG uniquement : le nom affiché sous l'icône distingue un APK
+     de test d'une release installée (même icône, même applicationId — seul le label change).
+     Les builds release gardent le « GeoMys » de src/main. -->
+<resources>
+    <string name="app_name">GeoMys debug</string>
+</resources>

@@ -105,7 +105,13 @@ object MapTileCache {
             var octetsLiberes = 0L
 
             cacheDir.walkTopDown()
-                .filter { it.isFile && it.lastModified() < limite }
+                // ⚠ Exclut la base SQLite d'osmdroid (cache.db + journaux -wal/-shm/-journal) :
+                // elle contient les zones TÉLÉCHARGÉES pour le hors-ligne, et sa simple
+                // consultation ne rafraîchit pas son mtime — la purge par âge supprimait toute
+                // la cartographie offline d'un naturaliste qui n'avait rien re-téléchargé
+                // depuis 30 jours. Sa taille est déjà bornée par la LRU osmdroid (1 Go/800 Mo),
+                // même filtre que viderCache().
+                .filter { it.isFile && it.lastModified() < limite && !it.name.contains(".db") }
                 .forEach { fichier ->
                     octetsLiberes += fichier.length()
                     if (fichier.delete()) nbPurgees++

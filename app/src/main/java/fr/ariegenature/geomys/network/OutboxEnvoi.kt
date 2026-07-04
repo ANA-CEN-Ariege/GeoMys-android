@@ -175,8 +175,24 @@ object OutboxEnvoi {
                         }
                         // Parent encore PENDING/SENDING : repris quand il passera en SENT.
                         parent.etat != SaisieEnAttente.Etat.SENT -> continue
-                        parent.idServeur != null -> OutboxMonitoring.mettreAJour(saisie.uuid) {
+                        (parent.idServeur ?: 0) > 0 -> OutboxMonitoring.mettreAJour(saisie.uuid) {
                             it.copy(parentIdServeur = parent.idServeur)
+                        }
+                        else -> {
+                            // Parent SENT mais id serveur inconnu/illisible (réponse du POST
+                            // perdue ou non parsable) : sans FK, l'enfant partirait ORPHELIN
+                            // côté GeoNature (la garde parentId > 0 d'envoyerVisite omettrait
+                            // le champ) ou en 500. ERROR explicite plutôt qu'un envoi bancal ;
+                            // un « Réessayer » retentera la récupération de l'id par uuid.
+                            OutboxMonitoring.mettreAJour(saisie.uuid) {
+                                it.copy(etat = SaisieEnAttente.Etat.ERROR,
+                                    messageErreur = "id serveur du parent inconnu — réessayez")
+                            }
+                            echecs++
+                            envoyees++
+                            messages.add("⚠ ${saisie.objectType} : id serveur du parent inconnu")
+                            progression(envoyees, total, "")
+                            continue
                         }
                     }
                 }
@@ -295,7 +311,29 @@ object OutboxEnvoi {
             var doublonPossible = false
             if (s.objetCree) {
                 // Objet déjà créé lors d'une tentative précédente — médias seulement.
-                idServeur = s.idServeur ?: 0
+                // Si l'id serveur est INCONNU (réponse du POST illisible à l'époque), on tente
+                // de le récupérer par l'uuid client : sans lui, les enfants partiraient sans FK.
+                val idConnu = (s.idServeur ?: 0).takeIf { it > 0 }
+                val idRecupere = if (idConnu == null && s.uuidPayload != null &&
+                    s.uuidFieldName != null && s.parentObjectType != null &&
+                    (s.parentIdServeur ?: 0) > 0
+                ) {
+                    MonitoringApi.chercherEnfantParUuid(
+                        config = config,
+                        moduleCode = s.moduleCode,
+                        parentObjectType = s.parentObjectType,
+                        parentId = s.parentIdServeur!!,
+                        childObjectType = s.objectType,
+                        uuidFieldName = s.uuidFieldName,
+                        uuid = s.uuidPayload,
+                    )?.takeIf { it > 0 }
+                } else null
+                if (idRecupere != null) {
+                    OutboxMonitoring.mettreAJour(s.uuid) { it.copy(idServeur = idRecupere) }
+                }
+                idServeur = idConnu ?: idRecupere ?: return Result.failure(
+                    GNErreur.EnvoiEchoue(0, "objet créé côté serveur mais id inconnu — " +
+                        "réessayez (récupération par uuid) ; ses enfants ne peuvent pas partir sans lui"))
             } else {
                 // Anti-doublon : une saisie DÉJÀ tentée sans confirmation (réponse perdue en
                 // pleine coupure) peut exister côté serveur. Si elle porte un uuid client et
@@ -314,6 +352,13 @@ object OutboxEnvoi {
                         uuid = s.uuidPayload,
                     )
                 } else null
+                if (idExistant != null && idExistant <= 0) {
+                    // Objet retrouvé côté serveur mais id illisible : pas de re-POST (doublon)
+                    // ET pas de succès (les enfants partiraient sans FK) — échec explicite.
+                    OutboxMonitoring.mettreAJour(s.uuid) { it.copy(objetCree = true) }
+                    return Result.failure(GNErreur.EnvoiEchoue(0,
+                        "objet déjà créé côté serveur mais id illisible — réessayez"))
+                }
                 if (idExistant != null) {
                     android.util.Log.i("OutboxEnvoi",
                         "Anti-doublon : ${s.objectType} ${s.uuidPayload} déjà créé côté serveur (#$idExistant) — pas de re-POST")
@@ -344,7 +389,25 @@ object OutboxEnvoi {
                         uuidClient = s.uuidPayload,
                         uuidFieldName = s.uuidFieldName,
                     )
-                    idServeur = resVisite.getOrElse { return Result.failure(it) }
+                    val idRecu = resVisite.getOrElse {
+                        // L'annulation de la coroutine (sortie d'écran pendant l'envoi) est
+                        // capturée par le runCatching d'envoyerVisite : la re-lever ici évite
+                        // de marquer ERROR des saisies simplement interrompues (elles restent
+                        // SENDING et seront requalifiées proprement au prochain envoi).
+                        if (it is kotlinx.coroutines.CancellationException) throw it
+                        return Result.failure(it)
+                    }
+                    if (idRecu <= 0) {
+                        // POST 2xx mais id illisible dans la réponse : l'objet EXISTE côté
+                        // serveur. objetCree est posé pour interdire tout re-POST (doublon),
+                        // mais l'envoi reste un ÉCHEC — retourner id 0 en « succès » faisait
+                        // partir les enfants sans FK (orphelins/500). Au prochain essai, la
+                        // branche objetCree ci-dessus récupérera l'id par l'uuid client.
+                        OutboxMonitoring.mettreAJour(s.uuid) { it.copy(objetCree = true) }
+                        return Result.failure(GNErreur.EnvoiEchoue(0,
+                            "objet créé mais id serveur illisible — réessayez (récupération par uuid)"))
+                    }
+                    idServeur = idRecu
                     // Marque « créé côté serveur » IMMÉDIATEMENT (avant l'upload des médias) :
                     // si l'app meurt ou si les médias échouent, on sait qu'il ne faut plus
                     // re-POSTer cet objet.
@@ -373,6 +436,10 @@ object OutboxEnvoi {
                 }
             }
             Result.success(EnvoiUne(idServeur, erreurMedia, doublonPossible))
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            // Jamais avalée : une rotation/sortie d'écran pendant l'envoi annulait le scope et
+            // marquait ERROR (« Erreur réseau : …cancelled ») toutes les saisies restantes.
+            throw e
         } catch (e: Exception) {
             Result.failure(e)
         }

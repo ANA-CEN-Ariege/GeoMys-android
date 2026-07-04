@@ -90,7 +90,7 @@ class DetailsReleveFragment : Fragment() {
             // deviennent le défaut de session de SaisieRapideFragment, commun à toutes les obs.
             if (args?.getBoolean("mono", false) == true) {
                 val bundleMono = Bundle().apply { putString("addReleveJson", Gson().toJson(valeurs)) }
-                findNavController().navigate(R.id.action_details_releve_to_saisie_rapide, bundleMono, navOpts)
+                findNavController().naviguerSur(R.id.action_details_releve_to_saisie_rapide, bundleMono, navOpts)
                 return@setOnClickListener
             }
             // Multi-taxons : transmet les valeurs + GPS + géométrie reçus à SaisieObservationFragment.
@@ -101,7 +101,7 @@ class DetailsReleveFragment : Fragment() {
                 args?.getString("geometryType")?.let { putString("geometryType", it) }
                 args?.getString("geometryCoordsJson")?.let { putString("geometryCoordsJson", it) }
             }
-            findNavController().navigate(R.id.action_details_releve_to_saisie, bundleSuite, navOpts)
+            findNavController().naviguerSur(R.id.action_details_releve_to_saisie, bundleSuite, navOpts)
         }
     }
 

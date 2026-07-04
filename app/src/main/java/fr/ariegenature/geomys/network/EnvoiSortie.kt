@@ -38,26 +38,59 @@ suspend fun envoyerSortieVersGeoNature(
 ): ResultatEnvoiSortie {
     return try {
         val res = GeoNatureUpload.envoyer(sortie, config)
-        sortieStore.marquerEnvoyee(sortie.id)
-        val msg = buildString {
-            append("${res.nbCrees}/${res.nbTotal} relevé")
-            if (res.nbTotal > 1) append("s")
-            append(" créé")
-            if (res.nbCrees > 1) append("s")
-            append(" sur GeoNature")
-            res.premierIdReleve?.let { append("\nPremier id_releve_occtax : $it") }
-            if (res.mediasOK > 0) append("\n${res.mediasOK} média(s) uploadé(s)")
-            if (res.mediasKO > 0) {
-                append("\n⚠ ${res.mediasKO} média(s) échoué(s)")
-                res.mediaErreurMsg?.let { append(" : $it") }
-            }
-            if (res.relevesOrphelins.isNotEmpty()) {
-                append("\n⚠ ${res.relevesOrphelins.size} relevé(s) vide(s) côté GeoNature ")
-                append("(id : ${res.relevesOrphelins.joinToString(", ")}) — ")
-                append("suppression retentée automatiquement au prochain envoi.")
-            }
+        // L'ACQUIS d'abord : les occurrences créées pendant cet envoi sont marquées AVANT tout
+        // autre traitement — même si la suite échoue, un ré-envoi ne les re-postera pas.
+        if (res.obsCreesIds.isNotEmpty()) {
+            sortieStore.marquerObservationsEnvoyees(sortie.id, res.obsCreesIds)
         }
-        ResultatEnvoiSortie(true, msg)
+        if (res.nbCrees == res.nbTotal) {
+            // Envoi COMPLET (nbTotal == 0 : tout avait déjà été transmis lors d'un envoi
+            // partiel précédent — on clôture simplement).
+            sortieStore.marquerEnvoyee(sortie.id)
+            val msg = buildString {
+                if (res.nbTotal == 0) {
+                    append("Toutes les observations avaient déjà été transmises — sortie marquée envoyée.")
+                } else {
+                    append("${res.nbCrees}/${res.nbTotal} relevé")
+                    if (res.nbTotal > 1) append("s")
+                    append(" créé")
+                    if (res.nbCrees > 1) append("s")
+                    append(" sur GeoNature")
+                    if (res.nbDejaEnvoyees > 0) {
+                        append(" (+ ${res.nbDejaEnvoyees} déjà transmis précédemment)")
+                    }
+                }
+                res.premierIdReleve?.let { append("\nPremier id_releve_occtax : $it") }
+                if (res.mediasOK > 0) append("\n${res.mediasOK} média(s) uploadé(s)")
+                if (res.mediasKO > 0) {
+                    // Ici, seuls des échecs média LOCAUX (fichier disparu) : un échec réseau
+                    // aurait retenu l'observation entière (envoi partiel, branche ci-dessous).
+                    append("\n⚠ ${res.mediasKO} média(s) introuvable(s) sur l'appareil — envoyé(s) sans photo")
+                    res.mediaErreurMsg?.let { append(" : $it") }
+                }
+                if (res.relevesOrphelins.isNotEmpty()) {
+                    append("\n⚠ ${res.relevesOrphelins.size} relevé(s) vide(s) côté GeoNature ")
+                    append("(id : ${res.relevesOrphelins.joinToString(", ")}) — ")
+                    append("suppression retentée automatiquement au prochain envoi.")
+                }
+            }
+            ResultatEnvoiSortie(true, msg)
+        } else {
+            // Envoi PARTIEL (réseau tombé entre deux groupes, photo non transmise…) : la sortie
+            // N'EST PAS marquée envoyée — elle reste visible et ré-envoyable dans « Mes
+            // saisies », et seules les obs restantes partiront au prochain essai (les créées
+            // sont marquées ci-dessus). Avant ce garde, UNE seule occurrence créée suffisait à
+            // verrouiller toute la sortie : les observations restantes étaient perdues.
+            val total = res.nbTotal + res.nbDejaEnvoyees
+            val transmises = res.nbCrees + res.nbDejaEnvoyees
+            val msg = buildString {
+                append("Envoi partiel : $transmises/$total observation(s) transmise(s)")
+                res.messageDerniereErreur?.let { append("\nDernière erreur : $it") }
+                append("\n→ Ré-envoyez la sortie : seules les observations restantes partiront.")
+            }
+            sortieStore.marquerErreurEnvoi(sortie.id, msg)
+            ResultatEnvoiSortie(false, msg)
+        }
     } catch (e: kotlinx.coroutines.CancellationException) {
         throw e
     } catch (e: Exception) {

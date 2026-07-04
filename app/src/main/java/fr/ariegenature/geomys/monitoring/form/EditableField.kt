@@ -114,4 +114,10 @@ data class EditableField(
      *  est inutile, on auto-sélectionne et on masque. [lireValeurs] collecte quand même la
      *  valeur (il itère toutes les vues, pas seulement les visibles). */
     val masque: Boolean = false,
+    /** NUMBER uniquement : true si le widget serveur accepte les décimaux (`number`, `float`,
+     *  `decimal` — par opposition à `integer`). Pilote le clavier (TYPE_NUMBER_FLAG_DECIMAL).
+     *  Sans ce flag, une mesure décimale (température, pH, recouvrement — RHOMEO…) était
+     *  IMPOSSIBLE à taper, et une valeur décimale posée par une règle `change` était relue
+     *  null par lireValeurs → perdue en silence dans le payload. */
+    val decimal: Boolean = false,
 )

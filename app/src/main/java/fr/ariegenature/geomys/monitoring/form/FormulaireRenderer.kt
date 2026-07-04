@@ -118,6 +118,20 @@ class FormulaireRenderer(
     private var valeursAuRendu: Map<String, String> = emptyMap()
     private val dernieresValeursAuto = mutableMapOf<String, String>()
 
+    /** Codes des champs pré-remplis depuis une saisie EXISTANTE (mode édition) : dirty
+     *  d'emblée. Le drapeau dirty n'est pas persisté entre sessions — au re-rendu d'édition,
+     *  valeursAuRendu est photographié APRÈS le pré-remplissage, donc tout champ redémarrait
+     *  « non touché » et les patchs `change` gardés par `!dirty` recalculaient et ÉCRASAIENT
+     *  la personnalisation dès l'ouverture (ex. base_site_name concaténé des scripts flore).
+     *  À poser AVANT [rendre] ; vidé par le caller pour un formulaire de création. */
+    private var champsDirtyInitiaux: Set<String> = emptySet()
+
+    /** Déclare les champs porteurs d'une valeur SAUVEGARDÉE (mode édition) — cf.
+     *  [champsDirtyInitiaux]. Passer un set vide en création. */
+    fun marquerDirtyInitiaux(codes: Set<String>) {
+        champsDirtyInitiaux = codes
+    }
+
     fun rendre(fields: List<EditableField>) {
         parent.removeAllViews()
         vuesParCode.clear()
@@ -386,9 +400,10 @@ class FormulaireRenderer(
         val valeurs = lireValeurs().toMutableMap()
         fieldsParCode.forEach { (code, field) ->
             // Drapeau « modifié par l'utilisateur » (cf. valeursAuRendu/dernieresValeursAuto).
+            // Un champ pré-rempli depuis une saisie existante est dirty d'office (édition).
             val courantStr = valeurs[code]?.toString() ?: ""
             val reference = dernieresValeursAuto[code] ?: valeursAuRendu[code] ?: ""
-            valeurs["${code}__dirty"] = courantStr != reference
+            valeurs["${code}__dirty"] = code in champsDirtyInitiaux || courantStr != reference
             // cd_nomenclature de l'option sélectionnée (datalists nomenclature).
             val courant = courantStr.takeIf { it.isNotEmpty() } ?: return@forEach
             field.values.firstOrNull { it.value == courant }?.cdNomenclature
@@ -400,14 +415,19 @@ class FormulaireRenderer(
 
     /** Lit la valeur courante de chaque champ. Renvoie une Map code → valeur typée :
      *  - TEXT / TEXTAREA → String (vide si non rempli)
-     *  - NUMBER → Int? (null si non parsable)
+     *  - NUMBER → Int? pour une valeur entière, Double? pour une décimale (null si non parsable)
      *  - DATE → String "YYYY-MM-DD" ou ""
      *  - SELECT → String (valeur technique de l'option, "" si rien) */
     fun lireValeurs(): Map<String, Any?> = vuesParCode.mapValues { (code, v) ->
         val field = fieldsParCode[code] ?: return@mapValues null
         when (field.viewType) {
             ViewType.TEXT, ViewType.TEXTAREA -> (v as EditText).text.toString()
-            ViewType.NUMBER -> (v as EditText).text.toString().toIntOrNull()
+            // Int d'abord (les entiers restent des entiers dans le payload), Double sinon.
+            // "12.5" passait par toIntOrNull() seul → null : valeur décimale saisie, collée
+            // ou posée par une règle `change` silencieusement PERDUE à l'envoi. La virgule
+            // (séparateur des claviers français) est acceptée comme le point.
+            ViewType.NUMBER -> (v as EditText).text.toString().replace(',', '.')
+                .let { it.toIntOrNull() ?: it.toDoubleOrNull() }
             ViewType.DATE -> (v as TextView).tag as? String ?: ""
             ViewType.TIME -> (v as TextView).tag as? String ?: ""
             ViewType.DATETIME -> (v as TextView).tag as? String ?: ""
@@ -485,7 +505,10 @@ class FormulaireRenderer(
             )
             ViewType.NUMBER -> creerEditText(
                 field,
-                InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_SIGNED,
+                // FLAG_DECIMAL indispensable pour les widgets number/float/decimal : sans lui
+                // le clavier numérique n'offre AUCUN séparateur décimal (cf. EditableField.decimal).
+                InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_SIGNED or
+                    (if (field.decimal) InputType.TYPE_NUMBER_FLAG_DECIMAL else 0),
             )
             ViewType.DATE -> creerChampDate(field)
             ViewType.TIME -> creerChampTime(field)
@@ -722,13 +745,20 @@ class FormulaireRenderer(
             )
             threshold = 2
             setHint("Tapez le nom du taxon…")
-            // Pré-remplissage si field.value est un cd_nom déjà connu (édition future).
+            // Pré-remplissage si field.value est un cd_nom déjà connu (édition).
             (field.value as? Int)?.takeIf { it > 0 }?.let { cd ->
                 val entry = fr.ariegenature.geomys.store.TaxRefCache.entreesParCdNom()[cd]
                 if (entry != null) {
                     setText(entry.nomFrOriginal ?: entry.sciNom, false)
-                    tag = cd
+                } else {
+                    // cd_nom sauvé mais absent du cache local (référentiel re-synchronisé sur
+                    // une autre liste, cache allégé…). Le tag est posé QUAND MÊME : sans lui,
+                    // « Enregistrer les modifications » remplaçait silencieusement le cd_nom
+                    // sauvé par null. Affichage brut faute de nom (l'utilisateur peut le
+                    // remplacer en tapant, ce qui re-résout normalement).
+                    setText("cd_nom $cd", false)
                 }
+                tag = cd
             }
             (field.value as? String)?.takeIf { it.isNotEmpty() }?.let { setText(it, false) }
         }
@@ -789,8 +819,19 @@ class FormulaireRenderer(
                 val saisi = s?.toString().orEmpty()
                 val resolu = fr.ariegenature.geomys.store.TaxRefCache.get(saisi)?.cdNom
                 if (resolu != ac.tag) ac.tag = resolu
+                // La résolution a abouti → efface l'éventuel signalement posé au blur.
+                if (resolu != null) ac.error = null
             }
         })
+        // Signalement VISIBLE au blur si le texte affiché ne résout aucun taxon : l'utilisateur
+        // voyait un nom écrit et croyait l'espèce saisie, alors que lireValeurs renvoyait null
+        // (payload sans cd_nom, silencieusement si le champ n'est pas requis). Au blur et non à
+        // la frappe : pendant la saisie, un texte partiel non résolu est l'état normal.
+        ac.setOnFocusChangeListener { _, aLeFocus ->
+            if (!aLeFocus && ac.text?.isNotEmpty() == true && ac.tag == null) {
+                ac.error = "Espèce non reconnue — choisissez une suggestion"
+            }
+        }
         return ac
     }
 

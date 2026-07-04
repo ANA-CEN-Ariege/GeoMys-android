@@ -375,7 +375,7 @@ class FicheObjetFragment : Fragment() {
                     layoutParams = LinearLayout.LayoutParams((40 * density).toInt(), (40 * density).toInt())
                     setOnClickListener {
                         if (e.id > 0) {
-                            findNavController().navigate(
+                            findNavController().naviguerSur(
                                 R.id.action_fiche_to_fiche,
                                 bundleOf(
                                     "moduleCode" to objet.moduleCode,
@@ -397,7 +397,7 @@ class FicheObjetFragment : Fragment() {
                     layoutParams = LinearLayout.LayoutParams((40 * density).toInt(), (40 * density).toInt())
                     setOnClickListener {
                         if (e.id > 0) {
-                            findNavController().navigate(
+                            findNavController().naviguerSur(
                                 R.id.action_fiche_to_carte,
                                 bundleOf(
                                     "moduleCode" to objet.moduleCode,
@@ -427,7 +427,7 @@ class FicheObjetFragment : Fragment() {
                     layoutParams = LinearLayout.LayoutParams((40 * density).toInt(), (40 * density).toInt())
                     setOnClickListener {
                         if (e.id > 0) {
-                            findNavController().navigate(
+                            findNavController().naviguerSur(
                                 R.id.action_fiche_to_nouvelle_visite,
                                 bundleOf(
                                     "moduleCode" to objet.moduleCode,
@@ -540,7 +540,7 @@ class FicheObjetFragment : Fragment() {
                     (40 * density).toInt(), (40 * density).toInt(),
                 )
                 setOnClickListener {
-                    findNavController().navigate(
+                    findNavController().naviguerSur(
                         R.id.action_fiche_to_nouvelle_visite,
                         bundleOf(
                             "moduleCode" to objet.moduleCode,
@@ -647,7 +647,7 @@ class FicheObjetFragment : Fragment() {
                     .libelleNouveau(objet.moduleCode, typeSaisieEnfant)
                 layoutParams = LinearLayout.LayoutParams((40 * density).toInt(), (40 * density).toInt())
                 setOnClickListener {
-                    findNavController().navigate(
+                    findNavController().naviguerSur(
                         R.id.action_fiche_to_nouvelle_visite,
                         bundleOf(
                             "moduleCode" to objet.moduleCode,

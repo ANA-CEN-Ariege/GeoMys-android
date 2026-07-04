@@ -743,7 +743,7 @@ class ConfigGeoNatureFragment : Fragment() {
             .setTitle(titre)
             .setItems(items) { _, which ->
                 val id = lignes[which].key
-                findNavController().navigate(
+                findNavController().naviguerSur(
                     R.id.action_config_to_taxons,
                     Bundle().apply {
                         putInt("idListe", id)

@@ -187,10 +187,27 @@ class DenombrementFragment : Fragment() {
         return binding.root
     }
 
+    /** Survie de l'état de capture photo à la mort du process (cf. restauration dans
+     *  onViewCreated). Les items eux-mêmes reviennent par les arguments du fragment. */
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        captureUri?.let { outState.putString("captureUriStr", it.toString()) }
+        captureFichier?.let { outState.putString("captureFichierPath", it.absolutePath) }
+        outState.putInt("pickMediaTargetIndex", pickMediaTargetIndex)
+    }
+
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         binding.root.applySystemBarInsets(includeIme = true)
         appliquerBandeauNavigation(binding.bandeauSaisie.root, findNavController(), traceViewModel.typeSaisieLabel)
+
+        // Mort du process derrière l'appli appareil photo : sans restauration, captureUri
+        // revenait null au retour de TakePicture et la photo pourtant écrite était jetée.
+        if (savedInstanceState != null) {
+            savedInstanceState.getString("captureUriStr")?.let { captureUri = Uri.parse(it) }
+            savedInstanceState.getString("captureFichierPath")?.let { captureFichier = File(it) }
+            pickMediaTargetIndex = savedInstanceState.getInt("pickMediaTargetIndex", -1)
+        }
 
         val a = arguments
         taxon = runCatching { Taxon.valueOf(a?.getString("taxon") ?: "") }.getOrDefault(Taxon.OISEAU)

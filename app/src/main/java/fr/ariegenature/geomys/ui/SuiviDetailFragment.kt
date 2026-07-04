@@ -347,7 +347,7 @@ class SuiviDetailFragment : Fragment() {
                     layoutParams = LinearLayout.LayoutParams((40 * density).toInt(), (40 * density).toInt())
                     setOnClickListener {
                         if (e.id > 0) {
-                            findNavController().navigate(
+                            findNavController().naviguerSur(
                                 R.id.action_suivi_to_fiche,
                                 bundleOf(
                                     "moduleCode" to moduleCode,
@@ -371,7 +371,7 @@ class SuiviDetailFragment : Fragment() {
                     layoutParams = LinearLayout.LayoutParams((40 * density).toInt(), (40 * density).toInt())
                     setOnClickListener {
                         if (e.id > 0) {
-                            findNavController().navigate(
+                            findNavController().naviguerSur(
                                 R.id.action_suivi_to_carte,
                                 bundleOf(
                                     "moduleCode" to moduleCode,
@@ -409,7 +409,7 @@ class SuiviDetailFragment : Fragment() {
                         )
                         setOnClickListener {
                             if (e.id > 0) {
-                                findNavController().navigate(
+                                findNavController().naviguerSur(
                                     R.id.action_suivi_to_nouvelle_visite,
                                     bundleOf(
                                         "moduleCode" to moduleCode,

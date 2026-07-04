@@ -141,20 +141,28 @@ class SortieDetailFragment : Fragment() {
     private fun envoyerVersGeoNature() {
         binding.overlayEnvoi.visibility = View.VISIBLE
         binding.btnEnvoyerGn.isEnabled = false
-        lifecycleScope.launch {
+        // viewLifecycleOwner (et pas lifecycleScope fragment) : la coroutine est annulée dès
+        // la destruction de la VUE. Et tous les accès post-suspend passent par _binding?. :
+        // un back pendant « Envoi en cours » exécutait le finally APRÈS _binding = null → NPE
+        // (l'annulation reprend de façon dispatchée sur le main thread). L'envoi lui-même
+        // reste sûr : envoyerSortieVersGeoNature persiste l'état dans le store quoi qu'il
+        // arrive, l'écran « Mes saisies » reflète le résultat à la réouverture.
+        viewLifecycleOwner.lifecycleScope.launch {
             try {
                 // Envoi + mise à jour du store factorisés (cf. envoyerSortieVersGeoNature).
                 val res = fr.ariegenature.geomys.network.envoyerSortieVersGeoNature(
                     sortie, sortieStore, gnConfig)
-                if (res.succes) binding.btnEnvoyerGn.visibility = View.GONE
-                else binding.btnEnvoyerGn.isEnabled = true
-                AlertDialog.Builder(requireContext())
-                    .setTitle(if (res.succes) "GeoNature" else "Erreur d'envoi")
-                    .setMessage(res.message)
-                    .setPositiveButton("OK", null)
-                    .show()
+                if (res.succes) _binding?.btnEnvoyerGn?.visibility = View.GONE
+                else _binding?.btnEnvoyerGn?.isEnabled = true
+                if (isAdded) {
+                    AlertDialog.Builder(requireContext())
+                        .setTitle(if (res.succes) "GeoNature" else "Erreur d'envoi")
+                        .setMessage(res.message)
+                        .setPositiveButton("OK", null)
+                        .show()
+                }
             } finally {
-                binding.overlayEnvoi.visibility = View.GONE
+                _binding?.overlayEnvoi?.visibility = View.GONE
             }
         }
     }

@@ -350,18 +350,18 @@ class TraceFragment : Fragment() {
             val ecranReleveNecessaire = fr.ariegenature.geomys.ui.saisie.AdditionalFieldsRenderer
                 .aDesChampsReleveRequisSansDefaut(gnConfig.additionalFieldsOcctaxJsonActif, gnConfig.idDataset.toIntOrNull())
             if (ecranReleveNecessaire) {
-                findNavController().navigate(
+                findNavController().naviguerSur(
                     R.id.action_trace_to_details_releve,
                     Bundle().apply { putBoolean("mono", true) },
                 )
             } else {
-                findNavController().navigate(R.id.action_trace_to_saisie_rapide)
+                findNavController().naviguerSur(R.id.action_trace_to_saisie_rapide)
             }
             true
         }
 
         binding.btnListe.setOnClickListener {
-            findNavController().navigate(R.id.action_trace_to_observations)
+            findNavController().naviguerSur(R.id.action_trace_to_observations)
         }
 
         binding.btnCentrer.setOnClickListener {
@@ -407,9 +407,10 @@ class TraceFragment : Fragment() {
         binding.btnValiderPosition.setOnClickListener {
             val center = binding.map.mapCenter
             if (obsARepositionnerIds.isNotEmpty()) {
-                obsARepositionnerIds.forEach { id ->
-                    traceViewModel.mettreAJourObservationPosition(id, center.latitude, center.longitude)
-                }
+                // Batch : un relevé multi-taxons = N obs déplacées au même point → UN seul
+                // auto-save (l'appel par obs réécrivait tout le store N fois, cf. TraceViewModel).
+                traceViewModel.mettreAJourObservationsPositions(
+                    obsARepositionnerIds, center.latitude, center.longitude)
                 obsARepositionnerIds = emptyList()
                 updateModePositionnement()
             } else {
@@ -435,7 +436,7 @@ class TraceFragment : Fragment() {
                     .aDesChampsReleveRequisSansDefaut(gnConfig.additionalFieldsOcctaxJsonActif, gnConfig.idDataset.toIntOrNull())
                 val cible = if (ecranReleveNecessaire) R.id.action_trace_to_details_releve
                             else R.id.action_trace_to_saisie
-                findNavController().navigate(cible, bundle)
+                findNavController().naviguerSur(cible, bundle)
             }
         }
 
@@ -980,11 +981,10 @@ class TraceFragment : Fragment() {
                 val idsADeplacer = if (!obs.releveId.isNullOrEmpty())
                     toutes.filter { it.releveId == obs.releveId }.map { it.id }
                 else listOf(obs.id)
-                idsADeplacer.forEach { id ->
-                    traceViewModel.mettreAJourObservationPosition(
-                        id, marker.position.latitude, marker.position.longitude,
-                    )
-                }
+                // Batch : un seul auto-save pour tout le relevé déplacé (cf. TraceViewModel).
+                traceViewModel.mettreAJourObservationsPositions(
+                    idsADeplacer, marker.position.latitude, marker.position.longitude,
+                )
             }
         })
         return marker
@@ -1015,7 +1015,7 @@ class TraceFragment : Fragment() {
                     if (!rid.isNullOrEmpty()) putString("releveId", rid)
                     else putString("obsId", premiere.id)
                 }
-                findNavController().navigate(R.id.action_trace_to_saisie, bundle)
+                findNavController().naviguerSur(R.id.action_trace_to_saisie, bundle)
             }
             // Plus de bouton "Déplacer" : le point se drague directement sur la carte, et
             // les sommets d'un polygone/ligne aussi.
@@ -1118,12 +1118,17 @@ class TraceFragment : Fragment() {
                 showResult(res.message, res.succes)
             } finally {
                 envoiEnCours = false
-                binding.overlayEnvoi.visibility = View.GONE
+                // ⚠ _binding?. et pas binding : onDestroyView annule currentJob PUIS pose
+                // _binding = null, mais l'annulation d'une coroutine suspendue reprend de
+                // façon DISPATCHÉE — ce finally s'exécute donc APRÈS _binding = null
+                // (NPE = crash sur un simple back pendant l'overlay d'envoi).
+                _binding?.overlayEnvoi?.visibility = View.GONE
             }
         }
     }
 
     private fun showResult(msg: String, success: Boolean) {
+        if (!isAdded) return // fragment détaché pendant l'envoi : pas de dialog (requireContext crashe)
         AlertDialog.Builder(requireContext())
             .setTitle(if (success) "GeoNature" else getString(R.string.erreur_envoi))
             .setMessage(msg)

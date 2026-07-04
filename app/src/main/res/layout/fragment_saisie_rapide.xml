@@ -623,7 +623,7 @@
                 android:background="@drawable/btn_circle_blue"
                 android:contentDescription="Enregistrer ici"
                 android:src="@drawable/ic_add"
-                android:tint="@android:color/white" />
+                app:tint="@android:color/white" />
         </LinearLayout>
     </LinearLayout>
 

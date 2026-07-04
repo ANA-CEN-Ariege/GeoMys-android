@@ -627,7 +627,7 @@ class SaisieRapideFragment : Fragment() {
             snackJob?.cancel()
             binding.snackConfirmation.visibility = View.GONE
             val bundle = Bundle().apply { putString("obsId", id) }
-            findNavController().navigate(R.id.action_saisieRapide_to_saisie, bundle)
+            findNavController().naviguerSur(R.id.action_saisieRapide_to_saisie, bundle)
         }
     }
 
@@ -729,7 +729,7 @@ class SaisieRapideFragment : Fragment() {
             putString("addReleveJson",       gson.toJson(additionalFieldsReleve))
             putString("addOccJson",          gson.toJson(additionalFieldsOccurrence))
         }
-        findNavController().navigate(R.id.action_saisieRapide_to_caracterisation, bundle)
+        findNavController().naviguerSur(R.id.action_saisieRapide_to_caracterisation, bundle)
     }
 
     private fun ouvrirDenombrementDefaut() {
@@ -751,7 +751,7 @@ class SaisieRapideFragment : Fragment() {
             putString("espece",            binding.etEspece.text.toString().ifEmpty { taxon.nomGroupe() })
             putString("denombrementsJson", Gson().toJson(tous))
         }
-        findNavController().navigate(R.id.action_saisieRapide_to_denombrement, bundle)
+        findNavController().naviguerSur(R.id.action_saisieRapide_to_denombrement, bundle)
     }
 
     private fun updateDetailsIndicator() {
@@ -1088,7 +1088,7 @@ class SaisieRapideFragment : Fragment() {
             .setTitle("${triees.size} obs. ici — appuyer pour modifier")
             .setItems(items) { _, which ->
                 val bundle = Bundle().apply { putString("obsId", triees[which].id) }
-                findNavController().navigate(R.id.action_saisieRapide_to_saisie, bundle)
+                findNavController().naviguerSur(R.id.action_saisieRapide_to_saisie, bundle)
             }
             .setPositiveButton("Fermer", null)
             .show()

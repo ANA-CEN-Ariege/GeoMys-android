@@ -79,7 +79,7 @@ class AccueilFragment : Fragment() {
             // sortie précédente (encore dans le ViewModel partagé de l'activité) s'afficheraient
             // sur la carte. La reprise depuis « Mes saisies » passe par un autre chemin (sortieId).
             traceViewModel.reinitialiser()
-            findNavController().navigate(R.id.action_accueil_to_trace)
+            findNavController().naviguerSur(R.id.action_accueil_to_trace)
         }
 
         binding.btnSaisieRapide.setOnClickListener {
@@ -93,17 +93,17 @@ class AccueilFragment : Fragment() {
             val ecranReleveNecessaire = fr.ariegenature.geomys.ui.saisie.AdditionalFieldsRenderer
                 .aDesChampsReleveRequisSansDefaut(gnConfig.additionalFieldsOcctaxJsonActif, gnConfig.idDataset.toIntOrNull())
             if (ecranReleveNecessaire) {
-                findNavController().navigate(
+                findNavController().naviguerSur(
                     R.id.action_accueil_to_details_releve,
                     Bundle().apply { putBoolean("mono", true) },
                 )
             } else {
-                findNavController().navigate(R.id.action_accueil_to_saisie_rapide)
+                findNavController().naviguerSur(R.id.action_accueil_to_saisie_rapide)
             }
         }
 
         binding.btnSuivis.setOnClickListener {
-            findNavController().navigate(R.id.action_accueil_to_suivis)
+            findNavController().naviguerSur(R.id.action_accueil_to_suivis)
         }
 
         binding.btnMenu.setOnClickListener { view ->
@@ -124,19 +124,19 @@ class AccueilFragment : Fragment() {
                 setOnMenuItemClickListener { item ->
                     when (item.itemId) {
                         R.id.menu_mes_sorties -> {
-                            findNavController().navigate(R.id.action_accueil_to_sorties)
+                            findNavController().naviguerSur(R.id.action_accueil_to_sorties)
                             true
                         }
                         R.id.menu_mes_visites -> {
-                            findNavController().navigate(R.id.action_accueil_to_attente)
+                            findNavController().naviguerSur(R.id.action_accueil_to_attente)
                             true
                         }
                         R.id.menu_explorer -> {
-                            findNavController().navigate(R.id.action_accueil_to_explorer)
+                            findNavController().naviguerSur(R.id.action_accueil_to_explorer)
                             true
                         }
                         R.id.menu_cache_manager -> {
-                            findNavController().navigate(R.id.action_accueil_to_cache_manager)
+                            findNavController().naviguerSur(R.id.action_accueil_to_cache_manager)
                             true
                         }
                         else -> false
@@ -147,7 +147,7 @@ class AccueilFragment : Fragment() {
         }
 
         binding.btnConfig.setOnClickListener {
-            findNavController().navigate(R.id.action_accueil_to_config)
+            findNavController().naviguerSur(R.id.action_accueil_to_config)
         }
 
         traceViewModel.locationTracker.estEnCours.observe(viewLifecycleOwner) { updateButtonState() }

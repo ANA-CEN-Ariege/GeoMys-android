@@ -142,7 +142,7 @@ class ObservationsFragment : Fragment() {
         val rid = releve.releveId
         if (!rid.isNullOrEmpty()) bundle.putString("releveId", rid)
         else bundle.putString("obsId", releve.premier.id)
-        findNavController().navigate(R.id.action_observations_to_saisie, bundle)
+        findNavController().naviguerSur(R.id.action_observations_to_saisie, bundle)
     }
 
     override fun onDestroyView() {

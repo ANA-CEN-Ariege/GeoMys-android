@@ -142,12 +142,27 @@ class NouvelleVisiteFragment : Fragment() {
         captureFichier = null
         val cb = attendCallbackMedia
         attendCallbackMedia = null
-        if (!succes || uri == null || cb == null) {
+        if (!succes || uri == null) {
             fichier?.delete()
             cb?.invoke(emptyList())
             return@registerForActivityResult
         }
         val appCtx = requireContext().applicationContext
+        if (cb == null) {
+            // Process tué derrière l'appli appareil photo (scénario le plus probable : elle
+            // est au premier plan) : la lambda du renderer est perdue avec l'ancien process,
+            // mais la photo, elle, a bien été écrite (captureUri restauré par
+            // onSaveInstanceState). On l'importe et on l'ajoute au pré-remplissage média que
+            // le rendu (relancé en parallèle) consommera — avant, elle était JETÉE en silence.
+            viewLifecycleOwner.lifecycleScope.launch {
+                val locale = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    MediaImport.importer(appCtx, uri, "image/jpeg")
+                }
+                fichier?.delete()
+                if (locale != null) mediaPathsPreremplir = mediaPathsPreremplir + locale
+            }
+            return@registerForActivityResult
+        }
         viewLifecycleOwner.lifecycleScope.launch {
             val locale = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                 MediaImport.importer(appCtx, uri, "image/jpeg")
@@ -220,6 +235,22 @@ class NouvelleVisiteFragment : Fragment() {
             saisieEnEdition.parentUuidLocal?.let { arguments?.putString("parentUuidLocal", it) }
             valeursPreremplies = chargerValeursPourEdition(saisieEnEdition)
             mediaPathsPreremplir = saisieEnEdition.mediasLocaux()
+        }
+
+        // Mort du process (typiquement derrière l'appli appareil photo, au premier plan) :
+        // restaure l'état de capture en cours + le snapshot du formulaire posé par
+        // onSaveInstanceState. Prioritaire sur le pré-remplissage d'édition ci-dessus (il est
+        // plus récent) — sans ça, la photo écrite par l'appareil était jetée (captureUri null
+        // au retour) et TOUTES les valeurs saisies repartaient à vierge.
+        if (savedInstanceState != null) {
+            savedInstanceState.getString("captureUriStr")?.let { captureUri = Uri.parse(it) }
+            savedInstanceState.getString("captureFichierPath")?.let { captureFichier = File(it) }
+            savedInstanceState.getString("valeursEnCours")?.let { json ->
+                try { valeursPreremplies = parseValeursJson(json) } catch (_: Exception) {}
+            }
+            savedInstanceState.getStringArrayList("mediaPathsEnCours")
+                ?.takeIf { it.isNotEmpty() }
+                ?.let { mediaPathsPreremplir = it }
         }
 
         val titreSite = arguments?.getString("titreSite").orEmpty()
@@ -459,6 +490,14 @@ class NouvelleVisiteFragment : Fragment() {
                 }
             } ?: champsFinaux0
             mediaPathsPreremplir = emptyList()
+            // Mode édition : les champs porteurs d'une valeur SAUVEGARDÉE sont déclarés dirty
+            // d'emblée — sinon les règles `change` gardées par `!dirty` (nom de site
+            // auto-généré…) recalculaient et écrasaient la personnalisation dès l'ouverture.
+            renderer.marquerDirtyInitiaux(
+                valeursPreremplies?.filterValues { v ->
+                    v != null && v.toString().isNotEmpty()
+                }?.keys.orEmpty()
+            )
             renderer.rendre(champsFinaux)
             // Règles `change` du schéma : auto-remplissage de champs dépendants (ex.
             // presence == 'Non' → count_min/count_max = 0). Appliquées après le rendu.
@@ -523,6 +562,23 @@ class NouvelleVisiteFragment : Fragment() {
                 val f = nouveaux[idx]
                 if (opts == null) {
                     notesEchecs.add("${f.code} (fetch options échoué)")
+                    // ÉDITION HORS-LIGNE : sans options, le Spinner ne peut pas re-sélectionner
+                    // la valeur sauvée → lireValeurs rendrait "" et « Enregistrer les
+                    // modifications » ÉCRASERAIT la nomenclature/l'observateur par du vide,
+                    // sans alerte. On injecte la ou les valeurs sauvées comme options
+                    // pré-sélectionnables : affichage brut (id) faute de label, mais la
+                    // donnée survit à l'aller-retour d'édition.
+                    val sauvee = valeursPreremplies?.get(f.code)
+                    val valeursSauvees = when (sauvee) {
+                        null -> emptyList()
+                        is List<*> -> sauvee.mapNotNull { it?.toString() }.filter { it.isNotEmpty() }
+                        else -> listOf(sauvee.toString()).filter { it.isNotEmpty() }
+                    }
+                    if (valeursSauvees.isNotEmpty()) {
+                        nouveaux[idx] = f.copy(values = valeursSauvees.map {
+                            PropertyValue(it, "$it (option non rechargée — hors-ligne ?)")
+                        })
+                    }
                     continue
                 }
                 optionsParIdx[idx] = opts
@@ -667,10 +723,19 @@ class NouvelleVisiteFragment : Fragment() {
      *  [puisTerminer] : sortie de chaîne via « Terminer » — après l'enregistrement on
      *  quitte le formulaire au lieu d'enchaîner/réinitialiser. */
     private fun envoyerVisite(puisTerminer: Boolean = false) {
+        // Garde anti double-clic : deux taps rapides sur « Enregistrer » créaient DEUX
+        // SaisieEnAttente (uuid distincts) → deux POST à l'envoi = visite dupliquée côté
+        // GeoNature. Le flag existait mais n'était jamais armé ; il est réarmé sur les
+        // chemins où le formulaire reste affiché (reset de chaîne, échec d'écriture).
+        if (enCoursEnvoi) return
+        enCoursEnvoi = true
+        binding.btnSubmit.isEnabled = false
         val moduleCode = arguments?.getString("moduleCode")
         val visitType = visitObjectType
         if (moduleCode.isNullOrEmpty() || visitType.isNullOrEmpty()) {
             afficherValeursDemo()
+            enCoursEnvoi = false
+            majEtatBoutonSubmit()
             return
         }
         val valeurs = renderer.lireValeurs().toMutableMap()
@@ -710,7 +775,7 @@ class NouvelleVisiteFragment : Fragment() {
         // Si pas de parent serveur (cas rare d'une saisie orpheline), fallback navigateUp.
         val uuidEdition = editUuid
         if (uuidEdition != null) {
-            fr.ariegenature.geomys.store.OutboxMonitoring.mettreAJour(uuidEdition) { ancien ->
+            val okMaj = fr.ariegenature.geomys.store.OutboxMonitoring.mettreAJour(uuidEdition) { ancien ->
                 // Sur une saisie legacy sans uuidPayload, on en génère un MAINTENANT si on a
                 // un média à uploader (sinon inutile). Le serveur acceptera l'uuid_field_name
                 // si le schéma l'expose.
@@ -728,6 +793,10 @@ class NouvelleVisiteFragment : Fragment() {
                     champsTexteLibre = champsTexteLibre,
                 )
             }
+            if (!okMaj) {
+                afficherErreurEcritureOutbox()
+                return
+            }
             android.widget.Toast.makeText(
                 requireContext(), "Modifications enregistrées",
                 android.widget.Toast.LENGTH_SHORT,
@@ -736,7 +805,7 @@ class NouvelleVisiteFragment : Fragment() {
             val parentTypeRetour = arguments?.getString("parentObjectType")?.takeIf { it.isNotEmpty() }
             val moduleRetour = arguments?.getString("moduleCode")?.takeIf { it.isNotEmpty() }
             if (parentIdRetour != null && parentTypeRetour != null && moduleRetour != null) {
-                findNavController().navigate(
+                findNavController().naviguerSur(
                     fr.ariegenature.geomys.R.id.action_nouvelle_visite_to_fiche,
                     androidx.core.os.bundleOf(
                         "moduleCode" to moduleRetour,
@@ -775,7 +844,13 @@ class NouvelleVisiteFragment : Fragment() {
             mediaPathsLocal = mediaPaths,
             mediaSchemaDotTable = mediaSchemaDotTable,
         )
-        fr.ariegenature.geomys.store.OutboxMonitoring.ajouter(saisie)
+        // L'écriture disque peut échouer (stockage plein — plausible avec photos + cache de
+        // tuiles) : dans ce cas la saisie n'existe NULLE PART. Sans ce contrôle, l'utilisateur
+        // voyait le toast de succès et quittait l'écran — perte silencieuse de sa visite.
+        if (!fr.ariegenature.geomys.store.OutboxMonitoring.ajouter(saisie)) {
+            afficherErreurEcritureOutbox()
+            return
+        }
 
         val labelType = labelTypeCap()
         android.widget.Toast.makeText(
@@ -797,7 +872,7 @@ class NouvelleVisiteFragment : Fragment() {
         // formulaire courant est remplacé (popUpTo) pour que « retour » revienne au fil.
         val enfant = typeSaisieEnfant
         if (enfant != null) {
-            findNavController().navigate(
+            findNavController().naviguerSur(
                 fr.ariegenature.geomys.R.id.action_nouvelle_visite_enchainer,
                 androidx.core.os.bundleOf(
                     "moduleCode" to moduleCode,
@@ -817,10 +892,31 @@ class NouvelleVisiteFragment : Fragment() {
         val modeChaine = !parentTypeArg.isNullOrEmpty() &&
             fr.ariegenature.geomys.network.MonitoringSync.estTypeSaisie(parentTypeArg)
         if (modeChaine) {
+            // Le formulaire reste affiché pour la saisie suivante : réarme le garde
+            // anti double-clic avant le re-rendu (majEtatBoutonSubmit s'ignore sinon).
+            enCoursEnvoi = false
             reinitialiserFormulaire()
+            majEtatBoutonSubmit()
         } else {
             findNavController().navigateUp()
         }
+    }
+
+    /** Échec d'écriture de l'outbox (disque plein, I/O) : alerte BLOQUANTE — la saisie n'a
+     *  pas été enregistrée, l'utilisateur ne doit surtout pas quitter l'écran en croyant
+     *  le contraire. Réarme le bouton pour permettre un nouvel essai après nettoyage. */
+    private fun afficherErreurEcritureOutbox() {
+        enCoursEnvoi = false
+        majEtatBoutonSubmit()
+        AlertDialog.Builder(requireContext())
+            .setTitle("Enregistrement impossible")
+            .setMessage(
+                "L'écriture sur l'appareil a échoué (stockage plein ?). " +
+                    "${labelTypeCap()} n'a PAS été enregistré${accordE()}.\n\n" +
+                    "Libérez de l'espace (photos, cache de cartes) puis réessayez — " +
+                    "sans quitter cet écran, sinon les valeurs saisies seront perdues.")
+            .setPositiveButton("OK", null)
+            .show()
     }
 
     /** Parse le `valeursJson` d'une SaisieEnAttente en Map<code, valeur> pour pré-remplir
@@ -830,22 +926,28 @@ class NouvelleVisiteFragment : Fragment() {
         saisie: fr.ariegenature.geomys.store.SaisieEnAttente,
     ): Map<String, Any?> {
         return try {
-            val obj = org.json.JSONObject(saisie.valeursJson)
-            val out = mutableMapOf<String, Any?>()
-            obj.keys().forEach { k ->
-                val v = obj.get(k)
-                out[k] = when (v) {
-                    org.json.JSONObject.NULL -> null
-                    is org.json.JSONArray -> (0 until v.length()).map { v.get(it).toString() }
-                    else -> v
-                }
-            }
-            out
+            parseValeursJson(saisie.valeursJson)
         } catch (e: Exception) {
             android.util.Log.w("NouvelleVisiteFragment",
                 "chargerValeursPourEdition échoué pour uuid=${saisie.uuid}", e)
             emptyMap()
         }
+    }
+
+    /** Parse un JSON `{code: valeur}` en Map pour le pré-remplissage — utilisé pour le
+     *  valeursJson d'une saisie en édition ET pour le snapshot d'onSaveInstanceState. */
+    private fun parseValeursJson(json: String): Map<String, Any?> {
+        val obj = org.json.JSONObject(json)
+        val out = mutableMapOf<String, Any?>()
+        obj.keys().forEach { k ->
+            val v = obj.get(k)
+            out[k] = when (v) {
+                org.json.JSONObject.NULL -> null
+                is org.json.JSONArray -> (0 until v.length()).map { v.get(it).toString() }
+                else -> v
+            }
+        }
+        return out
     }
 
     /** Convertit une valeur brute (telle que parsée depuis le JSON outbox) en la forme
@@ -856,12 +958,21 @@ class NouvelleVisiteFragment : Fragment() {
             ViewType.TEXT, ViewType.TEXTAREA, ViewType.DATE, ViewType.TIME, ViewType.DATETIME,
             ViewType.SELECT, ViewType.RADIO ->
                 v.toString()
-            ViewType.NUMBER, ViewType.TAXON -> when (v) {
+            ViewType.TAXON -> when (v) {
                 is Int -> v
                 is Long -> v.toInt()
                 is Number -> v.toInt()
                 is String -> v.toIntOrNull()
                 else -> v.toString().toIntOrNull()
+            }
+            // NUMBER : ne PAS tronquer une valeur décimale (widgets number/float/decimal —
+            // cf. EditableField.decimal). Un entier reste Int (payload inchangé).
+            ViewType.NUMBER -> when (v) {
+                is Int -> v
+                is Number ->
+                    if (v.toDouble() == v.toLong().toDouble()) v.toInt() else v.toDouble()
+                is String -> v.toIntOrNull() ?: v.toDoubleOrNull()
+                else -> null
             }
             ViewType.SELECT_MULTIPLE, ViewType.CHECKBOX_MULTIPLE -> when (v) {
                 is List<*> -> v.map { it.toString() }
@@ -995,6 +1106,34 @@ class NouvelleVisiteFragment : Fragment() {
         EditableField("responsable", ViewType.TEXT, "Nom du responsable"),
         EditableField("comments", ViewType.TEXTAREA, "Commentaires"),
     )
+
+    /** Survie à la mort du process — typiquement pendant qu'on est derrière l'appli appareil
+     *  photo : état de capture (captureUri/fichier, requis pour récupérer la photo au retour)
+     *  + snapshot des valeurs du formulaire (sinon le schéma est re-rendu VIERGE : toute la
+     *  saisie en cours était perdue). Restauré au début d'onViewCreated. */
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        captureUri?.let { outState.putString("captureUriStr", it.toString()) }
+        captureFichier?.let { outState.putString("captureFichierPath", it.absolutePath) }
+        if (::renderer.isInitialized && champsCourants.isNotEmpty()) {
+            val valeurs = renderer.lireValeurs().toMutableMap()
+            // Les MEDIA (List<String> de paths locaux) sont sauvés à part : au restore ils
+            // passent par mediaPathsPreremplir, pas par le JSON des valeurs.
+            @Suppress("UNCHECKED_CAST")
+            val mediaPaths = champsCourants
+                .filter { it.viewType == ViewType.MEDIA }
+                .firstNotNullOfOrNull { f -> (valeurs[f.code] as? List<String>)?.takeIf { it.isNotEmpty() } }
+                .orEmpty()
+            champsCourants.filter { it.viewType == ViewType.MEDIA }.forEach { valeurs.remove(it.code) }
+            val json = org.json.JSONObject().apply {
+                for ((code, v) in valeurs) put(code, valeurToJson(v))
+            }.toString()
+            outState.putString("valeursEnCours", json)
+            if (mediaPaths.isNotEmpty()) {
+                outState.putStringArrayList("mediaPathsEnCours", ArrayList(mediaPaths))
+            }
+        }
+    }
 
     override fun onDestroyView() {
         super.onDestroyView()

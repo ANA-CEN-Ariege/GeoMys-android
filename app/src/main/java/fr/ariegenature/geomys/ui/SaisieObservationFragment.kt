@@ -494,7 +494,7 @@ class SaisieObservationFragment : Fragment() {
             putString("addOccJson", com.google.gson.Gson().toJson(obs.additionalFieldsOccurrence))
             putString("occExtraJson", com.google.gson.Gson().toJson(obs.champsOccExtra))
         }
-        findNavController().navigate(R.id.action_saisie_to_caracterisation, bundle)
+        findNavController().naviguerSur(R.id.action_saisie_to_caracterisation, bundle)
     }
 
     private fun ouvrirDenombrement(index: Int) {
@@ -521,7 +521,7 @@ class SaisieObservationFragment : Fragment() {
             putString("espece",            obs.espece)
             putString("denombrementsJson", json)
         }
-        findNavController().navigate(R.id.action_saisie_to_denombrement, bundle)
+        findNavController().naviguerSur(R.id.action_saisie_to_denombrement, bundle)
     }
 
     override fun onResume() {

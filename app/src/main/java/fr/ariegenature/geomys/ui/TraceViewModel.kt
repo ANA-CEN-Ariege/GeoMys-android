@@ -112,6 +112,28 @@ class TraceViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /** Variante BATCH de [mettreAJourObservationPosition] : déplace N obs (relevé
+     *  multi-taxons repositionné d'un coup) en UNE mutation → UN seul auto-save. L'appel
+     *  par obs re-sérialisait TOUT le store (commit synchrone sur le thread UI) N fois
+     *  d'affilée pendant une interaction carte — jank garanti, ANR possible sur une
+     *  saisie chargée (audit 2026-07). */
+    fun mettreAJourObservationsPositions(ids: Collection<String>, lat: Double, lon: Double) {
+        if (ids.isEmpty()) return
+        val list = _observations.value ?: return
+        var modifie = false
+        ids.forEach { id ->
+            val idx = list.indexOfFirst { it.id == id }
+            if (idx >= 0) {
+                list[idx] = list[idx].copy(latitude = lat, longitude = lon)
+                modifie = true
+            }
+        }
+        if (modifie) {
+            _observations.value = list
+            persisterBrouillon()
+        }
+    }
+
     /** Met à jour les sommets d'un relevé ligne/polygone : applique le nouveau
      *  geometryCoordsJson et recentre lat/lon (centroïde) sur toutes les obs ciblées. */
     fun mettreAJourGeometrieReleve(ids: Collection<String>, coordsJson: String, lat: Double, lon: Double) {

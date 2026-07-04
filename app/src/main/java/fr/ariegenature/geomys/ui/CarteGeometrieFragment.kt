@@ -487,7 +487,7 @@ class CarteGeometrieFragment : Fragment() {
     /** Navigation vers la fiche de [item] avec le fil [filCible] (= chemin réel dans la
      *  hiérarchie monitoring jusqu'à cet objet). */
     private fun naviguerVersFiche(moduleCode: String, item: CarteItem, filCible: List<FilSegment>) {
-        findNavController().navigate(
+        findNavController().naviguerSur(
             R.id.action_carte_to_fiche,
             bundleOf(
                 "moduleCode" to moduleCode,
@@ -506,7 +506,7 @@ class CarteGeometrieFragment : Fragment() {
         childObjectType: String,
         filCible: List<FilSegment>,
     ) {
-        findNavController().navigate(
+        findNavController().naviguerSur(
             R.id.action_carte_to_nouvelle_visite,
             bundleOf(
                 "moduleCode" to moduleCode,

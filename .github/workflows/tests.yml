@@ -31,6 +31,18 @@ jobs:
       - name: Tests unitaires
         run: ./gradlew testGithubDebugUnitTest
 
+      # Android Lint : les tests unitaires ne voient ni les ressources, ni le manifest, ni
+      # les erreurs d'API-level — lint si. Un seul variant suffit (les sources sont
+      # quasi intégralement partagées) ; lintGithubDebug échoue le build sur toute ERREUR lint.
+      - name: Lint
+        run: ./gradlew lintGithubDebug
+
+      # Builds RELEASE des deux canaux (non signés : pas de keystore en CI, le build.gradle
+      # dégrade proprement). Sans ces tâches, une erreur de ressource/manifest propre au
+      # flavor play — jamais compilé par les tests — n'était détectée qu'au moment de publier.
+      - name: Assemble release (github + play)
+        run: ./gradlew assembleGithubRelease bundlePlayRelease
+
       # Rapport JUnit publié en artefact quand ça casse (diagnostic sans re-run local).
       - name: Rapport de tests (en échec)
         if: failure()
@@ -38,3 +50,12 @@ jobs:
         with:
           name: rapports-tests
           path: app/build/reports/tests/testGithubDebugUnitTest/
+
+      # Rapport lint publié en artefact quand ça casse.
+      - name: Rapport lint (en échec)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rapports-lint
+          path: app/build/reports/lint-results-*.html
+          if-no-files-found: ignore

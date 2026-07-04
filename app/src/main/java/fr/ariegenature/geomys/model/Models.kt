@@ -137,6 +137,12 @@ data class Observation(
      *  valeur = saisie en texte (entier pour les numériques, code mnémonique pour geo_object_nature).
      *  Vide = aucun renseigné. Map unique pour ne pas multiplier les champs à travers tout le code. */
     var champsReleveExtra: Map<String, String> = emptyMap(),
+    /** true dès que l'occurrence a été CRÉÉE côté serveur (POST 2xx). Après un envoi PARTIEL
+     *  (réseau tombé en cours de route), la sortie reste ré-envoyable : les obs marquées ne
+     *  sont pas re-postées (anti-doublon), seules les restantes partent. Persisté par
+     *  SortieStore.marquerObservationsEnvoyees dès le retour d'envoi — anciens JSON sans le
+     *  champ → false (défaut primitif Gson), comportement inchangé. */
+    var envoyeeServeur: Boolean = false,
 )
 
 data class Sortie(

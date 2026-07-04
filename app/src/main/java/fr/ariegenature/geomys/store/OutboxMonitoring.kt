@@ -101,13 +101,20 @@ object OutboxMonitoring {
     private lateinit var fichier: File
     private val gson = Gson()
     @Volatile private var mem: List<SaisieEnAttente>? = null
+    // Toutes les mutations sont des lire-modifier-écrire (sauvegarder(charger() + x)) appelées
+    // depuis le thread UI (ajout de saisie) ET depuis Dispatchers.IO (OutboxEnvoi met à jour
+    // les états pendant l'envoi, écran non bloqué) : sans verrou, deux écrivains croisés
+    // peuvent se perdre mutuellement des entrées (lost update) et entrelacer le même .tmp.
+    private val lock = Any()
 
     fun init(context: Context) {
-        fichier = File(context.filesDir, "monitoring_outbox.json")
-        mem = null  // ré-init = démarrage à froid : la prochaine lecture repart du disque
+        synchronized(lock) {
+            fichier = File(context.filesDir, "monitoring_outbox.json")
+            mem = null  // ré-init = démarrage à froid : la prochaine lecture repart du disque
+        }
     }
 
-    private fun charger(): List<SaisieEnAttente> {
+    private fun charger(): List<SaisieEnAttente> = synchronized(lock) {
         mem?.let { return it }
         if (!::fichier.isInitialized || !fichier.exists()) return emptyList()
         return try {
@@ -116,7 +123,19 @@ object OutboxMonitoring {
             (gson.fromJson<List<SaisieEnAttente?>>(json, type) ?: emptyList())
                 .mapNotNull { it?.let(::normaliser) }
                 .also { mem = it }
-        } catch (_: Exception) { emptyList() }
+        } catch (e: Exception) {
+            // Quarantaine AVANT retour vide : sans ça, la prochaine écriture (ajouter =
+            // charger()+saisie) écraserait le fichier illisible avec une liste quasi vide —
+            // perte définitive de TOUTES les saisies en attente. Le .corrupt (premier
+            // incident conservé) reste récupérable via adb run-as / support.
+            try {
+                val quarantaine = File(fichier.parentFile, fichier.name + ".corrupt")
+                if (!quarantaine.exists()) fichier.copyTo(quarantaine)
+            } catch (_: Exception) {}
+            android.util.Log.e("OutboxMonitoring",
+                "charger : outbox illisible, copie de quarantaine posée (.corrupt)", e)
+            emptyList()
+        }
     }
 
     /** Reconstruit une entrée sûre après désérialisation. Gson instancie sans passer par le
@@ -146,14 +165,23 @@ object OutboxMonitoring {
         )
     }
 
-    private fun sauvegarder(liste: List<SaisieEnAttente>) {
+    /** Écrit la liste sur disque (tmp + fsync + rename). Retourne false si la persistance a
+     *  échoué : l'appelant DOIT le vérifier pour une création de saisie (sinon la visite que
+     *  l'utilisateur croit enregistrée n'existe nulle part — ni disque ni mémoire). */
+    private fun sauvegarder(liste: List<SaisieEnAttente>): Boolean {
         if (!::fichier.isInitialized) {
             android.util.Log.w("OutboxMonitoring", "sauvegarder : fichier non initialisé")
-            return
+            return false
         }
-        try {
+        return try {
             val tmp = File(fichier.parentFile, fichier.name + ".tmp")
-            tmp.writeText(gson.toJson(liste))
+            java.io.FileOutputStream(tmp).use { fos ->
+                fos.write(gson.toJson(liste).toByteArray(Charsets.UTF_8))
+                // Les saisies outbox sont IRREMPLAÇABLES : flush physique avant le rename.
+                // Sans fsync, une coupure d'alimentation brutale peut committer le rename
+                // sans les blocs de données → fichier cible vide/tronqué.
+                fos.fd.sync()
+            }
             // rename atomique (écrase la cible). Si le rename échoue, on retombe sur une copie
             // explicite ; la mémoire n'est mise à jour QU'APRÈS une persistance disque confirmée,
             // sinon on risquerait de perdre silencieusement des saisies (mem ≠ disque).
@@ -170,23 +198,29 @@ object OutboxMonitoring {
                 android.util.Log.w("OutboxMonitoring",
                     "sauvegarder ECHEC rename — mémoire NON mise à jour (disque conservé)")
             }
+            ok
         } catch (e: Exception) {
             android.util.Log.w("OutboxMonitoring", "sauvegarder ECHEC : ${e.message}", e)
+            false
         }
     }
 
-    fun ajouter(saisie: SaisieEnAttente) {
+    /** Ajoute une saisie. Retourne false si la persistance disque a échoué (disque plein,
+     *  I/O) : la saisie n'existe alors NULLE PART — l'UI doit prévenir l'utilisateur au lieu
+     *  de continuer comme si elle était enregistrée. */
+    fun ajouter(saisie: SaisieEnAttente): Boolean = synchronized(lock) {
         android.util.Log.i("OutboxMonitoring",
             "ajouter : uuid=${saisie.uuid}, type=${saisie.objectType}, module=${saisie.moduleCode}")
         sauvegarder(charger() + saisie)
     }
 
-    fun mettreAJour(uuid: String, transform: (SaisieEnAttente) -> SaisieEnAttente) {
-        sauvegarder(charger().map { if (it.uuid == uuid) transform(it) else it })
-    }
+    fun mettreAJour(uuid: String, transform: (SaisieEnAttente) -> SaisieEnAttente): Boolean =
+        synchronized(lock) {
+            sauvegarder(charger().map { if (it.uuid == uuid) transform(it) else it })
+        }
 
     fun supprimer(uuid: String) {
-        sauvegarder(charger().filterNot { it.uuid == uuid })
+        synchronized(lock) { sauvegarder(charger().filterNot { it.uuid == uuid }) }
     }
 
     /** Retourne récursivement la liste des UUIDs descendants d'une saisie (obs rattachées
@@ -209,10 +243,10 @@ object OutboxMonitoring {
 
     /** Supprime la saisie [uuid] ET tous ses descendants locaux. Retourne le nombre total
      *  de saisies supprimées (1 + descendants). */
-    fun supprimerCascade(uuid: String): Int {
+    fun supprimerCascade(uuid: String): Int = synchronized(lock) {
         val aRetirer = (descendants(uuid) + uuid).toSet()
         sauvegarder(charger().filterNot { it.uuid in aRetirer })
-        return aRetirer.size
+        aRetirer.size
     }
 
     fun tout(): List<SaisieEnAttente> = charger()
@@ -232,15 +266,17 @@ object OutboxMonitoring {
      *  tout soit parti. Les références d'enfants eux-mêmes SENT ne comptent pas : quand tout
      *  le groupe est envoyé, parent et enfants sont purgés ensemble. */
     fun purgerSent() {
-        val tous = charger()
-        val referencees = tous
-            .filterNot { it.etat == SaisieEnAttente.Etat.SENT }
-            .mapNotNull { it.parentUuidLocal }
-            .toSet()
-        sauvegarder(tous.filterNot { it.etat == SaisieEnAttente.Etat.SENT && it.uuid !in referencees })
+        synchronized(lock) {
+            val tous = charger()
+            val referencees = tous
+                .filterNot { it.etat == SaisieEnAttente.Etat.SENT }
+                .mapNotNull { it.parentUuidLocal }
+                .toSet()
+            sauvegarder(tous.filterNot { it.etat == SaisieEnAttente.Etat.SENT && it.uuid !in referencees })
+        }
     }
 
     fun vider() {
-        sauvegarder(emptyList())
+        synchronized(lock) { sauvegarder(emptyList()) }
     }
 }

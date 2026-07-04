@@ -53,6 +53,16 @@ data class EnvoiResult(
      *  de rollback a aussi échoué — restent vides côté GeoNature et doivent être supprimés
      *  manuellement. Vide en cas de succès complet ou de rollback réussi. */
     val relevesOrphelins: List<Int> = emptyList(),
+    /** Ids ([Observation.id]) des observations dont l'occurrence a été CRÉÉE côté serveur
+     *  pendant CET envoi. L'appelant les persiste (SortieStore.marquerObservationsEnvoyees)
+     *  pour qu'un ré-envoi après succès partiel ne les re-poste pas (anti-doublon). */
+    val obsCreesIds: List<String> = emptyList(),
+    /** Observations exclues de cet envoi car déjà créées lors d'un envoi précédent
+     *  ([Observation.envoyeeServeur]) — pour le récapitulatif utilisateur. */
+    val nbDejaEnvoyees: Int = 0,
+    /** Dernière erreur rencontrée pendant l'envoi (utile quand nbCrees > 0 : l'envoi
+     *  PARTIEL ne lève pas, mais l'appelant doit pouvoir dire pourquoi il manque des obs). */
+    val messageDerniereErreur: String? = null,
 )
 
 object GeoNatureUpload {
@@ -82,6 +92,19 @@ object GeoNatureUpload {
             val obsValides = sortie.observations.filter { it.cdNom != null }
             if (obsValides.isEmpty()) throw GNErreur.AucuneObservationCompatible()
 
+            // Ré-envoi après succès PARTIEL : les obs déjà créées côté serveur lors d'un envoi
+            // précédent (envoyeeServeur, persisté par l'appelant) ne repartent PAS — anti-doublon.
+            val nbDejaEnvoyees = obsValides.count { it.envoyeeServeur }
+            val aEnvoyer = obsValides.filterNot { it.envoyeeServeur }
+            if (aEnvoyer.isEmpty()) {
+                // Tout avait déjà été créé (l'échec précédent portait sur le marquage final ou
+                // sur des fichiers média disparus) : rien à poster, l'appelant peut clôturer.
+                return@withContext EnvoiResult(
+                    nbCrees = 0, nbTotal = 0, premierIdReleve = null,
+                    nbDejaEnvoyees = nbDejaEnvoyees,
+                )
+            }
+
             val datasetId = config.idDataset.trim().toIntOrNull()?.takeIf { it > 0 }
                 ?: throw GNErreur.EnvoiEchoue(0, "id_dataset invalide : \"${config.idDataset}\"")
             // Garde : un id_dataset absent du serveur courant (typiquement hérité d'un autre
@@ -108,6 +131,9 @@ object GeoNatureUpload {
             var premierIdReleve: Int? = null
             var derniereErreur: String? = null
             var dernierCodeErreur: Int = 0
+            // Ids des observations créées PENDANT cet envoi — persistés par l'appelant pour
+            // qu'un ré-envoi partiel ne les re-poste pas.
+            val obsCreesIds = mutableListOf<String>()
             // Compteurs média (gn_commons).
             var mediasOK = 0
             var mediasKO = 0
@@ -138,7 +164,10 @@ object GeoNatureUpload {
             // toutes ses obs avec un même UUID, qui devient ici un seul relevé GeoNature
             // avec N occurrences. Pour les obs sans releveId (saisie mono-taxon, import GPX),
             // on utilise obs.id comme clé : chaque obs forme son propre groupe d'1 élément.
-            val groupes = obsValides.groupBy { it.releveId ?: it.id }
+            // NB ré-envoi partiel : les obs restantes d'un groupe partiellement créé forment
+            // un NOUVEAU relevé côté serveur (l'id du relevé précédent n'est pas conservé) —
+            // deux relevés au lieu d'un, mais aucune observation perdue ni dupliquée.
+            val groupes = aEnvoyer.groupBy { it.releveId ?: it.id }
 
             for ((_, groupe) in groupes) {
                 // Coordonnées du relevé : la première obs du groupe (toutes identiques pour
@@ -294,6 +323,16 @@ object GeoNatureUpload {
                     // ── Étape A : upload des médias par counting AVANT le POST de l'occurrence ──
                     // (chaque media uploadé renvoie un JSON Media à inclure dans le counting).
                     val mediasParCounting = mutableListOf<List<JSONObject>>()
+                    // Ids gn_commons uploadés pour CETTE obs : rejoignent mediaIdsGroupe seulement
+                    // si l'occurrence est bien postée — sinon rollback immédiat (cf. plus bas).
+                    val mediaIdsObs = mutableListOf<Int>()
+                    // true si AU MOINS un média a échoué pour une cause RÉSEAU/SERVEUR : dans ce
+                    // cas on ne poste pas l'occurrence (un média Occtax ne peut être rattaché
+                    // qu'à la création du counting — l'envoyer « sans » perdrait la photo
+                    // définitivement) ; l'obs entière reste à envoyer pour le prochain essai.
+                    // Un fichier LOCAL disparu (URI invalide/inaccessible) ne compte pas :
+                    // retenter ne le fera pas réapparaître, on envoie l'occurrence sans lui.
+                    var mediaEchecReessayable = false
                     val urisCounting0 = obs.mediaUrisCounting0
                     val urisAdditionnels = obs.denombrementsAdditionnels.map { it.mediaUris }
                     val besoinMedia = urisCounting0.isNotEmpty() || urisAdditionnels.any { it.isNotEmpty() }
@@ -306,6 +345,7 @@ object GeoNatureUpload {
                         fun upload(uris: List<String>): List<JSONObject> = uris.mapNotNull { uri ->
                             if (idTableLoc == null) {
                                 mediasKO++; if (mediaErreurMsg == null) mediaErreurMsg = errTable
+                                mediaEchecReessayable = true // id_table_location = échec réseau/serveur
                                 return@mapNotNull null
                             }
                             // Inférence du mime depuis l'extension du fichier copié localement.
@@ -321,17 +361,34 @@ object GeoNatureUpload {
                             )
                             if (json != null) {
                                 mediasOK++
-                                // Capture l'id_media pour rollback éventuel (cf. mediaIdsGroupe).
+                                // Capture l'id_media pour rollback éventuel.
                                 val idMedia = json.optInt("id_media", -1).takeIf { it > 0 }
                                     ?: json.optInt("id", -1).takeIf { it > 0 }
-                                if (idMedia != null) mediaIdsGroupe.add(idMedia)
+                                if (idMedia != null) mediaIdsObs.add(idMedia)
                                 json
                             }
-                            else { mediasKO++; if (mediaErreurMsg == null) mediaErreurMsg = err; null }
+                            else {
+                                mediasKO++; if (mediaErreurMsg == null) mediaErreurMsg = err
+                                if (!erreurMediaLocale(err)) mediaEchecReessayable = true
+                                null
+                            }
                         }
                         mediasParCounting.add(upload(urisCounting0))
                         urisAdditionnels.forEach { mediasParCounting.add(upload(it)) }
                     }
+                    if (mediaEchecReessayable) {
+                        // Photo non transmise pour cause réseau/serveur : l'obs N'est PAS envoyée
+                        // (photo + occurrence retentées ensemble au prochain envoi — même modèle
+                        // que l'état « médias seulement » ré-essayable d'OutboxEnvoi côté
+                        // monitoring). Rollback des médias de cette obs déjà partis pour ne pas
+                        // laisser d'orphelins gn_commons.
+                        mediasOK -= mediaIdsObs.count { tenterSupprimerMedia(base, token, cookies, it) }
+                        dernierCodeErreur = 0
+                        derniereErreur = "photo non transmise (${mediaErreurMsg ?: "erreur réseau"}) — " +
+                            "« ${obs.espece} » sera retentée au prochain envoi"
+                        continue
+                    }
+                    mediaIdsGroupe.addAll(mediaIdsObs)
 
                     // ── Étape B : construction + POST du JSON occurrence avec medias[] inclus ──
                     val occ = buildOccurrence(obs, nomenclatures, mediasParCounting)
@@ -353,6 +410,7 @@ object GeoNatureUpload {
                     if (code2 in 200..299) {
                         nbCrees++
                         nbReussisGroupe++
+                        obsCreesIds.add(obs.id)
                     } else if (code2 > 0) {
                         val bodyErr = try { (conn2.errorStream ?: conn2.inputStream)?.bufferedReader()?.readText() } catch (_: Exception) { null }
                         dernierCodeErreur = code2
@@ -394,11 +452,21 @@ object GeoNatureUpload {
                 throw GNErreur.EnvoiEchoue(dernierCodeErreur, msg)
             }
             EnvoiResult(
-                nbCrees = nbCrees, nbTotal = obsValides.size, premierIdReleve = premierIdReleve,
+                nbCrees = nbCrees, nbTotal = aEnvoyer.size, premierIdReleve = premierIdReleve,
                 mediasOK = mediasOK, mediasKO = mediasKO, mediaErreurMsg = mediaErreurMsg,
                 relevesOrphelins = relevesOrphelins.toList(),
+                obsCreesIds = obsCreesIds.toList(),
+                nbDejaEnvoyees = nbDejaEnvoyees,
+                messageDerniereErreur = derniereErreur,
             )
         }
+
+    /** true si l'échec média est LOCAL et définitif (fichier disparu, URI invalide — cf.
+     *  messages d'uploaderMediaFile) : retenter l'envoi ne fera pas réapparaître le fichier,
+     *  on ne bloque donc pas l'occurrence pour ça. Tout autre échec (HTTP, exception réseau,
+     *  id_table_location) est considéré ré-essayable. */
+    private fun erreurMediaLocale(err: String?): Boolean =
+        err != null && (err.startsWith("URI fichier invalide") || err.startsWith("Fichier inaccessible"))
 
     internal fun buildOccurrence(
         obs: Observation,

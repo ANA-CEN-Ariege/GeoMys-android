@@ -163,4 +163,85 @@ class GeoNatureUploadEnvoyerTest {
             assertTrue(e.message!!.contains("id_dataset"))
         }
     }
+
+    // ── Envoi partiel & ré-envoi (audit 2026-07 : une seule occurrence créée verrouillait
+    //    toute la sortie ; les obs restantes étaient perdues) ─────────────────────────────
+
+    /** Le réseau tombe entre le groupe 1 et le groupe 2 : l'envoi NE lève PAS (acquis
+     *  préservé), remonte nbCrees < nbTotal et la liste exacte des obs créées — c'est elle
+     *  que l'appelant persiste pour que le ré-envoi ne re-poste pas le groupe 1. */
+    @Test
+    fun envoi_partiel_remonte_les_obs_creees_sans_lever() {
+        val nbReleves = java.util.concurrent.atomic.AtomicInteger(0)
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                val path = request.path ?: ""
+                val json = MockResponse().setHeader("Content-Type", "application/json")
+                return when {
+                    path.startsWith("/api/auth/login") ->
+                        json.setResponseCode(200).setBody("""{"access_token":"t","user":{"id_role":1}}""")
+                    path.endsWith("/only/releve") ->
+                        if (nbReleves.incrementAndGet() == 1) json.setResponseCode(200).setBody("""{"id":100}""")
+                        else json.setResponseCode(500).setBody("{}")
+                    path.contains("/occurrence") -> json.setResponseCode(200).setBody("{}")
+                    else -> MockResponse().setResponseCode(404)
+                }
+            }
+        }
+        // Deux obs mono-taxon = deux groupes/relevés distincts.
+        val sortie = Sortie(observations = listOf(obs("a"), obs("b")))
+        val res = runBlocking { GeoNatureUpload.envoyer(sortie, config) }
+        assertEquals(1, res.nbCrees)
+        assertEquals(2, res.nbTotal)
+        assertEquals(listOf("a"), res.obsCreesIds)
+        assertTrue("l'erreur du groupe 2 doit être remontée pour le message utilisateur",
+            res.messageDerniereErreur != null)
+    }
+
+    /** Ré-envoi après succès partiel : les obs marquées envoyeeServeur ne repartent PAS
+     *  (anti-doublon) — une seule occurrence est postée, l'autre est comptée « déjà envoyée ». */
+    @Test
+    fun reenvoi_ignore_les_obs_deja_envoyees() {
+        val nbOccurrences = java.util.concurrent.atomic.AtomicInteger(0)
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                val path = request.path ?: ""
+                val json = MockResponse().setHeader("Content-Type", "application/json")
+                return when {
+                    path.startsWith("/api/auth/login") ->
+                        json.setResponseCode(200).setBody("""{"access_token":"t","user":{"id_role":1}}""")
+                    path.endsWith("/only/releve") -> json.setResponseCode(200).setBody("""{"id":100}""")
+                    path.contains("/occurrence") -> {
+                        nbOccurrences.incrementAndGet()
+                        json.setResponseCode(200).setBody("{}")
+                    }
+                    else -> MockResponse().setResponseCode(404)
+                }
+            }
+        }
+        val deja = obs("a").apply { envoyeeServeur = true }
+        val res = runBlocking {
+            GeoNatureUpload.envoyer(Sortie(observations = listOf(deja, obs("b"))), config)
+        }
+        assertEquals(1, res.nbCrees)
+        assertEquals(1, res.nbTotal)
+        assertEquals(1, res.nbDejaEnvoyees)
+        assertEquals(listOf("b"), res.obsCreesIds)
+        assertEquals("une seule occurrence doit avoir été postée", 1, nbOccurrences.get())
+    }
+
+    /** Toutes les obs déjà créées (échec précédent APRÈS le dernier groupe) : rien à poster,
+     *  résultat 0/0 → l'appelant clôture la sortie sans aucun POST relevé/occurrence. */
+    @Test
+    fun tout_deja_envoye_retourne_zero_sur_zero() {
+        router()
+        val sortie = Sortie(observations = listOf(
+            obs("a").apply { envoyeeServeur = true },
+            obs("b").apply { envoyeeServeur = true },
+        ))
+        val res = runBlocking { GeoNatureUpload.envoyer(sortie, config) }
+        assertEquals(0, res.nbCrees)
+        assertEquals(0, res.nbTotal)
+        assertEquals(2, res.nbDejaEnvoyees)
+    }
 }

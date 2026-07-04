@@ -46,6 +46,17 @@ class WidgetMappingTest {
     )
 
     @Test
+    fun seuls_les_widgets_number_float_decimal_acceptent_les_decimaux() {
+        // Audit 2026-07 : sans FLAG_DECIMAL, une mesure décimale (température, pH, RHOMEO…)
+        // était intapable au clavier et relue null (toIntOrNull) → perdue en silence.
+        org.junit.Assert.assertTrue(fr.ariegenature.geomys.monitoring.form.estWidgetDecimal("float"))
+        org.junit.Assert.assertTrue(fr.ariegenature.geomys.monitoring.form.estWidgetDecimal("decimal"))
+        org.junit.Assert.assertTrue(fr.ariegenature.geomys.monitoring.form.estWidgetDecimal("number"))
+        org.junit.Assert.assertFalse(fr.ariegenature.geomys.monitoring.form.estWidgetDecimal("integer"))
+        org.junit.Assert.assertFalse(fr.ariegenature.geomys.monitoring.form.estWidgetDecimal("text"))
+    }
+
+    @Test
     fun widgets_scalaires_simples() {
         assertEquals(ViewType.TEXT, mapperViewType(prop("text")))
         assertEquals(ViewType.TEXT, mapperViewType(prop("string")))

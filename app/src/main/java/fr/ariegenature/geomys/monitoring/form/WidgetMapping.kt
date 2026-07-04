@@ -31,6 +31,12 @@ private fun estChampTaxon(prop: MonitoringApi.MonitoringPropertySchema): Boolean
     return false
 }
 
+/** true si le widget numérique accepte les décimaux : `number`/`float`/`decimal` — par
+ *  opposition à `integer`, seul restreint aux entiers (parité web : <input type="number">
+ *  accepte les décimaux). Pilote le clavier ET la lecture de valeur (cf. EditableField.decimal). */
+fun estWidgetDecimal(typeWidget: String): Boolean =
+    typeWidget.lowercase() in setOf("number", "float", "decimal")
+
 /** Convertit un schéma de propriété gn_module_monitoring vers le [ViewType] du renderer.
  *  Le `multiple` est lu depuis le schéma — datalist/observers/dataset peuvent être single
  *  (Spinner) ou multi (dialog cases à cocher). Renvoie null pour les widgets pas encore portés. */
@@ -177,6 +183,7 @@ fun construireFormulaire(schemaObjet: MonitoringApi.MonitoringSchemaObjet): Form
                 // MEDIA uniquement : table cible côté gn_commons pour résoudre id_table_location
                 // lors de l'upload du fichier après création de l'objet parent.
                 schemaDotTable = if (viewType == ViewType.MEDIA) prop.schemaDotTable else null,
+                decimal = viewType == ViewType.NUMBER && estWidgetDecimal(prop.typeWidget),
             )
         )
     }

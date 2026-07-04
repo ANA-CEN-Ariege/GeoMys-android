@@ -33,14 +33,25 @@
 -keepclassmembers,allowobfuscation class * {
     @com.google.gson.annotations.SerializedName <fields>;
 }
-# Modèles désérialisés par réflexion (cf. audit B2). On garde le constructeur et
-# les champs : R8 ne doit ni les renommer ni les supprimer.
+# Modèles désérialisés par réflexion (cf. audit B2 + audit 2026-07). On garde le
+# constructeur et les champs : R8 ne doit ni les renommer ni les supprimer.
+# ⚠ La liste était INCOMPLÈTE (audit 2026-07) : Sortie était gardée mais pas ses classes
+# IMBRIQUÉES (Observation, PointTrace, Taxon) ni HabitatSuggestion — activer R8 avec
+# l'ancienne liste aurait cassé silencieusement la RELECTURE des saisies persistées
+# (SortieStore) au premier démarrage minifié. Aucune de ces classes n'a de @SerializedName,
+# la règle keepclassmembers @SerializedName ne les protège donc pas.
+# Le package model est gardé EN ENTIER : toute classe qu'on y ajoutera (le cas le plus
+# fréquent d'évolution du format de saisie) sera protégée d'office.
+-keep class fr.ariegenature.geomys.model.** { *; }
 -keep class fr.ariegenature.geomys.network.GeoNatureDataset { *; }
 -keep class fr.ariegenature.geomys.network.GeoNatureListe { *; }
 -keep class fr.ariegenature.geomys.network.GeoNatureObservateur { *; }
 -keep class fr.ariegenature.geomys.network.AdditionalFieldDef { *; }
+-keep class fr.ariegenature.geomys.network.HabitatSuggestion { *; }
+# SaisieEnAttente$Etat (enum imbriqué, sérialisé par nom) : couvert par le $*.
 -keep class fr.ariegenature.geomys.store.SaisieEnAttente { *; }
+-keep class fr.ariegenature.geomys.store.SaisieEnAttente$* { *; }
 -keep class fr.ariegenature.geomys.store.TaxRefEntry { *; }
 -keep class fr.ariegenature.geomys.store.NomValeur { *; }
--keep class fr.ariegenature.geomys.model.Denombrement { *; }
--keep class fr.ariegenature.geomys.model.Sortie { *; }
+# Table locale des codes de nidification (classe privée Fichier parsée par Gson).
+-keep class fr.ariegenature.geomys.store.NidificationOiseaux$* { *; }

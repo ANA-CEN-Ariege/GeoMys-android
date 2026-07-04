@@ -47,9 +47,14 @@ enum class ViewType {
      *  types de sites) ainsi que pour les widgets serveur `multiselect`. Rendu via dialog
      *  cases à cocher, valeur retournée = List<String>. */
     SELECT_MULTIPLE,
-    /** Booléen : widgets serveur `bool_checkbox` / `bool` / `checkbox`. Rendu en CheckBox
+    /** Booléen : widgets serveur `bool_checkbox` / `bool` / `boolean`. Rendu en CheckBox
      *  Material, valeur retournée = Boolean. */
     CHECKBOX,
+    /** Choix MULTIPLE rendu en groupe de cases à cocher INLINE (widget serveur `checkbox` :
+     *  une case par valeur de `values`, plusieurs cochables en même temps). À la différence de
+     *  SELECT_MULTIPLE (boîte de dialogue), les cases sont visibles directement, comme sur le
+     *  web GeoNature. Valeur retournée = List<String> des `value` cochées (null si aucune). */
+    CHECKBOX_MULTIPLE,
     /** Pièce jointe média (photo) — widget serveur `medias`. Rendu : bouton "Ajouter une
      *  photo" + nom du fichier sélectionné + bouton ✕. La valeur retournée par lireValeurs
      *  est l'URI String du fichier copié localement (ou null si rien sélectionné). L'upload

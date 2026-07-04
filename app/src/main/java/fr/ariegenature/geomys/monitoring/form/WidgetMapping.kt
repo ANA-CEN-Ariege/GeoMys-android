@@ -52,10 +52,18 @@ fun mapperViewType(prop: fr.ariegenature.geomys.network.MonitoringApi.Monitoring
         // n'a pas de sens → on bascule sur la multi-sélection à cases.
         "radio" ->
             if (prop.multiple) ViewType.SELECT_MULTIPLE else ViewType.RADIO
-        // Widget explicitement multi-sélection côté serveur (variantes vues sur le terrain).
+        // Widget explicitement multi-sélection côté serveur, rendu en boîte de dialogue.
         "multiselect", "multi_select", "select_multiple", "select-multiple" -> ViewType.SELECT_MULTIPLE
-        // Booléens : différentes conventions serveur — toutes vers CheckBox.
-        "bool_checkbox", "bool", "boolean", "checkbox" -> ViewType.CHECKBOX
+        // `checkbox` = GROUPE de cases à cocher à CHOIX MULTIPLE (une case par valeur de
+        // `values`, plusieurs cochables), rendu INLINE comme sur le web GeoNature — et NON un
+        // booléen. Le booléen unique, lui, c'est `bool_checkbox` / `bool_radio` (cf. GeoNature
+        // dynamic-form.component.html : *ngSwitchCase 'checkbox' rend N cases, 'bool_checkbox'
+        // rend UNE case). Rendre `checkbox` en CheckBox unique écrasait un choix multi-valeurs
+        // en un simple oui/non — ex. POPReptile « abondance » (« à vue » / « sur/sous plaques »)
+        // n'affichait qu'une case au lieu de deux.
+        "checkbox" -> ViewType.CHECKBOX_MULTIPLE
+        // Booléens (case unique vrai/faux) : différentes conventions serveur — toutes vers CheckBox.
+        "bool_checkbox", "bool", "boolean" -> ViewType.CHECKBOX
         // Widgets de type "liste alimentée par API" : tous unifiés sur SELECT(_MULTIPLE).
         // Le pré-fetch (cf [chargerOptionsDatalist]) leur donne des `values` toutes prêtes
         // depuis l'endpoint déclaré dans le schéma (api, keyLabel, keyValue, data_path).

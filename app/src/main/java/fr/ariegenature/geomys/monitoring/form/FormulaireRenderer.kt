@@ -224,6 +224,17 @@ class FormulaireRenderer(
                 val labels = field.values.filter { it.value in liste }.map { it.label }
                 text = if (labels.isEmpty()) "Choisir…" else labels.joinToString(", ")
             }
+            ViewType.CHECKBOX_MULTIPLE -> {
+                val liste = when (valeur) {
+                    is List<*> -> valeur.map { it.toString() }
+                    null -> emptyList()
+                    else -> listOf(valeur.toString())
+                }
+                val conteneur = vue as LinearLayout
+                (0 until conteneur.childCount)
+                    .mapNotNull { conteneur.getChildAt(it) as? android.widget.CheckBox }
+                    .forEach { it.isChecked = (it.tag as? String) in liste }
+            }
             // TAXON : cible improbable d'une règle change, non géré.
             ViewType.TAXON -> {}
         }
@@ -421,6 +432,16 @@ class FormulaireRenderer(
                 @Suppress("UNCHECKED_CAST")
                 ((v as TextView).tag as? List<String>)?.takeIf { it.isNotEmpty() }
             }
+            ViewType.CHECKBOX_MULTIPLE -> {
+                // Cases cochées → List<String> de leurs `value` (tag) ; aucune → null,
+                // même sémantique "non renseigné" que SELECT_MULTIPLE.
+                val conteneur = v as LinearLayout
+                (0 until conteneur.childCount)
+                    .mapNotNull { conteneur.getChildAt(it) as? android.widget.CheckBox }
+                    .filter { it.isChecked }
+                    .mapNotNull { it.tag as? String }
+                    .takeIf { it.isNotEmpty() }
+            }
             // CheckBox non cochée = null (= "non renseigné"), cochée = true. Le serveur
             // monitoring ne semble pas distinguer false explicite de "non renseigné".
             ViewType.CHECKBOX -> if ((v as android.widget.CheckBox).isChecked) true else null
@@ -473,6 +494,7 @@ class FormulaireRenderer(
             ViewType.SELECT -> creerSpinner(field)
             ViewType.RADIO -> creerChampRadio(field)
             ViewType.SELECT_MULTIPLE -> creerChampMultiSelect(field)
+            ViewType.CHECKBOX_MULTIPLE -> creerChampCheckboxMultiple(field)
             ViewType.CHECKBOX -> creerCheckBox(field)
             ViewType.MEDIA -> creerChampMedia(field)
         }
@@ -888,6 +910,47 @@ class FormulaireRenderer(
         // Listener posé APRÈS le pré-cochage du défaut pour ne pas notifier pendant le rendu.
         rg.setOnCheckedChangeListener { _, _ -> notifierChangement() }
         return rg
+    }
+
+    /** Champ CHECKBOX_MULTIPLE : groupe de cases à cocher à CHOIX MULTIPLE (widget serveur
+     *  `checkbox`). Contrairement à SELECT_MULTIPLE (boîte de dialogue), les cases sont
+     *  affichées INLINE, comme sur le web GeoNature — on peut en cocher plusieurs (ex.
+     *  POPReptile « abondance » : à vue ET/OU sur/sous plaques). Chaque case porte sa `value`
+     *  dans son `tag` ; la lecture au submit collecte les cases cochées (List<String>).
+     *  Pré-cochage depuis field.value (List<String> d'une édition/défaut, ou une seule String). */
+    private fun creerChampCheckboxMultiple(field: EditableField): LinearLayout {
+        val conteneur = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            )
+        }
+        if (field.values.isEmpty()) {
+            conteneur.addView(TextView(ctx).apply {
+                text = "(aucune option disponible)"
+                setTextColor(couleurSecondaire)
+            })
+            return conteneur
+        }
+        val defaut: Set<String> = when (val v = field.value) {
+            is List<*> -> v.map { it.toString() }.toSet()
+            is String -> if (v.isNotEmpty()) setOf(v) else emptySet()
+            else -> emptySet()
+        }
+        field.values.forEach { opt ->
+            conteneur.addView(
+                com.google.android.material.checkbox.MaterialCheckBox(ctx).apply {
+                    text = opt.label
+                    tag = opt.value
+                    setTextColor(couleurValeur)
+                    // isChecked posé AVANT le listener pour ne pas notifier pendant le rendu.
+                    isChecked = opt.value in defaut
+                    setOnCheckedChangeListener { _, _ -> notifierChangement() }
+                }
+            )
+        }
+        return conteneur
     }
 
     /** Champ MEDIA : conteneur horizontal [bouton "Ajouter une photo" | nom-de-fichier | ✕].

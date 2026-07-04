@@ -555,6 +555,12 @@ class NouvelleVisiteFragment : Fragment() {
         nouveaux.forEachIndexed { idx, f ->
             val prop = visitSchema.properties[f.code] ?: return@forEachIndexed
             if (f.value != null) return@forEachIndexed // déjà rempli (ex: par pré-sélection user)
+            // JAMAIS de valeur par défaut sur un champ ESPÈCE : le taxon doit être choisi par
+            // l'utilisateur (parité web, qui ne pré-remplit pas l'espèce). Un `default` cd_nom
+            // déclaré au schéma (ex. POPReptile) s'appliquait sinon ici et s'affichait en NUMÉRO
+            // brut dans le champ (String non résolue en nom). En édition, la valeur réelle est
+            // déjà posée plus haut (f.value != null) et n'est donc pas concernée.
+            if (f.viewType == ViewType.TAXON) return@forEachIndexed
             // Cas 1 : default scalaire (text/number/date) ou widget non-datalist
             if (prop.defaultValue != null && prop.defaultObjet.isEmpty()) {
                 nouveaux[idx] = f.copy(value = prop.defaultValue)
@@ -857,7 +863,7 @@ class NouvelleVisiteFragment : Fragment() {
                 is String -> v.toIntOrNull()
                 else -> v.toString().toIntOrNull()
             }
-            ViewType.SELECT_MULTIPLE -> when (v) {
+            ViewType.SELECT_MULTIPLE, ViewType.CHECKBOX_MULTIPLE -> when (v) {
                 is List<*> -> v.map { it.toString() }
                 else -> listOf(v.toString())
             }

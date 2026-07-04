@@ -37,6 +37,36 @@ class MiseAJourFragment : Fragment() {
     private val binding get() = _binding!!
     private var urlApk: String? = null
 
+    /** APK téléchargé, en attente d'installation — conservé pour pouvoir RELANCER
+     *  l'installation au retour des réglages d'autorisation (cf. [demandeAutorisation]). */
+    private var apkTelecharge: java.io.File? = null
+
+    /** Retour de l'écran « Installer des applis inconnues » : le détour par les réglages
+     *  ANNULE l'intent d'installation d'origine — sans cette reprise, l'écran restait figé
+     *  sur « Lancement de l'installation… » au premier usage (autorisation pas encore
+     *  accordée, typiquement après une première installation). */
+    private val demandeAutorisation = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
+    ) {
+        val apk = apkTelecharge
+        when {
+            apk == null || _binding == null -> Unit
+            peutInstaller() -> {
+                binding.tvResultat.text = "Lancement de l'installation…"
+                MiseAJour.installer(requireContext(), apk)
+            }
+            else -> binding.tvResultat.text =
+                "Autorisation non accordée — accordez « Installer des applis inconnues » " +
+                    "à GeoMys puis réappuyez sur « Installer »."
+        }
+    }
+
+    /** true si l'app a le droit de déclencher l'installation d'un APK (toujours vrai avant
+     *  Android 8.0, autorisation par appli ensuite). */
+    private fun peutInstaller(): Boolean =
+        android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.O ||
+            requireContext().packageManager.canRequestPackageInstalls()
+
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         _binding = FragmentMiseAJourBinding.inflate(inflater, container, false)
         return binding.root
@@ -98,7 +128,23 @@ class MiseAJourFragment : Fragment() {
                 if (_binding == null) return@launch
                 binding.progress.visibility = View.GONE
                 binding.btnInstaller.isEnabled = true
-                binding.tvResultat.text = "Lancement de l'installation…"
+                apkTelecharge = apk
+                if (!peutInstaller()) {
+                    // Premier usage : demande l'autorisation d'abord, l'installation
+                    // reprend automatiquement au retour des réglages (cf. demandeAutorisation).
+                    binding.tvResultat.text =
+                        "Autorisez GeoMys à installer des applications — " +
+                            "l'installation reprendra automatiquement."
+                    demandeAutorisation.launch(
+                        android.content.Intent(
+                            android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                            android.net.Uri.parse("package:${requireContext().packageName}"),
+                        )
+                    )
+                    return@launch
+                }
+                binding.tvResultat.text = "Lancement de l'installation…\n" +
+                    "(si rien ne se passe, réappuyez sur « Installer »)"
                 MiseAJour.installer(requireContext(), apk)
             } catch (e: Exception) {
                 if (_binding == null) return@launch

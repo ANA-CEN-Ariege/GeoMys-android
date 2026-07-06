@@ -202,16 +202,20 @@ class SortieDetailFragment : Fragment() {
 
             val titre: String
             val contenu: String
+            // Heure du relevé (Détails / dateDebutReleve) si fixée, sinon heure de saisie —
+            // même règle que l'envoi (date_min) et le dialogue Détails ; sinon une heure
+            // modifiée a posteriori n'apparaîtrait pas sur la carte.
+            val heureReleve = fmt.format(Date(rep.dateDebutReleve ?: rep.date))
             if (obsGroup.size == 1) {
                 titre = rep.espece
-                var sub = fmt.format(Date(rep.date))
+                var sub = heureReleve
                 if (rep.nombre > 1) sub += " · ${rep.nombre} ind."
                 if (rep.notes.isNotEmpty()) sub += " — ${rep.notes}"
                 contenu = sub
             } else {
                 // Une espèce par ligne — l'InfoWindow custom n'a pas de maxLines, donc
                 // toute la liste s'affiche même au-delà de 3 espèces.
-                titre = "${obsGroup.size} espèces · ${fmt.format(Date(rep.date))}"
+                titre = "${obsGroup.size} espèces · $heureReleve"
                 contenu = obsGroup.joinToString("\n") { o ->
                     val n = if (o.nombre > 1) " × ${o.nombre}" else ""
                     val notes = if (o.notes.isNotEmpty()) " — ${o.notes}" else ""

@@ -71,6 +71,10 @@ class TraceFragment : Fragment() {
     /** Vrai uniquement au 1er affichage après une reprise de sortie : demande à [setupMap] de
      *  cadrer la carte sur les obs/trace déjà saisies plutôt que sur la position courante. */
     private var doitCentrerSurObs = false
+    /** Vrai au retour d'un relevé multi-taxons tout juste terminé (flag demarrerSaisieSuivante) :
+     *  demande à [setupMap] de conserver l'emprise (centre + zoom) de la dernière localisation
+     *  plutôt que de recentrer sur le GPS, pour placer le relevé suivant dans le même cadrage. */
+    private var reprendreDerniereEmprise = false
     private var modePositionnement = false
     /** IDs des obs à repositionner sur la carte. Vide = pas en mode reposition. Un seul ID pour
      *  une obs solo, N IDs pour un relevé multi-taxons (toutes déplacées au même point). */
@@ -207,6 +211,13 @@ class TraceFragment : Fragment() {
             .getSharedPreferences("GeoMys_prefs", android.content.Context.MODE_PRIVATE)
             .getBoolean("enregistrer_trace", true)
 
+        // Enchaînement multi-taxons : consommé AVANT setupMap pour que la carte conserve
+        // l'emprise de la dernière localisation (cf. reprendreDerniereEmprise dans setupMap)
+        // au lieu de sauter sur le GPS. Le flag est posé par SaisieObservationFragment quand
+        // un relevé est terminé avec au moins une espèce.
+        reprendreDerniereEmprise = findNavController().currentBackStackEntry
+            ?.savedStateHandle?.remove<Boolean>("demarrerSaisieSuivante") == true
+
         setupMap()
         setupControls()
         observerViewModel()
@@ -219,11 +230,10 @@ class TraceFragment : Fragment() {
         binding.bandeauSaisie.root.applyStatusBarMargin()
         appliquerBandeauNavigation(binding.bandeauSaisie.root, findNavController(), traceViewModel.typeSaisieLabel)
 
-        // Enchaînement multi-taxons : si on revient d'un relevé tout juste validé (coche),
-        // SaisieObservationFragment a posé ce flag pour qu'on reparte directement en mode
-        // positionnement, prêt à placer le relevé suivant — comme un clic sur le bouton « + ».
-        val sv = findNavController().currentBackStackEntry?.savedStateHandle
-        if (sv?.remove<Boolean>("demarrerSaisieSuivante") == true) {
+        // Enchaînement multi-taxons : au retour d'un relevé tout juste validé (coche), on
+        // repart directement en mode positionnement, prêt à placer le relevé suivant — comme
+        // un clic sur le bouton « + ». (Le flag a été consommé plus haut, avant setupMap.)
+        if (reprendreDerniereEmprise) {
             suivrePosition = false
             modePositionnement = true
             updateModePositionnement()
@@ -265,6 +275,15 @@ class TraceFragment : Fragment() {
             suivrePosition = false
             binding.btnCentrer.setImageResource(R.drawable.ic_location_off)
             centrerSurObservations()
+        } else if (reprendreDerniereEmprise && savedMapCenter != null) {
+            // Fin d'un relevé multi-taxons → placement du suivant : on conserve l'emprise de la
+            // dernière localisation (le centre ci-dessous ; le zoom a déjà été restauré via
+            // savedMapZoom plus haut) au lieu de sauter sur le GPS. L'utilisateur garde ainsi
+            // le contexte spatial du relevé qu'il vient de terminer pour placer le suivant à
+            // proximité — sans ça, la carte recadrait sur la position du téléphone.
+            binding.map.controller.setCenter(savedMapCenter)
+            suivrePosition = false
+            binding.btnCentrer.setImageResource(R.drawable.ic_location_off)
         } else {
             // Au retour sur la carte (après saisie), on recentre sur la position du téléphone
             // et on réactive le suivi pour que la carte (et donc le réticule, fixé au centre

@@ -975,7 +975,10 @@ class TraceFragment : Fragment() {
         marker.icon = ContextCompat.getDrawable(requireContext(), R.drawable.ic_bird_marker)
         marker.title = obs.espece
         val fmt = SimpleDateFormat("HH:mm", Locale.getDefault())
-        var sub = fmt.format(Date(obs.date))
+        // Heure affichée = celle du relevé (« Détails », dateDebutReleve) si elle a été fixée,
+        // sinon l'heure de saisie de l'obs — même règle que l'envoi (date_min) et le dialogue
+        // Détails. Sans ça, la bulle gardait l'heure de CRÉATION après une modif dans Détails.
+        var sub = fmt.format(Date(obs.dateDebutReleve ?: obs.date))
         if (obs.nombre > 1) sub += " · ${obs.nombre} ind."
         if (obs.notes.isNotEmpty()) sub += " — ${obs.notes}"
         marker.snippet = sub
@@ -1021,10 +1024,14 @@ class TraceFragment : Fragment() {
             val notes = if (o.notes.isNotEmpty()) " — ${o.notes}" else ""
             "• ${o.espece}$n$notes"
         }
+        // Heure du relevé (Détails / dateDebutReleve) si fixée, sinon heure de saisie —
+        // cohérent avec le dialogue Détails et l'envoi. Avant : toujours l'heure de création,
+        // donc une heure modifiée dans Détails n'apparaissait pas ici.
+        val heure = fmt.format(Date(premiere.dateDebutReleve ?: premiere.date))
         val titre = if (observations.size == 1)
-            "${premiere.espece} · ${fmt.format(Date(premiere.date))}"
+            "${premiere.espece} · $heure"
         else
-            "${observations.size} espèces · ${fmt.format(Date(premiere.date))}"
+            "${observations.size} espèces · $heure"
         AlertDialog.Builder(requireContext())
             .setTitle(titre)
             .setMessage(especes)

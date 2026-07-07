@@ -38,6 +38,20 @@ import java.net.URL
 
 object GeoNatureSync {
 
+    /** Sur un ensemble de cd_nom HOMONYMES (même nom scientifique ou vernaculaire), retourne
+     *  celui à conserver dans le cache indexé-par-nom : priorité au cd_nom appartenant à la
+     *  liste de saisie configurée [listeConfig], puis le plus petit cd_nom (déterministe).
+     *  Corrige la perte d'un taxon présent dans la liste OccTax quand un homonyme d'une autre
+     *  liste l'écrasait (« dernier écrit »). Extrait pour être testable (cf. sync). */
+    internal fun meilleurCdNomPrefListe(
+        cds: Collection<Int>,
+        listesParCdNom: Map<Int, Set<Int>>,
+        listeConfig: Int?,
+    ): Int? = cds.minWithOrNull(
+        compareByDescending<Int> { listeConfig != null && listeConfig in (listesParCdNom[it] ?: emptySet()) }
+            .thenBy { it }
+    )
+
     suspend fun verifierVersionTaxRef(config: GeoNatureConfig): String? =
         withContext(Dispatchers.IO) {
             try {
@@ -215,6 +229,12 @@ object GeoNatureSync {
         // scientifique, pour résoudre les noms français APRÈS agrégation (cf. plus bas).
         val vernsCdNom = mutableMapOf<Int, LinkedHashSet<String>>()
         val lbNomParCd = mutableMapOf<Int, String>()
+        // Candidats par clé SCIENTIFIQUE normalisée : plusieurs cd_nom peuvent partager le même
+        // nom scientifique (entrées nomenclaturales homonymes — ex. Carex pendula 88766 dans les
+        // listes 100+108 ET 88767 dans 108). Résolus APRÈS la boucle, comme les noms français,
+        // pour privilégier le cd_nom de la liste de saisie configurée (sinon « dernier écrit »
+        // pouvait garder un cd_nom hors liste → taxon invisible en saisie OccTax).
+        val candidatsSci = HashMap<String, MutableList<Int>>()
 
         // Téléchargement PARALLÈLE des listes (concurrence bornée) — c'est le poste le plus
         // lourd de la synchro. Chaque liste est récupérée indépendamment, sans état partagé.
@@ -249,7 +269,7 @@ object GeoNatureSync {
                 }
                 lbNomParCd[item.cdNom] = item.lbNom
                 val cleSci = TaxRefCache.normaliser(item.lbNom)
-                if (cleSci.isNotEmpty()) entrees[cleSci] = TaxRefEntry(item.cdNom, item.lbNom, null)
+                if (cleSci.isNotEmpty()) candidatsSci.getOrPut(cleSci) { mutableListOf() }.add(item.cdNom)
                 if (item.group2.isNotEmpty()) {
                     groupeMap[item.cdNom] = item.group2
                     if (cdNomsDejaComptes.add(item.cdNom)) {
@@ -264,14 +284,26 @@ object GeoNatureSync {
             }
         }
 
-        // ── Résolution des noms FRANÇAIS → cd_nom (après agrégation : l'appartenance aux listes est
-        // alors connue). Le cache principal étant indexé par NOM, plusieurs cd_nom partageant un nom
-        // vernaculaire (typiquement une espèce et ses sous-espèces) entrent en collision de clé. On
-        // privilégie alors le cd_nom appartenant à la LISTE CONFIGURÉE pour la saisie (taxaListeId),
-        // puis le plus petit cd_nom (déterministe) — sinon « le dernier écrit » ferait pointer le nom
-        // français sur un cd_nom arbitraire, souvent hors liste (ex. sous-espèce), invisible à la
-        // saisie. On NE remplace PAS une clé scientifique homonyme déjà posée.
+        // Préférence commune aux résolutions ci-dessous : le cd_nom appartenant à la LISTE
+        // CONFIGURÉE pour la saisie l'emporte, puis le plus petit cd_nom (déterministe).
         val listeConfig = config.taxaListeId.trim().toIntOrNull()
+        fun meilleurCdNom(cds: Collection<Int>): Int? =
+            meilleurCdNomPrefListe(cds, listesParCdNom, listeConfig)
+
+        // ── Résolution des clés SCIENTIFIQUES homonymes (après agrégation : l'appartenance aux
+        // listes est alors connue). Plusieurs cd_nom peuvent porter le même nom scientifique ;
+        // « dernier écrit » pouvait garder un cd_nom hors liste de saisie (ex. Carex pendula
+        // 88767 [liste 108] écrasant 88766 [listes 100+108]) → le taxon, pourtant dans la liste
+        // OccTax, devenait invisible à la saisie. On garde ici le cd_nom préféré.
+        for ((cle, cds) in candidatsSci) {
+            val best = meilleurCdNom(cds) ?: continue
+            entrees[cle] = TaxRefEntry(best, lbNomParCd[best].orEmpty(), null)
+        }
+
+        // ── Résolution des noms FRANÇAIS → cd_nom. Même logique : plusieurs cd_nom partageant un
+        // nom vernaculaire (typiquement une espèce et ses sous-espèces) entrent en collision de
+        // clé ; on privilégie la liste configurée puis le plus petit cd_nom. On NE remplace PAS
+        // une clé scientifique homonyme déjà posée.
         val candidatsFr = HashMap<String, MutableList<Pair<Int, String>>>()
         for ((cd, noms) in vernsCdNom) for (nom in noms) {
             val cle = TaxRefCache.normaliser(nom)

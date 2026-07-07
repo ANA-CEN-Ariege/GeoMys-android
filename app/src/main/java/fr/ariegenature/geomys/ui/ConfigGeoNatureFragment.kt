@@ -734,13 +734,40 @@ class ConfigGeoNatureFragment : Fragment() {
             val marqueProto = if (id in listesProtocoles) " · protocole" else ""
             "$nom ($id) — $n taxon${if (n > 1) "s" else ""}$marqueProto"
         }.toTypedArray()
-        val titre = buildString {
-            append("Taxons par liste")
-            if (cdNomsProtocoles.isNotEmpty())
-                append(" — ${cdNomsProtocoles.size} via protocoles")
+
+        // En-tête PERSONNALISÉE (au lieu d'un simple setTitle) : titre en gras + sous-titre
+        // + trait de séparation, pour bien la distinguer des lignes de listes cliquables
+        // (le titre « Taxons par liste » se confondait avec un item).
+        val density = resources.displayMetrics.density
+        fun dp(v: Int) = (v * density).toInt()
+        val header = android.widget.LinearLayout(requireContext()).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(dp(22), dp(18), dp(22), 0)
+            addView(android.widget.TextView(requireContext()).apply {
+                text = "Taxons par listes"
+                textSize = 20f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setTextColor(couleurSurOnSurface(requireContext()))
+            })
+            addView(android.widget.TextView(requireContext()).apply {
+                text = buildString {
+                    append("Touchez une liste pour voir ses taxons")
+                    if (cdNomsProtocoles.isNotEmpty())
+                        append("  ·  ${cdNomsProtocoles.size} via protocoles")
+                }
+                textSize = 13f
+                setTextColor(couleurSecondaire(requireContext()))
+                setPadding(0, dp(3), 0, 0)
+            })
+            addView(android.view.View(requireContext()).apply {
+                layoutParams = android.widget.LinearLayout.LayoutParams(
+                    android.widget.LinearLayout.LayoutParams.MATCH_PARENT, dp(1),
+                ).apply { topMargin = dp(12) }
+                setBackgroundColor(0x40808080)
+            })
         }
         AlertDialog.Builder(requireContext())
-            .setTitle(titre)
+            .setCustomTitle(header)
             .setItems(items) { _, which ->
                 val id = lignes[which].key
                 findNavController().naviguerSur(

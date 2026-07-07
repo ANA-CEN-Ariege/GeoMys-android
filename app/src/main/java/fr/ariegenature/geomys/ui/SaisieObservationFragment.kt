@@ -279,6 +279,14 @@ class SaisieObservationFragment : Fragment() {
                 // Géométrie reçue de TraceFragment (via DetailsReleveFragment ou direct).
                 geometryTypeSession = arguments?.getString("geometryType")
                 geometryCoordsJsonSession = arguments?.getString("geometryCoordsJson")
+                // Saisie a posteriori (date modifiée dans « Détails » plus tôt dans cette
+                // sortie) : ce nouveau relevé HÉRITE de la date/heure choisie, même si
+                // l'utilisateur n'ouvre pas « Détails » (demande terrain : les relevés
+                // suivants conservent la date de la saisie a posteriori).
+                if (traceViewModel.saisieAPosteriori) {
+                    dateDebutReleveSession = traceViewModel.dateDebutReleveAPosteriori
+                    dateFinReleveSession = traceViewModel.dateFinReleveAPosteriori
+                }
             }
         } else {
             // View recréée — `pendingObs` est déjà à jour. Taxon = celui de la 1re espèce en cours.
@@ -463,6 +471,13 @@ class SaisieObservationFragment : Fragment() {
             dateFinReleveSession = res.dateFin
             typGrpReleveSession = res.typGrp
             champsReleveExtraSession = res.champsExtra
+            // Date/heure RÉELLEMENT modifiée → saisie a posteriori : on mémorise au niveau de
+            // la sortie (VM partagé) pour propager aux relevés suivants ET conserver l'emprise
+            // carte du relevé précédent (au lieu de recentrer sur le GPS). Jamais dé-armé ici :
+            // en direct (date non touchée), le mode reste inactif.
+            if (res.dateModifiee) {
+                traceViewModel.definirDateAPosteriori(res.dateDebut, res.dateFin)
+            }
         }
     }
 

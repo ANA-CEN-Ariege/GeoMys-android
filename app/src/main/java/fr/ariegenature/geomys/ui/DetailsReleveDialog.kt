@@ -125,6 +125,11 @@ data class DetailsReleveResult(
     /** Champs relevé supplémentaires saisis (clé = clé `form_fields`), seulement ceux visibles +
      *  renseignés ; les champs masqués conservent leur valeur initiale. */
     val champsExtra: Map<String, String> = emptyMap(),
+    /** true si l'utilisateur a réellement MODIFIÉ la date ou l'heure de DÉBUT dans ce dialogue
+     *  (≠ simplement validé la valeur par défaut). Signale une saisie a posteriori : la date
+     *  se propage aux relevés suivants et la carte garde l'emprise du relevé précédent
+     *  (cf. TraceViewModel.saisieAPosteriori). */
+    val dateModifiee: Boolean = false,
 )
 
 /** Dialog "Détails du relevé" partagé par la saisie multi-taxons ([SaisieObservationFragment])
@@ -334,6 +339,9 @@ fun ouvrirDialogDetailsReleve(
     val calFin = java.util.Calendar.getInstance().apply {
         timeInMillis = dateFinInitial ?: calDebut.timeInMillis
     }
+    // Passe à true dès que l'utilisateur change la date OU l'heure de DÉBUT (pas la fin) :
+    // marqueur de saisie a posteriori remonté dans le résultat (cf. DetailsReleveResult.dateModifiee).
+    var dateDebutModifiee = false
     val fmtDate = java.text.SimpleDateFormat("dd/MM/yyyy", java.util.Locale.FRANCE)
     val fmtHeure = java.text.SimpleDateFormat("HH:mm", java.util.Locale.FRANCE)
     fun champDateHeure(): TextView = TextView(ctx).apply {
@@ -351,8 +359,12 @@ fun ouvrirDialogDetailsReleve(
     }
     fun choisirDate(cal: java.util.Calendar, onSet: () -> Unit) {
         android.app.DatePickerDialog(ctx, { _, y, m, d ->
+            val avant = cal.timeInMillis
             cal.set(java.util.Calendar.YEAR, y); cal.set(java.util.Calendar.MONTH, m)
-            cal.set(java.util.Calendar.DAY_OF_MONTH, d); onSet()
+            cal.set(java.util.Calendar.DAY_OF_MONTH, d)
+            // Seul un vrai changement de la date de DÉBUT arme le marqueur a posteriori.
+            if (cal === calDebut && cal.timeInMillis != avant) dateDebutModifiee = true
+            onSet()
         }, cal.get(java.util.Calendar.YEAR), cal.get(java.util.Calendar.MONTH),
             cal.get(java.util.Calendar.DAY_OF_MONTH))
             .apply { datePicker.maxDate = System.currentTimeMillis() } // pas de date future
@@ -360,7 +372,10 @@ fun ouvrirDialogDetailsReleve(
     }
     fun choisirHeure(cal: java.util.Calendar, onSet: () -> Unit) {
         android.app.TimePickerDialog(ctx, { _, h, min ->
-            cal.set(java.util.Calendar.HOUR_OF_DAY, h); cal.set(java.util.Calendar.MINUTE, min); onSet()
+            val avant = cal.timeInMillis
+            cal.set(java.util.Calendar.HOUR_OF_DAY, h); cal.set(java.util.Calendar.MINUTE, min)
+            if (cal === calDebut && cal.timeInMillis != avant) dateDebutModifiee = true
+            onSet()
         }, cal.get(java.util.Calendar.HOUR_OF_DAY), cal.get(java.util.Calendar.MINUTE), true).show()
     }
     fun ecart() = android.view.View(ctx).apply {
@@ -653,6 +668,7 @@ fun ouvrirDialogDetailsReleve(
                     dateDebut = dDebut,
                     dateFin = dFin,
                     champsExtra = extra,
+                    dateModifiee = dateDebutModifiee,
                 )
             )
             dialog.dismiss()

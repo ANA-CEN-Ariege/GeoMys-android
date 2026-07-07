@@ -275,12 +275,12 @@ class TraceFragment : Fragment() {
             suivrePosition = false
             binding.btnCentrer.setImageResource(R.drawable.ic_location_off)
             centrerSurObservations()
-        } else if (reprendreDerniereEmprise && savedMapCenter != null) {
-            // Fin d'un relevé multi-taxons → placement du suivant : on conserve l'emprise de la
-            // dernière localisation (le centre ci-dessous ; le zoom a déjà été restauré via
-            // savedMapZoom plus haut) au lieu de sauter sur le GPS. L'utilisateur garde ainsi
-            // le contexte spatial du relevé qu'il vient de terminer pour placer le suivant à
-            // proximité — sans ça, la carte recadrait sur la position du téléphone.
+        } else if (reprendreDerniereEmprise && traceViewModel.saisieAPosteriori && savedMapCenter != null) {
+            // Fin d'un relevé en SAISIE A POSTERIORI (date modifiée dans « Détails ») → on
+            // conserve l'emprise du relevé précédent (centre ci-dessous ; zoom déjà restauré
+            // via savedMapZoom) : le GPS n'est pas pertinent quand on saisit des données
+            // passées, et l'utilisateur enchaîne les relevés dans la même zone. En saisie EN
+            // DIRECT (saisieAPosteriori=false), on retombe sur le centrage GPS ci-dessous.
             binding.map.controller.setCenter(savedMapCenter)
             suivrePosition = false
             binding.btnCentrer.setImageResource(R.drawable.ic_location_off)

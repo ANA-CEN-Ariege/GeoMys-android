@@ -49,6 +49,29 @@ class TraceViewModel(application: Application) : AndroidViewModel(application) {
     var sortieEnEditionId: String? = null
         private set
 
+    /** Saisie A POSTERIORI : passe à true dès que l'utilisateur modifie la date/heure d'un
+     *  relevé dans « Détails » au cours de cette sortie (≠ saisie en direct sur le terrain).
+     *  Conséquences, partagées par toute la sortie (VM d'Activity) :
+     *   - les relevés suivants HÉRITENT de [dateDebutReleveAPosteriori]/[dateFinReleveAPosteriori] ;
+     *   - au retour sur la carte après un relevé, on garde l'emprise du relevé précédent au
+     *     lieu de recentrer sur le GPS (non pertinent quand on saisit des données passées).
+     *  En saisie en direct (date non modifiée), reste false → comportement GPS habituel.
+     *  Reset par [reinitialiser] / [reprendreSortie]. */
+    var saisieAPosteriori = false
+        private set
+    var dateDebutReleveAPosteriori: Long? = null
+        private set
+    var dateFinReleveAPosteriori: Long? = null
+        private set
+
+    /** Mémorise la date/heure a posteriori choisie dans « Détails » et arme [saisieAPosteriori]
+     *  pour le reste de la sortie. Appelé par la saisie quand l'utilisateur MODIFIE la date. */
+    fun definirDateAPosteriori(debut: Long?, fin: Long?) {
+        saisieAPosteriori = true
+        dateDebutReleveAPosteriori = debut
+        dateFinReleveAPosteriori = fin
+    }
+
     fun ajouterObservation(obs: Observation) {
         val list = _observations.value ?: mutableListOf()
         list.add(obs)
@@ -202,6 +225,15 @@ class TraceViewModel(application: Application) : AndroidViewModel(application) {
         _observations.value = mutableListOf()
         locationTracker.reinitialiser()
         sortieEnEditionId = null
+        reinitialiserAPosteriori()
+    }
+
+    /** Repart en mode « saisie en direct » (GPS) : appelé au démarrage d'une nouvelle sortie
+     *  et à la reprise d'une sortie existante. */
+    private fun reinitialiserAPosteriori() {
+        saisieAPosteriori = false
+        dateDebutReleveAPosteriori = null
+        dateFinReleveAPosteriori = null
     }
 
     /** Force la prochaine ouverture de l'écran trace à RECHARGER la sortie depuis le store
@@ -223,6 +255,7 @@ class TraceViewModel(application: Application) : AndroidViewModel(application) {
         locationTracker.restaurerParcours(sortie.pointsParcours)
         locationTracker.definirDistance(sortie.distanceTotale)
         sortieEnEditionId = sortie.id
+        reinitialiserAPosteriori()
     }
 
     override fun onCleared() {

@@ -19,28 +19,81 @@
 package fr.ariegenature.geomys.ui
 
 import android.content.Context
+import androidx.appcompat.app.AlertDialog
+import fr.ariegenature.geomys.store.MbtilesStore
+import org.osmdroid.tileprovider.MapTileProviderBasic
+import org.osmdroid.tileprovider.modules.OfflineTileProvider
 import org.osmdroid.tileprovider.tilesource.OnlineTileSourceBase
 import org.osmdroid.tileprovider.tilesource.TileSourcePolicy
 import org.osmdroid.tileprovider.tilesource.XYTileSource
+import org.osmdroid.tileprovider.util.SimpleRegisterReceiver
 import org.osmdroid.util.MapTileIndex
+import org.osmdroid.views.MapView
+import java.io.File
 
 enum class FondCarte { OSM, OPENTOPO, TOPO, SCAN25, ORTHO, ESRI }
+
+/** Fond de carte sélectionné : soit un fond EN LIGNE ([FondCarte]), soit un fichier MBTILES
+ *  local importé par l'utilisateur (hors-ligne). Partagé entre toutes les cartes. */
+sealed interface FondChoisi {
+    data class EnLigne(val fond: FondCarte) : FondChoisi
+    data class Mbtiles(val fichier: File) : FondChoisi
+}
 
 private const val PREFS_FOND = "GeoMys_prefs"
 private const val KEY_FOND = "fond_carte"
 
-/** Charge le dernier fond de carte choisi par l'utilisateur (partagé entre toutes les cartes).
- *  `defaut` n'est utilisé qu'à la toute première ouverture, avant tout choix. */
-fun chargerFondCarte(context: Context, defaut: FondCarte): FondCarte {
-    val nom = context.getSharedPreferences(PREFS_FOND, Context.MODE_PRIVATE)
-        .getString(KEY_FOND, null) ?: return defaut
-    return runCatching { FondCarte.valueOf(nom) }.getOrDefault(defaut)
+/** Charge le dernier fond choisi (en ligne ou MBTiles). Repli sur OSM si aucun choix ou si le
+ *  fichier MBTiles mémorisé a disparu. */
+fun chargerFondChoisi(context: Context): FondChoisi {
+    val v = context.getSharedPreferences(PREFS_FOND, Context.MODE_PRIVATE).getString(KEY_FOND, null)
+        ?: return FondChoisi.EnLigne(FondCarte.OSM)
+    if (v.startsWith("mbtiles:")) {
+        val f = File(MbtilesStore.dossier(context), v.removePrefix("mbtiles:"))
+        return if (f.exists()) FondChoisi.Mbtiles(f) else FondChoisi.EnLigne(FondCarte.OSM)
+    }
+    return FondChoisi.EnLigne(runCatching { FondCarte.valueOf(v) }.getOrDefault(FondCarte.OSM))
 }
 
-/** Mémorise le fond de carte choisi pour qu'il soit réutilisé à la prochaine ouverture. */
-fun enregistrerFondCarte(context: Context, fond: FondCarte) {
-    context.getSharedPreferences(PREFS_FOND, Context.MODE_PRIVATE)
-        .edit().putString(KEY_FOND, fond.name).apply()
+/** Mémorise le fond choisi (en ligne : nom de l'enum ; MBTiles : `mbtiles:<nom de fichier>`). */
+fun enregistrerFondChoisi(context: Context, fond: FondChoisi) {
+    val v = when (fond) {
+        is FondChoisi.EnLigne -> fond.fond.name
+        is FondChoisi.Mbtiles -> "mbtiles:${fond.fichier.name}"
+    }
+    context.getSharedPreferences(PREFS_FOND, Context.MODE_PRIVATE).edit().putString(KEY_FOND, v).apply()
+}
+
+/** Applique le fond [fond] sur la carte [map] : bascule le fournisseur de tuiles entre le mode
+ *  EN LIGNE (provider réseau + cache) et le mode HORS-LIGNE MBTiles (OfflineTileProvider sur le
+ *  fichier SQLite). Détache proprement un provider MBTiles précédent (libère la connexion SQLite). */
+fun appliquerFond(map: MapView, fond: FondChoisi, context: Context) {
+    (map.tileProvider as? OfflineTileProvider)?.detach()
+    when (fond) {
+        is FondChoisi.EnLigne -> {
+            // Si on venait du hors-ligne, le provider a été détaché ci-dessus → on en remet un
+            // en ligne. Sinon (online→online), on garde le provider existant et on change juste
+            // la source (préserve le cache configuré à l'init de la carte).
+            if (map.tileProvider !is MapTileProviderBasic) map.setTileProvider(MapTileProviderBasic(context))
+            map.setUseDataConnection(true)
+            map.setTileSource(tileSourcePour(fond.fond))
+        }
+        is FondChoisi.Mbtiles -> {
+            val info = MbtilesStore.info(fond.fichier)
+            val provider = OfflineTileProvider(SimpleRegisterReceiver(context), arrayOf(fond.fichier))
+            // setIgnoreTileSource(true) : l'archive sert les tuiles par z/x/y quel que soit le
+            // nom de source (un MBTiles n'a pas de « dossier source » comme un zip).
+            provider.archives.forEach { it.setIgnoreTileSource(true) }
+            map.setTileProvider(provider)
+            map.setUseDataConnection(false) // pas de réseau : tout vient du fichier
+            // Source générique : ne sert qu'à borner le zoom et la taille de tuile ; le nom est
+            // ignoré (cf. ci-dessus), le format png/jpg est auto-détecté au décodage.
+            map.setTileSource(
+                XYTileSource("mbtiles", info.minZoom, info.maxZoom, 256, ".${info.format}", arrayOf(""))
+            )
+        }
+    }
+    map.invalidate()
 }
 
 /** Policy permissive : autorise le bulk download (FLAG_NO_BULK désactivé) — nécessaire pour
@@ -73,13 +126,46 @@ private fun osmTileSource(): OnlineTileSourceBase = XYTileSource(
     POLICY_PERMISSIVE,
 )
 
-fun FondCarte.suivant() = when (this) {
-    FondCarte.OSM      -> FondCarte.OPENTOPO
-    FondCarte.OPENTOPO -> FondCarte.TOPO
-    FondCarte.TOPO     -> FondCarte.SCAN25
-    FondCarte.SCAN25   -> FondCarte.ORTHO
-    FondCarte.ORTHO    -> FondCarte.ESRI
-    FondCarte.ESRI     -> FondCarte.OSM
+/** Libellé lisible d'un fond de carte, pour le menu de choix. */
+fun FondCarte.libelle(): String = when (this) {
+    FondCarte.OSM      -> "OpenStreetMap"
+    FondCarte.OPENTOPO -> "OpenTopoMap (relief)"
+    FondCarte.TOPO     -> "IGN Plan"
+    FondCarte.SCAN25   -> "IGN SCAN 25 (topo)"
+    FondCarte.ORTHO    -> "IGN Photo aérienne"
+    FondCarte.ESRI     -> "Esri (satellite)"
+}
+
+/** Libellé d'un fond pour le menu : nom du fond en ligne, ou « 📁 <nom> (hors-ligne) » pour
+ *  un MBTiles. */
+private fun libelleFond(fond: FondChoisi): String = when (fond) {
+    is FondChoisi.EnLigne -> fond.fond.libelle()
+    is FondChoisi.Mbtiles -> "📁 ${MbtilesStore.nomAffichage(fond.fichier)} (hors-ligne)"
+}
+
+private fun memeFond(a: FondChoisi, b: FondChoisi): Boolean = when {
+    a is FondChoisi.EnLigne && b is FondChoisi.EnLigne -> a.fond == b.fond
+    a is FondChoisi.Mbtiles && b is FondChoisi.Mbtiles -> a.fichier.name == b.fichier.name
+    else -> false
+}
+
+/** Ouvre un menu de choix du fond de carte : liste à choix unique (fonds EN LIGNE + fichiers
+ *  MBTILES importés), le fond [courant] présélectionné. [onChoix] est invoqué avec le fond
+ *  retenu (rien si annulation). Remplace le cyclage « fond suivant » au tap. */
+fun choisirFondCarte(context: Context, courant: FondChoisi, onChoix: (FondChoisi) -> Unit) {
+    val options: List<FondChoisi> =
+        FondCarte.values().map { FondChoisi.EnLigne(it) } +
+            MbtilesStore.liste(context).map { FondChoisi.Mbtiles(it) }
+    val labels = options.map { libelleFond(it) }.toTypedArray()
+    val idx = options.indexOfFirst { memeFond(it, courant) }.coerceAtLeast(0)
+    AlertDialog.Builder(context)
+        .setTitle("Fond de carte")
+        .setSingleChoiceItems(labels, idx) { dialog, which ->
+            dialog.dismiss()
+            onChoix(options[which])
+        }
+        .setNegativeButton("Annuler", null)
+        .show()
 }
 
 /** OpenTopoMap (tuiles XYZ standard z/x/y, CC-BY-SA). Zoom max 17. */

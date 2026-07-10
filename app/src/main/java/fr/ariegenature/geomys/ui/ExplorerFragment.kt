@@ -62,7 +62,7 @@ class ExplorerFragment : Fragment() {
     private var fetchJob: Job? = null
     private var debounceJob: Job? = null
     private val iconeCache = mutableMapOf<Pair<Taxon, Int>, BitmapDrawable>()
-    private var fondCarte = FondCarte.OSM
+    private var fondCarte: FondChoisi = FondChoisi.EnLigne(FondCarte.OSM)
     private var taxonFiltre: Taxon? = null
     private var observationsBrutes: List<ObsExplorer> = emptyList()
     private var sensorManager: android.hardware.SensorManager? = null
@@ -96,7 +96,7 @@ class ExplorerFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         gnConfig = GeoNatureConfig(requireContext())
-        fondCarte = chargerFondCarte(requireContext(), fondCarte)
+        fondCarte = chargerFondChoisi(requireContext())
 
         setupMap()
         setupLocalisation()
@@ -131,7 +131,7 @@ class ExplorerFragment : Fragment() {
     }
 
     private fun setupMap() {
-        binding.map.setTileSource(tileSourcePour(fondCarte))
+        appliquerFond(binding.map, fondCarte, requireContext())
         binding.map.setMultiTouchControls(true)
         // Boutons de zoom osmdroid désactivés au profit de nos boutons +/- (cluster bas-gauche).
         binding.map.zoomController.setVisibility(
@@ -325,10 +325,11 @@ class ExplorerFragment : Fragment() {
     }
 
     private fun toggleFondCarte() {
-        fondCarte = fondCarte.suivant()
-        binding.map.setTileSource(tileSourcePour(fondCarte))
-        binding.map.invalidate()
-        enregistrerFondCarte(requireContext(), fondCarte)
+        choisirFondCarte(requireContext(), fondCarte) { choisi ->
+            fondCarte = choisi
+            appliquerFond(binding.map, fondCarte, requireContext())
+            enregistrerFondChoisi(requireContext(), fondCarte)
+        }
     }
 
     private fun centrerSurPosition() {

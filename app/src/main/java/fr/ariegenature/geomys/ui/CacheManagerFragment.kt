@@ -20,7 +20,9 @@ package fr.ariegenature.geomys.ui
 
 import android.app.AlertDialog
 import android.app.ProgressDialog
+import android.net.Uri
 import android.os.Bundle
+import androidx.activity.result.contract.ActivityResultContracts
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -33,6 +35,8 @@ import fr.ariegenature.geomys.R
 import fr.ariegenature.geomys.databinding.FragmentCacheManagerBinding
 import fr.ariegenature.geomys.network.MonitoringApi
 import fr.ariegenature.geomys.store.GeoNatureConfig
+import fr.ariegenature.geomys.store.MbtilesStore
+import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -68,7 +72,14 @@ import kotlin.math.min
 class CacheManagerFragment : Fragment() {
     private var _binding: FragmentCacheManagerBinding? = null
     private val binding get() = _binding!!
-    private var fondCarte = FondCarte.OSM
+    private var fondCarte: FondChoisi = FondChoisi.EnLigne(FondCarte.OSM)
+
+    /** Sélecteur système pour importer un fichier MBTiles (type générique « tous fichiers » car
+     *  les .mbtiles n'ont pas de type MIME enregistré) ; le fichier choisi est copié (importerMbtiles). */
+    private val importMbtilesLauncher =
+        registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            if (uri != null) importerMbtiles(uri)
+        }
     /** Overlays posés par la dernière sélection de protocole — gardés pour pouvoir les
      *  retirer proprement avant d'en afficher d'autres (changement de protocole). */
     private val overlaysProtocole = mutableListOf<Overlay>()
@@ -96,8 +107,8 @@ class CacheManagerFragment : Fragment() {
         // suffisant pour ne pas être occulté par la nav bar gestuelle / 3-boutons.
         binding.panelBas.applyNavBarInset(includeIme = true)
 
-        fondCarte = chargerFondCarte(requireContext(), fondCarte)
-        binding.map.setTileSource(tileSourcePour(fondCarte))
+        fondCarte = chargerFondChoisi(requireContext())
+        appliquerFond(binding.map, fondCarte, requireContext())
         binding.map.setMultiTouchControls(true)
         // Boutons de zoom osmdroid désactivés au profit de nos boutons +/- (cluster bas-gauche).
         binding.map.zoomController.setVisibility(
@@ -136,15 +147,17 @@ class CacheManagerFragment : Fragment() {
         binding.map.overlays.add(locationOverlay)
 
         binding.btnFondCarte.setOnClickListener {
-            fondCarte = fondCarte.suivant()
-            binding.map.setTileSource(tileSourcePour(fondCarte))
-            binding.map.invalidate()
-            enregistrerFondCarte(requireContext(), fondCarte)
-            majInfos()
+            choisirFondCarte(requireContext(), fondCarte) { choisi ->
+                fondCarte = choisi
+                appliquerFond(binding.map, fondCarte, requireContext())
+                enregistrerFondChoisi(requireContext(), fondCarte)
+                majInfos()
+            }
         }
         binding.btnCentrer.setOnClickListener { recentrerSurPosition() }
         binding.btnViderCache.setOnClickListener { demanderViderCache() }
         binding.btnProtocole.setOnClickListener { afficherChoixProtocole() }
+        binding.btnMbtiles.setOnClickListener { gererCartesHorsLigne() }
         binding.btnCharger.setOnClickListener { lancerTelechargement() }
 
         chargerProtocolesAccessibles()
@@ -168,19 +181,31 @@ class CacheManagerFragment : Fragment() {
      *  l'état du bouton « Charger » selon le seuil [SURFACE_MAX_KM2]. */
     private fun majInfos() {
         if (_binding == null) return
-        val bbox = binding.map.boundingBox
-        val surface = surfaceKm2(bbox)
-        val zoomMin = binding.map.zoomLevelDouble.toInt().coerceAtLeast(1)
-        val zoomMax = ZOOM_MAX_DEFAUT
-        val nbTuiles = nombreDeTuiles(bbox, zoomMin, zoomMax)
-        val poidsMb = nbTuiles * poidsTuileKbMoyen(fondCarte) / 1024.0
+        // Un fond MBTiles est DÉJÀ hors-ligne (tuiles dans le fichier) : rien à télécharger.
+        // L'estimation/le bouton « Charger » ne valent que pour un fond EN LIGNE.
+        val fondEnLigne = (fondCarte as? FondChoisi.EnLigne)?.fond
+        if (fondEnLigne != null) {
+            val bbox = binding.map.boundingBox
+            val surface = surfaceKm2(bbox)
+            val zoomMin = binding.map.zoomLevelDouble.toInt().coerceAtLeast(1)
+            val zoomMax = ZOOM_MAX_DEFAUT
+            val nbTuiles = nombreDeTuiles(bbox, zoomMin, zoomMax)
+            val poidsMb = nbTuiles * poidsTuileKbMoyen(fondEnLigne) / 1024.0
+            binding.tvSurface.text = "Surface : %.1f km² · zooms %d–%d".format(surface, zoomMin, zoomMax)
+            binding.tvTuiles.text = "≈ %s tuiles · ~%.0f MB · fond : %s".format(
+                "%,d".format(nbTuiles).replace(',', ' '), poidsMb, nomFond(fondEnLigne))
+            val depasse = surface > SURFACE_MAX_KM2
+            binding.btnCharger.isEnabled = !depasse && nbTuiles > 0
+            binding.tvAvertissement.visibility = if (depasse) View.VISIBLE else View.GONE
+            if (depasse) binding.tvAvertissement.text =
+                "Zone trop large (max ${SURFACE_MAX_KM2.toInt()} km²) — zoomer pour réduire."
+        } else {
+            binding.tvSurface.text = "Fond hors-ligne (MBTiles)"
+            binding.tvTuiles.text = "Déjà disponible hors-ligne — rien à télécharger"
+            binding.btnCharger.isEnabled = false
+            binding.tvAvertissement.visibility = View.GONE
+        }
 
-        binding.tvSurface.text = "Surface : %.1f km² · zooms %d–%d".format(surface, zoomMin, zoomMax)
-        binding.tvTuiles.text = "≈ %s tuiles · ~%.0f MB · fond : %s".format(
-            "%,d".format(nbTuiles).replace(',', ' '),
-            poidsMb,
-            nomFond(fondCarte),
-        )
         // Occupation cache disque : utile pour décider de vider avant d'enchaîner un autre
         // téléchargement, surtout au-delà de 90 % où la purge LRU auto va se déclencher
         // sous peu et risque d'évincer des tuiles qu'on vient juste de télécharger.
@@ -194,14 +219,82 @@ class CacheManagerFragment : Fragment() {
             if (pct >= 90.0) couleurErreur(requireContext())
             else couleurSecondaire(requireContext())
         )
+    }
 
-        val depasse = surface > SURFACE_MAX_KM2
-        binding.btnCharger.isEnabled = !depasse && nbTuiles > 0
-        binding.tvAvertissement.visibility = if (depasse) View.VISIBLE else View.GONE
-        if (depasse) {
-            binding.tvAvertissement.text =
-                "Zone trop large (max ${SURFACE_MAX_KM2.toInt()} km²) — zoomer pour réduire."
+    // ── Cartes hors-ligne MBTiles ──────────────────────────────────────────────────────────
+
+    /** Dialogue de gestion des cartes MBTiles : liste des fichiers importés (tap = supprimer)
+     *  + bouton d'import. Une fois importée, une carte apparaît dans le menu « fond de carte ». */
+    private fun gererCartesHorsLigne() {
+        val fichiers = MbtilesStore.liste(requireContext())
+        val builder = AlertDialog.Builder(requireContext())
+            .setTitle("Cartes hors-ligne (MBTiles)")
+            .setPositiveButton("Importer un fichier…") { _, _ ->
+                // "*/*" : les .mbtiles n'ont pas de type MIME standard reconnu par le sélecteur.
+                importMbtilesLauncher.launch(arrayOf("*/*"))
+            }
+            .setNegativeButton("Fermer", null)
+        if (fichiers.isEmpty()) {
+            builder.setMessage(
+                "Aucune carte importée.\n\nImportez un fichier .mbtiles depuis votre téléphone : " +
+                    "il apparaîtra ensuite dans le menu « fond de carte » et fonctionnera hors-ligne."
+            )
+        } else {
+            val items = fichiers.map { f ->
+                val info = MbtilesStore.info(f)
+                val mo = f.length() / (1024 * 1024)
+                "${MbtilesStore.nomAffichage(f)}\nzoom ${info.minZoom}–${info.maxZoom} · $mo Mo"
+            }.toTypedArray()
+            builder.setItems(items) { _, which -> confirmerSuppressionMbtiles(fichiers[which]) }
         }
+        builder.show()
+    }
+
+    private fun importerMbtiles(uri: Uri) {
+        @Suppress("DEPRECATION")
+        val progress = ProgressDialog(requireContext()).apply {
+            setTitle("Import de la carte")
+            setMessage("Copie du fichier…")
+            isIndeterminate = true
+            setCancelable(false)
+            show()
+        }
+        val appCtx = requireContext().applicationContext
+        viewLifecycleOwner.lifecycleScope.launch {
+            val fichier = withContext(Dispatchers.IO) { MbtilesStore.importer(appCtx, uri) }
+            progress.dismiss()
+            if (_binding == null) return@launch
+            if (fichier == null) {
+                android.widget.Toast.makeText(requireContext(),
+                    "Import échoué : fichier .mbtiles invalide ou illisible", android.widget.Toast.LENGTH_LONG).show()
+            } else {
+                android.widget.Toast.makeText(requireContext(),
+                    "Carte importée : ${MbtilesStore.nomAffichage(fichier)}", android.widget.Toast.LENGTH_LONG).show()
+                gererCartesHorsLigne()
+            }
+        }
+    }
+
+    private fun confirmerSuppressionMbtiles(fichier: File) {
+        AlertDialog.Builder(requireContext())
+            .setTitle(MbtilesStore.nomAffichage(fichier))
+            .setMessage("Supprimer cette carte hors-ligne du téléphone ?")
+            .setPositiveButton("Supprimer") { _, _ ->
+                val etaitSelectionne = (fondCarte as? FondChoisi.Mbtiles)?.fichier?.name == fichier.name
+                MbtilesStore.supprimer(fichier)
+                // Si c'était le fond affiché, on retombe sur OSM (sinon carte vide).
+                if (etaitSelectionne) {
+                    fondCarte = FondChoisi.EnLigne(FondCarte.OSM)
+                    appliquerFond(binding.map, fondCarte, requireContext())
+                    enregistrerFondChoisi(requireContext(), fondCarte)
+                    majInfos()
+                }
+                android.widget.Toast.makeText(requireContext(),
+                    "Carte supprimée", android.widget.Toast.LENGTH_SHORT).show()
+                gererCartesHorsLigne()
+            }
+            .setNegativeButton("Annuler", null)
+            .show()
     }
 
     private fun lancerTelechargement() {
@@ -229,7 +322,7 @@ class CacheManagerFragment : Fragment() {
                     majInfos()  // taille du cache a grandi
                     AlertDialog.Builder(requireContext())
                         .setTitle("Téléchargement terminé")
-                        .setMessage("Les tuiles du fond ${nomFond(fondCarte)} sont " +
+                        .setMessage("Les tuiles du fond ${nomFond((fondCarte as? FondChoisi.EnLigne)?.fond ?: FondCarte.OSM)} sont " +
                             "disponibles hors-ligne pour la zone affichée.")
                         .setPositiveButton("OK", null)
                         .show()

@@ -139,6 +139,17 @@
         android:layout_marginBottom="100dp"
         android:orientation="vertical">
 
+        <!-- Bouton « i » : détails COMMUNS de la saisie (jeu de données, observateurs, date,
+             habitat… pré-remplis pour tous les relevés de cette saisie). Au-dessus du GPS. -->
+        <ImageButton
+            android:id="@+id/btn_details_communs"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:layout_marginBottom="12dp"
+            android:background="@drawable/btn_circle_white"
+            android:contentDescription="Détails communs de la saisie"
+            android:src="@drawable/ic_info" />
+
         <!-- Bouton centrage (toggle suivi position). -->
         <ImageButton
             android:id="@+id/btn_centrer"

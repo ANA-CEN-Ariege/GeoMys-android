@@ -287,6 +287,24 @@ class SaisieObservationFragment : Fragment() {
                     dateDebutReleveSession = traceViewModel.dateDebutReleveAPosteriori
                     dateFinReleveSession = traceViewModel.dateFinReleveAPosteriori
                 }
+                // Détails COMMUNS de la saisie (bouton « i » sur la carte) : ce nouveau relevé en
+                // hérite comme valeurs de départ (jeu de données, observateurs, date, habitat,
+                // commentaire, form_fields). Surchargeable via le « Détails » de ce relevé. Les
+                // champs additionnels de l'écran intercalé (addReleveJson ci-dessus) priment ;
+                // sinon on prend ceux des détails communs.
+                traceViewModel.detailsCommuns?.let { dc ->
+                    idDatasetReleveSession = dc.idDataset
+                    observateursReleveIdsSession = dc.idsObservateurs
+                    observateursReleveNomsSession = dc.nomsObservateurs
+                    commentReleveSession = dc.comment
+                    cdHabReleveSession = dc.cdHab
+                    habitatReleveLabelSession = dc.habitatLabel
+                    typGrpReleveSession = dc.typGrp
+                    champsReleveExtraSession = dc.champsExtra
+                    dateDebutReleveSession = dc.dateDebut
+                    dateFinReleveSession = dc.dateFin
+                    if (additionalFieldsReleveSession.isEmpty()) additionalFieldsReleveSession = dc.additionnels
+                }
             }
         } else {
             // View recréée — `pendingObs` est déjà à jour. Taxon = celui de la 1re espèce en cours.

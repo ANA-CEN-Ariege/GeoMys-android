@@ -206,7 +206,7 @@ class SaisieRapideFragment : Fragment() {
         }
         override fun onAccuracyChanged(sensor: Sensor, accuracy: Int) {}
     }
-    private var fondCarte = FondCarte.OSM
+    private var fondCarte: FondChoisi = FondChoisi.EnLigne(FondCarte.OSM)
 
     // Zoom/centre carte mémorisés entre deux affichages de la vue (la vue est détruite/recréée
     // quand on va éditer Caractérisation/Dénombrement). Sans ça, setupMap rezoomait à 15 au retour
@@ -315,8 +315,8 @@ class SaisieRapideFragment : Fragment() {
     // ─── Carte ────────────────────────────────────────────────────────────────
 
     private fun setupMap() {
-        fondCarte = chargerFondCarte(requireContext(), fondCarte)
-        binding.map.setTileSource(tileSourcePour(fondCarte))
+        fondCarte = chargerFondChoisi(requireContext())
+        appliquerFond(binding.map, fondCarte, requireContext())
         binding.map.setMultiTouchControls(true)
         // Boutons de zoom osmdroid désactivés au profit de nos boutons +/- (cluster bas-gauche).
         binding.map.zoomController.setVisibility(
@@ -362,10 +362,11 @@ class SaisieRapideFragment : Fragment() {
         }
 
         binding.btnFondCarte.setOnClickListener {
-            fondCarte = fondCarte.suivant()
-            binding.map.setTileSource(tileSourcePour(fondCarte))
-            binding.map.invalidate()
-            enregistrerFondCarte(requireContext(), fondCarte)
+            choisirFondCarte(requireContext(), fondCarte) { choisi ->
+                fondCarte = choisi
+                appliquerFond(binding.map, fondCarte, requireContext())
+                enregistrerFondChoisi(requireContext(), fondCarte)
+            }
         }
 
         binding.compass.setOnClickListener {

@@ -55,7 +55,7 @@ import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
 class CarteGeometrieFragment : Fragment() {
     private var _binding: FragmentCarteGeometrieBinding? = null
     private val binding get() = _binding!!
-    private var fondCarte = FondCarte.TOPO
+    private var fondCarte: FondChoisi = FondChoisi.EnLigne(FondCarte.TOPO)
     private var locationOverlay: MyLocationNewOverlay? = null
     /** Schéma du protocole, chargé une fois pour les deux chemins (objet / protocole). Sert à
      *  décider, au tap sur un overlay, si on peut proposer "Nouvelle saisie" (= y a-t-il un
@@ -98,8 +98,8 @@ class CarteGeometrieFragment : Fragment() {
         binding.tvTitre.text = titre
         binding.tvTitre.visibility = if (titre.isEmpty()) View.GONE else View.VISIBLE
 
-        fondCarte = chargerFondCarte(requireContext(), fondCarte)
-        binding.map.setTileSource(tileSourcePour(fondCarte))
+        fondCarte = chargerFondChoisi(requireContext())
+        appliquerFond(binding.map, fondCarte, requireContext())
         binding.map.setMultiTouchControls(true)
         // Boutons de zoom osmdroid désactivés au profit de nos boutons +/- (cluster bas-gauche).
         binding.map.zoomController.setVisibility(
@@ -121,10 +121,11 @@ class CarteGeometrieFragment : Fragment() {
         binding.map.overlays.add(locationOverlay)
 
         binding.btnFondCarte.setOnClickListener {
-            fondCarte = fondCarte.suivant()
-            binding.map.setTileSource(tileSourcePour(fondCarte))
-            binding.map.invalidate()
-            enregistrerFondCarte(requireContext(), fondCarte)
+            choisirFondCarte(requireContext(), fondCarte) { choisi ->
+                fondCarte = choisi
+                appliquerFond(binding.map, fondCarte, requireContext())
+                enregistrerFondChoisi(requireContext(), fondCarte)
+            }
         }
 
         chargerEtAfficher(moduleCode, objectType, id)

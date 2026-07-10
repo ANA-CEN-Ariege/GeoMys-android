@@ -21,15 +21,17 @@ package fr.ariegenature.geomys
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import fr.ariegenature.geomys.ui.FondCarte
-import fr.ariegenature.geomys.ui.chargerFondCarte
-import fr.ariegenature.geomys.ui.enregistrerFondCarte
+import fr.ariegenature.geomys.ui.FondChoisi
+import fr.ariegenature.geomys.ui.chargerFondChoisi
+import fr.ariegenature.geomys.ui.enregistrerFondChoisi
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
-/** Mémorisation du fond de carte choisi (SharedPreferences, partagé entre toutes les cartes). */
+/** Mémorisation du fond de carte choisi (SharedPreferences, partagé entre toutes les cartes) —
+ *  fonds EN LIGNE et repli. Le modèle est [FondChoisi] depuis v1.2.14 (support MBTiles). */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class FondCartePersistanceTest {
@@ -37,24 +39,30 @@ class FondCartePersistanceTest {
     private val ctx: Context get() = ApplicationProvider.getApplicationContext()
 
     @Test
-    fun sans_valeur_enregistree_renvoie_le_defaut() {
-        assertEquals(FondCarte.OSM, chargerFondCarte(ctx, FondCarte.OSM))
-        assertEquals(FondCarte.TOPO, chargerFondCarte(ctx, FondCarte.TOPO))
+    fun sans_valeur_enregistree_renvoie_osm() {
+        assertEquals(FondChoisi.EnLigne(FondCarte.OSM), chargerFondChoisi(ctx))
     }
 
     @Test
-    fun enregistrer_puis_charger_roundtrip() {
-        enregistrerFondCarte(ctx, FondCarte.ORTHO)
-        assertEquals(FondCarte.ORTHO, chargerFondCarte(ctx, FondCarte.OSM))
-        // Le défaut passé est ignoré dès qu'une valeur est mémorisée.
-        enregistrerFondCarte(ctx, FondCarte.SCAN25)
-        assertEquals(FondCarte.SCAN25, chargerFondCarte(ctx, FondCarte.OSM))
+    fun enregistrer_puis_charger_roundtrip_en_ligne() {
+        enregistrerFondChoisi(ctx, FondChoisi.EnLigne(FondCarte.ORTHO))
+        assertEquals(FondChoisi.EnLigne(FondCarte.ORTHO), chargerFondChoisi(ctx))
+        enregistrerFondChoisi(ctx, FondChoisi.EnLigne(FondCarte.SCAN25))
+        assertEquals(FondChoisi.EnLigne(FondCarte.SCAN25), chargerFondChoisi(ctx))
     }
 
     @Test
-    fun valeur_corrompue_retombe_sur_le_defaut() {
+    fun valeur_corrompue_retombe_sur_osm() {
         ctx.getSharedPreferences("GeoMys_prefs", Context.MODE_PRIVATE)
             .edit().putString("fond_carte", "PAS_UN_FOND").commit()
-        assertEquals(FondCarte.TOPO, chargerFondCarte(ctx, FondCarte.TOPO))
+        assertEquals(FondChoisi.EnLigne(FondCarte.OSM), chargerFondChoisi(ctx))
+    }
+
+    @Test
+    fun mbtiles_dont_le_fichier_a_disparu_retombe_sur_osm() {
+        // Un fond MBTiles mémorisé mais dont le fichier n'existe plus → repli OSM (pas de crash).
+        ctx.getSharedPreferences("GeoMys_prefs", Context.MODE_PRIVATE)
+            .edit().putString("fond_carte", "mbtiles:inexistant.mbtiles").commit()
+        assertEquals(FondChoisi.EnLigne(FondCarte.OSM), chargerFondChoisi(ctx))
     }
 }

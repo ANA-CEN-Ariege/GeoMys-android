@@ -181,5 +181,13 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
             android:text="Charger les tuiles" />
+
+        <Button
+            android:id="@+id/btn_mbtiles"
+            style="@style/Widget.GeoMys.Button.TextButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Cartes hors-ligne (MBTiles)…"
+            android:textColor="@android:color/white" />
     </LinearLayout>
 </androidx.constraintlayout.widget.ConstraintLayout>

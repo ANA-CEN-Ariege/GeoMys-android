@@ -55,7 +55,7 @@ class SortieDetailFragment : Fragment() {
     private lateinit var sortie: Sortie
     private lateinit var sortieStore: SortieStore
     private lateinit var gnConfig: GeoNatureConfig
-    private var fondCarte = FondCarte.TOPO
+    private var fondCarte: FondChoisi = FondChoisi.EnLigne(FondCarte.TOPO)
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         Configuration.getInstance().userAgentValue = requireContext().packageName
@@ -96,10 +96,11 @@ class SortieDetailFragment : Fragment() {
 
     private fun setupButtons() {
         binding.btnFondCarte.setOnClickListener {
-            fondCarte = fondCarte.suivant()
-            binding.map.setTileSource(tileSourcePour(fondCarte))
-            binding.map.invalidate()
-            enregistrerFondCarte(requireContext(), fondCarte)
+            choisirFondCarte(requireContext(), fondCarte) { choisi ->
+                fondCarte = choisi
+                appliquerFond(binding.map, fondCarte, requireContext())
+                enregistrerFondChoisi(requireContext(), fondCarte)
+            }
         }
         binding.btnExporter.setOnClickListener { exporterGpx() }
 
@@ -168,8 +169,8 @@ class SortieDetailFragment : Fragment() {
     }
 
     private fun setupMap() {
-        fondCarte = chargerFondCarte(requireContext(), fondCarte)
-        binding.map.setTileSource(tileSourcePour(fondCarte))
+        fondCarte = chargerFondChoisi(requireContext())
+        appliquerFond(binding.map, fondCarte, requireContext())
         binding.map.setMultiTouchControls(true)
 
         if (sortie.pointsParcours.size > 1) {

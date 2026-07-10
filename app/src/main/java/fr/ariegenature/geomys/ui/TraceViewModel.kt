@@ -72,6 +72,17 @@ class TraceViewModel(application: Application) : AndroidViewModel(application) {
         dateFinReleveAPosteriori = fin
     }
 
+    /** Détails COMMUNS de la saisie multi-taxons, réglés via le bouton « i » sur la carte :
+     *  jeu de données, observateurs, date/heure, habitat, commentaire, champs additionnels et
+     *  form_fields. CHAQUE nouveau relevé de la sortie en hérite comme valeurs de départ (au
+     *  lieu des seuls défauts de la config) ; un relevé peut toujours surcharger via son propre
+     *  « Détails ». null tant que l'utilisateur ne les a pas définis. Reset par reinitialiser /
+     *  reprendreSortie. */
+    var detailsCommuns: DetailsReleveResult? = null
+        private set
+
+    fun definirDetailsCommuns(res: DetailsReleveResult) { detailsCommuns = res }
+
     fun ajouterObservation(obs: Observation) {
         val list = _observations.value ?: mutableListOf()
         list.add(obs)
@@ -234,6 +245,7 @@ class TraceViewModel(application: Application) : AndroidViewModel(application) {
         saisieAPosteriori = false
         dateDebutReleveAPosteriori = null
         dateFinReleveAPosteriori = null
+        detailsCommuns = null
     }
 
     /** Force la prochaine ouverture de l'écran trace à RECHARGER la sortie depuis le store

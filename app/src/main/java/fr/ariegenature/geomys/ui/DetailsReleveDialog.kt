@@ -167,6 +167,9 @@ fun ouvrirDialogDetailsReleve(
     champsExtraInitial: Map<String, String>,
     scope: CoroutineScope,
     chercherHabitats: suspend (String) -> List<HabitatSuggestion>,
+    /** Titre du dialogue : « Détails du relevé » pour un relevé précis, « Détails des relevés »
+     *  pour les détails communs à toute la saisie (bouton « i »). */
+    titreDialog: String = "Détails du relevé",
     onValider: (DetailsReleveResult) -> Unit,
 ) {
     val density = ctx.resources.displayMetrics.density
@@ -618,7 +621,7 @@ fun ouvrirDialogDetailsReleve(
     // Bouton « Valider » posé après show() pour pouvoir BLOQUER la fermeture si un champ
     // additionnel obligatoire (required) visible est vide (sinon setPositiveButton ferme le dialog).
     val dialog = MaterialAlertDialogBuilder(ctx)
-        .setTitle("Détails du relevé")
+        .setTitle(titreDialog)
         .setView(scroll)
         .setPositiveButton("Valider", null)
         .setNegativeButton("Annuler", null)

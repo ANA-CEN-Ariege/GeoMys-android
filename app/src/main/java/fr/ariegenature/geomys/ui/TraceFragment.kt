@@ -79,7 +79,7 @@ class TraceFragment : Fragment() {
     /** IDs des obs à repositionner sur la carte. Vide = pas en mode reposition. Un seul ID pour
      *  une obs solo, N IDs pour un relevé multi-taxons (toutes déplacées au même point). */
     private var obsARepositionnerIds: List<String> = emptyList()
-    private var fondCarte = FondCarte.OSM
+    private var fondCarte: FondChoisi = FondChoisi.EnLigne(FondCarte.OSM)
     /** false (défaut) = carte figée nord en haut du téléphone.
      *  true = carte tournée par la boussole pour garder le nord en haut de l'écran. */
     private var carteSuitBoussole = false
@@ -257,8 +257,8 @@ class TraceFragment : Fragment() {
     }
 
     private fun setupMap() {
-        fondCarte = chargerFondCarte(requireContext(), fondCarte)
-        binding.map.setTileSource(tileSourcePour(fondCarte))
+        fondCarte = chargerFondChoisi(requireContext())
+        appliquerFond(binding.map, fondCarte, requireContext())
         binding.map.setMultiTouchControls(true)
         // Boutons de zoom osmdroid par défaut DÉSACTIVÉS au profit de nos boutons +/- (cluster
         // bas-gauche, au-dessus du bandeau du bas) — placement maîtrisé, symétrique du cluster
@@ -371,7 +371,12 @@ class TraceFragment : Fragment() {
             if (ecranReleveNecessaire) {
                 findNavController().naviguerSur(
                     R.id.action_trace_to_details_releve,
-                    Bundle().apply { putBoolean("mono", true) },
+                    Bundle().apply {
+                        putBoolean("mono", true)
+                        // Pré-remplissage depuis les détails communs de la saisie.
+                        putString("addReleveJson", com.google.gson.Gson().toJson(
+                            traceViewModel.detailsCommuns?.additionnels ?: emptyMap<String, String>()))
+                    },
                 )
             } else {
                 findNavController().naviguerSur(R.id.action_trace_to_saisie_rapide)
@@ -404,11 +409,14 @@ class TraceFragment : Fragment() {
         }
 
         binding.btnFondCarte.setOnClickListener {
-            fondCarte = fondCarte.suivant()
-            binding.map.setTileSource(tileSourcePour(fondCarte))
-            binding.map.invalidate()
-            enregistrerFondCarte(requireContext(), fondCarte)
+            choisirFondCarte(requireContext(), fondCarte) { choisi ->
+                fondCarte = choisi
+                appliquerFond(binding.map, fondCarte, requireContext())
+                enregistrerFondChoisi(requireContext(), fondCarte)
+            }
         }
+
+        binding.btnDetailsCommuns.setOnClickListener { ouvrirDetailsCommuns() }
 
         binding.compass.setOnClickListener {
             carteSuitBoussole = !carteSuitBoussole
@@ -453,6 +461,12 @@ class TraceFragment : Fragment() {
                 // « Détails », et un required avec défaut est déjà satisfait.
                 val ecranReleveNecessaire = fr.ariegenature.geomys.ui.saisie.AdditionalFieldsRenderer
                     .aDesChampsReleveRequisSansDefaut(gnConfig.additionalFieldsOcctaxJsonActif, gnConfig.idDataset.toIntOrNull())
+                if (ecranReleveNecessaire) {
+                    // Écran relevé intercalé pré-rempli avec les champs additionnels COMMUNS de
+                    // la saisie (l'utilisateur confirme/ajuste ce qui est requis, sans retaper).
+                    bundle.putString("addReleveJson", com.google.gson.Gson().toJson(
+                        traceViewModel.detailsCommuns?.additionnels ?: emptyMap<String, String>()))
+                }
                 val cible = if (ecranReleveNecessaire) R.id.action_trace_to_details_releve
                             else R.id.action_trace_to_saisie
                 findNavController().naviguerSur(cible, bundle)
@@ -1130,6 +1144,52 @@ class TraceFragment : Fragment() {
             envoyerVersGeoNature(sortie)
         } else {
             findNavController().navigateUp()
+        }
+    }
+
+    /** Bouton « i » : règle les détails COMMUNS à tous les relevés de la saisie. Ouvre le même
+     *  dialogue « Détails » qu'un relevé, pré-rempli avec les valeurs communes courantes (ou les
+     *  défauts de la config au premier usage). À la validation, mémorisé dans le TraceViewModel :
+     *  chaque nouveau relevé en héritera comme point de départ (surchargeable via son « Détails »). */
+    private fun ouvrirDetailsCommuns() {
+        val communs = traceViewModel.detailsCommuns
+        val defs = fr.ariegenature.geomys.ui.saisie.AdditionalFieldsRenderer
+            .fromJson(gnConfig.additionalFieldsOcctaxJsonActif)
+            .filter { it.appliqueA(fr.ariegenature.geomys.network.AdditionalFieldsObject.RELEVE) }
+            .filter { it.visiblePour(gnConfig.idDataset.toIntOrNull(), emptyList()) }
+        val datasets = datasetsPourDetailsReleve(gnConfig)
+        val observateurs = observateursPourDetailsReleve(gnConfig)
+        val idDsInitial = communs?.idDataset ?: gnConfig.idDataset.toIntOrNull()
+        val idsObsInitial = communs?.idsObservateurs?.takeIf { it.isNotEmpty() }
+            ?: listOfNotNull(
+                gnConfig.observateurDefautId.toIntOrNull() ?: gnConfig.idRoleUtilisateur.takeIf { it > 0 })
+        val nomsObsInitial = communs?.nomsObservateurs?.takeIf { it.isNotEmpty() }
+            ?: listOfNotNull(
+                gnConfig.observateurDefautNom.ifEmpty { gnConfig.nomUtilisateur.ifEmpty { gnConfig.login } }
+                    .takeIf { it.isNotBlank() })
+        ouvrirDialogDetailsReleve(
+            requireContext(),
+            emptyList(), // réglages communs : pas d'info géométrie d'un relevé précis
+            datasets, idDsInitial, gnConfig.nomDataset.takeIf { it.isNotEmpty() },
+            observateurs, idsObsInitial, nomsObsInitial,
+            defs, communs?.additionnels ?: emptyMap(),
+            gnConfig.settingsOcctaxJson, gnConfig.formFieldsJson,
+            communs?.typGrp ?: "", communs?.comment ?: "",
+            communs?.dateDebut, communs?.dateFin, gnConfig.heuresVisibles, gnConfig.dateFinVisible,
+            communs?.cdHab, communs?.habitatLabel,
+            communs?.champsExtra ?: emptyMap(),
+            viewLifecycleOwner.lifecycleScope,
+            { terme -> fr.ariegenature.geomys.network.HabitatService.rechercher(gnConfig.urlServeur, terme) },
+            titreDialog = "Détails des relevés",
+        ) { res ->
+            traceViewModel.definirDetailsCommuns(res)
+            // Date commune modifiée → saisie a posteriori (cohérent avec le « Détails » d'un relevé).
+            if (res.dateModifiee) traceViewModel.definirDateAPosteriori(res.dateDebut, res.dateFin)
+            android.widget.Toast.makeText(
+                requireContext(),
+                "Détails communs enregistrés — appliqués aux prochains relevés",
+                android.widget.Toast.LENGTH_SHORT,
+            ).show()
         }
     }
 

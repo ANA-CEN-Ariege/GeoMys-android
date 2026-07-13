@@ -239,15 +239,46 @@ class CacheManagerFragment : Fragment() {
                 "Aucune carte importée.\n\nImportez un fichier .mbtiles depuis votre téléphone : " +
                     "il apparaîtra ensuite dans le menu « fond de carte » et fonctionnera hors-ligne."
             )
-        } else {
-            val items = fichiers.map { f ->
-                val info = MbtilesStore.info(f)
-                val mo = f.length() / (1024 * 1024)
-                "${MbtilesStore.nomAffichage(f)}\nzoom ${info.minZoom}–${info.maxZoom} · $mo Mo"
-            }.toTypedArray()
-            builder.setItems(items) { _, which -> confirmerSuppressionMbtiles(fichiers[which]) }
+            builder.show()
+            return
         }
-        builder.show()
+        // Liste custom : une ligne par carte (nom + zoom/taille) avec un bouton POUBELLE dédié
+        // à droite — plus clair qu'un tap sur la ligne pour supprimer.
+        val density = resources.displayMetrics.density
+        fun dp(v: Int) = (v * density).toInt()
+        val conteneur = android.widget.LinearLayout(requireContext()).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(dp(20), dp(8), dp(8), dp(8))
+        }
+        val dialog = builder
+            .setView(android.widget.ScrollView(requireContext()).apply { addView(conteneur) })
+            .create()
+        fichiers.forEach { f ->
+            val info = MbtilesStore.info(f)
+            val mo = f.length() / (1024 * 1024)
+            val ligne = android.widget.LinearLayout(requireContext()).apply {
+                orientation = android.widget.LinearLayout.HORIZONTAL
+                gravity = android.view.Gravity.CENTER_VERTICAL
+                setPadding(0, dp(6), 0, dp(6))
+            }
+            ligne.addView(android.widget.TextView(requireContext()).apply {
+                text = "${MbtilesStore.nomAffichage(f)}\nzoom ${info.minZoom}–${info.maxZoom} · $mo Mo"
+                textSize = 15f
+                layoutParams = android.widget.LinearLayout.LayoutParams(
+                    0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            })
+            ligne.addView(android.widget.ImageButton(requireContext()).apply {
+                setImageResource(R.drawable.ic_delete)
+                setColorFilter(0xFFC62828.toInt())
+                background = null
+                contentDescription = "Supprimer ${MbtilesStore.nomAffichage(f)}"
+                val p = dp(10)
+                setPadding(p, p, p, p)
+                setOnClickListener { dialog.dismiss(); confirmerSuppressionMbtiles(f) }
+            })
+            conteneur.addView(ligne)
+        }
+        dialog.show()
     }
 
     private fun importerMbtiles(uri: Uri) {

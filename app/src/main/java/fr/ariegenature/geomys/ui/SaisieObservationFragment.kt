@@ -279,6 +279,11 @@ class SaisieObservationFragment : Fragment() {
                 // Géométrie reçue de TraceFragment (via DetailsReleveFragment ou direct).
                 geometryTypeSession = arguments?.getString("geometryType")
                 geometryCoordsJsonSession = arguments?.getString("geometryCoordsJson")
+                // Jeu de données au niveau de la SAISIE : un relevé AJOUTÉ reprend celui des
+                // relevés déjà enregistrés de la sortie (donc conservé en ré-édition, même en
+                // ajoutant des relevés) ; pour le tout 1er relevé, synchroniserBatch fige le
+                // défaut config. Surchargé ensuite par les détails communs / « Détails » si posés.
+                idDatasetReleveSession = traceViewModel.datasetSortie()
                 // Saisie a posteriori (date modifiée dans « Détails » plus tôt dans cette
                 // sortie) : ce nouveau relevé HÉRITE de la date/heure choisie, même si
                 // l'utilisateur n'ouvre pas « Détails » (demande terrain : les relevés
@@ -932,7 +937,13 @@ class SaisieObservationFragment : Fragment() {
                     fr.ariegenature.geomys.ui.saisie.AdditionalFieldsRenderer
                         .defautsChampsReleve(gnConfig.additionalFieldsOcctaxJsonActif, gnConfig.idDataset.toIntOrNull())
                 },
-                idDatasetReleve           = idDatasetReleveSession,
+                // Jeu de données FIGÉ à la création du relevé : surcharge explicite (« Détails » /
+                // détails communs) sinon la valeur déjà stockée (préserve à la ré-édition) sinon
+                // le défaut de la config AU MOMENT de la 1re sauvegarde. Ainsi un changement de
+                // jeu de données par défaut dans les Paramètres n'affecte QUE les saisies
+                // ultérieures — les relevés déjà enregistrés gardent le leur.
+                idDatasetReleve           = idDatasetReleveSession ?: base.idDatasetReleve
+                    ?: gnConfig.idDataset.toIntOrNull()?.takeIf { it > 0 },
                 observateursReleveIds     = observateursReleveIdsSession,
                 observateursReleveNoms    = observateursReleveNomsSession,
                 commentReleve             = commentReleveSession.ifEmpty { null },

@@ -898,7 +898,12 @@ class SaisieRapideFragment : Fragment() {
                 fr.ariegenature.geomys.ui.saisie.AdditionalFieldsRenderer
                     .defautsChampsReleve(gnConfig.additionalFieldsOcctaxJsonActif, gnConfig.idDataset.toIntOrNull())
             },
-            idDatasetReleve             = idDatasetReleveSession,
+            // Jeu de données FIGÉ au niveau de la SAISIE : surcharge explicite (« Détails »)
+            // sinon le JDD des relevés déjà dans la sortie (conservé même en ajoutant/rééditant)
+            // sinon le défaut config au moment présent. Un changement ultérieur du défaut dans
+            // les Paramètres n'affecte QUE les saisies suivantes.
+            idDatasetReleve             = idDatasetReleveSession ?: traceViewModel.datasetSortie()
+                ?: gnConfig.idDataset.toIntOrNull()?.takeIf { it > 0 },
             typGrpReleve                = typGrpReleveSession.ifEmpty { null },
             champsReleveExtra           = champsReleveExtraSession,
             observateursReleveIds       = observateursReleveIdsSession,

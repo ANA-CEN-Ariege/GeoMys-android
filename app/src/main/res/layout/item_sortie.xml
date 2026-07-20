@@ -89,6 +89,16 @@
     </LinearLayout>
 
     <ImageButton
+        android:id="@+id/btn_liste"
+        android:layout_width="36dp"
+        android:layout_height="36dp"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:contentDescription="Lister les espèces"
+        android:src="@drawable/ic_list"
+        android:visibility="gone"
+        app:tint="?attr/colorControlNormal" />
+
+    <ImageButton
         android:id="@+id/btn_envoyer"
         android:layout_width="36dp"
         android:layout_height="36dp"

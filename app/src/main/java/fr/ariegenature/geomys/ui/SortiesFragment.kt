@@ -102,6 +102,7 @@ class SortiesFragment : Fragment() {
                 findNavController().naviguerSur(R.id.action_sorties_to_trace, bundle)
             },
             onEnvoyer = { sortie -> envoyerSortie(sortie) },
+            onListe = { sortie -> montrerListeEspeces(sortie) },
         )
 
         binding.recyclerView.layoutManager = LinearLayoutManager(requireContext())
@@ -214,6 +215,23 @@ class SortiesFragment : Fragment() {
         }
     }
 
+    /** Récapitulatif des espèces d'une saisie (bouton "liste" de la ligne), au même format que
+     *  l'écran de détail : une espèce par ligne, avec le nombre total d'individus. */
+    private fun montrerListeEspeces(sortie: Sortie) {
+        val agregees = sortie.observations
+            .groupBy { it.espece }
+            .map { (espece, obs) -> espece to obs.sumOf { it.nombre } }
+            .sortedBy { it.first }
+
+        val lignes = agregees.map { (espece, nombre) -> "$espece — $nombre ind." }
+        val titre = "${agregees.size} espèce${if (agregees.size > 1) "s" else ""}"
+        AlertDialog.Builder(requireContext())
+            .setTitle(titre)
+            .setItems(lignes.toTypedArray(), null)
+            .setPositiveButton("Fermer", null)
+            .show()
+    }
+
     private fun lancerImport() {
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             type = "*/*"
@@ -242,6 +260,7 @@ class SortieAdapter(
     private val onDelete: (Sortie) -> Unit,
     private val onEdit: (Sortie) -> Unit = {},
     private val onEnvoyer: (Sortie) -> Unit = {},
+    private val onListe: (Sortie) -> Unit = {},
 ) : RecyclerView.Adapter<SortieAdapter.ViewHolder>() {
     private var items: List<Sortie> = emptyList()
     private val fmt = SimpleDateFormat("dd MMM yyyy HH:mm", Locale.getDefault())
@@ -278,6 +297,12 @@ class SortieAdapter(
             }
             root.setOnClickListener { onClick(sortie) }
             btnSupprimer.setOnClickListener { onDelete(sortie) }
+            // Bouton "Lister les espèces" : dès qu'il y a au moins une observation, ouvre le
+            // même récapitulatif (espèce · cd_nom · nb ind.) que l'écran de détail, sans avoir
+            // à ouvrir la carte.
+            val aDesObs = sortie.observations.isNotEmpty()
+            btnListe.visibility = if (aDesObs) android.view.View.VISIBLE else android.view.View.GONE
+            btnListe.setOnClickListener { onListe(sortie) }
             // Bouton "Continuer la saisie" : visible uniquement pour les sorties à envoyer
             // (= non envoyées et non importées). Une sortie déjà envoyée n'a pas vocation
             // à être ré-éditée côté local ; une sortie importée (GPX externe) idem.

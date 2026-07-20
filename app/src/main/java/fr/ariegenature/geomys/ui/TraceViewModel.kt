@@ -83,6 +83,14 @@ class TraceViewModel(application: Application) : AndroidViewModel(application) {
 
     fun definirDetailsCommuns(res: DetailsReleveResult) { detailsCommuns = res }
 
+    /** Jeu de données de la SORTIE en cours = celui des relevés déjà enregistrés (tous les
+     *  relevés d'une saisie partagent le même). null si aucun relevé n'en porte encore →
+     *  l'appelant retombe alors sur le défaut de la config. Permet qu'un relevé AJOUTÉ à une
+     *  saisie existante (y compris en ré-édition) reprenne le jeu de données de la SAISIE, et
+     *  non le défaut config courant (qui a pu changer entre-temps). */
+    fun datasetSortie(): Int? =
+        _observations.value?.firstNotNullOfOrNull { it.idDatasetReleve?.takeIf { d -> d > 0 } }
+
     fun ajouterObservation(obs: Observation) {
         val list = _observations.value ?: mutableListOf()
         list.add(obs)

@@ -121,16 +121,10 @@ class SortieDetailFragment : Fragment() {
     private fun montrerListeEspeces() {
         val agregees = sortie.observations
             .groupBy { it.espece }
-            .map { (espece, obs) -> Triple(espece, obs.sumOf { it.nombre }, obs.firstOrNull()?.cdNom) }
+            .map { (espece, obs) -> espece to obs.sumOf { it.nombre } }
             .sortedBy { it.first }
 
-        val lignes = agregees.map { (espece, nombre, cdNom) ->
-            buildString {
-                append(espece)
-                if (cdNom != null) append("\n  cd_nom : $cdNom")
-                append("\n  $nombre ind.")
-            }
-        }
+        val lignes = agregees.map { (espece, nombre) -> "$espece — $nombre ind." }
         val titre = "${agregees.size} espèce${if (agregees.size > 1) "s" else ""}"
         AlertDialog.Builder(requireContext())
             .setTitle(titre)

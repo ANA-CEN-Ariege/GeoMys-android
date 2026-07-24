@@ -395,8 +395,10 @@ object GeoNatureSync {
                     ?: return@withContext Pair(0, "Format inattendu")
 
                 // Types de nomenclature de saisie : dérivés du registre unique (OcctaxFieldsConfig),
-                // + TYPE_MEDIA (type de média, hors champs de saisie).
-                val typesVoulus = fr.ariegenature.geomys.store.OcctaxFieldsConfig.mnemoniques().toSet() + "TYPE_MEDIA"
+                // + TYPE_MEDIA (type de média, hors champs de saisie), + les nomenclatures OccHab
+                // (station + habitat) pour que leurs sélecteurs aient des valeurs hors-ligne.
+                val typesVoulus = fr.ariegenature.geomys.store.OcctaxFieldsConfig.mnemoniques().toSet() +
+                    "TYPE_MEDIA" + OccHabApi.MNEMONIQUES
                 val result = mutableMapOf<String, List<NomValeur>>()
 
                 for (i in 0 until array.length()) {
@@ -455,8 +457,11 @@ object GeoNatureSync {
                 // GeoNature) produirait des envois incomplets invisibles pour l'utilisateur.
                 // Les types OPTIONNELS (champs pilotés form_fields, souvent absents) ne déclenchent
                 // pas d'avertissement s'ils manquent — ils ne sont utilisés que si le serveur les expose.
+                // Les nomenclatures OccHab sont OPTIONNELLES (présentes seulement si le module
+                // OccHab est installé) → jamais d'avertissement si elles manquent.
                 val typesManquants = typesVoulus - result.keys -
-                    fr.ariegenature.geomys.store.OcctaxFieldsConfig.mnemoniquesOptionnels()
+                    fr.ariegenature.geomys.store.OcctaxFieldsConfig.mnemoniquesOptionnels() -
+                    OccHabApi.MNEMONIQUES
                 val msg = buildString {
                     append(resume)
                     if (typesManquants.isNotEmpty()) {

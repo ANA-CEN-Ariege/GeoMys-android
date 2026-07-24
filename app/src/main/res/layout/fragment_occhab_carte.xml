@@ -1,0 +1,160 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Écran de définition de la GÉOMÉTRIE d'une station OccHab : on tape sur la carte pour
+     placer un point (mode Point) ou ajouter des sommets (mode Polygone). Contrôles carte
+     identiques à Occtax (TraceFragment) : mode point/polygone à gauche-milieu, zoom bas-gauche,
+     centrer/boussole/fond bas-droite. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <org.osmdroid.views.MapView
+        android:id="@+id/map"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <include
+        android:id="@+id/bandeau_saisie"
+        layout="@layout/view_bandeau_saisie"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        android:layout_margin="12dp" />
+
+    <TextView
+        android:id="@+id/tv_instructions"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|center_horizontal"
+        android:layout_marginTop="64dp"
+        android:background="@drawable/badge_bg"
+        android:paddingHorizontal="12dp"
+        android:paddingVertical="6dp"
+        android:textColor="@android:color/white"
+        android:textSize="13sp"
+        android:textStyle="bold" />
+
+    <!-- Sélecteur de mode géométrique (point / polygone), centré verticalement à gauche —
+         même emplacement/habillage que le sélecteur d'Occtax. -->
+    <LinearLayout
+        android:id="@+id/ll_mode_geom"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_vertical|start"
+        android:layout_marginStart="12dp"
+        android:orientation="vertical">
+
+        <ImageButton
+            android:id="@+id/btn_mode_point"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:layout_marginBottom="6dp"
+            android:background="@drawable/btn_map_bg"
+            android:contentDescription="Saisir un point"
+            android:src="@drawable/ic_pin_drop" />
+
+        <ImageButton
+            android:id="@+id/btn_mode_polygone"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:background="@drawable/btn_map_bg"
+            android:contentDescription="Saisir un polygone"
+            android:src="@drawable/ic_geom_polygon" />
+    </LinearLayout>
+
+    <!-- Zoom +/- (bas-gauche), au-dessus du panneau du bas. -->
+    <LinearLayout
+        android:id="@+id/ll_zoom"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|start"
+        android:layout_marginStart="12dp"
+        android:layout_marginBottom="100dp"
+        android:orientation="vertical">
+
+        <ImageButton
+            android:id="@+id/btn_zoom_in"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:background="@drawable/btn_circle_white"
+            android:contentDescription="Zoom avant"
+            android:src="@drawable/ic_add" />
+
+        <ImageButton
+            android:id="@+id/btn_zoom_out"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:layout_marginTop="12dp"
+            android:background="@drawable/btn_circle_white"
+            android:contentDescription="Zoom arrière"
+            android:src="@drawable/ic_remove" />
+    </LinearLayout>
+
+    <!-- Contrôles carte (bas-droite) : centrer GPS, boussole, fond de carte — comme Occtax. -->
+    <LinearLayout
+        android:id="@+id/ll_carte_controles"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|end"
+        android:layout_marginEnd="12dp"
+        android:layout_marginBottom="100dp"
+        android:orientation="vertical">
+
+        <ImageButton
+            android:id="@+id/btn_centrer"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:background="@drawable/btn_circle_white"
+            android:contentDescription="Centrer"
+            android:src="@drawable/ic_location_on" />
+
+        <fr.ariegenature.geomys.ui.CompassView
+            android:id="@+id/compass"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:layout_marginTop="12dp"
+            android:elevation="4dp" />
+
+        <ImageButton
+            android:id="@+id/btn_fond_carte"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:layout_marginTop="12dp"
+            android:background="@drawable/btn_map_bg"
+            android:contentDescription="Changer fond"
+            android:src="@drawable/ic_map" />
+    </LinearLayout>
+
+    <!-- Panneau du bas : annuler dernier sommet (polygone) + valider la géométrie. -->
+    <LinearLayout
+        android:id="@+id/panel_bas"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:background="@drawable/panel_bg"
+        android:orientation="horizontal"
+        android:paddingHorizontal="12dp"
+        android:paddingVertical="10dp">
+
+        <Button
+            android:id="@+id/btn_annuler_point"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:enabled="false"
+            android:text="Annuler"
+            android:textAllCaps="false" />
+
+        <Button
+            android:id="@+id/btn_valider"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:layout_weight="1"
+            android:backgroundTint="@color/green_85"
+            android:enabled="false"
+            android:text="Valider"
+            android:textAllCaps="false"
+            android:textColor="@android:color/white" />
+    </LinearLayout>
+</FrameLayout>

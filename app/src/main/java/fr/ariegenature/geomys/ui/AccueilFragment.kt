@@ -43,6 +43,7 @@ class AccueilFragment : Fragment() {
     private var _binding: FragmentAccueilBinding? = null
     private val binding get() = _binding!!
     private val traceViewModel: TraceViewModel by activityViewModels()
+    private val occhabViewModel: OccHabViewModel by activityViewModels()
     private lateinit var sortieStore: SortieStore
     private lateinit var gnConfig: GeoNatureConfig
 
@@ -106,6 +107,13 @@ class AccueilFragment : Fragment() {
             findNavController().naviguerSur(R.id.action_accueil_to_suivis)
         }
 
+        binding.btnOcchab.setOnClickListener {
+            // Nouvelle station OccHab : on repart d'une station vierge (le ViewModel est partagé
+            // au niveau activité, comme pour Occtax).
+            occhabViewModel.nouvelle()
+            findNavController().naviguerSur(R.id.action_accueil_to_occhab)
+        }
+
         binding.btnMenu.setOnClickListener { view ->
             PopupMenu(requireContext(), view).apply {
                 menuInflater.inflate(R.menu.menu_accueil, menu)
@@ -114,6 +122,8 @@ class AccueilFragment : Fragment() {
                 // avant la première synchro). Cohérent avec la visibilité du bouton "Suivis".
                 menu.findItem(R.id.menu_mes_visites)?.isVisible =
                     MonitoringApi.countModulesEnCache() > 0
+                // "Mes stations OccHab" : seulement si le module OccHab est détecté.
+                menu.findItem(R.id.menu_mes_stations)?.isVisible = gnConfig.occhabDisponible
                 // Pastille rouge à côté des entrées dont des éléments restent à envoyer.
                 menu.findItem(R.id.menu_mes_sorties)?.let {
                     it.title = titreAvecPastille(it.title, nbSaisiesEnAttente() > 0)
@@ -129,6 +139,10 @@ class AccueilFragment : Fragment() {
                         }
                         R.id.menu_mes_visites -> {
                             findNavController().naviguerSur(R.id.action_accueil_to_attente)
+                            true
+                        }
+                        R.id.menu_mes_stations -> {
+                            findNavController().naviguerSur(R.id.action_accueil_to_occhab_stations)
                             true
                         }
                         R.id.menu_explorer -> {
@@ -218,6 +232,9 @@ class AccueilFragment : Fragment() {
     private fun updateSuivisVisibility() {
         binding.btnSuivis.visibility =
             if (MonitoringApi.countModulesEnCache() > 0) View.VISIBLE else View.GONE
+        // Tuile OccHab : visible seulement si le module a été détecté à la synchro (+ droits).
+        binding.btnOcchab.visibility =
+            if (gnConfig.occhabDisponible) View.VISIBLE else View.GONE
     }
 
     private fun updateButtonState() {
@@ -247,6 +264,7 @@ class AccueilFragment : Fragment() {
         setBoutonActif(binding.btnNouveauSortie, valide)
         setBoutonActif(binding.btnSaisieRapide, valide)
         setBoutonActif(binding.btnSuivis, valide)
+        setBoutonActif(binding.btnOcchab, valide)
     }
 
     /** Grise visuellement un bouton à fond teinté fixe (le `backgroundTint` ne réagit pas à

@@ -84,18 +84,19 @@ object GeoNatureBrowse {
             } catch (_: Exception) { emptySet() }
         }
 
-    suspend fun chargerDatasets(config: GeoNatureConfig): List<GeoNatureDataset> =
+    suspend fun chargerDatasets(config: GeoNatureConfig, moduleCode: String = "OCCTAX"): List<GeoNatureDataset> =
         withContext(Dispatchers.IO) {
             val base = config.urlServeur.trim().trimEnd('/')
             val (token, _) = GeoNatureAuth.login(base, config.login, config.motDePasse)
                 ?: throw GNErreur.AuthEchouee(401)
 
-            // Filtre serveur : `active=true` + `module_code=OCCTAX` (périmètre LECTURE — on garde
+            // Filtre serveur : `active=true` + `module_code=<module>` (périmètre LECTURE — on garde
             // large pour que le cache serve aussi à la résolution des noms côté monitoring).
-            // La restriction aux datasets CRÉABLES (CRUVED C) est appliquée à l'AFFICHAGE Occtax
-            // via [chargerIdsDatasetsCreables] + GeoNatureConfig.datasetsCreablesOcctax.
+            // La restriction aux datasets CRÉABLES (CRUVED C) est appliquée à l'AFFICHAGE via
+            // [chargerIdsDatasetsCreables] + GeoNatureConfig.datasetsCreables*. Chaque module
+            // (OCCTAX, OCCHAB…) a son propre périmètre de jeux de données côté serveur.
             // `fields=modules` ramène le tableau des modules rattachés (utile au tracking).
-            val url = URL("$base/api/meta/datasets?active=true&module_code=OCCTAX&fields=modules")
+            val url = URL("$base/api/meta/datasets?active=true&module_code=$moduleCode&fields=modules")
             // Read timeout généreux (90s) : `meta/datasets` n'est PAS paginé côté serveur et
             // `fields=modules` ajoute un joinedload + sérialisation imbriquée PAR jeu de données.
             // Sur un serveur à 2500+ jeux, la réponse dépasse les 10s par défaut → « blocage »/timeout.
@@ -198,17 +199,17 @@ object GeoNatureBrowse {
     /** Télécharge la liste COMPLÈTE des habitats HABREF (sans `search_name` → tout le référentiel,
      *  ~29 000 entrées / ~5 Mo). Lecture en STREAMING. Pour alimenter [HabitatCache] à la synchro
      *  et rendre le champ habitat utilisable hors-ligne. Best-effort : [] en cas d'échec. */
-    suspend fun chargerTousHabitats(config: GeoNatureConfig): List<HabitatSuggestion> =
+    suspend fun chargerTousHabitats(config: GeoNatureConfig, moduleCode: String = "OCCTAX"): List<HabitatSuggestion> =
         withContext(Dispatchers.IO) {
             val base = config.urlServeur.trim().trimEnd('/')
-            // Si le serveur configure une liste d'habitats (`OCCTAX.ID_LIST_HABITAT`), on s'y restreint
-            // comme le web (`releve.component.html` passe `id_list: config.OCCTAX?.ID_LIST_HABITAT`).
-            // Absent (cas ANA) ou login indisponible → tout HABREF. L'autocomplete étant public, on ne
-            // dépend pas du login pour la liste elle-même : il ne sert qu'à lire la config.
+            // Si le serveur configure une liste d'habitats (`<module>.ID_LIST_HABITAT`), on s'y
+            // restreint comme le web. Absent ou login indisponible → tout HABREF. L'autocomplete
+            // étant public, on ne dépend pas du login pour la liste elle-même : il ne sert qu'à
+            // lire la config.
             val idList = runCatching {
                 val (token, _, cookies) = GeoNatureAuth.loginAvecCookies(base, config.login, config.motDePasse)
                     ?: return@runCatching null
-                idListHabitatOcctax(base, token, cookies)
+                idListHabitat(base, token, cookies, moduleCode)
             }.getOrNull()
             val filtreListe = idList?.let { "&id_list=$it" }.orEmpty()
             val url = URL("$base/api/habref/habitats/autocomplete?limit=200000$filtreListe")
@@ -331,16 +332,30 @@ object GeoNatureBrowse {
                 .optJSONObject("OCCTAX")?.optInt("id_observers_list", -1)?.takeIf { it > 0 }
         } catch (_: Exception) { null }
 
-    /** Id de la liste d'habitats HABREF du module Occtax (`/api/gn_commons/config` →
-     *  `OCCTAX.ID_LIST_HABITAT`, défaut `null` côté serveur) — pour restreindre la liste téléchargée
-     *  à la même liste que le web. null si absent/illisible (→ tout le référentiel HABREF). */
-    private fun idListHabitatOcctax(base: String, token: String?, cookies: String): Int? =
+    /** Id de la liste d'habitats HABREF d'un module (`/api/gn_commons/config` →
+     *  `<moduleCode>.ID_LIST_HABITAT`, défaut `null` côté serveur) — pour restreindre la liste
+     *  téléchargée à la même liste que le web. null si absent/illisible (→ tout HABREF). */
+    private fun idListHabitat(base: String, token: String?, cookies: String, moduleCode: String): Int? =
         try {
             val conn = HttpClient.get(URL("$base/api/gn_commons/config"), token, cookies, 10000)
             if (conn.responseCode != 200) null
             else JSONObject(conn.inputStream.bufferedReader().readText())
-                .optJSONObject("OCCTAX")?.optInt("ID_LIST_HABITAT", -1)?.takeIf { it > 0 }
+                .optJSONObject(moduleCode)?.optInt("ID_LIST_HABITAT", -1)?.takeIf { it > 0 }
         } catch (_: Exception) { null }
+
+    /** Id de la liste d'habitats HABREF du module OccHab (`/api/gn_commons/config` →
+     *  `OCCHAB.ID_LIST_HABITAT`) — pour restreindre l'autocomplétion habitat à la MÊME liste
+     *  que le formulaire web OccHab. null si absent/illisible (→ tout le référentiel HABREF). */
+    suspend fun chargerIdListHabitatOccHab(config: GeoNatureConfig): Int? =
+        withContext(Dispatchers.IO) {
+            try {
+                val base = config.urlServeur.trim().trimEnd('/')
+                val (token, _, cookies) =
+                    GeoNatureAuth.loginAvecCookies(base, config.login, config.motDePasse)
+                        ?: return@withContext null
+                idListHabitat(base, token, cookies, "OCCHAB")
+            } catch (_: Exception) { null }
+        }
 
     /** Observateurs d'une liste UsersHub (`/api/users/menu/<id>`) : `id_role` + `nom_complet`
      *  (format « NOM Prénom », tel qu'affiché par le web). null si échec → l'appelant retombe sur

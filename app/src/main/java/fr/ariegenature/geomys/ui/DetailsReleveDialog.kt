@@ -59,7 +59,7 @@ private fun normaliserAccents(s: String): String =
  *  - filtrage **insensible aux accents et à la casse**, par *contains* (pas seulement le préfixe) ;
  *  - contrainte vide ⇒ **toute la liste** (permet de déployer le menu au clic, façon spinner).
  *  Le filtrage par défaut d'`AutoCompleteTextView` (préfixe, sensible aux accents) est ainsi remplacé. */
-private class AdaptateurAutocomplete(context: Context, private val tous: List<String>) :
+internal class AdaptateurAutocomplete(context: Context, private val tous: List<String>) :
     ArrayAdapter<String>(context, android.R.layout.simple_dropdown_item_1line, ArrayList(tous)) {
     private val filtre = object : android.widget.Filter() {
         override fun performFiltering(constraint: CharSequence?): FilterResults {
@@ -89,6 +89,19 @@ fun datasetsPourDetailsReleve(config: GeoNatureConfig): List<Pair<Int, String>> 
         val creables = config.datasetsCreablesOcctax
         l.filter {
             it.actif && (it.moduleCodes.isEmpty() || "OCCTAX" in it.moduleCodes) &&
+                (creables.isEmpty() || it.id in creables)
+        }.map { it.id to "${it.nom} (${it.id})" }
+    } catch (_: Exception) { emptyList() }
+
+/** Jeux de données proposables pour la saisie OccHab, depuis le cache DÉDIÉ OccHab
+ *  (périmètre serveur distinct d'OCCTAX), restreints aux créables (CRUVED C). */
+fun datasetsPourOccHab(config: GeoNatureConfig): List<Pair<Int, String>> =
+    try {
+        val t = object : TypeToken<List<GeoNatureDataset>>() {}.type
+        val l: List<GeoNatureDataset> = gsonDetailsReleve.fromJson(config.datasetsOcchabCacheJson, t) ?: emptyList()
+        val creables = config.datasetsCreablesOcchab
+        l.filter {
+            it.actif && (it.moduleCodes.isEmpty() || "OCCHAB" in it.moduleCodes) &&
                 (creables.isEmpty() || it.id in creables)
         }.map { it.id to "${it.nom} (${it.id})" }
     } catch (_: Exception) { emptyList() }

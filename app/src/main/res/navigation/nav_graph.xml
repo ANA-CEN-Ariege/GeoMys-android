@@ -38,6 +38,41 @@
         <action
             android:id="@+id/action_accueil_to_mise_a_jour"
             app:destination="@id/miseAJourFragment" />
+        <action
+            android:id="@+id/action_accueil_to_occhab"
+            app:destination="@id/occhabCarteFragment" />
+        <action
+            android:id="@+id/action_accueil_to_occhab_stations"
+            app:destination="@id/occhabStationsFragment" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/occhabCarteFragment"
+        android:name="fr.ariegenature.geomys.ui.OccHabCarteFragment"
+        android:label="Station OccHab">
+        <action
+            android:id="@+id/action_occhab_carte_to_station"
+            app:destination="@id/occhabStationFragment" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/occhabStationFragment"
+        android:name="fr.ariegenature.geomys.ui.OccHabStationFragment"
+        android:label="Station OccHab">
+        <action
+            android:id="@+id/action_occhab_station_to_stations"
+            app:destination="@id/occhabStationsFragment"
+            app:popUpTo="@id/accueilFragment"
+            app:popUpToInclusive="false" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/occhabStationsFragment"
+        android:name="fr.ariegenature.geomys.ui.OccHabStationsFragment"
+        android:label="Mes stations">
+        <action
+            android:id="@+id/action_occhab_stations_to_station"
+            app:destination="@id/occhabStationFragment" />
     </fragment>
 
     <fragment

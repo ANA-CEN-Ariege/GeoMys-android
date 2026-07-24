@@ -25,37 +25,34 @@ import fr.ariegenature.geomys.network.HabitatSuggestion
 import java.io.File
 
 /**
- * Cache local de la liste COMPLÈTE des habitats HABREF, téléchargée à la synchro (« Recharger les
- * données »), pour que le champ habitat fonctionne **hors ligne** et plus vite (recherche locale).
+ * Cache local d'une liste HABREF téléchargée à la synchro, pour que le champ habitat fonctionne
+ * **hors ligne** et plus vite (recherche locale en mémoire, *contains* insensible aux accents/casse).
  *
- * L'endpoint `GET /api/habref/habitats/autocomplete?limit=<grand>` (sans `search_name`) renvoie tout
- * le référentiel (~29 000 habitats, ~5 Mo sur l'ANA) — on le récupère une fois et on le stocke en
- * fichier (trop gros pour SharedPreferences). La recherche se fait ensuite en mémoire (contains
- * insensible aux accents/casse). HABREF étant national, le cache vaut quel que soit le serveur.
- * Cf. [[details-releve-champs-standards]].
+ * L'endpoint `GET /api/habref/habitats/autocomplete?limit=<grand>[&id_list=<liste>]` renvoie tout le
+ * référentiel (ou la liste restreinte) — récupéré une fois et stocké en fichier (trop gros pour
+ * SharedPreferences). Une INSTANCE par périmètre : la liste diffère selon le module
+ * (`OCCTAX.ID_LIST_HABITAT` vs `OCCHAB.ID_LIST_HABITAT`). Cf. [[details-releve-champs-standards]],
+ * [[occhab-module]].
  */
-object HabitatCache {
-
-    private const val FICHIER = "habitats_v1.json"
+class HabitatCacheStore(private val nomFichier: String) {
 
     private lateinit var dir: File
     private val gson = Gson()
 
     @Volatile private var mem: List<HabitatSuggestion>? = null
-    // Index de recherche : libellé normalisé (accents/casse retirés) précalculé UNE fois par entrée.
-    // Sans lui, chaque frappe renormalisait les ~29 000 libellés (+ une regex recompilée par entrée),
-    // d'où l'autocomplétion très lente. Aligné sur `mem` (reconstruit à chaque remplacement).
+    // Index de recherche : libellé normalisé (accents/casse retirés) précalculé UNE fois par entrée
+    // (sinon chaque frappe renormaliserait des dizaines de milliers de libellés). Aligné sur `mem`.
     @Volatile private var index: List<Pair<HabitatSuggestion, String>>? = null
 
     fun init(context: Context) { dir = context.filesDir }
 
-    private fun fichier() = File(dir, FICHIER)
+    private fun fichier() = File(dir, nomFichier)
 
     /** Remplace tout le cache (chemin de synchro). Écriture atomique tmp+rename. */
     fun remplacerTout(habitats: List<HabitatSuggestion>) {
         if (!::dir.isInitialized) return
         try {
-            val tmp = File(dir, "$FICHIER.tmp")
+            val tmp = File(dir, "$nomFichier.tmp")
             tmp.writeText(gson.toJson(habitats))
             val cible = fichier()
             if (!tmp.renameTo(cible)) { cible.delete(); tmp.renameTo(cible) }
@@ -75,20 +72,18 @@ object HabitatCache {
         } catch (_: Exception) { emptyList() }
     }
 
-    /** Index normalisé, construit paresseusement une seule fois (coûteux : ~29 000 normalisations). */
     private fun indexer(): List<Pair<HabitatSuggestion, String>> {
         index?.let { return it }
         return charger().map { it to normaliser(it.libelle) }.also { index = it }
     }
 
-    /** Vrai si la liste complète a été téléchargée (→ recherche locale possible, y compris hors-ligne). */
+    /** Vrai si la liste a été téléchargée (→ recherche locale possible, y compris hors-ligne). */
     val estDisponible: Boolean get() = charger().isNotEmpty()
 
     val count: Int get() = charger().size
 
-    /** Recherche locale : *contains* insensible aux accents/casse sur le libellé, priorité aux
-     *  libellés qui COMMENCENT par le terme, puis tri alphabétique. Les libellés sont normalisés
-     *  une fois pour toutes (cf. [indexer]) — la frappe ne fait plus que filtrer/trier. */
+    /** Recherche locale : *contains* insensible aux accents/casse, priorité aux libellés qui
+     *  COMMENCENT par le terme, puis tri alphabétique. */
     fun rechercher(terme: String, limite: Int = 20): List<HabitatSuggestion> {
         val t = normaliser(terme)
         if (t.length < 2) return emptyList()
@@ -112,4 +107,27 @@ object HabitatCache {
             .replace(accentsMn, "")
             .lowercase()
             .trim()
+}
+
+/** Cache HABREF du module Occtax (`OCCTAX.ID_LIST_HABITAT`, ou tout HABREF si absent). */
+object HabitatCache {
+    private val store = HabitatCacheStore("habitats_v1.json")
+    fun init(context: Context) = store.init(context)
+    fun remplacerTout(habitats: List<HabitatSuggestion>) = store.remplacerTout(habitats)
+    val estDisponible: Boolean get() = store.estDisponible
+    val count: Int get() = store.count
+    fun rechercher(terme: String, limite: Int = 20) = store.rechercher(terme, limite)
+    fun vider() = store.vider()
+}
+
+/** Cache HABREF DÉDIÉ au module OccHab (`OCCHAB.ID_LIST_HABITAT`) — liste distincte d'Occtax,
+ *  pour que l'autocomplétion habitat OccHab fonctionne hors-ligne avec les MÊMES valeurs que le web. */
+object HabitatCacheOccHab {
+    private val store = HabitatCacheStore("habitats_occhab_v1.json")
+    fun init(context: Context) = store.init(context)
+    fun remplacerTout(habitats: List<HabitatSuggestion>) = store.remplacerTout(habitats)
+    val estDisponible: Boolean get() = store.estDisponible
+    val count: Int get() = store.count
+    fun rechercher(terme: String, limite: Int = 20) = store.rechercher(terme, limite)
+    fun vider() = store.vider()
 }

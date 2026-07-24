@@ -47,6 +47,7 @@ class GeoMysApplication : Application() {
         TaxRefCache.init(this)
         NomenclatureCache.init(this)
         fr.ariegenature.geomys.store.HabitatCache.init(this)
+        fr.ariegenature.geomys.store.HabitatCacheOccHab.init(this)
         MonitoringCache.init(this)
         OutboxMonitoring.init(this)
         fr.ariegenature.geomys.store.RelevesOrphelins.init(this)

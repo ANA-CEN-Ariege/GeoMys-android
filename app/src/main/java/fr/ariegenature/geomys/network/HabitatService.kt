@@ -19,6 +19,7 @@
 package fr.ariegenature.geomys.network
 
 import fr.ariegenature.geomys.store.HabitatCache
+import fr.ariegenature.geomys.store.HabitatCacheOccHab
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -39,23 +40,35 @@ data class HabitatSuggestion(val cdHab: Int, val libelle: String)
  *  jamais de crash. Chaque recherche en ligne alimente ce cache. */
 object HabitatService {
 
-    suspend fun rechercher(base: String, terme: String, limite: Int = 20): List<HabitatSuggestion> =
+    /** [idList] : restreint la recherche à une liste HABREF précise (`id_list`), comme le web.
+     *  - null (Occtax) → cache complet OCCTAX si dispo (hors-ligne), sinon serveur sans filtre.
+     *  - non-null (OccHab) → cache DÉDIÉ OccHab si dispo (hors-ligne, mêmes valeurs que le web),
+     *    sinon serveur AVEC `id_list`. Le cache OCCTAX n'est jamais utilisé pour OccHab (liste ≠). */
+    suspend fun rechercher(
+        base: String, terme: String, limite: Int = 20, idList: Int? = null,
+    ): List<HabitatSuggestion> =
         withContext(Dispatchers.IO) {
             val t = terme.trim()
             if (t.length < 2) return@withContext emptyList()
             val urlBase = base.trim().trimEnd('/')
             val url = URL(
                 "$urlBase/api/habref/habitats/autocomplete" +
-                    "?search_name=${URLEncoder.encode(t, "UTF-8")}&limit=$limite"
+                    "?search_name=${URLEncoder.encode(t, "UTF-8")}&limit=$limite" +
+                    (idList?.let { "&id_list=$it" } ?: "")
             )
-            // Liste complète déjà en cache (téléchargée à la synchro) → recherche LOCALE : marche
-            // hors-ligne et sans round-trip réseau à chaque frappe. Cf. HabitatCache.
-            if (HabitatCache.estDisponible) return@withContext HabitatCache.rechercher(t, limite)
-            // Pas encore synchronisé (cache vide) → requête serveur en direct (repli).
+            // Cache du bon périmètre : OccHab si une liste est imposée, sinon le cache complet OCCTAX.
+            val cacheDispo = if (idList != null) HabitatCacheOccHab.estDisponible else HabitatCache.estDisponible
+            fun depuisCache(): List<HabitatSuggestion> =
+                if (idList != null) HabitatCacheOccHab.rechercher(t, limite) else HabitatCache.rechercher(t, limite)
+            // Cache présent → recherche LOCALE (hors-ligne, sans round-trip par frappe).
+            if (cacheDispo) return@withContext depuisCache()
+            // Cache absent → requête serveur (avec id_list si OccHab).
             try {
                 val conn = HttpClient.get(url, timeoutMs = 8000)
                 try {
-                    if (conn.responseCode != 200) return@withContext emptyList()
+                    if (conn.responseCode != 200) {
+                        return@withContext if (cacheDispo) depuisCache() else emptyList()
+                    }
                     val arr = JSONArray(conn.inputStream.bufferedReader().readText())
                     (0 until arr.length()).mapNotNull { i ->
                         val o = arr.getJSONObject(i)
@@ -69,7 +82,7 @@ object HabitatService {
                     conn.disconnect()
                 }
             } catch (_: Exception) {
-                emptyList()
+                if (cacheDispo) depuisCache() else emptyList()
             }
         }
 }

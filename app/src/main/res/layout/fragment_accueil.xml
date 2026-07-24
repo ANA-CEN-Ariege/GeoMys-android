@@ -201,6 +201,21 @@
                 android:textSize="15sp"
                 android:textAllCaps="false" />
 
+            <!-- Bouton OccHab (module habitats GeoNature) — visible seulement si le module est
+                 détecté sur le serveur (gnConfig.occhabDisponible). -->
+            <Button
+                android:id="@+id/btn_occhab"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="12dp"
+                android:backgroundTint="@color/green_85"
+                android:paddingVertical="16dp"
+                android:text="OccHab"
+                android:textColor="@android:color/white"
+                android:textSize="15sp"
+                android:textAllCaps="false"
+                android:visibility="gone" />
+
             <!-- Switch enregistrer trace -->
             <LinearLayout
                 android:layout_width="match_parent"

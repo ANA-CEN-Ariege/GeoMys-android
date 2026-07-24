@@ -114,6 +114,26 @@ class GeoNatureConfig(context: Context) {
         get() = prefs.getString("gn_obs_defaut_id", "") ?: ""
         set(v) = prefs.edit().putString("gn_obs_defaut_id", v).apply()
 
+    /** true si le module OccHab est installé sur le serveur ET accessible à l'utilisateur
+     *  (au moins un droit CRUVED). Détecté à la synchro via `GET /api/gn_commons/modules`.
+     *  Conditionne l'affichage de la tuile OccHab sur l'accueil (comme Monitoring). */
+    var occhabDisponible: Boolean
+        get() = prefs.getBoolean("gn_occhab_dispo", false)
+        set(v) = prefs.edit().putBoolean("gn_occhab_dispo", v).apply()
+
+    /** true si l'utilisateur a le droit de CRÉER des stations OccHab (cruved C > 0). Gate le
+     *  bouton d'envoi ; false → consultation seule. */
+    var occhabPeutCreer: Boolean
+        get() = prefs.getBoolean("gn_occhab_creer", false)
+        set(v) = prefs.edit().putBoolean("gn_occhab_creer", v).apply()
+
+    /** Id de la liste HABREF du module OccHab (`OCCHAB.ID_LIST_HABITAT`), lue à la synchro.
+     *  -1 = non configurée → tout le référentiel HABREF. Restreint l'autocomplétion habitat
+     *  OccHab à la même liste que le web. */
+    var occhabIdListHabitat: Int
+        get() = prefs.getInt("gn_occhab_id_list_habitat", -1)
+        set(v) = prefs.edit().putInt("gn_occhab_id_list_habitat", v).apply()
+
     /** Cache JSON des datasets chargés depuis le serveur (List<GeoNatureDataset>). */
     var datasetsCacheJson: String
         get() = prefs.getString("gn_cache_datasets", "") ?: ""
@@ -130,6 +150,18 @@ class GeoNatureConfig(context: Context) {
         get() = (prefs.getString("gn_cache_ds_creables", "") ?: "")
             .split(",").mapNotNull { it.trim().toIntOrNull() }.toSet()
         set(v) = prefs.edit().putString("gn_cache_ds_creables", v.joinToString(",")).apply()
+
+    /** Cache JSON des datasets rattachés au module OccHab (List<GeoNatureDataset>). Distinct du
+     *  cache OCCTAX : le périmètre de jeux de données diffère d'un module à l'autre côté serveur. */
+    var datasetsOcchabCacheJson: String
+        get() = prefs.getString("gn_cache_datasets_occhab", "") ?: ""
+        set(v) = prefs.edit().putString("gn_cache_datasets_occhab", v).apply()
+
+    /** IDs des jeux de données CRÉABLES en OccHab (CRUVED C). Vide ⇒ pas de restriction. */
+    var datasetsCreablesOcchab: Set<Int>
+        get() = (prefs.getString("gn_cache_ds_creables_occhab", "") ?: "")
+            .split(",").mapNotNull { it.trim().toIntOrNull() }.toSet()
+        set(v) = prefs.edit().putString("gn_cache_ds_creables_occhab", v.joinToString(",")).apply()
 
     /** Cache JSON des observateurs chargés (List<GeoNatureObservateur>). */
     var observateursCacheJson: String

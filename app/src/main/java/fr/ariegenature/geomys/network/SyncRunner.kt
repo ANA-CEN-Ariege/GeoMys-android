@@ -147,6 +147,37 @@ object SyncRunner {
                         if (h.isNotEmpty()) fr.ariegenature.geomys.store.HabitatCache.remplacerTout(h)
                     } catch (_: Exception) { /* habitat optionnel */ }
                 }
+                // Détection du module OccHab (+ droits CRUVED) → drapeaux de config qui
+                // conditionnent la tuile d'accueil et le bouton d'envoi. Best-effort : module
+                // absent/inaccessible = tuile masquée (aucun ajout aux échecs).
+                val occhab = async {
+                    try {
+                        val acces = OccHabApi.detecterModule(config)
+                        config.occhabDisponible = acces.disponible
+                        config.occhabPeutCreer = acces.peutCreer
+                        // Datasets propres au module OccHab (périmètre serveur distinct d'OCCTAX)
+                        // + ids créables — pour ne proposer à la saisie que les bons JDD.
+                        if (acces.disponible) {
+                            try {
+                                val ds = GeoNatureBrowse.chargerDatasets(config, "OCCHAB")
+                                if (ds.isNotEmpty()) config.datasetsOcchabCacheJson = gson.toJson(ds)
+                            } catch (_: Exception) { /* datasets OccHab best-effort */ }
+                            config.datasetsCreablesOcchab =
+                                GeoNatureBrowse.chargerIdsDatasetsCreables(config, "OCCHAB")
+                            // Liste HABREF du module (OCCHAB.ID_LIST_HABITAT) → restreint
+                            // l'autocomplétion habitat à la même liste que le web.
+                            config.occhabIdListHabitat =
+                                GeoNatureBrowse.chargerIdListHabitatOccHab(config) ?: -1
+                            // Cache HABREF DÉDIÉ OccHab → autocomplétion hors-ligne avec les mêmes
+                            // valeurs que le web. Best-effort ; on n'écrase pas si le retour est vide.
+                            try {
+                                val hab = GeoNatureBrowse.chargerTousHabitats(config, "OCCHAB")
+                                if (hab.isNotEmpty())
+                                    fr.ariegenature.geomys.store.HabitatCacheOccHab.remplacerTout(hab)
+                            } catch (_: Exception) { /* habitats OccHab optionnels */ }
+                        }
+                    } catch (_: Exception) { /* OccHab optionnel */ }
+                }
                 listOf(
                     "Jeux de données" to ds.await(),
                     "Listes de taxons" to li.await(),
@@ -157,6 +188,7 @@ object SyncRunner {
                 ).forEach { (nom, err) -> if (err != null) echecs += "$nom ($err)" }
                 protocolListIds = mod.await()
                 hab.await() // habitats : best-effort, pas d'ajout aux échecs
+                occhab.await() // détection module OccHab : best-effort
             }
 
             // Étapes 5-7 EN PARALLÈLE : caches indépendants (TaxRef / nomenclatures / monitoring),

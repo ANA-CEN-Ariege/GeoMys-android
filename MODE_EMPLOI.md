@@ -13,7 +13,7 @@ Application Android de terrain pour la saisie naturaliste connectée à un serve
 
 ## 1. Installation
 
-1. Télécharger l'application depuis ce lien [Latest version](https://github.com/ANA-CEN-Ariege/GeoMys-android/releases/latest/download/app-release.apk) ou la dernière version (`app-release.apk`) depuis la page [Releases GitHub](https://github.com/ANA-CEN-Ariege/GeoMys-android/releases) ou .
+1. Télécharger l'application depuis ce lien [Latest version](https://github.com/ANA-CEN-Ariege/GeoMys-android/releases/latest/download/app-github-release.apk) ou la dernière version (`app-release.apk`) depuis la page [Releases GitHub](https://github.com/ANA-CEN-Ariege/GeoMys-android/releases) ou .
 3. Sur Android, autoriser l'installation depuis des sources inconnues si demandé.
 4. Ouvrir le fichier APK et installer.
 

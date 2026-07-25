@@ -65,8 +65,10 @@ class OccHabStationsFragment : Fragment() {
         adapter = OccHabStationAdapter(
             onDelete = { confirmerSuppression(it) },
             onEdit = { station ->
+                // Édition : on recharge la station puis on passe par la CARTE (géométrie
+                // préchargée, modifiable) ; « Valider » enchaîne sur le formulaire pré-rempli.
                 occhabViewModel.reprendre(station)
-                findNavController().naviguerSur(R.id.action_occhab_stations_to_station)
+                findNavController().naviguerSur(R.id.action_occhab_stations_to_carte)
             },
             onEnvoyer = { envoyerStation(it) },
         )

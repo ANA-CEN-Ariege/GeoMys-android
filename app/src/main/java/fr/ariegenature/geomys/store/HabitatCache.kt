@@ -34,7 +34,13 @@ import java.io.File
  * (`OCCTAX.ID_LIST_HABITAT` vs `OCCHAB.ID_LIST_HABITAT`). Cf. [[details-releve-champs-standards]],
  * [[occhab-module]].
  */
-class HabitatCacheStore(private val nomFichier: String) {
+class HabitatCacheStore(
+    private val nomFichier: String,
+    /** true (OccHab) = recherche IDENTIQUE au serveur (`ilike` : insensible à la casse mais
+     *  SENSIBLE aux accents — « Foret » ne matche pas « Forêts ») pour que la liste locale soit
+     *  la même que le web. false (Occtax, historique) = insensible aux accents aussi. */
+    private val sensibleAuxAccents: Boolean = false,
+) {
 
     private lateinit var dir: File
     private val gson = Gson()
@@ -74,18 +80,23 @@ class HabitatCacheStore(private val nomFichier: String) {
 
     private fun indexer(): List<Pair<HabitatSuggestion, String>> {
         index?.let { return it }
-        return charger().map { it to normaliser(it.libelle) }.also { index = it }
+        return charger().map { it to cleRecherche(it.libelle) }.also { index = it }
     }
+
+    /** Clé de comparaison : minuscules+trim, avec ou sans retrait des accents selon le mode. */
+    private fun cleRecherche(s: String): String =
+        if (sensibleAuxAccents) s.lowercase().trim() else normaliser(s)
 
     /** Vrai si la liste a été téléchargée (→ recherche locale possible, y compris hors-ligne). */
     val estDisponible: Boolean get() = charger().isNotEmpty()
 
     val count: Int get() = charger().size
 
-    /** Recherche locale : *contains* insensible aux accents/casse, priorité aux libellés qui
-     *  COMMENCENT par le terme, puis tri alphabétique. */
+    /** Recherche locale : *contains* insensible à la casse (et aux accents seulement si
+     *  `!sensibleAuxAccents`), priorité aux libellés qui COMMENCENT par le terme, puis tri
+     *  alphabétique. En mode sensible aux accents, résultats identiques au `ilike` serveur. */
     fun rechercher(terme: String, limite: Int = 20): List<HabitatSuggestion> {
-        val t = normaliser(terme)
+        val t = cleRecherche(terme)
         if (t.length < 2) return emptyList()
         val (debut, autres) = indexer().asSequence()
             .filter { it.second.contains(t) }
@@ -109,25 +120,33 @@ class HabitatCacheStore(private val nomFichier: String) {
             .trim()
 }
 
+/** Accès commun aux caches HABREF (Occtax / OccHab) — pour pouvoir choisir le cache selon le
+ *  contexte dans [fr.ariegenature.geomys.network.HabitatService]. */
+interface HabitatCacheAcces {
+    val estDisponible: Boolean
+    fun rechercher(terme: String, limite: Int = 20): List<HabitatSuggestion>
+}
+
 /** Cache HABREF du module Occtax (`OCCTAX.ID_LIST_HABITAT`, ou tout HABREF si absent). */
-object HabitatCache {
+object HabitatCache : HabitatCacheAcces {
     private val store = HabitatCacheStore("habitats_v1.json")
     fun init(context: Context) = store.init(context)
     fun remplacerTout(habitats: List<HabitatSuggestion>) = store.remplacerTout(habitats)
-    val estDisponible: Boolean get() = store.estDisponible
+    override val estDisponible: Boolean get() = store.estDisponible
     val count: Int get() = store.count
-    fun rechercher(terme: String, limite: Int = 20) = store.rechercher(terme, limite)
+    override fun rechercher(terme: String, limite: Int) = store.rechercher(terme, limite)
     fun vider() = store.vider()
 }
 
 /** Cache HABREF DÉDIÉ au module OccHab (`OCCHAB.ID_LIST_HABITAT`) — liste distincte d'Occtax,
- *  pour que l'autocomplétion habitat OccHab fonctionne hors-ligne avec les MÊMES valeurs que le web. */
-object HabitatCacheOccHab {
-    private val store = HabitatCacheStore("habitats_occhab_v1.json")
+ *  recherche SENSIBLE aux accents (comme le `ilike` serveur) pour que l'autocomplétion hors-ligne
+ *  renvoie exactement les MÊMES valeurs que le formulaire web. */
+object HabitatCacheOccHab : HabitatCacheAcces {
+    private val store = HabitatCacheStore("habitats_occhab_v1.json", sensibleAuxAccents = true)
     fun init(context: Context) = store.init(context)
     fun remplacerTout(habitats: List<HabitatSuggestion>) = store.remplacerTout(habitats)
-    val estDisponible: Boolean get() = store.estDisponible
+    override val estDisponible: Boolean get() = store.estDisponible
     val count: Int get() = store.count
-    fun rechercher(terme: String, limite: Int = 20) = store.rechercher(terme, limite)
+    override fun rechercher(terme: String, limite: Int) = store.rechercher(terme, limite)
     fun vider() = store.vider()
 }

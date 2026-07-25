@@ -175,6 +175,13 @@ object SyncRunner {
                                 if (hab.isNotEmpty())
                                     fr.ariegenature.geomys.store.HabitatCacheOccHab.remplacerTout(hab)
                             } catch (_: Exception) { /* habitats OccHab optionnels */ }
+                            // formConfig (visibilité des champs) + défauts de nomenclature (ex. « In
+                            // situ ») → formulaire habitat identique au web.
+                            try {
+                                GeoNatureBrowse.chargerFormConfigOccHab(config)?.let { config.occhabFormConfigJson = it }
+                                val defauts = OccHabApi.chargerDefautsNomenclatures(config)
+                                if (defauts.isNotEmpty()) config.occhabDefautsNomencJson = gson.toJson(defauts)
+                            } catch (_: Exception) { /* formConfig/défauts OccHab optionnels */ }
                         }
                     } catch (_: Exception) { /* OccHab optionnel */ }
                 }

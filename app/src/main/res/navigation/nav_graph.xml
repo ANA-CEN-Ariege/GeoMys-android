@@ -59,9 +59,11 @@
         android:id="@+id/occhabStationFragment"
         android:name="fr.ariegenature.geomys.ui.OccHabStationFragment"
         android:label="Station OccHab">
+        <!-- Après enregistrement : on repart sur une carte VIERGE (nouvelle instance) pour saisir
+             une autre station. popUpTo accueil (exclusive) → la pile ne s'empile pas. -->
         <action
-            android:id="@+id/action_occhab_station_to_stations"
-            app:destination="@id/occhabStationsFragment"
+            android:id="@+id/action_occhab_station_to_carte"
+            app:destination="@id/occhabCarteFragment"
             app:popUpTo="@id/accueilFragment"
             app:popUpToInclusive="false" />
     </fragment>
@@ -70,9 +72,11 @@
         android:id="@+id/occhabStationsFragment"
         android:name="fr.ariegenature.geomys.ui.OccHabStationsFragment"
         android:label="Mes stations">
+        <!-- Édition : on repasse d'abord par la carte (géométrie éventuellement modifiable),
+             puis « Valider » enchaîne sur le formulaire (mêmes actions que la création). -->
         <action
-            android:id="@+id/action_occhab_stations_to_station"
-            app:destination="@id/occhabStationFragment" />
+            android:id="@+id/action_occhab_stations_to_carte"
+            app:destination="@id/occhabCarteFragment" />
     </fragment>
 
     <fragment

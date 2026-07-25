@@ -228,6 +228,7 @@ class OccHabStationFragment : Fragment() {
             datasets.firstOrNull { it.second == txt }?.let { sel ->
                 occhabViewModel.maj { st -> st.copy(idDataset = sel.first) }
                 nomChoisi = sel.second
+                majBoutonEnregistrer()
             }
             // onDismiss peut courir AVANT onItemClick → on réaffiche EXPLICITEMENT la sélection.
             champ.setText(nomChoisi.orEmpty(), false)
@@ -338,6 +339,16 @@ class OccHabStationFragment : Fragment() {
             row.addView(suppr)
             container.addView(row)
         }
+        majBoutonEnregistrer()
+    }
+
+    /** « Enregistrer » actif seulement si les obligatoires sont remplis : jeu de données choisi
+     *  ET au moins un habitat (avec code HABREF). */
+    private fun majBoutonEnregistrer() {
+        val ok = occhabViewModel.station.idDataset != null &&
+            occhabViewModel.station.habitats.any { it.cdHab > 0 }
+        binding.btnEnregistrer.isEnabled = ok
+        binding.btnEnregistrer.alpha = if (ok) 1f else 0.5f
     }
 
     // ── Dialogue d'ajout / édition d'un habitat ────────────────────────────────────────────
@@ -400,27 +411,71 @@ class OccHabStationFragment : Fragment() {
             majProg = false
         }
 
-        val champNom = EditText(ctx).apply {
-            isSingleLine = true
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
-            setText(existant?.nomCite.orEmpty())
-            hint = "Nom cité (défaut = libellé HABREF)"
-        }
-        val champRecouvr = EditText(ctx).apply {
-            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
-            setText(existant?.recouvrement?.let {
-                if (it == it.toLong().toDouble()) it.toLong().toString() else it.toString()
-            }.orEmpty())
-            hint = "Recouvrement en %"
-        }
-        val (spTech, lireTech) = construireSpinner("TECHNIQUE_COLLECT_HAB", existant?.idNomTechniqueCollecte)
-        val (spAbon, lireAbon) = construireSpinner("ABONDANCE_HAB", existant?.idNomAbondance)
+        // Champs habitat pilotés par OCCHAB.formConfig (visibilité serveur), dans l'ORDRE du web.
+        // Le « nom cité » n'est pas un champ (comme le web) : il est recopié du libellé HABREF.
+        val estNouveau = existant == null
+        // Pour un NOUVEL habitat, un sélecteur non renseigné prend le défaut serveur (ex. « In situ »).
+        fun idInit(valExistante: Int?, mnem: String): Int? =
+            valExistante ?: if (estNouveau) gnConfig.occhabDefautNomenclature(mnem) else null
+        fun visible(champ: String) = gnConfig.occhabChampVisible(champ)
 
         racine.addView(label("Habitat (HABREF) *")); racine.addView(champHab)
-        racine.addView(label("Nom cité")); racine.addView(champNom)
-        racine.addView(label("Recouvrement (%)")); racine.addView(champRecouvr)
-        racine.addView(label("Technique de collecte")); racine.addView(spTech)
-        racine.addView(label("Abondance")); racine.addView(spAbon)
+
+        // Habitat d'intérêt communautaire.
+        val lireInteret: () -> Int? = if (visible("community_interest")) {
+            val (sp, lire) = construireSpinner("HAB_INTERET_COM", idInit(existant?.idNomInteretCommunautaire, "HAB_INTERET_COM"))
+            racine.addView(label("Habitat d'intérêt communautaire")); racine.addView(sp); lire
+        } else { { existant?.idNomInteretCommunautaire } }
+
+        // Déterminateur (texte).
+        val champDeterminateur: EditText? = if (visible("determiner")) {
+            val et = EditText(ctx).apply {
+                isSingleLine = true
+                inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_WORDS
+                setText(existant?.determiner.orEmpty()); hint = "Déterminateur"
+            }
+            racine.addView(label("Déterminateur")); racine.addView(et); et
+        } else null
+
+        // Type de détermination.
+        val lireTypeDeterm: () -> Int? = if (visible("determination_type")) {
+            val (sp, lire) = construireSpinner("DETERMINATION_TYP_HAB", idInit(existant?.idNomTypeDetermination, "DETERMINATION_TYP_HAB"))
+            racine.addView(label("Type de détermination")); racine.addView(sp); lire
+        } else { { existant?.idNomTypeDetermination } }
+
+        // Technique de collecte (défaut « In situ »).
+        val lireTech: () -> Int? = if (visible("collection_technique")) {
+            val (sp, lire) = construireSpinner("TECHNIQUE_COLLECT_HAB", idInit(existant?.idNomTechniqueCollecte, "TECHNIQUE_COLLECT_HAB"))
+            racine.addView(label("Technique de collecte")); racine.addView(sp); lire
+        } else { { existant?.idNomTechniqueCollecte } }
+
+        // Précision technique (texte).
+        val champPrecision: EditText? = if (visible("technical_precision")) {
+            val et = EditText(ctx).apply {
+                inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or
+                    InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+                setText(existant?.precisionTechnique.orEmpty()); hint = "Précision technique"
+            }
+            racine.addView(label("Précision technique")); racine.addView(et); et
+        } else null
+
+        // Recouvrement (%) — masqué sur l'ANA (formConfig).
+        val champRecouvr: EditText? = if (visible("recovery_percentage")) {
+            val et = EditText(ctx).apply {
+                inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+                setText(existant?.recouvrement?.let {
+                    if (it == it.toLong().toDouble()) it.toLong().toString() else it.toString()
+                }.orEmpty())
+                hint = "Recouvrement en %"
+            }
+            racine.addView(label("Recouvrement (%)")); racine.addView(et); et
+        } else null
+
+        // Abondance.
+        val lireAbon: () -> Int? = if (visible("abundance")) {
+            val (sp, lire) = construireSpinner("ABONDANCE_HAB", idInit(existant?.idNomAbondance, "ABONDANCE_HAB"))
+            racine.addView(label("Abondance")); racine.addView(sp); lire
+        } else { { existant?.idNomAbondance } }
 
         val dlg = AlertDialog.Builder(ctx)
             .setTitle(if (existant == null) "Ajouter un habitat" else "Modifier l'habitat")
@@ -435,13 +490,21 @@ class OccHabStationFragment : Fragment() {
                     toast("Choisissez un habitat dans la liste HABREF")
                     return@setOnClickListener
                 }
+                val libelle = champHab.text?.toString()?.trim().orEmpty()
                 val habitat = (existant ?: OccHabHabitat()).copy(
                     cdHab = cd,
-                    habitatLabel = champHab.text?.toString()?.trim().orEmpty(),
-                    nomCite = champNom.text?.toString()?.trim().orEmpty(),
-                    recouvrement = champRecouvr.text?.toString()?.trim()?.toDoubleOrNull(),
+                    habitatLabel = libelle,
+                    nomCite = libelle, // nom cité = libellé HABREF (patchNomCite du web)
+                    determiner = champDeterminateur?.text?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+                        ?: existant?.determiner,
+                    precisionTechnique = champPrecision?.text?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+                        ?: existant?.precisionTechnique,
+                    recouvrement = champRecouvr?.text?.toString()?.trim()?.toDoubleOrNull()
+                        ?: existant?.recouvrement,
                     idNomTechniqueCollecte = lireTech(),
                     idNomAbondance = lireAbon(),
+                    idNomTypeDetermination = lireTypeDeterm(),
+                    idNomInteretCommunautaire = lireInteret(),
                 )
                 occhabViewModel.ajouterOuMajHabitat(habitat)
                 rafraichirHabitats()
@@ -466,12 +529,13 @@ class OccHabStationFragment : Fragment() {
         return spinner to lecteur
     }
 
-    /** Recherche HABREF restreinte à la liste du module OccHab (`OCCHAB.ID_LIST_HABITAT`), comme
-     *  le formulaire web — donc les mêmes valeurs que le serveur, et pas tout le référentiel. */
+    /** Recherche HABREF comme le formulaire web OccHab : restreinte à la liste du module
+     *  (`OCCHAB.ID_LIST_HABITAT`), via le cache dédié OccHab (hors-ligne, recherche sensible aux
+     *  accents comme le `ilike` serveur) ou le serveur. Mêmes valeurs et même limite que le web. */
     private suspend fun chercherHabitats(terme: String): List<HabitatSuggestion> {
         val base = gnConfig.urlServeur.trim().trimEnd('/')
         val idList = gnConfig.occhabIdListHabitat.takeIf { it > 0 }
-        return HabitatService.rechercher(base, terme, 25, idList)
+        return HabitatService.rechercher(base, terme, 20, idList, occhab = true)
     }
 
     // ── Enregistrement ─────────────────────────────────────────────────────────────────────
@@ -492,8 +556,14 @@ class OccHabStationFragment : Fragment() {
             return
         }
         occHabStore.remplacer(station.id, station)
-        toast("Station enregistrée")
-        findNavController().naviguerSur(R.id.action_occhab_station_to_stations)
+        Toast.makeText(
+            requireContext(),
+            "Votre station est enregistrée dans « Mes stations »",
+            Toast.LENGTH_LONG,
+        ).show()
+        // On repart sur une carte vierge pour enchaîner une autre station.
+        occhabViewModel.nouvelle()
+        findNavController().naviguerSur(R.id.action_occhab_station_to_carte)
     }
 
     private fun toast(msg: String) {

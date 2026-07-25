@@ -37,6 +37,7 @@ import fr.ariegenature.geomys.network.GNErreur
 import fr.ariegenature.geomys.network.OccHabUpload
 import fr.ariegenature.geomys.store.GeoNatureConfig
 import fr.ariegenature.geomys.store.OccHabStore
+import com.google.android.material.tabs.TabLayout
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -50,6 +51,7 @@ class OccHabStationsFragment : Fragment() {
     private lateinit var occHabStore: OccHabStore
     private lateinit var adapter: OccHabStationAdapter
     private val occhabViewModel: OccHabViewModel by activityViewModels()
+    private var ongletCourant = 0
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         _binding = FragmentOcchabStationsBinding.inflate(inflater, container, false)
@@ -71,19 +73,47 @@ class OccHabStationsFragment : Fragment() {
                 findNavController().naviguerSur(R.id.action_occhab_stations_to_carte)
             },
             onEnvoyer = { envoyerStation(it) },
+            // CRUVED C du module OCCHAB (détecté à la synchro) : sans droit de création, le POST
+            // partirait en 403 — on masque le bouton d'envoi.
+            envoiAutorise = GeoNatureConfig(requireContext()).occhabPeutCreer,
         )
         binding.recyclerView.layoutManager = LinearLayoutManager(requireContext())
         binding.recyclerView.adapter = adapter
+        setupTabs()
         rafraichir()
     }
 
     override fun onResume() { super.onResume(); rafraichir() }
 
+    private fun setupTabs() {
+        binding.tabLayout.addTab(binding.tabLayout.newTab().setText("À envoyer"))
+        binding.tabLayout.addTab(binding.tabLayout.newTab().setText("Envoyées"))
+        binding.tabLayout.addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
+            override fun onTabSelected(tab: TabLayout.Tab) { ongletCourant = tab.position; rafraichir() }
+            override fun onTabUnselected(tab: TabLayout.Tab) {}
+            override fun onTabReselected(tab: TabLayout.Tab) {}
+        })
+    }
+
     private fun rafraichir() {
-        val stations = occHabStore.charger().sortedByDescending { it.date }
-        adapter.submitList(stations)
-        binding.emptyView.visibility = if (stations.isEmpty()) View.VISIBLE else View.GONE
-        binding.recyclerView.visibility = if (stations.isEmpty()) View.GONE else View.VISIBLE
+        val toutes = occHabStore.charger().sortedByDescending { it.date }
+        val filtrees = when (ongletCourant) {
+            1 -> toutes.filter { it.envoyeGeoNature }
+            else -> toutes.filter { !it.envoyeGeoNature }
+        }
+        updateTabCounts(toutes)
+        adapter.submitList(filtrees)
+        val vide = filtrees.isEmpty()
+        binding.emptyView.visibility = if (vide) View.VISIBLE else View.GONE
+        binding.recyclerView.visibility = if (vide) View.GONE else View.VISIBLE
+        binding.tvEmpty.text = if (ongletCourant == 1)
+            "Aucune station envoyée."
+        else "Aucune station en attente d'envoi.\nCréez-en une depuis « OccHab » sur l'accueil."
+    }
+
+    private fun updateTabCounts(toutes: List<OccHabStation>) {
+        binding.tabLayout.getTabAt(0)?.text = "À envoyer (${toutes.count { !it.envoyeGeoNature }})"
+        binding.tabLayout.getTabAt(1)?.text = "Envoyées (${toutes.count { it.envoyeGeoNature }})"
     }
 
     private fun confirmerSuppression(station: OccHabStation) {
@@ -145,6 +175,8 @@ class OccHabStationAdapter(
     private val onDelete: (OccHabStation) -> Unit,
     private val onEdit: (OccHabStation) -> Unit,
     private val onEnvoyer: (OccHabStation) -> Unit,
+    /** CRUVED C du module OCCHAB : false → bouton d'envoi masqué (le POST serait refusé). */
+    private val envoiAutorise: Boolean = true,
 ) : RecyclerView.Adapter<OccHabStationAdapter.ViewHolder>() {
     private var items: List<OccHabStation> = emptyList()
     private val fmt = SimpleDateFormat("dd MMM yyyy HH:mm", Locale.getDefault())
@@ -193,7 +225,7 @@ class OccHabStationAdapter(
             val peutEditer = !station.envoyeGeoNature
             btnEditer.visibility = if (peutEditer) View.VISIBLE else View.GONE
             btnEditer.setOnClickListener { onEdit(station) }
-            val peutEnvoyer = peutEditer && station.habitats.any { it.cdHab > 0 }
+            val peutEnvoyer = peutEditer && envoiAutorise && station.habitats.any { it.cdHab > 0 }
             btnEnvoyer.visibility = if (peutEnvoyer) View.VISIBLE else View.GONE
             btnEnvoyer.setOnClickListener { onEnvoyer(station) }
         }

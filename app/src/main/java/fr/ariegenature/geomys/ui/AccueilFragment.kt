@@ -108,9 +108,9 @@ class AccueilFragment : Fragment() {
         }
 
         binding.btnOcchab.setOnClickListener {
-            // Nouvelle station OccHab : on repart d'une station vierge (le ViewModel est partagé
-            // au niveau activité, comme pour Occtax).
-            occhabViewModel.nouvelle()
+            // Nouvelle SESSION OccHab : détails (JDD, observateurs…) réinitialisés aux défauts
+            // serveur, JDD à saisir. Le ViewModel est partagé au niveau activité.
+            occhabViewModel.demarrerSession(detailsSessionParDefaut(gnConfig))
             findNavController().naviguerSur(R.id.action_accueil_to_occhab)
         }
 
@@ -232,9 +232,10 @@ class AccueilFragment : Fragment() {
     private fun updateSuivisVisibility() {
         binding.btnSuivis.visibility =
             if (MonitoringApi.countModulesEnCache() > 0) View.VISIBLE else View.GONE
-        // Tuile OccHab : visible seulement si le module a été détecté à la synchro (+ droits).
+        // Tuile OccHab : module détecté à la synchro ET droit de CRÉER des stations (CRUVED C).
+        // Un utilisateur en lecture seule ne voit pas la tuile (il ne pourrait rien saisir).
         binding.btnOcchab.visibility =
-            if (gnConfig.occhabDisponible) View.VISIBLE else View.GONE
+            if (gnConfig.occhabDisponible && gnConfig.occhabPeutCreer) View.VISIBLE else View.GONE
     }
 
     private fun updateButtonState() {

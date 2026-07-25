@@ -21,6 +21,14 @@
         android:layout_marginTop="8dp"
         android:background="?attr/colorControlHighlight" />
 
+    <com.google.android.material.tabs.TabLayout
+        android:id="@+id/tab_layout"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingHorizontal="8dp"
+        app:tabIndicatorColor="@color/jaune_clair"
+        app:tabSelectedTextColor="@color/jaune_clair" />
+
     <LinearLayout
         android:id="@+id/empty_view"
         android:layout_width="match_parent"

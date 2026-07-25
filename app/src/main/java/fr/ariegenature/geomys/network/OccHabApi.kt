@@ -174,7 +174,7 @@ object OccHabApi {
             val f = features.optJSONObject(i) ?: continue
             val props = f.optJSONObject("properties") ?: JSONObject()
             val (type, lat, lon, coordsJson) = parserGeometrie(f.optJSONObject("geometry"))
-            val dateMin = parserDate(props.optString("date_min", null))
+            val dateMin = parserDate(props.optString("date_min").takeIf { it.isNotBlank() })
             val habitats = mutableListOf<OccHabHabitat>()
             val habArr = props.optJSONArray("habitats")
             if (habArr != null) {
@@ -199,8 +199,8 @@ object OccHabApi {
                 longitude = lon,
                 geometryCoordsJson = coordsJson,
                 idDataset = props.optInt("id_dataset", -1).takeIf { it > 0 },
-                stationName = props.optString("station_name", null),
-                comment = props.optString("comment", null),
+                stationName = props.optString("station_name").takeIf { it.isNotBlank() },
+                comment = props.optString("comment").takeIf { it.isNotBlank() },
                 dateMin = dateMin,
                 habitats = habitats,
                 envoyeGeoNature = true,

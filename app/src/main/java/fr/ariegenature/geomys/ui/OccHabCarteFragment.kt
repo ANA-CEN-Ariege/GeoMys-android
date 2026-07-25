@@ -78,7 +78,6 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
     private val geomagnetic = FloatArray(3)
     private var gravityReady = false
     private var geomagneticReady = false
-    private var useRotationVector = false
     private var carteSuitBoussole = false
 
     private val compassListener = object : SensorEventListener {
@@ -373,7 +372,12 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
                 "Polygon", sLat / sommets.size, sLon / sommets.size, coords.toString(),
             )
         }
-        findNavController().naviguerSur(R.id.action_occhab_carte_to_station)
+        // Nouvelle station (aucun habitat) → écran de création directement ; station rééditée
+        // (habitats déjà présents) → liste des habitats.
+        if (occhabViewModel.station.habitats.isEmpty())
+            findNavController().naviguerSur(R.id.action_occhab_carte_to_habitat)
+        else
+            findNavController().naviguerSur(R.id.action_occhab_carte_to_liste)
     }
 
     override fun onResume() {
@@ -383,10 +387,8 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
         sensorManager = requireContext().getSystemService(SensorManager::class.java)
         val rotVec = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
         if (rotVec != null) {
-            useRotationVector = true
             sensorManager.registerListener(compassListener, rotVec, SensorManager.SENSOR_DELAY_UI)
         } else {
-            useRotationVector = false
             sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)?.let {
                 sensorManager.registerListener(compassListener, it, SensorManager.SENSOR_DELAY_UI)
             }

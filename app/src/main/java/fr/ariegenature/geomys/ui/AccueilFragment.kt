@@ -131,6 +131,9 @@ class AccueilFragment : Fragment() {
                 menu.findItem(R.id.menu_mes_visites)?.let {
                     it.title = titreAvecPastille(it.title, nbVisitesEnAttente() > 0)
                 }
+                menu.findItem(R.id.menu_mes_stations)?.let {
+                    it.title = titreAvecPastille(it.title, nbStationsEnAttente() > 0)
+                }
                 setOnMenuItemClickListener { item ->
                     when (item.itemId) {
                         R.id.menu_mes_sorties -> {
@@ -180,10 +183,10 @@ class AccueilFragment : Fragment() {
         MiseAJourAccueil.reverifier(this)
     }
 
-    /** Pastille rouge sur le bouton menu dès qu'au moins une saisie OU une visite reste à
-     *  envoyer (le détail par entrée est affiché dans le menu déplié). */
+    /** Pastille rouge sur le bouton menu dès qu'au moins une saisie, une visite OU une station
+     *  OccHab reste à envoyer (le détail par entrée est affiché dans le menu déplié). */
     private fun updatePastilleMenu() {
-        val enAttente = nbSaisiesEnAttente() > 0 || nbVisitesEnAttente() > 0
+        val enAttente = nbSaisiesEnAttente() > 0 || nbVisitesEnAttente() > 0 || nbStationsEnAttente() > 0
         binding.pastilleMenu.visibility = if (enAttente) View.VISIBLE else View.GONE
     }
 
@@ -196,6 +199,10 @@ class AccueilFragment : Fragment() {
         OutboxMonitoring.tout().count {
             it.etat == SaisieEnAttente.Etat.PENDING || it.etat == SaisieEnAttente.Etat.ERROR
         }
+
+    /** Nombre de stations OccHab non encore envoyées (« Mes stations », onglet À envoyer). */
+    private fun nbStationsEnAttente(): Int =
+        fr.ariegenature.geomys.store.OccHabStore(requireContext()).charger().count { !it.envoyeGeoNature }
 
     /** Affiche la pastille « MAJ disponible » sur le numéro de version (jaune + point rouge).
      *  Appelée par le code de MAJ spécifique au flavor github ([MiseAJourAccueil]) ; jamais

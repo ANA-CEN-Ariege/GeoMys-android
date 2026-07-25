@@ -50,18 +50,45 @@
         android:id="@+id/occhabCarteFragment"
         android:name="fr.ariegenature.geomys.ui.OccHabCarteFragment"
         android:label="Station OccHab">
+        <!-- Nouvelle station → écran de création d'habitat ; station rééditée → liste. -->
         <action
-            android:id="@+id/action_occhab_carte_to_station"
+            android:id="@+id/action_occhab_carte_to_habitat"
+            app:destination="@id/occhabHabitatFragment" />
+        <action
+            android:id="@+id/action_occhab_carte_to_liste"
             app:destination="@id/occhabStationFragment" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/occhabHabitatFragment"
+        android:name="fr.ariegenature.geomys.ui.OccHabHabitatFragment"
+        android:label="Habitat OccHab">
+        <argument
+            android:name="habitatId"
+            android:defaultValue="@null"
+            app:argType="string"
+            app:nullable="true" />
+        <!-- Habitat validé → liste (on retire l'écran de création de la pile). -->
+        <action
+            android:id="@+id/action_occhab_habitat_to_liste"
+            app:destination="@id/occhabStationFragment"
+            app:popUpTo="@id/occhabHabitatFragment"
+            app:popUpToInclusive="true"
+            app:launchSingleTop="true" />
     </fragment>
 
     <fragment
         android:id="@+id/occhabStationFragment"
         android:name="fr.ariegenature.geomys.ui.OccHabStationFragment"
         android:label="Station OccHab">
+        <!-- « Ajouter un autre habitat » / éditer un habitat → écran de création. -->
         <action
-            android:id="@+id/action_occhab_station_to_stations"
-            app:destination="@id/occhabStationsFragment"
+            android:id="@+id/action_occhab_liste_to_habitat"
+            app:destination="@id/occhabHabitatFragment" />
+        <!-- Après enregistrement : carte VIERGE pour une autre station. popUpTo accueil. -->
+        <action
+            android:id="@+id/action_occhab_station_to_carte"
+            app:destination="@id/occhabCarteFragment"
             app:popUpTo="@id/accueilFragment"
             app:popUpToInclusive="false" />
     </fragment>
@@ -70,9 +97,11 @@
         android:id="@+id/occhabStationsFragment"
         android:name="fr.ariegenature.geomys.ui.OccHabStationsFragment"
         android:label="Mes stations">
+        <!-- Édition : on repasse d'abord par la carte (géométrie éventuellement modifiable),
+             puis « Valider » enchaîne sur le formulaire (mêmes actions que la création). -->
         <action
-            android:id="@+id/action_occhab_stations_to_station"
-            app:destination="@id/occhabStationFragment" />
+            android:id="@+id/action_occhab_stations_to_carte"
+            app:destination="@id/occhabCarteFragment" />
     </fragment>
 
     <fragment

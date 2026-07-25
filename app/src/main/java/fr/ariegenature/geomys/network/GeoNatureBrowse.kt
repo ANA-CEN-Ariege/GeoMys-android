@@ -243,20 +243,21 @@ object GeoNatureBrowse {
     }
 
     private fun parseUnHabitat(r: JsonReader): HabitatSuggestion? {
-        var cd = -1; var searchName = ""; var lbCode = ""
+        var cd = -1; var searchName = ""; var lbCode = ""; var cdTypo: Int? = null
         r.beginObject()
         while (r.hasNext()) {
             when (r.nextName()) {
                 "cd_hab" -> cd = lireIntOuNull(r) ?: -1
                 "search_name" -> searchName = lireStringOuVide(r)
                 "lb_code" -> lbCode = lireStringOuVide(r)
+                "cd_typo" -> cdTypo = lireIntOuNull(r)?.takeIf { it > 0 }
                 else -> r.skipValue()
             }
         }
         r.endObject()
         if (cd <= 0) return null
         val libelle = searchName.ifBlank { lbCode }.trim().ifBlank { cd.toString() }
-        return HabitatSuggestion(cd, libelle)
+        return HabitatSuggestion(cd, libelle, cdTypo)
     }
 
     suspend fun chargerListesTaxons(config: GeoNatureConfig): List<GeoNatureListe> =
@@ -354,6 +355,22 @@ object GeoNatureBrowse {
                     GeoNatureAuth.loginAvecCookies(base, config.login, config.motDePasse)
                         ?: return@withContext null
                 idListHabitat(base, token, cookies, "OCCHAB")
+            } catch (_: Exception) { null }
+        }
+
+    /** `OCCHAB.formConfig` (map champ→booléen de visibilité) sérialisé, depuis `/gn_commons/config`.
+     *  Pilote quels champs afficher dans le formulaire OccHab — même source que le web. null si absent. */
+    suspend fun chargerFormConfigOccHab(config: GeoNatureConfig): String? =
+        withContext(Dispatchers.IO) {
+            try {
+                val base = config.urlServeur.trim().trimEnd('/')
+                val (token, _, cookies) =
+                    GeoNatureAuth.loginAvecCookies(base, config.login, config.motDePasse)
+                        ?: return@withContext null
+                val conn = HttpClient.get(URL("$base/api/gn_commons/config"), token, cookies, 10000)
+                if (conn.responseCode != 200) null
+                else JSONObject(conn.inputStream.bufferedReader().readText())
+                    .optJSONObject("OCCHAB")?.optJSONObject("formConfig")?.toString()
             } catch (_: Exception) { null }
         }
 

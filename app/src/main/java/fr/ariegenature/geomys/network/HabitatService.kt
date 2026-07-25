@@ -19,6 +19,7 @@
 package fr.ariegenature.geomys.network
 
 import fr.ariegenature.geomys.store.HabitatCache
+import fr.ariegenature.geomys.store.HabitatCacheAcces
 import fr.ariegenature.geomys.store.HabitatCacheOccHab
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -26,8 +27,10 @@ import org.json.JSONArray
 import java.net.URL
 import java.net.URLEncoder
 
-/** Une suggestion d'habitat issue du référentiel HABREF du serveur. */
-data class HabitatSuggestion(val cdHab: Int, val libelle: String)
+/** Une suggestion d'habitat issue du référentiel HABREF du serveur.
+ *  [cdTypo] = typologie HABREF de l'habitat (CORINE, EUNIS, Cahiers d'habitats…), informatif.
+ *  Null si inconnu (anciens caches). */
+data class HabitatSuggestion(val cdHab: Int, val libelle: String, val cdTypo: Int? = null)
 
 /** Recherche d'habitats (référentiel HABREF) pour le champ `cd_hab` du relevé Occtax.
  *
@@ -40,12 +43,14 @@ data class HabitatSuggestion(val cdHab: Int, val libelle: String)
  *  jamais de crash. Chaque recherche en ligne alimente ce cache. */
 object HabitatService {
 
-    /** [idList] : restreint la recherche à une liste HABREF précise (`id_list`), comme le web.
-     *  - null (Occtax) → cache complet OCCTAX si dispo (hors-ligne), sinon serveur sans filtre.
-     *  - non-null (OccHab) → cache DÉDIÉ OccHab si dispo (hors-ligne, mêmes valeurs que le web),
-     *    sinon serveur AVEC `id_list`. Le cache OCCTAX n'est jamais utilisé pour OccHab (liste ≠). */
+    /** Recherche d'habitats.
+     *  - [occhab] false (Occtax) → cache complet OCCTAX si dispo, sinon serveur (+ [idList]).
+     *  - [occhab] true (OccHab)  → cache DÉDIÉ OccHab (jamais le cache OCCTAX ; recherche
+     *    sensible aux accents = mêmes résultats que le web) ; sinon serveur avec `id_list`.
+     *  [idList] = `OCCHAB.ID_LIST_HABITAT` (souvent null → tout HABREF). */
     suspend fun rechercher(
-        base: String, terme: String, limite: Int = 20, idList: Int? = null,
+        base: String, terme: String, limite: Int = 20,
+        idList: Int? = null, occhab: Boolean = false,
     ): List<HabitatSuggestion> =
         withContext(Dispatchers.IO) {
             val t = terme.trim()
@@ -56,18 +61,16 @@ object HabitatService {
                     "?search_name=${URLEncoder.encode(t, "UTF-8")}&limit=$limite" +
                     (idList?.let { "&id_list=$it" } ?: "")
             )
-            // Cache du bon périmètre : OccHab si une liste est imposée, sinon le cache complet OCCTAX.
-            val cacheDispo = if (idList != null) HabitatCacheOccHab.estDisponible else HabitatCache.estDisponible
-            fun depuisCache(): List<HabitatSuggestion> =
-                if (idList != null) HabitatCacheOccHab.rechercher(t, limite) else HabitatCache.rechercher(t, limite)
+            // Cache du bon périmètre.
+            val cache: HabitatCacheAcces = if (occhab) HabitatCacheOccHab else HabitatCache
             // Cache présent → recherche LOCALE (hors-ligne, sans round-trip par frappe).
-            if (cacheDispo) return@withContext depuisCache()
-            // Cache absent → requête serveur (avec id_list si OccHab).
+            if (cache.estDisponible) return@withContext cache.rechercher(t, limite)
+            // Cache absent → requête serveur (avec id_list éventuel).
             try {
                 val conn = HttpClient.get(url, timeoutMs = 8000)
                 try {
                     if (conn.responseCode != 200) {
-                        return@withContext if (cacheDispo) depuisCache() else emptyList()
+                        return@withContext if (cache.estDisponible) cache.rechercher(t, limite) else emptyList()
                     }
                     val arr = JSONArray(conn.inputStream.bufferedReader().readText())
                     (0 until arr.length()).mapNotNull { i ->
@@ -76,13 +79,13 @@ object HabitatService {
                         if (cd <= 0) return@mapNotNull null
                         val libelle = o.optString("search_name").ifBlank { o.optString("lb_code") }
                             .trim().ifBlank { cd.toString() }
-                        HabitatSuggestion(cd, libelle)
+                        HabitatSuggestion(cd, libelle, o.optInt("cd_typo", -1).takeIf { it > 0 })
                     }
                 } finally {
                     conn.disconnect()
                 }
             } catch (_: Exception) {
-                if (cacheDispo) depuisCache() else emptyList()
+                if (cache.estDisponible) cache.rechercher(t, limite) else emptyList()
             }
         }
 }

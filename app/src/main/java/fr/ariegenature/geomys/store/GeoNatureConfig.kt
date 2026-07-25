@@ -134,6 +134,34 @@ class GeoNatureConfig(context: Context) {
         get() = prefs.getInt("gn_occhab_id_list_habitat", -1)
         set(v) = prefs.edit().putInt("gn_occhab_id_list_habitat", v).apply()
 
+    /** `OCCHAB.formConfig` (map champ→booléen de visibilité) sérialisé, lu à la synchro. Pilote
+     *  quels champs afficher dans le formulaire OccHab, exactement comme le web. */
+    var occhabFormConfigJson: String
+        get() = prefs.getString("gn_occhab_formconfig", "") ?: ""
+        set(v) = prefs.edit().putString("gn_occhab_formconfig", v).apply()
+
+    /** Visibilité d'un champ du formulaire OccHab (`OCCHAB.formConfig[champ]`). Défaut true si la
+     *  config est absente ou le champ non listé — on ne masque QUE ce que le serveur masque. */
+    fun occhabChampVisible(champ: String): Boolean {
+        val json = occhabFormConfigJson
+        if (json.isBlank()) return true
+        return try { org.json.JSONObject(json).optBoolean(champ, true) } catch (_: Exception) { true }
+    }
+
+    /** Valeurs par défaut des nomenclatures OccHab (`/occhab/defaultNomenclatures`), map
+     *  mnémonique→id_nomenclature sérialisée. Pré-remplit les sélecteurs d'un NOUVEL habitat
+     *  (ex. technique de collecte = « In situ »), comme le web. */
+    var occhabDefautsNomencJson: String
+        get() = prefs.getString("gn_occhab_defauts_nomenc", "") ?: ""
+        set(v) = prefs.edit().putString("gn_occhab_defauts_nomenc", v).apply()
+
+    /** Id_nomenclature par défaut OccHab pour un mnémonique. null si inconnu. */
+    fun occhabDefautNomenclature(mnemonique: String): Int? {
+        val json = occhabDefautsNomencJson
+        if (json.isBlank()) return null
+        return try { org.json.JSONObject(json).optInt(mnemonique, -1).takeIf { it > 0 } } catch (_: Exception) { null }
+    }
+
     /** Cache JSON des datasets chargés depuis le serveur (List<GeoNatureDataset>). */
     var datasetsCacheJson: String
         get() = prefs.getString("gn_cache_datasets", "") ?: ""

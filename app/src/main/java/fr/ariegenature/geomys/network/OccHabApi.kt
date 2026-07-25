@@ -99,6 +99,31 @@ object OccHabApi {
     }
 
     /**
+     * Valeurs par défaut des nomenclatures OccHab (`GET /api/occhab/defaultNomenclatures`) :
+     * map mnémonique→id_nomenclature (ex. `TECHNIQUE_COLLECT_HAB` → « In situ »). Pré-remplit les
+     * sélecteurs d'un nouvel habitat, comme le web. Best-effort : map vide si échec.
+     */
+    suspend fun chargerDefautsNomenclatures(config: GeoNatureConfig): Map<String, Int> =
+        withContext(Dispatchers.IO) {
+            val base = config.urlServeur.trim().trimEnd('/')
+            val (token, _, cookies) = GeoNatureAuth.loginAvecCookies(base, config.login, config.motDePasse)
+                ?: return@withContext emptyMap()
+            try {
+                val conn = HttpClient.get(URL("$base/api/occhab/defaultNomenclatures"), token, cookies, 15000)
+                if (conn.responseCode != 200) return@withContext emptyMap()
+                val obj = JSONObject(conn.inputStream.bufferedReader().readText())
+                val out = HashMap<String, Int>()
+                val it = obj.keys()
+                while (it.hasNext()) {
+                    val mnem = it.next()
+                    val id = obj.optJSONObject(mnem)?.optInt("id_nomenclature", -1)?.takeIf { v -> v > 0 }
+                    if (id != null) out[mnem] = id
+                }
+                out
+            } catch (_: Exception) { emptyMap() }
+        }
+
+    /**
      * Charge les stations existantes du serveur (consultation lecture seule).
      * `GET /api/occhab/stations/?format=geojson&habitats=1&nomenclatures=1` → FeatureCollection.
      * [idDataset] filtre optionnellement par jeu de données. Les stations renvoyées portent
@@ -149,7 +174,7 @@ object OccHabApi {
             val f = features.optJSONObject(i) ?: continue
             val props = f.optJSONObject("properties") ?: JSONObject()
             val (type, lat, lon, coordsJson) = parserGeometrie(f.optJSONObject("geometry"))
-            val dateMin = parserDate(props.optString("date_min", null))
+            val dateMin = parserDate(props.optString("date_min").takeIf { it.isNotBlank() })
             val habitats = mutableListOf<OccHabHabitat>()
             val habArr = props.optJSONArray("habitats")
             if (habArr != null) {
@@ -174,8 +199,8 @@ object OccHabApi {
                 longitude = lon,
                 geometryCoordsJson = coordsJson,
                 idDataset = props.optInt("id_dataset", -1).takeIf { it > 0 },
-                stationName = props.optString("station_name", null),
-                comment = props.optString("comment", null),
+                stationName = props.optString("station_name").takeIf { it.isNotBlank() },
+                comment = props.optString("comment").takeIf { it.isNotBlank() },
                 dateMin = dateMin,
                 habitats = habitats,
                 envoyeGeoNature = true,

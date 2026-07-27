@@ -63,11 +63,36 @@ class OccHabStationFragment : Fragment() {
 
         binding.btnDetails.setOnClickListener {
             ouvrirDialogDetailsOccHab(requireContext(), occhabViewModel, gnConfig) {
-                majResume(); majBoutonEnregistrer()
+                majResume()
+                // Les détails modifiés s'appliquent aussi à la station courante déjà sauvée.
+                sauvegarderAuFilDeLEau()
             }
         }
         binding.btnAjouterHabitat.setOnClickListener { ouvrirEcranHabitat(null) }
-        binding.btnEnregistrer.setOnClickListener { enregistrer() }
+        // Coche verte « terminer » (comme la saisie multi-taxons) : la station est déjà
+        // enregistrée au fil de l'eau — on repart simplement sur une carte vierge.
+        binding.btnTerminer.setOnClickListener {
+            if (occhabViewModel.station.habitats.isNotEmpty()) {
+                Toast.makeText(
+                    requireContext(),
+                    "Votre station est enregistrée dans « Mes stations »",
+                    Toast.LENGTH_LONG,
+                ).show()
+            }
+            occhabViewModel.nouvelleStation()
+            findNavController().naviguerSur(R.id.action_occhab_station_to_carte)
+        }
+    }
+
+    /** Enregistrement AU FIL DE L'EAU (comme les saisies Occtax) : la station courante —
+     *  détails de session fusionnés — est (ré)écrite dans le store dès qu'elle porte au moins
+     *  un habitat, ou dès qu'elle y existe déjà (mise à jour après édition/suppression). */
+    private fun sauvegarderAuFilDeLEau() {
+        val station = occhabViewModel.stationAEnregistrer()
+        val dejaEnregistree = occHabStore.charger().any { it.id == station.id }
+        if (station.habitats.isNotEmpty() || dejaEnregistree) {
+            occHabStore.remplacer(station.id, station)
+        }
     }
 
     override fun onResume() {
@@ -129,6 +154,7 @@ class OccHabStationFragment : Fragment() {
                 setOnClickListener {
                     occhabViewModel.supprimerHabitat(h.id)
                     rafraichirHabitats()
+                    sauvegarderAuFilDeLEau()
                 }
             }
             row.setOnClickListener { ouvrirEcranHabitat(h.id) }
@@ -136,27 +162,6 @@ class OccHabStationFragment : Fragment() {
             row.addView(suppr)
             container.addView(row)
         }
-        majBoutonEnregistrer()
-    }
-
-    /** « Enregistrer » actif seulement si le jeu de données est choisi ET au moins un habitat. */
-    private fun majBoutonEnregistrer() {
-        val ok = occhabViewModel.details.idDataset != null &&
-            occhabViewModel.station.habitats.any { it.cdHab > 0 }
-        binding.btnEnregistrer.isEnabled = ok
-        binding.btnEnregistrer.alpha = if (ok) 1f else 0.5f
-    }
-
-    private fun enregistrer() {
-        val station = occhabViewModel.stationAEnregistrer()
-        occHabStore.remplacer(station.id, station)
-        Toast.makeText(
-            requireContext(),
-            "Votre station est enregistrée dans « Mes stations »",
-            Toast.LENGTH_LONG,
-        ).show()
-        occhabViewModel.nouvelleStation()
-        findNavController().naviguerSur(R.id.action_occhab_station_to_carte)
     }
 
     override fun onDestroyView() { super.onDestroyView(); _binding = null }

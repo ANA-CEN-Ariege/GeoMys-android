@@ -153,10 +153,9 @@ fun ouvrirDialogDetailsOccHab(
         if (jddSeul) {
             // Dialogue JDD seul (petit, centré) : le clavier masque le bas → dropdown AU-DESSUS.
             champ.post { champ.dropDownVerticalOffset = -(champ.height + hauteurDropdown) }
-        } else {
-            // Détails (champ en haut du formulaire) : dropdown SOUS le champ, hauteur bornée.
-            champ.post { champ.dropDownVerticalOffset = champ.height }
         }
+        // Détails (champ en haut du formulaire) : ancrage par défaut = liste juste sous le bas
+        // du champ (un offset supplémentaire la faisait descendre trop bas).
         var nomChoisi: String? = pendingNomDataset ?: datasets.firstOrNull { it.first == pendingIdDataset }?.second
         nomChoisi?.let { champ.setText(it, false) }
         champ.setOnClickListener { champ.setText("", false); champ.showDropDown() }

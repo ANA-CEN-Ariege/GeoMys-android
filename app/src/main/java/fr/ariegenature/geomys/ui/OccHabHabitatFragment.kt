@@ -247,6 +247,10 @@ class OccHabHabitatFragment : Fragment() {
             idNomInteretCommunautaire = lireInteret(),
         )
         occhabViewModel.ajouterOuMajHabitat(habitat)
+        // Enregistrement AU FIL DE L'EAU (comme les saisies Occtax) : la station — détails de
+        // session fusionnés — est (ré)écrite dans « Mes stations » dès qu'un habitat est validé.
+        val station = occhabViewModel.stationAEnregistrer()
+        fr.ariegenature.geomys.store.OccHabStore(requireContext()).remplacer(station.id, station)
         findNavController().naviguerSur(R.id.action_occhab_habitat_to_liste)
     }
 

@@ -20,7 +20,9 @@ package fr.ariegenature.geomys
 
 import androidx.test.core.app.ApplicationProvider
 import fr.ariegenature.geomys.store.TaxRefCache
+import fr.ariegenature.geomys.store.TaxRefEntry
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -74,5 +76,78 @@ class TaxRefCacheTest {
         TaxRefCache.vider()
         assertTrue(TaxRefCache.listesPourCdNom(1).isEmpty())
         assertTrue(TaxRefCache.comptesGroupes.isEmpty())
+    }
+
+    // ── Recherche vocale (niveaux 1b / 3 / 2) ─────────────────────────────────────────────────
+    // Les clés du cache sont stockées NORMALISÉES au sync — on reproduit ça via normaliser().
+
+    private fun peupler(vararg noms: Pair<String, Int>) {
+        TaxRefCache.remplacerTout(noms.associate { (nom, cd) ->
+            TaxRefCache.normaliser(nom) to TaxRefEntry(cd, nom, nom)
+        })
+    }
+
+    @Test
+    fun get_tolere_tiret_espace_et_espaces_multiples() {
+        peupler("Pique-prune" to 5000) // séparateur UNIQUE (un tiret)
+        // Clé stockée avec tiret ; requêtes vocales avec espace / espaces multiples / tiret.
+        assertEquals(5000, TaxRefCache.get("pique prune")?.cdNom)
+        assertEquals(5000, TaxRefCache.get("pique  prune")?.cdNom)
+        assertEquals(5000, TaxRefCache.get("Pique-prune")?.cdNom)
+    }
+
+    @Test
+    fun mots_tolere_separateurs_mixtes() {
+        peupler("Grand-duc d'Europe" to 3000)
+        // Séparateurs MIXTES (tiret + espace) : hors du ressort de get(), résolu par l'index mots.
+        assertEquals(3000, TaxRefCache.chercherParMots(TaxRefCache.normaliser("grand duc d'europe"))?.cdNom)
+    }
+
+    @Test
+    fun get_tolere_concatenation_des_separateurs() {
+        peupler("Rougegorge" to 4001) // nom INPN en un mot
+        assertEquals(4001, TaxRefCache.get("rouge gorge")?.cdNom)
+    }
+
+    @Test
+    fun mots_matche_nom_en_un_mot_depuis_deux_mots_dictes() {
+        peupler("Rougegorge familier" to 4001, "Mésange bleue" to 4002)
+        // « rouge gorge » (ASR, 2 mots) → « Rougegorge familier » (index par mots + concat).
+        assertEquals(4001, TaxRefCache.chercherParMots(TaxRefCache.normaliser("rouge gorge"))?.cdNom)
+    }
+
+    @Test
+    fun mots_tolere_ordre_et_mot_isole() {
+        peupler("Rougegorge familier" to 4001, "Tichodrome échelette" to 4494, "Bombus lucorum" to 240)
+        // Mots inversés.
+        assertEquals(4001, TaxRefCache.chercherParMots(TaxRefCache.normaliser("familier rougegorge"))?.cdNom)
+        // Un seul mot discriminant.
+        assertEquals(4494, TaxRefCache.chercherParMots(TaxRefCache.normaliser("tichodrome"))?.cdNom)
+        assertEquals(240, TaxRefCache.chercherParMots(TaxRefCache.normaliser("lucorum"))?.cdNom)
+    }
+
+    @Test
+    fun mots_ambigu_ne_matche_pas() {
+        peupler("Milan royal" to 2000, "Milan noir" to 2001)
+        // « milan » seul désigne 2 espèces → aucun match (pas de faux positif en auto-ajout vocal).
+        assertNull(TaxRefCache.chercherParMots(TaxRefCache.normaliser("milan")))
+        // …sauf si le groupe taxon restreint à un seul cd_nom.
+        assertEquals(2000, TaxRefCache.chercherParMots(TaxRefCache.normaliser("milan"), setOf(2000))?.cdNom)
+    }
+
+    @Test
+    fun approche_rattrape_une_faute_de_transcription() {
+        peupler("Bombus lucorum" to 240, "Mésange bleue" to 4002)
+        // « lucorun » (n au lieu de m) → 1 substitution → match.
+        assertEquals(240, TaxRefCache.chercherApproche(TaxRefCache.normaliser("bombus lucorun"))?.cdNom)
+    }
+
+    @Test
+    fun approche_refuse_ambiguite_et_trop_loin() {
+        peupler("abcd" to 10, "abce" to 11, "Bombus lucorum" to 240)
+        // Deux clés à distance 1 égale → ambigu → null (pas de faux positif).
+        assertNull(TaxRefCache.chercherApproche("abcf"))
+        // Trop éloigné de tout.
+        assertNull(TaxRefCache.chercherApproche("zzzzzz"))
     }
 }

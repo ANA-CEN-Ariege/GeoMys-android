@@ -48,9 +48,10 @@ fun couleurSurOnSurface(ctx: Context): Int = MaterialColors.getColor(
 )
 
 /** Couleur d'erreur (validation, refus, suppression…). Avant : #C62828 ou
- *  @android:color/holo_red_dark. */
+ *  @android:color/holo_red_dark. NB : `colorError` est un attribut APPCOMPAT — Material
+ *  1.13.0 ne le ré-exporte plus dans son R. */
 fun couleurErreur(ctx: Context): Int = MaterialColors.getColor(
-    ctx, com.google.android.material.R.attr.colorError, 0xFFB00020.toInt(),
+    ctx, androidx.appcompat.R.attr.colorError, 0xFFB00020.toInt(),
 )
 
 // Material 3 n'expose pas d'attributs « succès / en-cours / avertissement » : couleurs fixes,

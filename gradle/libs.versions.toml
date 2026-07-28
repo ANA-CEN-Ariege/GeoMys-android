@@ -6,6 +6,12 @@ junit = "4.13.2"
 junitVersion = "1.1.5"
 espressoCore = "3.5.1"
 appcompat = "1.6.1"
+# NB avertissement console Play « API obsolètes bord à bord » (Window.setStatusBarColor /
+# setNavigationBarColor dans BottomSheetDialog / EdgeToEdgeUtils / SheetDialog) : ces appels
+# sont du code de COMPATIBILITÉ gardé par version (< API 35) DANS Material — indispensables
+# pour les Android < 15 (minSdk 24). Vérifié au dexdump : présents à l'identique en 1.13.0 et
+# 1.14.0 — aucune version ne fait disparaître l'avertissement, qui est INFORMATIF et non
+# bloquant. Notre code n'appelle pas ces API. Inutile de monter de version pour ça.
 material = "1.12.0"
 osmdroid = "6.1.20"
 coroutines = "1.8.1"

@@ -39,6 +39,7 @@ import fr.ariegenature.geomys.TaxRefLocal
 import fr.ariegenature.geomys.databinding.FragmentSaisieObservationBinding
 import fr.ariegenature.geomys.model.Observation
 import fr.ariegenature.geomys.model.Taxon
+import fr.ariegenature.geomys.network.TaxRefService
 import fr.ariegenature.geomys.network.TaxRefStatut
 import fr.ariegenature.geomys.store.GeoNatureConfig
 import fr.ariegenature.geomys.store.NidificationOiseaux
@@ -166,9 +167,6 @@ class SaisieObservationFragment : Fragment() {
     private var latitude = 0.0
     private var longitude = 0.0
     private var rechercheNomSci = false
-    /** Vrai entre le résultat final de la dictée vocale et l'arrivée du statut TaxRef
-     *  correspondant : à ce moment-là, un match auto-ajoute une obs sans intervention. */
-    private var attendreRetourVoix = false
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         _binding = FragmentSaisieObservationBinding.inflate(inflater, container, false)
@@ -344,7 +342,7 @@ class SaisieObservationFragment : Fragment() {
 
         speech = SpeechToTextHelper(
             this, binding.tilEspece, binding.etEspece, micPermissionLauncher,
-            onFinalText = { attendreRetourVoix = true }
+            onFinalText = { candidats -> resoudreEtAjouterDepuisVoix(candidats) }
         )
         taxrefLookup = TaxRefLookupController(
             scope = viewLifecycleOwner.lifecycleScope,
@@ -352,7 +350,6 @@ class SaisieObservationFragment : Fragment() {
             tvStatut = binding.tvTaxrefStatut,
             taxonProvider = { taxonSelector.taxon },
             configProvider = { gnConfig },
-            onChange = { s -> consommerRetourVoix(s) },
         )
 
         setupAutocomplete()
@@ -785,13 +782,24 @@ class SaisieObservationFragment : Fragment() {
         })
     }
 
-    /** Consomme le flag dicté : sur un match TaxRef, ajoute automatiquement l'obs.
-     *  Le flag est consommé dans tous les cas pour éviter qu'une frappe clavier
-     *  ultérieure ne déclenche un ajout fantôme. */
-    private fun consommerRetourVoix(statut: TaxRefStatut?) {
-        if (!attendreRetourVoix || statut == null) return
-        attendreRetourVoix = false
-        if (statut is TaxRefStatut.Trouve) ajouterDepuisVoix(statut)
+    /** Dictée vocale : essaie TOUTES les hypothèses ASR (jusqu'à 5) contre TaxRef (recherche
+     *  étendue), et sur un match auto-ajoute l'obs — DÉTERMINISTE (résolution explicite des
+     *  candidats, plus de flag posé à l'avance qui pouvait être consommé par le 1ᵉʳ candidat non
+     *  reconnu avant que le bon candidat n'arrive). Aucun match → on laisse le 1ᵉʳ candidat dans
+     *  le champ et on affiche le statut « non trouvé » (via son propre lookup). */
+    private fun resoudreEtAjouterDepuisVoix(candidats: List<String>) {
+        viewLifecycleOwner.lifecycleScope.launch {
+            val (statut, _) = TaxRefService.rechercherParmiCandidats(
+                candidats, taxonSelector.taxon, gnConfig,
+            )
+            if (!isAdded || _binding == null) return@launch
+            if (statut is TaxRefStatut.Trouve) {
+                ajouterDepuisVoix(statut)
+            } else {
+                // Rafraîchit le statut sur le texte affiché (1ᵉʳ candidat) — « non trouvé ».
+                taxrefLookup.rechercher(binding.etEspece.text?.toString().orEmpty())
+            }
+        }
     }
 
     /** Ajoute une PendingObs à partir d'un match TaxRef issu de la dictée vocale.

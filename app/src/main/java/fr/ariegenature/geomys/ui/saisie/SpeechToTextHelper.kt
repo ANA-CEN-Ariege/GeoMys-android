@@ -46,10 +46,12 @@ class SpeechToTextHelper(
     private val til: TextInputLayout,
     private val et: AutoCompleteTextView,
     private val micPermissionLauncher: ActivityResultLauncher<String>,
-    /** Invoqué après le résultat final de la reconnaissance, juste après écriture du texte
-     *  dans le champ. Permet au caller de réagir spécifiquement à la dictée (vs un
-     *  changement de texte manuel) — ex. déclencher un ajout automatique sur match TaxRef. */
-    private val onFinalText: ((String) -> Unit)? = null,
+    /** Invoqué après le résultat final de la reconnaissance, juste après écriture du 1ᵉʳ
+     *  candidat dans le champ. Reçoit TOUTES les hypothèses ASR (jusqu'à 5, EXTRA_MAX_RESULTS) :
+     *  Google renvoie souvent la bonne transcription en 2ᵉ–5ᵉ position quand la 1ʳᵉ est un mot
+     *  mal reconnu — le caller les essaie toutes contre TaxRef. Permet aussi de réagir
+     *  spécifiquement à la dictée (vs une frappe clavier) — ex. ajout automatique sur match. */
+    private val onFinalText: ((List<String>) -> Unit)? = null,
 ) {
     private var recognizer: SpeechRecognizer? = null
 
@@ -81,12 +83,19 @@ class SpeechToTextHelper(
                 }
                 override fun onResults(results: Bundle?) {
                     til.setEndIconDrawable(R.drawable.ic_mic)
-                    val texte = results
+                    val candidats = results
                         ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                        ?.firstOrNull() ?: return
-                    et.setText(texte)
-                    et.setSelection(texte.length)
-                    onFinalText?.invoke(texte)
+                        ?.filter { it.isNotBlank() }
+                        ?.takeIf { it.isNotEmpty() } ?: return
+                    // Trace des hypothèses réelles (calibrage des seuils de matching en terrain) :
+                    // `adb logcat -s GeoMysASR`.
+                    android.util.Log.i("GeoMysASR", "hypothèses=${candidats.joinToString(" | ")}")
+                    // Affichage immédiat du 1ᵉʳ candidat (retour instantané) ; le caller essaiera
+                    // ensuite TOUTES les hypothèses contre TaxRef et réinjectera la gagnante.
+                    val premier = candidats.first()
+                    et.setText(premier)
+                    et.setSelection(premier.length)
+                    onFinalText?.invoke(candidats)
                 }
                 override fun onError(error: Int) {
                     til.setEndIconDrawable(R.drawable.ic_mic)

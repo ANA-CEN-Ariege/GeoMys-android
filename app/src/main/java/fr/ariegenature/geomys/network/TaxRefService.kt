@@ -34,7 +34,35 @@ sealed class TaxRefStatut {
 
 object TaxRefService {
 
-    suspend fun rechercher(nom: String, taxon: Taxon? = null, gnConfig: GeoNatureConfig? = null): Pair<TaxRefStatut, Boolean> =
+    /**
+     * Essaie les [candidats] de la reconnaissance vocale (hypothèses ASR, dans l'ordre) contre
+     * TaxRef, recherche ÉTENDUE activée (mots + approché). Renvoie le premier [TaxRefStatut.Trouve]
+     * avec le TEXTE candidat gagnant (pour réafficher/réinjecter dans le champ) ; sinon
+     * [TaxRefStatut.NonTrouve] avec le 1ᵉʳ candidat. Sur le chemin VOCAL uniquement.
+     */
+    suspend fun rechercherParmiCandidats(
+        candidats: List<String>,
+        taxon: Taxon? = null,
+        gnConfig: GeoNatureConfig? = null,
+    ): Pair<TaxRefStatut, String?> = withContext(Dispatchers.IO) {
+        val liste = candidats.map { it.trim() }.filter { it.isNotEmpty() }
+        if (liste.isEmpty()) return@withContext Pair(TaxRefStatut.NonTrouve, null)
+        for (cand in liste) {
+            val (statut, _) = rechercher(cand, taxon, gnConfig, avecRechercheEtendue = true)
+            if (statut is TaxRefStatut.Trouve) return@withContext Pair(statut, cand)
+        }
+        Pair(TaxRefStatut.NonTrouve, liste.first())
+    }
+
+    suspend fun rechercher(
+        nom: String,
+        taxon: Taxon? = null,
+        gnConfig: GeoNatureConfig? = null,
+        /** true (chemin VOCAL) : après échec du match exact (cache + API), tente une résolution
+         *  ÉTENDUE sur le cache local — index par MOTS puis APPROCHÉ. Jamais activé par
+         *  l'autocomplétion clavier (perf sur 15-50k entrées, à chaque frappe). */
+        avecRechercheEtendue: Boolean = false,
+    ): Pair<TaxRefStatut, Boolean> =
         withContext(Dispatchers.IO) {
             // Set des cd_nom autorisés pour le groupe sélectionné. Null si pas de groupe
             // demandé OU si l'index par taxon n'a pas (encore) été synchronisé pour ce groupe
@@ -65,6 +93,21 @@ object TaxRefService {
                     if (statut !is TaxRefStatut.Trouve) {
                         return@withContext Pair(statut, true)
                     }
+                }
+            }
+
+            // 3. Recherche ÉTENDUE (chemin vocal) sur le cache local, en dernier recours.
+            //    Ordre : index par MOTS (déterministe, sans faux positif) AVANT l'APPROCHÉ
+            //    (Levenshtein, seul tier pouvant se tromper). Les deux filtrent déjà par groupe.
+            if (avecRechercheEtendue) {
+                val norm = TaxRefCache.normaliser(TaxRefCache.nettoyerSuffixeArticle(nom))
+                TaxRefCache.chercherParMots(norm, cdNomsAutorises)?.let { e ->
+                    val nomFr = e.nomFrOriginal ?: TaxRefCache.getVernaculaireParCdNom(e.cdNom)
+                    return@withContext Pair(TaxRefStatut.Trouve(e.cdNom, e.sciNom, nomFr), false)
+                }
+                TaxRefCache.chercherApproche(norm, cdNomsAutorises)?.let { e ->
+                    val nomFr = e.nomFrOriginal ?: TaxRefCache.getVernaculaireParCdNom(e.cdNom)
+                    return@withContext Pair(TaxRefStatut.Trouve(e.cdNom, e.sciNom, nomFr), false)
                 }
             }
 

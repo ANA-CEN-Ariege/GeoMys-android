@@ -221,7 +221,7 @@ class OccHabStationAdapter(
                 station.envoyeGeoNature -> {
                     root.background = null
                     tvEtat.visibility = View.VISIBLE
-                    tvEtat.setTextColor(0xFF2E7D32.toInt())
+                    tvEtat.setTextColor(couleurSucces(root.context))
                     tvEtat.text = "✅ Envoyée"
                 }
                 erreur != null -> {

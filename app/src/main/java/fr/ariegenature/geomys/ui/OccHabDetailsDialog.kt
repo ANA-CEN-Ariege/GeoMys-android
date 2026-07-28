@@ -121,13 +121,13 @@ fun ouvrirDialogDetailsOccHab(
     //    (sinon « Annuler » laissait passer les modifications de JDD / observateurs / dates). ──
     var pendingIdDataset: Int? = d.idDataset
     var pendingNomDataset: String? = d.nomDataset
-    var pendingObsIds: List<Int> = d.observateursIds
-    var pendingObsNoms: List<String> = d.observateursNoms
     var pendingDateMin: Long? = d.dateMin
     var pendingDateMax: Long? = d.dateMax
-
-    fun libelleObservateurs() =
-        pendingObsNoms.joinToString(", ").ifBlank { "(utilisateur connecté)" }
+    // Getter des observateurs choisis (widget partagé, cf. plus bas). Par défaut : sélection
+    // actuelle inchangée (mode « JDD seul » ne montre pas le champ).
+    var lireObservateurs: () -> List<Pair<Int, String>> = {
+        d.observateursIds.mapIndexed { i, id -> id to (d.observateursNoms.getOrNull(i) ?: id.toString()) }
+    }
 
     // Jeu de données (autocomplétion).
     racine.addView(label("Jeu de données *"))
@@ -135,7 +135,7 @@ fun ouvrirDialogDetailsOccHab(
     if (datasets.isEmpty()) {
         racine.addView(TextView(context).apply {
             text = "Aucun jeu de données OccHab en cache — lancez « Recharger les données »."
-            setTextColor(0xFFC62828.toInt()); textSize = 13f
+            setTextColor(couleurErreur(context)); textSize = 13f
             setPadding(0, (6 * density).toInt(), 0, 0)
         })
     } else {
@@ -181,27 +181,13 @@ fun ouvrirDialogDetailsOccHab(
     var lireMethode: () -> Int? = { null }
     var lireNature: () -> Int? = { null }
     if (!jddSeul) {
-        // Observateurs (multi-sélection).
-        val observateurs = observateursPourDetailsReleve(config)
-        champClic("Observateurs", libelleObservateurs()) { tv ->
-            if (observateurs.isEmpty()) {
-                Toast.makeText(context, "Aucun observateur en cache — synchronisez", Toast.LENGTH_SHORT).show()
-                return@champClic
-            }
-            val ids = observateurs.map { it.first }
-            val labels = observateurs.map { it.second }.toTypedArray()
-            val coches = BooleanArray(ids.size) { pendingObsIds.contains(ids[it]) }
-            AlertDialog.Builder(context)
-                .setTitle("Observateurs")
-                .setMultiChoiceItems(labels, coches) { _, which, isChecked -> coches[which] = isChecked }
-                .setPositiveButton("OK") { _, _ ->
-                    pendingObsIds = ids.filterIndexed { i, _ -> coches[i] }
-                    pendingObsNoms = observateurs.filterIndexed { i, _ -> coches[i] }.map { it.second }
-                    tv.text = libelleObservateurs()
-                }
-                .setNegativeButton("Annuler", null)
-                .show()
-        }
+        // Observateurs : MÊME widget multi-sélection qu'Occtax (« Détails du relevé ») —
+        // recherche + entrées retirables « ✕ ». Appliqué au ViewModel seulement à « Valider ».
+        racine.addView(label("Observateurs"))
+        lireObservateurs = construireSelecteurMultiObservateurs(
+            context, racine, observateursPourDetailsReleve(config),
+            d.observateursIds, d.observateursNoms,
+        )
 
         // Dates début / fin.
         val calDebut = Calendar.getInstance().apply { timeInMillis = pendingDateMin ?: System.currentTimeMillis() }
@@ -258,9 +244,10 @@ fun ouvrirDialogDetailsOccHab(
             if (!jddSeul) {
                 // Garde serveur : date_max ≥ date_min (sinon payload invalide côté GeoNature).
                 val fin = pendingDateMax?.let { f -> maxOf(f, pendingDateMin ?: f) }
+                val obs = lireObservateurs()
                 vm.majDetails {
-                    it.observateursIds = pendingObsIds
-                    it.observateursNoms = pendingObsNoms
+                    it.observateursIds = obs.map { o -> o.first }
+                    it.observateursNoms = obs.map { o -> o.second }
                     it.dateMin = pendingDateMin
                     it.dateMax = fin
                     it.altitudeMin = etAltMin?.text?.toString()?.trim()?.toIntOrNull()
@@ -280,14 +267,22 @@ fun ouvrirDialogDetailsOccHab(
 
 /** Spinner de nomenclature « — Non renseigné — » + valeurs du cache [NomenclatureCache].
  *  Renvoie le spinner et un lecteur de l'id_nomenclature choisi (null si non renseigné).
- *  Partagé par le dialogue Détails et l'écran de création d'habitat. */
+ *  Partagé par le dialogue Détails et l'écran de création d'habitat.
+ *  Rendu ALIGNÉ sur les spinners de nomenclature Occtax (OcctaxFieldsRenderer) : item fermé
+ *  `simple_spinner_item` + liste `simple_spinner_dropdown_item`, valeurs triées alphabétiquement
+ *  (français, insensible casse/accents), placeholder en tête. */
 internal fun construireSpinnerNomenclature(
     context: Context, type: String, idCourant: Int?,
 ): Pair<Spinner, () -> Int?> {
-    val valeurs = NomenclatureCache.get(type)
+    val collator = java.text.Collator.getInstance(Locale.FRENCH).apply {
+        strength = java.text.Collator.PRIMARY
+    }
+    val valeurs = NomenclatureCache.get(type).sortedWith(compareBy(collator) { it.label })
     val labels = mutableListOf("— Non renseigné —").apply { valeurs.forEach { add(it.label) } }
     val spinner = Spinner(context)
-    spinner.adapter = ArrayAdapter(context, android.R.layout.simple_spinner_dropdown_item, labels)
+    val adapter = ArrayAdapter(context, android.R.layout.simple_spinner_item, labels)
+    adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+    spinner.adapter = adapter
     val idx = valeurs.indexOfFirst { it.id == idCourant }
     if (idx >= 0) spinner.setSelection(idx + 1)
     return spinner to {

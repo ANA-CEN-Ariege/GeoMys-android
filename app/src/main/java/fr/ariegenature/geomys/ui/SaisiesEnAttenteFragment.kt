@@ -46,6 +46,8 @@ import java.util.Locale
 class SaisiesEnAttenteFragment : Fragment() {
     private var _binding: FragmentSaisiesEnAttenteBinding? = null
     private val binding get() = _binding!!
+    private val adapterAttente = AttenteAdapter()
+    private val fmtDateListe = SimpleDateFormat("dd/MM HH:mm", Locale.FRANCE)
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         _binding = FragmentSaisiesEnAttenteBinding.inflate(inflater, container, false)
@@ -56,7 +58,60 @@ class SaisiesEnAttenteFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
         binding.root.applySystemBarInsets(includeIme = true)
         appliquerBandeauNavigation(binding.bandeauSaisie.root, findNavController(), "Mes visites")
+        binding.rvSaisies.layoutManager =
+            androidx.recyclerview.widget.LinearLayoutManager(requireContext())
+        binding.rvSaisies.adapter = adapterAttente
         rafraichir()
+    }
+
+    // ── Items de la liste (RecyclerView) : la hiérarchie protocole → groupe → lignes est
+    //    APLATIE en une liste typée ; chaque item est rendu par la même fonction creer* qu'avant
+    //    la conversion (le holder est un simple conteneur rebindé — vues légères, le gain du
+    //    RecyclerView est la virtualisation : seules les lignes visibles sont construites). ──
+    private sealed interface ItemAttente {
+        data class Vide(val texte: String) : ItemAttente
+        data class HeaderProtocole(val moduleCode: String) : ItemAttente
+        data class HeaderGroupe(val racine: SaisieEnAttente) : ItemAttente
+        data class Ligne(val saisie: SaisieEnAttente, val profondeur: Int) : ItemAttente
+    }
+
+    private inner class AttenteAdapter :
+        androidx.recyclerview.widget.RecyclerView.Adapter<AttenteAdapter.VH>() {
+        private var items: List<ItemAttente> = emptyList()
+
+        @Suppress("NotifyDataSetChanged") // liste courte, reconstruite en bloc à chaque refresh
+        fun submit(nouveaux: List<ItemAttente>) { items = nouveaux; notifyDataSetChanged() }
+
+        inner class VH(val conteneur: LinearLayout) :
+            androidx.recyclerview.widget.RecyclerView.ViewHolder(conteneur)
+
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH =
+            VH(LinearLayout(parent.context).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = androidx.recyclerview.widget.RecyclerView.LayoutParams(
+                    androidx.recyclerview.widget.RecyclerView.LayoutParams.MATCH_PARENT,
+                    androidx.recyclerview.widget.RecyclerView.LayoutParams.WRAP_CONTENT,
+                )
+            })
+
+        override fun getItemCount() = items.size
+
+        override fun onBindViewHolder(holder: VH, position: Int) {
+            holder.conteneur.removeAllViews()
+            when (val item = items[position]) {
+                is ItemAttente.Vide -> holder.conteneur.addView(TextView(requireContext()).apply {
+                    text = item.texte
+                    setTextColor(couleurSecondaire(requireContext()))
+                    textSize = 13f
+                })
+                is ItemAttente.HeaderProtocole ->
+                    holder.conteneur.addView(creerHeaderProtocole(item.moduleCode))
+                is ItemAttente.HeaderGroupe ->
+                    creerHeaderGroupe(item.racine)?.let { holder.conteneur.addView(it) }
+                is ItemAttente.Ligne ->
+                    holder.conteneur.addView(creerLigne(item.saisie, fmtDateListe, item.profondeur))
+            }
+        }
     }
 
     override fun onResume() {
@@ -108,16 +163,13 @@ class SaisiesEnAttenteFragment : Fragment() {
     }
 
     private fun peuplerListe(saisies: List<SaisieEnAttente>) {
-        binding.llSaisies.removeAllViews()
+        envoiAutoriseParModule.clear() // les droits sont re-lus à chaque peuplement
         if (saisies.isEmpty()) {
-            binding.llSaisies.addView(TextView(requireContext()).apply {
-                text = "Les données que tu enregistres apparaîtront ici jusqu'à leur envoi."
-                setTextColor(couleurSecondaire(requireContext()))
-                textSize = 13f
-            })
+            adapterAttente.submit(listOf(ItemAttente.Vide(
+                "Les données que tu enregistres apparaîtront ici jusqu'à leur envoi.")))
             return
         }
-        val fmtDate = SimpleDateFormat("dd/MM HH:mm", Locale.FRANCE)
+        val items = mutableListOf<ItemAttente>()
 
         // Présentation par "groupe" parent → enfants. On identifie les racines locales
         // (= saisies dont le parentUuidLocal est nul OU pointe vers un uuid absent de la
@@ -139,28 +191,27 @@ class SaisiesEnAttenteFragment : Fragment() {
         }
 
         racinesParModule.forEach { (moduleCode, racinesModule) ->
-            binding.llSaisies.addView(creerHeaderProtocole(moduleCode))
+            items.add(ItemAttente.HeaderProtocole(moduleCode))
             racinesModule.forEach { racine ->
                 // Header de groupe : on remonte la chaîne des parents serveur du parent direct
                 // de la racine pour situer le groupe (par ex. "Forêt de Foix › Point Foix-Nord"
                 // pour une visite faite sur un point d'écoute). Si le parent serveur n'a jamais
                 // été ouvert dans l'app (cache vide), on omet le header — le titre de la racine
                 // gardera son fallback "type #id".
-                creerHeaderGroupe(racine)?.let { binding.llSaisies.addView(it) }
+                if (racine.parentObjectType?.isNotEmpty() == true && racine.parentIdServeur != null) {
+                    items.add(ItemAttente.HeaderGroupe(racine))
+                }
 
-                val lignes = mutableListOf<Pair<SaisieEnAttente, Int>>()
                 fun ajouterArbre(s: SaisieEnAttente, profondeur: Int) {
-                    lignes.add(s to profondeur)
+                    items.add(ItemAttente.Ligne(s, profondeur))
                     parParent[s.uuid].orEmpty()
                         .sortedWith(compareBy({ ordrePourTri(it.etat) }, { it.dateLocale }))
                         .forEach { ajouterArbre(it, profondeur + 1) }
                 }
                 ajouterArbre(racine, 0)
-                lignes.forEach { (s, profondeur) ->
-                    binding.llSaisies.addView(creerLigne(s, fmtDate, profondeur))
-                }
             }
         }
+        adapterAttente.submit(items)
     }
 
     /** Header de section "Protocole : <nom>" qui regroupe toutes les saisies d'un même
@@ -256,6 +307,15 @@ class SaisiesEnAttenteFragment : Fragment() {
         SaisieEnAttente.Etat.SENT -> 2
     }
 
+    /** CRUVED C du protocole (cache modules) : false → flèches « Envoyer » masquées, le POST
+     *  serait refusé (403). Cohérent avec le gating des listes Occtax/OccHab. Mémoïsé par
+     *  module le temps d'un peuplement (le cache disque est re-parsé sinon à chaque ligne). */
+    private val envoiAutoriseParModule = mutableMapOf<String, Boolean>()
+    private fun envoiAutorise(s: SaisieEnAttente): Boolean =
+        envoiAutoriseParModule.getOrPut(s.moduleCode) {
+            fr.ariegenature.geomys.network.MonitoringApi.moduleAutoriseCreation(s.moduleCode)
+        }
+
     private fun creerLigne(s: SaisieEnAttente, fmtDate: SimpleDateFormat, profondeur: Int = 0): View {
         val ctx = requireContext()
         val density = resources.displayMetrics.density
@@ -273,8 +333,8 @@ class SaisiesEnAttenteFragment : Fragment() {
             // envoyée (groupe conservé tant qu'il reste des obs), ambre = envoi en cours.
             when (s.etat) {
                 SaisieEnAttente.Etat.ERROR -> background = cadreColore(couleurErreur(ctx), density)
-                SaisieEnAttente.Etat.SENT -> background = cadreColore(0xFF4CAF50.toInt(), density)     // vert
-                SaisieEnAttente.Etat.SENDING -> background = cadreColore(0xFFFFB300.toInt(), density)  // ambre
+                SaisieEnAttente.Etat.SENT -> background = cadreColore(couleurSucces(ctx), density)
+                SaisieEnAttente.Etat.SENDING -> background = cadreColore(couleurEnCours(ctx), density)
                 else -> setBackgroundColor(0x00000000)
             }
             layoutParams = LinearLayout.LayoutParams(
@@ -329,7 +389,9 @@ class SaisiesEnAttenteFragment : Fragment() {
         })
         if (s.etat == SaisieEnAttente.Etat.PENDING || s.etat == SaisieEnAttente.Etat.ERROR) {
             ajouterIconesActions(header, s, profondeur)
-        } else if (profondeur == 0 && s.etat == SaisieEnAttente.Etat.SENT && aDescendantsAEnvoyer(s)) {
+        } else if (profondeur == 0 && s.etat == SaisieEnAttente.Etat.SENT &&
+            aDescendantsAEnvoyer(s) && envoiAutorise(s)
+        ) {
             // Visite déjà envoyée mais obs restantes : la ligne reste affichée comme groupe
             // (cf. purgerSent) et garde UNIQUEMENT la flèche — qui n'enverra que le reste
             // (l'objet créé n'est jamais re-POSTé, cf. SaisieEnAttente.objetCree).
@@ -375,7 +437,7 @@ class SaisiesEnAttenteFragment : Fragment() {
      *  (profondeur > 0) : Éditer + Supprimer (l'envoi reste géré par "Envoyer le groupe"
      *  de la racine ou par "Envoyer tout" — un enfant ne peut pas partir sans son parent). */
     private fun ajouterIconesActions(parent: LinearLayout, s: SaisieEnAttente, profondeur: Int) {
-        if (profondeur == 0) {
+        if (profondeur == 0 && envoiAutorise(s)) {
             parent.addView(creerIconeAction(
                 fr.ariegenature.geomys.R.drawable.ic_send,
                 "Envoyer ce groupe",
@@ -486,7 +548,7 @@ class SaisiesEnAttenteFragment : Fragment() {
         // F : "Envoyer ce groupe" — uniquement si la saisie est encore à envoyer ET a
         // au moins un enfant local. Pour une saisie isolée, l'envoi unitaire ne gagne
         // rien sur "Envoyer tout".
-        if (nbEnfants > 0 &&
+        if (nbEnfants > 0 && envoiAutorise(s) &&
             (s.etat == SaisieEnAttente.Etat.PENDING || s.etat == SaisieEnAttente.Etat.ERROR)
         ) {
             actions.add("Envoyer ce groupe (${nbEnfants + 1} données)")

@@ -147,12 +147,15 @@ object SyncRunner {
                         if (h.isNotEmpty()) fr.ariegenature.geomys.store.HabitatCache.remplacerTout(h)
                     } catch (_: Exception) { /* habitat optionnel */ }
                 }
-                // Détection du module OccHab (+ droits CRUVED) → drapeaux de config qui
-                // conditionnent la tuile d'accueil et le bouton d'envoi. Best-effort : module
-                // absent/inaccessible = tuile masquée (aucun ajout aux échecs).
+                // Détection des modules OccHab + Occtax (+ droits CRUVED, UN seul appel) →
+                // drapeaux de config qui conditionnent tuile d'accueil et boutons d'envoi.
+                // Best-effort : module absent/inaccessible = tuile masquée (aucun ajout aux
+                // échecs) ; Occtax absent de la réponse → drapeau INCHANGÉ (défaut permissif).
                 val occhab = async {
                     try {
-                        val acces = OccHabApi.detecterModule(config)
+                        val modules = OccHabApi.detecterModules(config, setOf(OccHabApi.MODULE_CODE, "OCCTAX"))
+                        modules["OCCTAX"]?.let { config.occtaxPeutCreer = it.peutCreer }
+                        val acces = modules[OccHabApi.MODULE_CODE] ?: OccHabAcces.ABSENT
                         config.occhabDisponible = acces.disponible
                         config.occhabPeutCreer = acces.peutCreer
                         // Datasets propres au module OccHab (périmètre serveur distinct d'OCCTAX)

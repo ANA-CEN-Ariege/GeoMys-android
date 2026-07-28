@@ -103,6 +103,9 @@ class SortiesFragment : Fragment() {
             },
             onEnvoyer = { sortie -> envoyerSortie(sortie) },
             onListe = { sortie -> montrerListeEspeces(sortie) },
+            // CRUVED C du module OCCTAX (détecté à la synchro, comme OccHab) : sans droit de
+            // création, le POST partirait en 403 — on masque le bouton d'envoi.
+            envoiAutorise = fr.ariegenature.geomys.store.GeoNatureConfig(requireContext()).occtaxPeutCreer,
         )
 
         binding.recyclerView.layoutManager = LinearLayoutManager(requireContext())
@@ -261,6 +264,8 @@ class SortieAdapter(
     private val onEdit: (Sortie) -> Unit = {},
     private val onEnvoyer: (Sortie) -> Unit = {},
     private val onListe: (Sortie) -> Unit = {},
+    /** CRUVED C du module OCCTAX : false → bouton d'envoi masqué (le POST serait refusé). */
+    private val envoiAutorise: Boolean = true,
 ) : RecyclerView.Adapter<SortieAdapter.ViewHolder>() {
     private var items: List<Sortie> = emptyList()
     private val fmt = SimpleDateFormat("dd MMM yyyy HH:mm", Locale.getDefault())
@@ -310,8 +315,9 @@ class SortieAdapter(
             btnEditer.visibility = if (peutEditer) android.view.View.VISIBLE else android.view.View.GONE
             btnEditer.setOnClickListener { onEdit(sortie) }
             // Bouton "Envoyer au serveur" : même conditions que l'édition (non envoyée, non
-            // importée) ET au moins une obs déterminée (cd_nom résolu) — sinon rien à envoyer.
-            val peutEnvoyer = peutEditer && sortie.observations.any { it.cdNom != null }
+            // importée), droit de création OCCTAX (CRUVED C, comme OccHab) ET au moins une
+            // obs déterminée (cd_nom résolu) — sinon rien à envoyer.
+            val peutEnvoyer = peutEditer && envoiAutorise && sortie.observations.any { it.cdNom != null }
             btnEnvoyer.visibility = if (peutEnvoyer) android.view.View.VISIBLE else android.view.View.GONE
             btnEnvoyer.setOnClickListener { onEnvoyer(sortie) }
         }

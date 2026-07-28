@@ -53,6 +53,22 @@ fun couleurErreur(ctx: Context): Int = MaterialColors.getColor(
     ctx, com.google.android.material.R.attr.colorError, 0xFFB00020.toInt(),
 )
 
+// Material 3 n'expose pas d'attributs « succès / en-cours / avertissement » : couleurs fixes,
+// mais CENTRALISÉES ici pour que le même état porte la même teinte sur tous les écrans (les
+// écrans avaient dérivé : deux verts différents pour « envoyé » selon Mes visites / Mes stations).
+
+/** Vert « envoyé / succès » (badge ✅, cadre d'état, test de connexion réussi). */
+@Suppress("UNUSED_PARAMETER")
+fun couleurSucces(ctx: Context): Int = 0xFF2E7D32.toInt()
+
+/** Ambre « envoi en cours » (cadre d'état pendant un envoi). */
+@Suppress("UNUSED_PARAMETER")
+fun couleurEnCours(ctx: Context): Int = 0xFFFFB300.toInt()
+
+/** Orange « avertissement / à configurer » (état non bloquant mais à traiter). */
+@Suppress("UNUSED_PARAMETER")
+fun couleurAvertissement(ctx: Context): Int = 0xFFE65100.toInt()
+
 /** Cadre coloré arrondi sur fond transparent — le marqueur d'état standard des listes
  *  (rouge = erreur/à envoyer, vert = envoyé, ambre = en cours). Remplace les fonds pastel
  *  (illisibles sur le thème sombre) ; centralisé pour que rayon/épaisseur restent uniformes

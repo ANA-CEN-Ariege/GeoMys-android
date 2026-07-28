@@ -269,7 +269,7 @@ class CacheManagerFragment : Fragment() {
             })
             ligne.addView(android.widget.ImageButton(requireContext()).apply {
                 setImageResource(R.drawable.ic_delete)
-                setColorFilter(0xFFC62828.toInt())
+                setColorFilter(couleurErreur(requireContext()))
                 background = null
                 contentDescription = "Supprimer ${MbtilesStore.nomAffichage(f)}"
                 val p = dp(10)

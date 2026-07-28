@@ -134,6 +134,27 @@ object MonitoringApi {
         } catch (_: Exception) { null }
     }
 
+    /** L'utilisateur peut-il CRÉER des données sur ce protocole (CRUVED C > 0) ? Lit la
+     *  mémoire puis le cache disque modules — pas d'appel réseau. Défaut TRUE quand le bloc
+     *  cruved est absent (vieux serveur, cache antérieur) ou le module inconnu du cache :
+     *  même philosophie que [MonitoringModule.aAuMoinsUnDroit], on ne verrouille jamais en
+     *  silence — le serveur refusera lui-même le cas échéant. Gate les flèches d'envoi de
+     *  « Mes visites » (cohérent avec le gating OccHab/Occtax des listes). */
+    fun moduleAutoriseCreation(moduleCode: String): Boolean {
+        moduleParCode(moduleCode)?.cruved?.let { return (it["C"] ?: 0) > 0 }
+        val json = MonitoringCache.getJson(MonitoringCache.keyModules()) ?: return true
+        return try {
+            val arr = json.parserTableauJson("data", "items", "modules") ?: return true
+            for (i in 0 until arr.length()) {
+                val item = arr.optJSONObject(i) ?: continue
+                if (item.optString("module_code") != moduleCode) continue
+                val cruved = item.optJSONObject("cruved") ?: return true
+                return cruved.optInt("C", 0) > 0
+            }
+            true
+        } catch (_: Exception) { true }
+    }
+
     /** GET /api/monitorings/modules — liste les modules de suivi disponibles sur l'instance.
      *  Renvoie [] silencieusement si HTTP 404 (gn_module_monitoring non installé).
      *  Sur toute autre erreur HTTP (5xx, parse), propage l'exception. Sur erreur **réseau**

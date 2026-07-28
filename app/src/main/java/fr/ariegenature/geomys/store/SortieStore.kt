@@ -22,130 +22,66 @@ import android.content.Context
 import fr.ariegenature.geomys.model.Denombrement
 import fr.ariegenature.geomys.model.Observation
 import fr.ariegenature.geomys.model.Sortie
-import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import java.io.File
+import java.lang.reflect.Type
 
-class SortieStore(context: Context) {
+/** Store local des sorties Occtax (« Mes saisies »), sur [JsonCollectionStore] : cache process-wide,
+ *  quarantaine, normalisation post-Gson, lire-modifier-écrire atomique. Backend : SharedPreferences
+ *  (`commit()` synchrone → durable même sur kill brutal ; données petites, écritures peu fréquentes).
+ *  Copie de secours d'un JSON illisible dans filesDir (les prefs n'offrent pas de fichier annexe). */
+class SortieStore(context: Context) : JsonCollectionStore<Sortie>() {
     private val prefs = context.getSharedPreferences("sorties_store", Context.MODE_PRIVATE)
-    private val gson = Gson()
-    private val key = "sorties_sauvegardees"
-    // Pour la quarantaine d'un JSON illisible (cf. charger) — les prefs n'offrent pas de
-    // fichier annexe, on écrit la copie de secours dans filesDir.
     private val filesDir = context.filesDir
+    private val key = "sorties_sauvegardees"
+
+    override val nom = "SortieStore"
+    override val verrou get() = VERROU
+    override var cache: List<Sortie>?
+        get() = mem
+        set(v) { mem = v }
+    override val typeListe: Type = object : TypeToken<MutableList<Sortie?>>() {}.type
+
+    override fun lireBrut(): String? = prefs.getString(key, null)
+    override fun ecrireBrut(json: String): Boolean = prefs.edit().putString(key, json).commit()
+    override fun quarantaine(json: String) {
+        try {
+            val q = File(filesDir, "sorties_store.corrupt.json")
+            if (!q.exists()) q.writeText(json)
+        } catch (_: Exception) {}
+    }
+    override fun normaliser(item: Sortie): Sortie? = normaliserSortie(item)
 
     companion object {
-        // Cache mémoire process-wide : toutes les instances visent le même fichier de prefs, on
-        // évite donc de RE-DÉSÉRIALISER tout le store à chaque action de saisie (l'auto-save « au
-        // fil de l'eau » appelait charger() plusieurs fois par ajout/suppression d'espèce).
-        // [charger] renvoie une COPIE défensive (les appelants mutent la liste) ; [sauvegarder]
-        // remplace le cache. Le cache n'est invalidé que par une écriture → toujours cohérent.
+        // Cache + verrou process-wide : toutes les instances visent le même fichier de prefs, on
+        // évite de RE-DÉSÉRIALISER tout le store à chaque action de saisie, et le verrou sérialise
+        // les écritures croisées (auto-save UI vs marquage depuis le chemin d'envoi sur IO).
         @Volatile private var mem: List<Sortie>? = null
+        private val VERROU = Any()
 
         /** Réinitialise le cache mémoire process-wide. Réservé aux TESTS (le cache statique fuit
-         *  sinon d'un test à l'autre). Inutile en production : le cache n'est invalidé que par une
-         *  écriture, et toutes les instances visent le même fichier de prefs. */
+         *  sinon d'un test à l'autre). */
         @androidx.annotation.VisibleForTesting
         fun reinitialiserCacheMemoire() { mem = null }
     }
 
-    @Suppress("SENSELESS_COMPARISON") // Gson peut violer la non-nullabilité Kotlin (cf. filtre)
-    fun charger(): MutableList<Sortie> {
-        mem?.let { return ArrayList(it) }
-        val json = prefs.getString(key, null)
-        val parsed: MutableList<Sortie> = if (json == null) mutableListOf() else try {
-            val type = object : TypeToken<MutableList<Sortie?>>() {}.type
-            val brutes = (gson.fromJson<MutableList<Sortie?>>(json, type) ?: mutableListOf())
-                .filterNotNull()
-            // Gson ne valide pas les types Kotlin : un JSON corrompu-mais-parsable peut
-            // produire des champs non-nullables à null (entrée nulle, id manquant) et un
-            // crash différé (NPE) au premier usage. On écarte ces entrées au chargement.
-            val valides = brutes
-                .filter { it.id != null && it.observations != null && it.pointsParcours != null }
-                .map(::normaliserSortie)
-                .toMutableList()
-            if (valides.size < brutes.size) {
-                android.util.Log.w("SortieStore",
-                    "charger : ${brutes.size - valides.size} sortie(s) illisible(s) écartée(s)")
-                mettreEnQuarantaine(json)
-            }
-            valides
-        } catch (e: Exception) {
-            // Quarantaine AVANT retour vide : sans ça, la prochaine sauvegarde (ajouter =
-            // charger()+sortie) écraserait la clé prefs avec une liste quasi vide — perte
-            // définitive et silencieuse de toutes les saisies. Le fichier .corrupt reste
-            // récupérable (adb run-as / support).
-            android.util.Log.e("SortieStore", "charger : JSON illisible, mise en quarantaine", e)
-            mettreEnQuarantaine(json)
-            mutableListOf()
-        }
-        mem = parsed
-        return ArrayList(parsed)
-    }
-
-    /** Copie de secours du JSON du store quand il est illisible ou partiellement écarté.
-     *  Un seul fichier conservé (le PREMIER incident — c'est lui qui porte les données
-     *  d'origine, les suivants seraient des copies déjà dégradées). */
-    private fun mettreEnQuarantaine(json: String?) {
-        if (json == null) return
-        try {
-            val quarantaine = File(filesDir, "sorties_store.corrupt.json")
-            if (!quarantaine.exists()) quarantaine.writeText(json)
-        } catch (_: Exception) {}
-    }
-
-    fun sauvegarder(sorties: List<Sortie>): Boolean {
-        // commit() (synchrone) et non apply() : l'auto-save « au fil de l'eau » doit être
-        // durable même sur un kill brutal (SIGKILL via stop Android Studio / force-stop /
-        // OOM) qui surviendrait avant le flush disque asynchrone d'apply(). Données petites
-        // + écritures peu fréquentes (au rythme des obs) → coût négligeable.
-        // Le cache mémoire n'est mis à jour QU'APRÈS un commit confirmé : sinon l'app
-        // afficherait comme sauvées des saisies qui disparaîtraient au redémarrage
-        // (disque plein, I/O en échec).
-        val ok = prefs.edit().putString(key, gson.toJson(sorties)).commit()
-        if (ok) {
-            mem = ArrayList(sorties)
-        } else {
-            android.util.Log.e("SortieStore",
-                "sauvegarder ECHEC commit — cache mémoire NON mis à jour (disque conservé)")
-        }
-        return ok
-    }
-
-    fun ajouter(sortie: Sortie): Boolean {
-        val sorties = charger()
-        sorties.add(0, sortie)
-        return sauvegarder(sorties)
-    }
+    fun ajouter(sortie: Sortie): Boolean = muter { it.add(0, sortie) }
 
     /** Remplace la sortie [id] par [sortieMaj] en préservant sa position dans la liste. Si
      *  l'id n'existe pas, ajoute en tête (= comportement [ajouter]). Utilisé pour la reprise
      *  d'une sortie depuis l'onglet "À envoyer". */
-    fun remplacer(id: String, sortieMaj: Sortie): Boolean {
-        val sorties = charger()
-        val idx = sorties.indexOfFirst { it.id == id }
-        return if (idx >= 0) {
-            sorties[idx] = sortieMaj
-            sauvegarder(sorties)
-        } else {
-            sorties.add(0, sortieMaj)
-            sauvegarder(sorties)
-        }
+    fun remplacer(id: String, sortieMaj: Sortie): Boolean = muter { liste ->
+        val idx = liste.indexOfFirst { it.id == id }
+        if (idx >= 0) liste[idx] = sortieMaj else liste.add(0, sortieMaj)
     }
 
-    fun supprimer(id: String) {
-        val sorties = charger()
-        sorties.removeAll { it.id == id }
-        sauvegarder(sorties)
-    }
+    fun supprimer(id: String) { muter { liste -> liste.removeAll { it.id == id } } }
 
     fun marquerEnvoyee(id: String) {
-        val sorties = charger()
-        val idx = sorties.indexOfFirst { it.id == id }
-        if (idx >= 0) {
+        muter { liste ->
+            val idx = liste.indexOfFirst { it.id == id }
             // Succès → on efface aussi l'éventuelle erreur d'un échec précédent.
-            sorties[idx] = sorties[idx].copy(envoyeGeoNature = true, derniereErreurEnvoi = null)
-            sauvegarder(sorties)
+            if (idx >= 0) liste[idx] = liste[idx].copy(envoyeGeoNature = true, derniereErreurEnvoi = null)
         }
     }
 
@@ -155,24 +91,21 @@ class SortieStore(context: Context) {
      *  global de la sortie pour que l'acquis survive même si la suite échoue. */
     fun marquerObservationsEnvoyees(id: String, obsIds: Collection<String>) {
         if (obsIds.isEmpty()) return
-        val sorties = charger()
-        val idx = sorties.indexOfFirst { it.id == id }
-        if (idx < 0) return
         val ids = obsIds.toSet()
-        sorties[idx] = sorties[idx].copy(observations = sorties[idx].observations.map { o ->
-            if (o.id in ids) o.copy(envoyeeServeur = true) else o
-        })
-        sauvegarder(sorties)
+        muter { liste ->
+            val idx = liste.indexOfFirst { it.id == id }
+            if (idx >= 0) liste[idx] = liste[idx].copy(observations = liste[idx].observations.map { o ->
+                if (o.id in ids) o.copy(envoyeeServeur = true) else o
+            })
+        }
     }
 
     /** Mémorise l'échec du dernier envoi (message humanisé) — affiché en cadre rouge dans
      *  « Mes saisies » pour que l'échec reste visible après la fermeture du dialog. */
     fun marquerErreurEnvoi(id: String, message: String) {
-        val sorties = charger()
-        val idx = sorties.indexOfFirst { it.id == id }
-        if (idx >= 0) {
-            sorties[idx] = sorties[idx].copy(derniereErreurEnvoi = message.take(200))
-            sauvegarder(sorties)
+        muter { liste ->
+            val idx = liste.indexOfFirst { it.id == id }
+            if (idx >= 0) liste[idx] = liste[idx].copy(derniereErreurEnvoi = message.take(200))
         }
     }
 }
@@ -187,13 +120,19 @@ class SortieStore(context: Context) {
 // NB : on reconstruit par CONSTRUCTEUR explicite (pas copy() : il crasherait justement sur
 // les champs null qu'on cherche à réparer).
 
+// Gson ne valide pas les types Kotlin : un JSON corrompu-mais-parsable peut produire des champs
+// non-nullables à null (entrée nulle, id manquant) → crash différé (NPE) au premier usage. On
+// ÉCARTE ces entrées (retour null) au chargement ; sinon on reconstruit une entrée sûre.
 @Suppress("SENSELESS_COMPARISON", "USELESS_ELVIS") // Gson viole la non-nullabilité Kotlin
-private fun normaliserSortie(s: Sortie): Sortie = s.copy(
-    // copy() est sûr ICI : les champs non-nullables de Sortie (id/observations/pointsParcours)
-    // ont été vérifiés par le filtre de charger() avant l'appel.
-    pointsParcours = s.pointsParcours.filterNotNull(),
-    observations = s.observations.mapNotNull { o -> if (o == null) null else normaliserObservation(o) },
-)
+private fun normaliserSortie(s: Sortie): Sortie? {
+    if (s.id == null || s.observations == null || s.pointsParcours == null) return null
+    return s.copy(
+        // copy() est sûr ICI : les champs non-nullables (id/observations/pointsParcours) viennent
+        // d'être vérifiés non-null juste au-dessus.
+        pointsParcours = s.pointsParcours.filterNotNull(),
+        observations = s.observations.mapNotNull { o -> if (o == null) null else normaliserObservation(o) },
+    )
+}
 
 @Suppress("SENSELESS_COMPARISON", "USELESS_ELVIS")
 private fun normaliserObservation(o: Observation): Observation? {

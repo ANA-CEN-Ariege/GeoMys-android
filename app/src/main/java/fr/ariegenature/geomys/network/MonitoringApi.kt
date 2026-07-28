@@ -1693,7 +1693,7 @@ object MonitoringApi {
             val base = config.urlServeur.trim().trimEnd('/')
             val auth = GeoNatureAuth.loginAvecCookies(base, config.login, config.motDePasse)
                 ?: throw GNErreur.AuthEchouee(401)
-            val (token, _, cookies) = auth
+            val (token, idRoleAuth, cookies) = auth
 
             val properties = JSONObject()
             // Lien au parent : injecté dans properties (le sélecteur de parent est masqué
@@ -1715,7 +1715,10 @@ object MonitoringApi {
             }
             // `id_digitiser` : le serveur attend l'id_role de l'utilisateur qui enregistre.
             // Contrainte NOT NULL côté DB monitoring → un 500 silencieux sans ce champ.
-            val idRole = config.idRoleUtilisateur.takeIf { it > 0 }
+            // Dérivé EN DIRECT du login courant (comme Occtax/OccHab) plutôt que de la copie
+            // persistée `config.idRoleUtilisateur` : évite d'estampiller l'ancien auteur après un
+            // changement de compte. Repli sur la valeur persistée si l'auth ne l'a pas renvoyé.
+            val idRole = idRoleAuth ?: config.idRoleUtilisateur.takeIf { it > 0 }
             if (idRole != null && !properties.has("id_digitiser")) {
                 properties.put("id_digitiser", idRole)
             }

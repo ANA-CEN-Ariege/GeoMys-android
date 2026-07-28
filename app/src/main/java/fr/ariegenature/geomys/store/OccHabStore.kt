@@ -21,145 +21,95 @@ package fr.ariegenature.geomys.store
 import android.content.Context
 import fr.ariegenature.geomys.model.OccHabHabitat
 import fr.ariegenature.geomys.model.OccHabStation
-import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import java.io.File
+import java.lang.reflect.Type
 
 /**
- * Stockage local des stations OccHab saisies (« Mes stations »), calqué sur [SortieStore] :
- * cache mémoire process-wide, quarantaine d'un JSON illisible, écriture durable par `commit()`,
- * normalisation post-Gson (champs/listes absents d'un JSON ancien remis à leur défaut).
+ * Stockage local des stations OccHab saisies (« Mes stations »), sur [JsonCollectionStore] comme
+ * [SortieStore] : cache process-wide, quarantaine, écriture durable par `commit()`, normalisation
+ * post-Gson, lire-modifier-écrire atomique.
  *
  * Ne contient QUE les stations créées localement. Les stations lues depuis le serveur
  * (consultation lecture seule) ne sont pas persistées ici.
  */
-class OccHabStore(context: Context) {
+class OccHabStore(context: Context) : JsonCollectionStore<OccHabStation>() {
     private val prefs = context.getSharedPreferences("occhab_store", Context.MODE_PRIVATE)
-    private val gson = Gson()
-    private val key = "stations_sauvegardees"
     private val filesDir = context.filesDir
+    private val key = "stations_sauvegardees"
+
+    override val nom = "OccHabStore"
+    override val verrou get() = VERROU
+    override var cache: List<OccHabStation>?
+        get() = mem
+        set(v) { mem = v }
+    override val typeListe: Type = object : TypeToken<MutableList<OccHabStation?>>() {}.type
+
+    override fun lireBrut(): String? = prefs.getString(key, null)
+    override fun ecrireBrut(json: String): Boolean = prefs.edit().putString(key, json).commit()
+    override fun quarantaine(json: String) {
+        try {
+            val q = File(filesDir, "occhab_store.corrupt.json")
+            if (!q.exists()) q.writeText(json)
+        } catch (_: Exception) {}
+    }
+    override fun normaliser(item: OccHabStation): OccHabStation? = normaliserStation(item)
 
     companion object {
         @Volatile private var mem: List<OccHabStation>? = null
+        private val VERROU = Any()
 
         /** Réinitialise le cache mémoire process-wide. Réservé aux TESTS. */
         @androidx.annotation.VisibleForTesting
         fun reinitialiserCacheMemoire() { mem = null }
     }
 
-    @Suppress("SENSELESS_COMPARISON") // Gson peut violer la non-nullabilité Kotlin
-    fun charger(): MutableList<OccHabStation> {
-        mem?.let { return ArrayList(it) }
-        val json = prefs.getString(key, null)
-        val parsed: MutableList<OccHabStation> = if (json == null) mutableListOf() else try {
-            val type = object : TypeToken<MutableList<OccHabStation?>>() {}.type
-            val brutes = (gson.fromJson<MutableList<OccHabStation?>>(json, type) ?: mutableListOf())
-                .filterNotNull()
-            val valides = brutes
-                .filter { it.id != null && it.habitats != null }
-                .map(::normaliserStation)
-                .toMutableList()
-            if (valides.size < brutes.size) {
-                android.util.Log.w("OccHabStore",
-                    "charger : ${brutes.size - valides.size} station(s) illisible(s) écartée(s)")
-                mettreEnQuarantaine(json)
-            }
-            valides
-        } catch (e: Exception) {
-            android.util.Log.e("OccHabStore", "charger : JSON illisible, mise en quarantaine", e)
-            mettreEnQuarantaine(json)
-            mutableListOf()
-        }
-        mem = parsed
-        return ArrayList(parsed)
-    }
-
-    private fun mettreEnQuarantaine(json: String?) {
-        if (json == null) return
-        try {
-            val quarantaine = File(filesDir, "occhab_store.corrupt.json")
-            if (!quarantaine.exists()) quarantaine.writeText(json)
-        } catch (_: Exception) {}
-    }
-
-    fun sauvegarder(stations: List<OccHabStation>): Boolean {
-        val ok = prefs.edit().putString(key, gson.toJson(stations)).commit()
-        if (ok) {
-            mem = ArrayList(stations)
-        } else {
-            android.util.Log.e("OccHabStore",
-                "sauvegarder ECHEC commit — cache mémoire NON mis à jour (disque conservé)")
-        }
-        return ok
-    }
-
-    fun ajouter(station: OccHabStation): Boolean {
-        val stations = charger()
-        stations.add(0, station)
-        return sauvegarder(stations)
-    }
+    fun ajouter(station: OccHabStation): Boolean = muter { it.add(0, station) }
 
     /** Remplace la station [id] en préservant sa position (reprise d'édition). Ajoute en tête
      *  si l'id n'existe pas. */
-    fun remplacer(id: String, stationMaj: OccHabStation): Boolean {
-        val stations = charger()
-        val idx = stations.indexOfFirst { it.id == id }
-        return if (idx >= 0) {
-            stations[idx] = stationMaj
-            sauvegarder(stations)
-        } else {
-            stations.add(0, stationMaj)
-            sauvegarder(stations)
-        }
+    fun remplacer(id: String, stationMaj: OccHabStation): Boolean = muter { liste ->
+        val idx = liste.indexOfFirst { it.id == id }
+        if (idx >= 0) liste[idx] = stationMaj else liste.add(0, stationMaj)
     }
 
-    fun supprimer(id: String) {
-        val stations = charger()
-        stations.removeAll { it.id == id }
-        sauvegarder(stations)
-    }
+    fun supprimer(id: String) { muter { liste -> liste.removeAll { it.id == id } } }
 
     /** Marque la station comme envoyée (efface l'erreur d'un échec précédent) et enregistre
      *  l'id_station attribué par le serveur. */
     fun marquerEnvoyee(id: String, idStationServeur: Int?) {
-        val stations = charger()
-        val idx = stations.indexOfFirst { it.id == id }
-        if (idx >= 0) {
-            stations[idx] = stations[idx].copy(
+        muter { liste ->
+            val idx = liste.indexOfFirst { it.id == id }
+            if (idx >= 0) liste[idx] = liste[idx].copy(
                 envoyeGeoNature = true,
-                idStationServeur = idStationServeur ?: stations[idx].idStationServeur,
+                idStationServeur = idStationServeur ?: liste[idx].idStationServeur,
                 derniereErreurEnvoi = null,
                 envoiIncertain = false, // envoi confirmé : plus d'incertitude.
             )
-            sauvegarder(stations)
         }
     }
 
     /** Mémorise un échec d'envoi NET (rejet serveur / requête non émise) : la station n'a PAS
      *  été créée. Efface l'incertitude éventuelle d'une tentative précédente. Cadre rouge. */
     fun marquerErreurEnvoi(id: String, message: String) {
-        val stations = charger()
-        val idx = stations.indexOfFirst { it.id == id }
-        if (idx >= 0) {
-            stations[idx] = stations[idx].copy(
+        muter { liste ->
+            val idx = liste.indexOfFirst { it.id == id }
+            if (idx >= 0) liste[idx] = liste[idx].copy(
                 derniereErreurEnvoi = message.take(200),
                 envoiIncertain = false,
             )
-            sauvegarder(stations)
         }
     }
 
     /** Mémorise un envoi au statut INCERTAIN (réseau coupé après l'émission : la station a
      *  peut-être été créée). Le prochain envoi vérifiera d'abord l'existence côté serveur. */
     fun marquerEnvoiIncertain(id: String, message: String) {
-        val stations = charger()
-        val idx = stations.indexOfFirst { it.id == id }
-        if (idx >= 0) {
-            stations[idx] = stations[idx].copy(
+        muter { liste ->
+            val idx = liste.indexOfFirst { it.id == id }
+            if (idx >= 0) liste[idx] = liste[idx].copy(
                 derniereErreurEnvoi = message.take(200),
                 envoiIncertain = true,
             )
-            sauvegarder(stations)
         }
     }
 }
@@ -170,8 +120,12 @@ class OccHabStore(context: Context) {
 // On reconstruit par CONSTRUCTEUR explicite (pas copy() : il crasherait sur les champs null).
 // Même filet que SortieStore.normaliserSortie / OutboxMonitoring.normaliser.
 
+// Écarte (retour null) une entrée structurellement invalide (id/habitats null via Gson), sinon
+// reconstruit une station sûre par CONSTRUCTEUR explicite (pas copy() : il crasherait sur null).
 @Suppress("SENSELESS_COMPARISON", "USELESS_ELVIS")
-private fun normaliserStation(s: OccHabStation): OccHabStation = OccHabStation(
+private fun normaliserStation(s: OccHabStation): OccHabStation? {
+    if (s.id == null || s.habitats == null) return null
+    return OccHabStation(
     id = s.id,
     // Stations d'avant l'ajout de l'UUID SINP (JSON ancien → null via Gson) : on en génère un
     // maintenant. Il se fige au prochain enregistrement (au fil de l'eau), donc reste stable pour
@@ -207,7 +161,8 @@ private fun normaliserStation(s: OccHabStation): OccHabStation = OccHabStation(
     origineServeur = s.origineServeur,
     derniereErreurEnvoi = s.derniereErreurEnvoi,
     envoiIncertain = s.envoiIncertain,
-)
+    )
+}
 
 @Suppress("SENSELESS_COMPARISON", "USELESS_ELVIS")
 private fun normaliserHabitat(h: OccHabHabitat): OccHabHabitat? {

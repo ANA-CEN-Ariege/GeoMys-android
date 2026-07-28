@@ -156,7 +156,144 @@ object TaxRefCache {
 
     fun get(nom: String): TaxRefEntry? {
         val cache = charger()
-        return cache[normaliser(nom)] ?: cache[normaliser(nettoyerSuffixeArticle(nom))]
+        val base = normaliser(nom)
+        cache[base]?.let { return it }
+        val sansArticle = normaliser(nettoyerSuffixeArticle(nom))
+        cache[sansArticle]?.let { return it }
+        // Variantes de séparateurs testées À LA LECTURE seulement (la clé canonique stockée au
+        // sync n'est PAS modifiée → aucun resync requis, marche sur les caches existants) :
+        // espaces multiples repliés, tiret ↔ espace, et suppression totale des séparateurs
+        // (« rouge gorge » → « rougegorge » pour matcher les noms INPN en un mot).
+        for (b in linkedSetOf(base, sansArticle)) {
+            val collapse = b.replace(Regex("\\s+"), " ").trim()
+            cache[collapse]?.let { return it }
+            cache[collapse.replace(' ', '-')]?.let { return it }
+            cache[collapse.replace('-', ' ')]?.let { return it }
+            cache[collapse.replace(" ", "").replace("-", "")]?.let { return it }
+        }
+        return null
+    }
+
+    // ── Recherche vocale : index par mots (niveau 3) + approché (niveau 2) ─────────────────────
+    // Utilisés en dernier recours par TaxRefService.rechercher(avecRechercheEtendue=true), sur le
+    // CHEMIN VOCAL uniquement — jamais par l'autocomplétion clavier (perf). Opèrent sur le cache
+    // LOCAL (hors-ligne). Objectif : rattraper une transcription approximative sans jamais
+    // produire de FAUX POSITIF (un auto-ajout vocal erroné = donnée fausse) → « pas de match »
+    // plutôt qu'un match douteux.
+
+    @Volatile private var memIndexMots: Map<String, Set<Int>>? = null
+
+    /** Index inversé mot-normalisé → cd_nom, construit (memoïzé) depuis les clés du cache. Les
+     *  clés étant déjà uniques par nom (dédoublonnées au sync, cf. collision cd_nom), un mot
+     *  pointe vers l'ensemble des cd_nom des noms qui le contiennent. */
+    private fun indexMots(): Map<String, Set<Int>> {
+        memIndexMots?.let { return it }
+        val idx = HashMap<String, MutableSet<Int>>()
+        for ((cle, entry) in charger()) {
+            for (mot in cle.split(regexSeparateurs)) {
+                if (mot.length < 2) continue
+                idx.getOrPut(mot) { HashSet() }.add(entry.cdNom)
+            }
+        }
+        return idx.also { memIndexMots = it }
+    }
+
+    private val regexSeparateurs = Regex("[ \\-]+")
+
+    /** Toutes les segmentations d'une liste de mots par CONCATÉNATION de mots adjacents
+     *  (« rouge »,« gorge » → {rouge,gorge} ET {rougegorge}). Bornée : au-delà de 4 mots, on
+     *  se limite au tout-séparé et au tout-concaténé pour éviter l'explosion 2^(n-1). */
+    private fun segmentations(mots: List<String>): List<List<String>> {
+        if (mots.size > 4) return listOf(mots, listOf(mots.joinToString("")))
+        val res = mutableListOf<List<String>>()
+        fun rec(i: Int, courant: List<String>) {
+            if (i == mots.size) { res.add(courant); return }
+            val sb = StringBuilder()
+            for (j in i until mots.size) {
+                sb.append(mots[j])
+                rec(j + 1, courant + sb.toString())
+            }
+        }
+        rec(0, emptyList())
+        return res
+    }
+
+    /** Match par MOTS : tolère l'ordre, les mots manquants (sous-ensemble) et la
+     *  concaténation/séparation (« rouge gorge » ↔ « Rougegorge familier », « gorge rouge »
+     *  ↔ « rouge gorge »). Retourne l'entrée SEULEMENT si l'ensemble des segmentations désigne
+     *  un cd_nom UNIQUE (après filtrage éventuel par [cdNomsAutorises]) — sinon null (ambigu). */
+    fun chercherParMots(nomNormalise: String, cdNomsAutorises: Set<Int>? = null): TaxRefEntry? {
+        val mots = nomNormalise.split(regexSeparateurs).filter { it.length >= 2 }
+        if (mots.isEmpty()) return null
+        val idx = indexMots()
+        val cdNoms = LinkedHashSet<Int>()
+        for (seg in segmentations(mots)) {
+            var inter: MutableSet<Int>? = null
+            var ok = true
+            for (token in seg) {
+                val s = idx[token]
+                if (s == null) { ok = false; break }
+                inter = if (inter == null) HashSet(s) else inter.apply { retainAll(s) }
+                if (inter.isEmpty()) { ok = false; break }
+            }
+            if (!ok || inter == null) continue
+            if (cdNomsAutorises != null) inter.retainAll(cdNomsAutorises)
+            cdNoms.addAll(inter)
+            if (cdNoms.size > 1) return null // ambigu → on n'invente pas
+        }
+        return if (cdNoms.size == 1) entreesParCdNom()[cdNoms.first()] else null
+    }
+
+    /** Match APPROCHÉ (distance de Levenshtein bornée) — dernier recours, pour une vraie faute
+     *  de transcription (« lucorun » → « lucorum »). Préfiltre bon marché (même 1ʳᵉ lettre,
+     *  écart de longueur ≤ seuil) avant tout calcul. Seuil : ≤1 pour clé courte (<8), ≤2 sinon.
+     *  Retourne null en cas d'ambiguïté (deux cd_nom à égale distance minimale) — pas de faux
+     *  positif. [cdNomsAutorises] restreint au groupe taxon quand fourni. */
+    fun chercherApproche(nomNormalise: String, cdNomsAutorises: Set<Int>? = null): TaxRefEntry? {
+        val q = nomNormalise.replace(regexSeparateurs, " ").trim()
+        if (q.length < 3) return null // trop court → trop de collisions fortuites
+        val seuil = if (q.length < 8) 1 else 2
+        val premier = q.first()
+        var meilleureCle: String? = null
+        var meilleureDist = Int.MAX_VALUE
+        var meilleurCd = -1
+        var ambigu = false
+        for ((cle, entry) in charger()) {
+            if (cle.isEmpty() || cle.first() != premier) continue
+            if (kotlin.math.abs(cle.length - q.length) > seuil) continue
+            if (cdNomsAutorises != null && entry.cdNom !in cdNomsAutorises) continue
+            val d = distanceBornee(q, cle, seuil)
+            if (d < 0) continue
+            if (d < meilleureDist) {
+                meilleureDist = d; meilleureCle = cle; meilleurCd = entry.cdNom; ambigu = false
+            } else if (d == meilleureDist && entry.cdNom != meilleurCd) {
+                ambigu = true
+            }
+        }
+        if (meilleureCle == null || ambigu) return null
+        return charger()[meilleureCle]
+    }
+
+    /** Distance de Levenshtein bornée (2 lignes, sans dépendance) : renvoie -1 dès que toute une
+     *  ligne dépasse [seuil] (abandon anticipé), sinon la distance exacte. */
+    private fun distanceBornee(a: String, b: String, seuil: Int): Int {
+        val n = a.length; val m = b.length
+        if (kotlin.math.abs(n - m) > seuil) return -1
+        var prev = IntArray(m + 1) { it }
+        var cur = IntArray(m + 1)
+        for (i in 1..n) {
+            cur[0] = i
+            var minLigne = cur[0]
+            val ca = a[i - 1]
+            for (j in 1..m) {
+                val cout = if (ca == b[j - 1]) 0 else 1
+                cur[j] = minOf(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cout)
+                if (cur[j] < minLigne) minLigne = cur[j]
+            }
+            if (minLigne > seuil) return -1
+            val tmp = prev; prev = cur; cur = tmp
+        }
+        return prev[m]
     }
 
     fun set(nom: String, cdNom: Int, sciNom: String, nomFr: String? = null) {
@@ -417,6 +554,7 @@ object TaxRefCache {
         memCdNomsDansListe = null
         memTousLesNoms = null
         memNomsParListe = null
+        memIndexMots = null
     }
 
     var versionSauvegardee: String?
@@ -508,6 +646,7 @@ object TaxRefCache {
         memVernsParCdNom = null
         memTousLesNoms = null
         memNomsParListe = null
+        memIndexMots = null
     }
 
     /** Écrit FILE_CACHE en STREAMING : la String JSON complète n'est jamais construite en mémoire

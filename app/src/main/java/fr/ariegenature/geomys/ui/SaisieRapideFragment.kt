@@ -275,7 +275,14 @@ class SaisieRapideFragment : Fragment() {
             } catch (_: Exception) { emptyMap() }
         }
 
-        speech = SpeechToTextHelper(this, binding.tilEspece, binding.etEspece, micPermissionLauncher)
+        speech = SpeechToTextHelper(
+            this, binding.tilEspece, binding.etEspece, micPermissionLauncher,
+            // Dictée : essaie les hypothèses ASR (jusqu'à 5) contre TaxRef (recherche étendue)
+            // et RÉINJECTE la meilleure dans le champ — son propre lookup met alors à jour le
+            // statut + le bouton « Démarrer ». Pas d'auto-ajout ici (la saisie rapide se
+            // déclenche à « Démarrer »). Aucun match → on garde le 1ᵉʳ candidat affiché.
+            onFinalText = { candidats -> resoudreEtReinjecterDepuisVoix(candidats) },
+        )
         taxrefLookup = TaxRefLookupController(
             scope = viewLifecycleOwner.lifecycleScope,
             progress = binding.taxrefProgress,
@@ -487,6 +494,23 @@ class SaisieRapideFragment : Fragment() {
         val matchTaxRef = taxRefStatut is TaxRefStatut.Trouve
         val cdNomManuelOk = (cdNomManuel.trim().toIntOrNull() ?: 0) > 0
         binding.btnDemarrer.isEnabled = texte.isNotEmpty() && (matchTaxRef || cdNomManuelOk)
+    }
+
+    /** Dictée vocale : essaie les hypothèses ASR contre TaxRef (recherche étendue) et réinjecte
+     *  le texte gagnant dans le champ s'il diffère de ce qui est affiché — ce qui redéclenche le
+     *  lookup existant (statut + bouton « Démarrer »). Aucun match → on garde le 1ᵉʳ candidat. */
+    private fun resoudreEtReinjecterDepuisVoix(candidats: List<String>) {
+        viewLifecycleOwner.lifecycleScope.launch {
+            val (statut, gagnant) = fr.ariegenature.geomys.network.TaxRefService
+                .rechercherParmiCandidats(candidats, taxon, gnConfig)
+            if (!isAdded || _binding == null) return@launch
+            if (statut is TaxRefStatut.Trouve && gagnant != null &&
+                gagnant != binding.etEspece.text?.toString()
+            ) {
+                binding.etEspece.setText(gagnant)
+                binding.etEspece.setSelection(gagnant.length)
+            }
+        }
     }
 
     private fun refreshAutocompleteAdapter() {

@@ -43,6 +43,22 @@
             android:textSize="12sp"
             android:visibility="gone" />
 
+        <!-- Onglets À envoyer / Envoyées — mêmes onglets que « Mes saisies » / « Mes stations ».
+             Un GROUPE (racine + descendants) reste dans « À envoyer » tant qu'une de ses données
+             n'est pas partie ; la hiérarchie protocole → groupe → lignes est conservée DANS
+             chaque onglet. -->
+        <!-- Fond transparent (plus de bande noire), soulignement jaune — même style que
+             « Mes saisies ». -->
+        <com.google.android.material.tabs.TabLayout
+            android:id="@+id/tab_layout"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:background="@android:color/transparent"
+            app:tabIndicatorColor="@color/jaune_clair"
+            app:tabSelectedTextColor="@color/jaune_clair"
+            app:tabTextColor="?attr/colorOnSurfaceVariant" />
+
         <!-- RecyclerView (recyclage : seules les lignes visibles sont construites), cohérent
              avec « Mes saisies » / « Mes stations ». Remplace l'ancien ScrollView + LinearLayout
              reconstruit intégralement à chaque refresh ; les items (headers protocole/groupe,

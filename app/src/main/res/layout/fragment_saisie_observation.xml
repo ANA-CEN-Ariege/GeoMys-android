@@ -291,12 +291,15 @@
 
     <!-- Bouton « terminer le relevé » en haut à droite : la saisie étant sauvée au fil de
          l'eau, ce bouton sert juste à sortir. Même cercle vert + coche que les autres écrans. -->
+    <!-- Zone cliquable 48dp (minimum tactile Material — gants/froid) ; le padding transparent
+         garde l'icône à 32dp visuels, la marge est réduite d'autant (position inchangée). -->
     <ImageButton
         android:id="@+id/btn_ok"
-        android:layout_width="32dp"
-        android:layout_height="32dp"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
         android:layout_gravity="top|end"
-        android:layout_margin="16dp"
+        android:layout_margin="8dp"
+        android:padding="8dp"
         android:background="?attr/selectableItemBackgroundBorderless"
         android:contentDescription="Terminer le relevé"
         android:scaleType="fitCenter"

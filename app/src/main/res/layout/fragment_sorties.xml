@@ -42,16 +42,37 @@
         android:layout_height="1dp"
         android:background="?attr/colorControlHighlight" />
 
-    <!-- Onglets À envoyer / Envoyés / Importés. Indicateur et texte sélectionné en jaune
-         clair pour cohérence avec les autres éléments cliquables ; texte des onglets
-         inactifs reste en colorOnSurfaceVariant (Material) — lisible sur fond sombre. -->
+    <!-- Onglets À envoyer / Envoyés / Importés — fond TRANSPARENT (plus de bande noire de
+         TabLayout : le dégradé de l'app traverse), soulignement + texte actif jaune clair.
+         Même style sur les trois écrans « Mes X ». -->
     <com.google.android.material.tabs.TabLayout
         android:id="@+id/tab_layout"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:background="@android:color/transparent"
         android:paddingHorizontal="8dp"
         app:tabIndicatorColor="@color/jaune_clair"
-        app:tabSelectedTextColor="@color/jaune_clair" />
+        app:tabSelectedTextColor="@color/jaune_clair"
+        app:tabTextColor="?attr/colorOnSurfaceVariant" />
+
+    <!-- Progression d'envoi INLINE (même patron que « Mes visites ») : remplace l'ancien
+         dialogue modal bloquant pendant l'envoi d'une saisie. -->
+    <ProgressBar
+        android:id="@+id/progress_envoi"
+        android:layout_width="wrap_content"
+        android:layout_height="24dp"
+        android:layout_marginStart="16dp"
+        android:layout_marginTop="8dp"
+        android:visibility="gone" />
+
+    <TextView
+        android:id="@+id/tv_message_envoi"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:paddingHorizontal="16dp"
+        android:textSize="12sp"
+        android:visibility="gone" />
 
     <!-- Vue vide -->
     <LinearLayout
@@ -76,7 +97,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
             android:gravity="center"
-            android:text="Aucune sortie enregistrée\nTerminez une sortie pour la sauvegarder."
+            android:text="Aucune saisie enregistrée\nTerminez une saisie pour la sauvegarder."
             android:textColor="?attr/colorControlNormal" />
     </LinearLayout>
 

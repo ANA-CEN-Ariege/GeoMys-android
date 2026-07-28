@@ -24,13 +24,16 @@
             android:layout_marginStart="12dp"
             android:layout_marginTop="12dp" />
 
+        <!-- Zone cliquable 48dp (minimum tactile Material — gants/froid) ; le padding
+             transparent garde l'icône à 32dp visuels, marges réduites d'autant. -->
         <ImageButton
             android:id="@+id/btn_terminer"
-            android:layout_width="32dp"
-            android:layout_height="32dp"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
             android:layout_gravity="center_vertical|end"
-            android:layout_marginEnd="16dp"
-            android:layout_marginTop="12dp"
+            android:layout_marginEnd="8dp"
+            android:layout_marginTop="4dp"
+            android:padding="8dp"
             android:background="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="Terminer la station"
             android:scaleType="fitCenter"

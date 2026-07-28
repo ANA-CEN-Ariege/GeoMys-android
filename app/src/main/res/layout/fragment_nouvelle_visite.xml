@@ -5,49 +5,69 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
-    <ScrollView
-        android:id="@+id/scroll_contenu"
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:paddingTop="64dp"
-        android:clipToPadding="false">
+        android:orientation="vertical">
 
+        <ScrollView
+            android:id="@+id/scroll_contenu"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:paddingTop="64dp"
+            android:clipToPadding="false">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:clipChildren="false"
+                android:clipToPadding="false"
+                android:orientation="vertical"
+                android:paddingHorizontal="16dp"
+                android:paddingBottom="16dp">
+
+                <TextView
+                    android:id="@+id/tv_titre"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textSize="22sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/tv_contexte"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:textColor="@android:color/darker_gray"
+                    android:textSize="13sp" />
+
+                <LinearLayout
+                    android:id="@+id/ll_formulaire"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="16dp"
+                    android:orientation="vertical" />
+            </LinearLayout>
+        </ScrollView>
+
+        <!-- Barre de validation FIXE (hors scroll) : sur un long formulaire, le bouton
+             d'enregistrement restait invisible tant qu'on n'avait pas défilé jusqu'en bas —
+             risque de visite « crue enregistrée ». Toujours visible désormais. -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:clipChildren="false"
-            android:clipToPadding="false"
             android:orientation="vertical"
             android:paddingHorizontal="16dp"
-            android:paddingBottom="24dp">
-
-            <TextView
-                android:id="@+id/tv_titre"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:textSize="22sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/tv_contexte"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                android:textColor="@android:color/darker_gray"
-                android:textSize="13sp" />
-
-            <LinearLayout
-                android:id="@+id/ll_formulaire"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="16dp"
-                android:orientation="vertical" />
+            android:paddingTop="8dp"
+            android:paddingBottom="8dp"
+            android:background="?attr/colorSurface"
+            android:elevation="8dp">
 
             <Button
                 android:id="@+id/btn_submit"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="24dp"
                 android:text="Enregistrer la visite" />
 
             <!-- Bouton "Terminer" : visible UNIQUEMENT en mode "chaîne de saisies" (= quand
@@ -59,11 +79,11 @@
                 style="@style/Widget.GeoMys.Button.TextButton"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
+                android:layout_marginTop="4dp"
                 android:text="Terminer"
                 android:visibility="gone" />
         </LinearLayout>
-    </ScrollView>
+    </LinearLayout>
 
     <!-- Fil d'Ariane flottant : sticky en haut, au-dessus du ScrollView. Bordure arrondie +
          ombre (elevation) pour que l'utilisateur voie nettement le contenu passer dessous. -->

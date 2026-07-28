@@ -54,6 +54,10 @@ class SaisiesEnAttenteFragment : Fragment() {
         return binding.root
     }
 
+    /** Onglet courant : 0 = À envoyer (groupes avec au moins une donnée non partie),
+     *  1 = Envoyées (groupes entièrement transmis). Mêmes onglets que les autres « Mes X ». */
+    private var ongletCourant = 0
+
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         binding.root.applySystemBarInsets(includeIme = true)
@@ -61,6 +65,16 @@ class SaisiesEnAttenteFragment : Fragment() {
         binding.rvSaisies.layoutManager =
             androidx.recyclerview.widget.LinearLayoutManager(requireContext())
         binding.rvSaisies.adapter = adapterAttente
+        binding.tabLayout.addTab(binding.tabLayout.newTab().setText("À envoyer"))
+        binding.tabLayout.addTab(binding.tabLayout.newTab().setText("Envoyées"))
+        binding.tabLayout.addOnTabSelectedListener(
+            object : com.google.android.material.tabs.TabLayout.OnTabSelectedListener {
+                override fun onTabSelected(tab: com.google.android.material.tabs.TabLayout.Tab) {
+                    ongletCourant = tab.position; rafraichir()
+                }
+                override fun onTabUnselected(tab: com.google.android.material.tabs.TabLayout.Tab) {}
+                override fun onTabReselected(tab: com.google.android.material.tabs.TabLayout.Tab) {}
+            })
         rafraichir()
     }
 
@@ -129,6 +143,8 @@ class SaisiesEnAttenteFragment : Fragment() {
             enAttente == 0 -> "Toutes les données ont été envoyées ($envoyees)."
             else -> "$enAttente en attente · $envoyees envoyées"
         }
+        binding.tabLayout.getTabAt(0)?.text = "À envoyer ($enAttente)"
+        binding.tabLayout.getTabAt(1)?.text = "Envoyées ($envoyees)"
         peuplerListe(toutes)
     }
 
@@ -166,7 +182,7 @@ class SaisiesEnAttenteFragment : Fragment() {
         envoiAutoriseParModule.clear() // les droits sont re-lus à chaque peuplement
         if (saisies.isEmpty()) {
             adapterAttente.submit(listOf(ItemAttente.Vide(
-                "Les données que tu enregistres apparaîtront ici jusqu'à leur envoi.")))
+                "Les données que vous enregistrez apparaîtront ici jusqu'à leur envoi.")))
             return
         }
         val items = mutableListOf<ItemAttente>()
@@ -182,11 +198,34 @@ class SaisiesEnAttenteFragment : Fragment() {
             .filter { it.parentUuidLocal == null || it.parentUuidLocal !in uuidsConnus }
             .sortedWith(compareBy({ ordrePourTri(it.etat) }, { it.dateLocale }))
 
+        // Onglets « À envoyer / Envoyées » : un GROUPE (racine + descendants) ne passe dans
+        // « Envoyées » que lorsque TOUT son sous-arbre est SENT — tant qu'une obs reste à
+        // envoyer, le groupe entier reste visible dans « À envoyer » (hiérarchie conservée).
+        fun groupeToutEnvoye(racine: SaisieEnAttente): Boolean {
+            if (racine.etat != SaisieEnAttente.Etat.SENT) return false
+            val file = ArrayDeque<String>().apply { add(racine.uuid) }
+            while (file.isNotEmpty()) {
+                val courant = file.removeFirst()
+                parParent[courant].orEmpty().forEach {
+                    if (it.etat != SaisieEnAttente.Etat.SENT) return false
+                    file.add(it.uuid)
+                }
+            }
+            return true
+        }
+        val racinesOnglet = racines.filter { groupeToutEnvoye(it) == (ongletCourant == 1) }
+        if (racinesOnglet.isEmpty()) {
+            adapterAttente.submit(listOf(ItemAttente.Vide(
+                if (ongletCourant == 1) "Aucune donnée envoyée."
+                else "Aucune donnée en attente d'envoi.")))
+            return
+        }
+
         // Regroupement hiérarchique : Protocole → Site (header de groupe) → Visite/Obs.
         // On préserve l'ordre des racines (déjà trié par état/date) au sein de chaque
         // module, et on ordonne les modules par leur ordre d'apparition de la 1re racine.
         val racinesParModule = linkedMapOf<String, MutableList<SaisieEnAttente>>()
-        racines.forEach { r ->
+        racinesOnglet.forEach { r ->
             racinesParModule.getOrPut(r.moduleCode) { mutableListOf() }.add(r)
         }
 
@@ -475,10 +514,12 @@ class SaisiesEnAttenteFragment : Fragment() {
             setImageResource(drawableId)
             contentDescription = description
             setBackgroundResource(attr.resourceId)
-            val pad = (8 * density).toInt()
+            // Zone cliquable 48dp (minimum tactile Material — gants/froid) ; le padding garde
+            // l'icône à 24dp visuels.
+            val pad = (12 * density).toInt()
             setPadding(pad, pad, pad, pad)
             layoutParams = LinearLayout.LayoutParams(
-                (40 * density).toInt(), (40 * density).toInt(),
+                (48 * density).toInt(), (48 * density).toInt(),
             )
             // Icônes d'action : jaune clair pour Envoyer/Éditer (cohérence cliquable),
             // colorError pour Supprimer (sémantique destructive maintenue).
@@ -635,7 +676,8 @@ class SaisiesEnAttenteFragment : Fragment() {
                 }
             }
             AlertDialog.Builder(requireContext())
-                .setTitle("Récap")
+                // « Envoi » : même titre de récap que Mes saisies / Mes stations.
+                .setTitle("Envoi")
                 .setMessage(recap)
                 .setPositiveButton("OK", null)
                 .show()

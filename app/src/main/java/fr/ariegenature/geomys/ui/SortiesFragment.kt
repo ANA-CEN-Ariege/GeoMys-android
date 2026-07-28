@@ -147,9 +147,9 @@ class SortiesFragment : Fragment() {
         updateTabCounts(toutes)
         adapter.submitList(filtrees)
         val emptyMsg = when (ongletCourant) {
-            1 -> "Aucune sortie envoyée à GeoNature"
-            2 -> "Aucune sortie importée"
-            else -> "Aucune sortie en attente d'envoi"
+            1 -> "Aucune saisie envoyée à GeoNature"
+            2 -> "Aucune saisie importée"
+            else -> "Aucune saisie en attente d'envoi"
         }
         binding.emptyView.visibility = if (filtrees.isEmpty()) View.VISIBLE else View.GONE
         binding.recyclerView.visibility = if (filtrees.isEmpty()) View.GONE else View.VISIBLE
@@ -166,6 +166,11 @@ class SortiesFragment : Fragment() {
     }
 
     private fun confirmerSuppression(sortie: Sortie) {
+        if (envoiEnCours) {
+            android.widget.Toast.makeText(requireContext(), "Un envoi est en cours — réessayez ensuite.",
+                android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
         val date = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.FRANCE).format(Date(sortie.date))
         val nbObs = sortie.observations.size
         val descr = when {
@@ -184,36 +189,50 @@ class SortiesFragment : Fragment() {
             .show()
     }
 
-    /** Envoie une seule sortie vers GeoNature (bouton "Envoyer" de la ligne). Bloque l'UI le
-     *  temps de l'envoi, marque la sortie comme envoyée en cas de succès et rafraîchit la liste. */
+    /** true pendant un envoi : les actions concurrentes (2ᵉ envoi, suppression) sont refusées
+     *  avec un toast — la liste reste consultable, contrairement à l'ancien modal bloquant. */
+    private var envoiEnCours = false
+
+    /** Envoie une seule sortie vers GeoNature (bouton "Envoyer" de la ligne). Progression
+     *  INLINE (même patron que « Mes visites ») — l'utilisateur peut continuer à consulter la
+     *  liste pendant l'envoi. Marque la sortie envoyée en cas de succès et rafraîchit. */
     private fun envoyerSortie(sortie: Sortie) {
+        if (envoiEnCours) {
+            android.widget.Toast.makeText(requireContext(), "Un envoi est déjà en cours…",
+                android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
         val gnConfig = GeoNatureConfig(requireContext())
         if (!gnConfig.connexionConfiguree) {
             AlertDialog.Builder(requireContext())
                 .setTitle("Configuration requise")
-                .setMessage("La connexion GeoNature n'est pas configurée. Ouvre la configuration (⚙️) avant d'envoyer.")
+                .setMessage("La connexion GeoNature n'est pas configurée. Ouvrez la configuration (⚙️) avant d'envoyer.")
                 .setPositiveButton("OK", null)
                 .show()
             return
         }
-        val dialogEnvoi = AlertDialog.Builder(requireContext())
-            .setTitle("Envoi en cours…")
-            .setMessage("Envoi de la saisie vers GeoNature.")
-            .setCancelable(false)
-            .show()
+        envoiEnCours = true
+        binding.progressEnvoi.visibility = View.VISIBLE
+        binding.tvMessageEnvoi.visibility = View.VISIBLE
+        binding.tvMessageEnvoi.text = "Envoi de la saisie vers GeoNature…"
         viewLifecycleOwner.lifecycleScope.launch {
             try {
                 // Envoi + mise à jour du store (succès/erreur persistée) factorisés —
                 // cf. envoyerSortieVersGeoNature, partagé par les 4 écrans d'envoi.
                 val res = envoyerSortieVersGeoNature(sortie, sortieStore, gnConfig)
-                if (!isAdded) return@launch
+                if (!isAdded || _binding == null) return@launch
                 refreshList()
                 AlertDialog.Builder(requireContext())
-                    .setTitle(if (res.succes) "GeoNature" else "Erreur d'envoi")
+                    // « Envoi » : même titre de récap que Mes visites / Mes stations.
+                    .setTitle(if (res.succes) "Envoi" else "Erreur d'envoi")
                     .setMessage(res.message)
                     .setPositiveButton("OK", null).show()
             } finally {
-                runCatching { dialogEnvoi.dismiss() }
+                envoiEnCours = false
+                _binding?.let {
+                    it.progressEnvoi.visibility = View.GONE
+                    it.tvMessageEnvoi.visibility = View.GONE
+                }
             }
         }
     }
@@ -299,6 +318,15 @@ class SortieAdapter(
             } else {
                 root.background = null
                 tvErreurEnvoi.visibility = android.view.View.GONE
+            }
+            // « ✅ Envoyée » : même marqueur d'état que « Mes stations » — l'onglet le dit déjà,
+            // mais le marqueur ligne rend l'état lisible aussi hors contexte (recherche visuelle).
+            if (sortie.envoyeGeoNature) {
+                tvEtat.visibility = android.view.View.VISIBLE
+                tvEtat.setTextColor(couleurSucces(root.context))
+                tvEtat.text = "✅ Envoyée"
+            } else {
+                tvEtat.visibility = android.view.View.GONE
             }
             root.setOnClickListener { onClick(sortie) }
             btnSupprimer.setOnClickListener { onDelete(sortie) }

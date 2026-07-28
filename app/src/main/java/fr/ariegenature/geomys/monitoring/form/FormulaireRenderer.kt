@@ -64,9 +64,10 @@ class FormulaireRenderer(
         parent, com.google.android.material.R.attr.colorOnSurface, 0xFF000000.toInt(),
     )
     /** Couleur d'erreur du thème (colorError) — utilisée pour les messages de validation
-     *  sous les champs hors bornes. Reste lisible en mode sombre. */
+     *  sous les champs hors bornes. Reste lisible en mode sombre. NB : attribut APPCOMPAT
+     *  (Material 1.13.0 ne le ré-exporte plus dans son R). */
     private val couleurErreur: Int = com.google.android.material.color.MaterialColors.getColor(
-        parent, com.google.android.material.R.attr.colorError, 0xFFB00020.toInt(),
+        parent, androidx.appcompat.R.attr.colorError, 0xFFB00020.toInt(),
     )
     /** Couleur de texte secondaire (label, placeholder "Choisir…", aide…). Avant on avait
      *  des gris en dur (#888888, #666666) qui se brûlaient en mode sombre / sur le fond

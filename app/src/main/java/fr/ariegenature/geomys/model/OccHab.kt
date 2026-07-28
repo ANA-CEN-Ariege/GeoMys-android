@@ -62,6 +62,12 @@ data class OccHabHabitat(
 
 data class OccHabStation(
     val id: String = UUID.randomUUID().toString(),
+    /** Identifiant SINP stable généré côté client (`unique_id_sinp_station`), envoyé dès la
+     *  création. Sert d'ancre d'idempotence : le serveur OccHab n'imposant AUCUNE contrainte
+     *  d'unicité (POST = toujours une insertion), c'est la seule protection contre un doublon —
+     *  après un envoi INCERTAIN (requête émise mais réponse perdue), un ré-envoi interroge
+     *  d'abord le serveur sur cet UUID pour ne pas recréer la station. Cf. [envoiIncertain]. */
+    var uuidStation: String = UUID.randomUUID().toString(),
     /** id_station attribué par le serveur après un envoi réussi (ou pour une station lue
      *  depuis le serveur en consultation). null = jamais envoyée / créée localement. */
     var idStationServeur: Int? = null,
@@ -125,4 +131,9 @@ data class OccHabStation(
     var origineServeur: Boolean = false,
     /** Message du dernier échec d'envoi (humanisé). Null si jamais échoué / envoi réussi. */
     var derniereErreurEnvoi: String? = null,
+    /** true après une tentative d'envoi au statut INCERTAIN (réseau coupé APRÈS l'émission de
+     *  la requête : le serveur a peut-être créé la station). Le prochain envoi commence alors
+     *  par une vérification d'existence côté serveur (anti-doublon, cf. [uuidStation]). Effacé
+     *  dès qu'un envoi est confirmé, ou qu'un échec NET (rejet serveur) prouve la non-création. */
+    var envoiIncertain: Boolean = false,
 )

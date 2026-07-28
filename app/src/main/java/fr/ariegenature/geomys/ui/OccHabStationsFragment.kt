@@ -151,7 +151,22 @@ class OccHabStationsFragment : Fragment() {
                 rafraichir()
                 AlertDialog.Builder(requireContext())
                     .setTitle("OccHab")
-                    .setMessage("Station envoyée (${res.nbHabitats} habitat(s)).")
+                    .setMessage(
+                        if (res.dejaPresente)
+                            "Station déjà enregistrée sur GeoNature lors d'une tentative précédente — aucun doublon créé."
+                        else
+                            "Station envoyée (${res.nbHabitats} habitat(s))."
+                    )
+                    .setPositiveButton("OK", null).show()
+            } catch (e: GNErreur.EnvoiIncertain) {
+                // Réseau coupé après l'émission : on NE marque PAS d'échec net (qui inviterait à
+                // re-POSTer). Statut incertain → le prochain envoi vérifiera l'existence par UUID.
+                occHabStore.marquerEnvoiIncertain(station.id, e.msg)
+                if (!isAdded) return@launch
+                rafraichir()
+                AlertDialog.Builder(requireContext())
+                    .setTitle("Envoi interrompu")
+                    .setMessage(e.msg + "\n\nRenvoyez la station : l'application vérifiera d'abord côté serveur pour éviter un doublon.")
                     .setPositiveButton("OK", null).show()
             } catch (e: Exception) {
                 val msg = (e as? GNErreur)?.message ?: e.message ?: "Erreur d'envoi"

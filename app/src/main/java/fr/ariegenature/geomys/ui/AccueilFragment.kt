@@ -122,8 +122,11 @@ class AccueilFragment : Fragment() {
                 // avant la première synchro). Cohérent avec la visibilité du bouton "Suivis".
                 menu.findItem(R.id.menu_mes_visites)?.isVisible =
                     MonitoringApi.countModulesEnCache() > 0
-                // "Mes stations OccHab" : seulement si le module OccHab est détecté.
-                menu.findItem(R.id.menu_mes_stations)?.isVisible = gnConfig.occhabDisponible
+                // "Mes stations OccHab" : mêmes conditions que la tuile OccHab (module détecté ET
+                // droit de créer). La liste ne contient QUE des stations saisies localement : sans
+                // droit de création, elle serait toujours vide et renverrait vers une tuile masquée.
+                menu.findItem(R.id.menu_mes_stations)?.isVisible =
+                    gnConfig.occhabDisponible && gnConfig.occhabPeutCreer
                 // Pastille rouge à côté des entrées dont des éléments restent à envoyer.
                 menu.findItem(R.id.menu_mes_sorties)?.let {
                     it.title = titreAvecPastille(it.title, nbSaisiesEnAttente() > 0)

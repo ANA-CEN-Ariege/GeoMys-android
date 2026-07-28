@@ -21,6 +21,10 @@ package fr.ariegenature.geomys.network
 sealed class GNErreur(message: String) : Exception(message) {
     class AuthEchouee(val code: Int) : GNErreur("Authentification refusée (HTTP $code)")
     class EnvoiEchoue(val code: Int, val msg: String) : GNErreur("Envoi échoué HTTP $code : $msg")
+    /** Envoi au statut INCERTAIN : la requête a été émise mais la réponse s'est perdue (coupure
+     *  réseau après émission). L'objet a PEUT-ÊTRE été créé côté serveur — un ré-envoi doit
+     *  vérifier l'existence avant de re-POSTer (anti-doublon). */
+    class EnvoiIncertain(val msg: String) : GNErreur(msg)
     class AucuneObservationCompatible : GNErreur("Aucune observation n'a de cd_nom résolu.")
     /** Le jeu de données configuré n'existe pas sur le serveur ciblé (id absent du cache
      *  datasets). Détecté avant l'envoi pour éviter le 500 opaque (FK invalide). */

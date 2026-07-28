@@ -129,17 +129,36 @@ class OccHabStore(context: Context) {
                 envoyeGeoNature = true,
                 idStationServeur = idStationServeur ?: stations[idx].idStationServeur,
                 derniereErreurEnvoi = null,
+                envoiIncertain = false, // envoi confirmé : plus d'incertitude.
             )
             sauvegarder(stations)
         }
     }
 
-    /** Mémorise l'échec du dernier envoi (message humanisé) — affiché en cadre rouge. */
+    /** Mémorise un échec d'envoi NET (rejet serveur / requête non émise) : la station n'a PAS
+     *  été créée. Efface l'incertitude éventuelle d'une tentative précédente. Cadre rouge. */
     fun marquerErreurEnvoi(id: String, message: String) {
         val stations = charger()
         val idx = stations.indexOfFirst { it.id == id }
         if (idx >= 0) {
-            stations[idx] = stations[idx].copy(derniereErreurEnvoi = message.take(200))
+            stations[idx] = stations[idx].copy(
+                derniereErreurEnvoi = message.take(200),
+                envoiIncertain = false,
+            )
+            sauvegarder(stations)
+        }
+    }
+
+    /** Mémorise un envoi au statut INCERTAIN (réseau coupé après l'émission : la station a
+     *  peut-être été créée). Le prochain envoi vérifiera d'abord l'existence côté serveur. */
+    fun marquerEnvoiIncertain(id: String, message: String) {
+        val stations = charger()
+        val idx = stations.indexOfFirst { it.id == id }
+        if (idx >= 0) {
+            stations[idx] = stations[idx].copy(
+                derniereErreurEnvoi = message.take(200),
+                envoiIncertain = true,
+            )
             sauvegarder(stations)
         }
     }
@@ -154,6 +173,10 @@ class OccHabStore(context: Context) {
 @Suppress("SENSELESS_COMPARISON", "USELESS_ELVIS")
 private fun normaliserStation(s: OccHabStation): OccHabStation = OccHabStation(
     id = s.id,
+    // Stations d'avant l'ajout de l'UUID SINP (JSON ancien → null via Gson) : on en génère un
+    // maintenant. Il se fige au prochain enregistrement (au fil de l'eau), donc reste stable pour
+    // la vérification d'existence d'un ré-envoi.
+    uuidStation = s.uuidStation ?: java.util.UUID.randomUUID().toString(),
     idStationServeur = s.idStationServeur,
     date = s.date,
     geometryType = s.geometryType ?: "Point",
@@ -183,6 +206,7 @@ private fun normaliserStation(s: OccHabStation): OccHabStation = OccHabStation(
     envoyeGeoNature = s.envoyeGeoNature,
     origineServeur = s.origineServeur,
     derniereErreurEnvoi = s.derniereErreurEnvoi,
+    envoiIncertain = s.envoiIncertain,
 )
 
 @Suppress("SENSELESS_COMPARISON", "USELESS_ELVIS")

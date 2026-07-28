@@ -37,6 +37,9 @@ data class OccHabEnvoiResult(
     val idStationServeur: Int?,
     /** Nombre d'habitats effectivement envoyés (ceux avec un cd_hab renseigné). */
     val nbHabitats: Int,
+    /** true si la station existait DÉJÀ côté serveur (créée lors d'une tentative précédente au
+     *  statut incertain) : aucun POST n'a été refait — anti-doublon. */
+    val dejaPresente: Boolean = false,
 )
 
 /**
@@ -66,6 +69,21 @@ object OccHabUpload {
             val habitatsValides = station.habitats.filter { it.cdHab > 0 }
             if (habitatsValides.isEmpty()) {
                 throw GNErreur.EnvoiEchoue(0, "La station doit contenir au moins un habitat (code HABREF).")
+            }
+
+            // Anti-doublon : une tentative précédente s'est soldée par un statut INCERTAIN (réseau
+            // coupé après l'émission) → la station a peut-être déjà été créée. Le serveur OccHab
+            // n'imposant aucune contrainte d'unicité, on interroge par notre UUID stable AVANT de
+            // re-POSTer. Trouvée → on renvoie son id sans rien recréer. Absente / serveur muet →
+            // on procède au POST (si le serveur est injoignable, rien n'a pu être créé).
+            if (station.envoiIncertain && (station.idStationServeur ?: 0) <= 0) {
+                verifierStationExistante(base, token, cookies, station.uuidStation)?.let { idExistant ->
+                    return@withContext OccHabEnvoiResult(
+                        idStationServeur = idExistant,
+                        nbHabitats = habitatsValides.size,
+                        dejaPresente = true,
+                    )
+                }
             }
 
             val dateFmt = SimpleDateFormat("yyyy-MM-dd", Locale.US)
@@ -109,6 +127,10 @@ object OccHabUpload {
 
             val properties = JSONObject().apply {
                 put("id_dataset", datasetId)
+                // UUID SINP stable côté client : ancre d'idempotence pour la vérification
+                // d'existence d'un ré-envoi (cf. verifierStationExistante). Le serveur le persiste
+                // tel quel (colonne unique_id_sinp_station) au lieu d'en générer un.
+                station.uuidStation.takeIf { it.isNotBlank() }?.let { put("unique_id_sinp_station", it) }
                 put("date_min", dateFmt.format(dateMin))
                 put("date_max", dateFmt.format(dateMax))
                 station.stationName?.takeIf { it.isNotBlank() }?.let { put("station_name", it) }
@@ -146,8 +168,13 @@ object OccHabUpload {
                 conn.responseCode
             } catch (e: IOException) {
                 conn.disconnect()
-                throw GNErreur.EnvoiEchoue(0,
-                    "Réseau interrompu pendant l'envoi de la station (${e.message ?: e.javaClass.simpleName})")
+                // Coupure réseau autour du POST : impossible de savoir si le serveur a committé
+                // (la réponse peut se perdre APRÈS création). Statut INCERTAIN → le prochain envoi
+                // vérifiera l'existence par UUID avant de recréer (anti-doublon). Ne jamais
+                // requalifier ça en échec net : ce serait inviter à un re-POST aveugle.
+                throw GNErreur.EnvoiIncertain(
+                    "Réseau interrompu pendant l'envoi de la station — statut incertain " +
+                        "(${e.message ?: e.javaClass.simpleName}). La station a peut-être été enregistrée.")
             }
             if (code !in 200..299) {
                 val bodyErr = try {
@@ -168,6 +195,49 @@ object OccHabUpload {
 
             OccHabEnvoiResult(idStationServeur = idStation, nbHabitats = habitatsValides.size)
         }
+
+    /**
+     * Cherche une station déjà créée côté serveur portant [uuid] (`unique_id_sinp_station`).
+     * `GET /api/occhab/stations/?format=json`. Renvoie son id_station si trouvée, sinon null —
+     * y compris si le serveur est injoignable ou refuse la lecture (CRUVED R absent) : l'appelant
+     * procédera alors au POST, ce qui reste sûr (un serveur muet n'a rien pu créer).
+     */
+    private fun verifierStationExistante(base: String, token: String?, cookies: String, uuid: String): Int? {
+        if (uuid.isBlank()) return null
+        return try {
+            val conn = HttpClient.get(URL("$base/api/occhab/stations/?format=json"), token, cookies, 30000)
+            val code = conn.responseCode
+            if (code !in 200..299) { conn.disconnect(); return null }
+            val text = try { conn.inputStream.bufferedReader().readText() } catch (_: Exception) { "" }
+            conn.disconnect()
+            trouverIdParUuid(text, uuid)
+        } catch (_: Exception) { null }
+    }
+
+    /** Extrait l'id_station d'une station portant [uuid] dans la réponse de la liste des stations.
+     *  Gère le format `json` (tableau d'objets) et un repli `geojson` (FeatureCollection). */
+    internal fun trouverIdParUuid(text: String, uuid: String): Int? {
+        val cible = uuid.trim().lowercase()
+        if (cible.isEmpty()) return null
+        val arr = try {
+            JSONArray(text)
+        } catch (_: Exception) {
+            val root = try { JSONObject(text) } catch (_: Exception) { return null }
+            root.optJSONArray("features") ?: return null
+        }
+        for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i) ?: continue
+            val props = o.optJSONObject("properties") ?: o
+            val u = props.optString("unique_id_sinp_station", "").trim().lowercase()
+            if (u.isNotEmpty() && u == cible) {
+                val id = props.optInt("id_station", -1).takeIf { it > 0 }
+                    ?: o.optInt("id_station", -1).takeIf { it > 0 }
+                    ?: o.optInt("id", -1).takeIf { it > 0 }
+                if (id != null) return id
+            }
+        }
+        return null
+    }
 
     private fun parseErreur(code: Int, body: String?): String {
         if (body != null) {

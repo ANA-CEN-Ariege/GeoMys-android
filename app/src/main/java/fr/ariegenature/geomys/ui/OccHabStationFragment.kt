@@ -92,6 +92,7 @@ class OccHabStationFragment : Fragment() {
         val dejaEnregistree = occHabStore.charger().any { it.id == station.id }
         if (station.habitats.isNotEmpty() || dejaEnregistree) {
             occHabStore.remplacer(station.id, station)
+            occhabViewModel.enregistrerDansSession(station.id)
         }
     }
 

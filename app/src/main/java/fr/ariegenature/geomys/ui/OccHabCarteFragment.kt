@@ -40,6 +40,7 @@ import fr.ariegenature.geomys.databinding.FragmentOcchabCarteBinding
 import org.json.JSONArray
 import org.osmdroid.config.Configuration
 import org.osmdroid.events.MapEventsReceiver
+import org.osmdroid.util.BoundingBox
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.overlay.MapEventsOverlay
 import org.osmdroid.views.overlay.Marker
@@ -71,6 +72,14 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
     private var markerPoint: Marker? = null
     private val markersSommets = mutableListOf<Marker>()
     private var overlayForme: Overlay? = null
+    // Overlays en LECTURE SEULE des autres stations déjà posées dans la session (pins/polygones
+    // rouges). Redessinés séparément des overlays d'édition ; jamais draggables.
+    private val overlaysSession = mutableListOf<Overlay>()
+    // Sommets des stations de session : cibles d'AIMANTAGE (snapping) d'un nouveau point/sommet.
+    private val sommetsSession = mutableListOf<GeoPoint>()
+    // true dès qu'un cadrage initial a été imposé (géométrie courante ou stations de session) :
+    // empêche le premier fix GPS de recentrer ailleurs.
+    private var cadrageInitialFait = false
 
     // Boussole (repris de TraceFragment) : rotation de la carte selon l'orientation du téléphone.
     private lateinit var sensorManager: SensorManager
@@ -186,7 +195,7 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
             runOnFirstFix {
                 val loc = myLocation ?: return@runOnFirstFix
                 binding.map.post {
-                    if (pointChoisi == null && sommets.isEmpty()) {
+                    if (!cadrageInitialFait && pointChoisi == null && sommets.isEmpty()) {
                         binding.map.controller.setZoom(16.0)
                         binding.map.controller.setCenter(loc)
                     }
@@ -195,9 +204,14 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
         }
         binding.map.overlays.add(locationOverlay)
 
-        preremplirDepuisViewModel()
-
-        if (pointChoisi == null && sommets.isEmpty()) {
+        val ptsCourant = preremplirDepuisViewModel()
+        val ptsSession = afficherStationsSession()
+        val aCadrer = ptsCourant + ptsSession
+        if (aCadrer.isNotEmpty()) {
+            cadrerSur(aCadrer)
+        } else {
+            // Ni géométrie en cours, ni station de session : cadrage large Ariège (le 1er fix GPS
+            // recentrera si disponible).
             binding.map.controller.setZoom(11.0)
             binding.map.controller.setCenter(GeoPoint(42.93, 1.40))
         }
@@ -215,15 +229,20 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
         changerMode(mode)
     }
 
-    private fun preremplirDepuisViewModel() {
+    /** Précharge la géométrie de la station COURANTE (édition / retour arrière) dans les overlays
+     *  d'édition et renvoie ses sommets (liste vide si station vierge). Ne recadre pas : le cadrage
+     *  est décidé par l'appelant sur l'union « géométrie courante + stations de session ». */
+    private fun preremplirDepuisViewModel(): List<GeoPoint> {
         val s = occhabViewModel.station
+        val pts = mutableListOf<GeoPoint>()
         when {
             s.geometryType == "Polygon" && !s.geometryCoordsJson.isNullOrEmpty() -> {
                 try {
                     val arr = JSONArray(s.geometryCoordsJson)
                     for (i in 0 until arr.length()) {
                         val pt = arr.getJSONArray(i)
-                        sommets.add(GeoPoint(pt.getDouble(1), pt.getDouble(0)))
+                        val gp = GeoPoint(pt.getDouble(1), pt.getDouble(0))
+                        sommets.add(gp); pts.add(gp)
                     }
                     mode = Mode.POLYGONE
                 } catch (_: Exception) {}
@@ -231,20 +250,134 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
             s.geometryType == "Point" && (s.latitude != 0.0 || s.longitude != 0.0) -> {
                 pointChoisi = GeoPoint(s.latitude, s.longitude)
                 mode = Mode.POINT
+                pts.add(pointChoisi!!)
             }
         }
-        if (pointChoisi != null || sommets.isNotEmpty()) {
-            val centre = pointChoisi ?: sommets.first()
-            binding.map.controller.setZoom(16.0)
-            binding.map.controller.setCenter(centre)
-            redessiner()
+        if (pts.isNotEmpty()) redessiner()
+        return pts
+    }
+
+    /** Dessine, en LECTURE SEULE (pins/polygones VERTS, non draggables, taps traversants), les
+     *  AUTRES stations déjà posées dans la session — la station courante est exclue. Renvoie tous
+     *  leurs points pour le cadrage de l'emprise. */
+    private fun afficherStationsSession(): List<GeoPoint> {
+        overlaysSession.forEach { binding.map.overlays.remove(it) }
+        overlaysSession.clear()
+        val parId = fr.ariegenature.geomys.store.OccHabStore(requireContext())
+            .charger().associateBy { it.id }
+        val autres = occhabViewModel.stationsSession
+            .filter { it != occhabViewModel.station.id }
+            .mapNotNull { parId[it] }
+        val pts = mutableListOf<GeoPoint>()
+        val rouge = 0xFFD32F2F.toInt() // même rouge que le pin ic_pin_drop.
+        autres.forEach { st ->
+            if (st.geometryType == "Polygon" && !st.geometryCoordsJson.isNullOrEmpty()) {
+                try {
+                    val arr = JSONArray(st.geometryCoordsJson)
+                    val ring = mutableListOf<GeoPoint>()
+                    for (i in 0 until arr.length()) {
+                        val c = arr.getJSONArray(i)
+                        val gp = GeoPoint(c.getDouble(1), c.getDouble(0))
+                        ring.add(gp); pts.add(gp)
+                    }
+                    if (ring.size >= 2) {
+                        val poly = Polygon(binding.map).apply {
+                            points = ring
+                            fillPaint.color = 0x33D32F2F
+                            outlinePaint.color = rouge
+                            outlinePaint.strokeWidth = 4f
+                            setOnClickListener { _, _, _ -> false } // laisse passer le tap.
+                        }
+                        binding.map.overlays.add(poly)
+                        overlaysSession.add(poly)
+                        // Chaque sommet matérialisé par un petit cercle rouge (non interactif).
+                        ring.forEach { sommet ->
+                            val cm = Marker(binding.map).apply {
+                                position = sommet
+                                icon = cercleSommet(rouge)
+                                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                                isDraggable = false
+                                setInfoWindow(null)
+                                setOnMarkerClickListener { _, _ -> false }
+                            }
+                            binding.map.overlays.add(cm)
+                            overlaysSession.add(cm)
+                        }
+                    }
+                } catch (_: Exception) {}
+            } else if (st.latitude != 0.0 || st.longitude != 0.0) {
+                val gp = GeoPoint(st.latitude, st.longitude)
+                pts.add(gp)
+                val m = Marker(binding.map).apply {
+                    position = gp
+                    icon = ContextCompat.getDrawable(requireContext(), R.drawable.ic_pin_drop) // rouge natif.
+                    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                    isDraggable = false
+                    setInfoWindow(null)
+                    setOnMarkerClickListener { _, _ -> false } // non interactif : tap traversant.
+                }
+                binding.map.overlays.add(m)
+                overlaysSession.add(m)
+            }
+        }
+        binding.map.invalidate()
+        // Ces points (sommets de polygones + points des stations ponctuelles) servent de cibles
+        // d'aimantage pour la saisie de la station suivante.
+        sommetsSession.clear()
+        sommetsSession.addAll(pts)
+        return pts
+    }
+
+    /** Aimante [p] sur le sommet de session le plus proche s'il est à moins de ~28 dp à l'écran
+     *  (seuil constant quel que soit le zoom), sinon renvoie null. Renvoie une COPIE du sommet
+     *  (jamais l'instance partagée avec l'overlay de session). */
+    private fun snapVersSommet(p: GeoPoint): GeoPoint? {
+        if (sommetsSession.isEmpty()) return null
+        val proj = binding.map.projection ?: return null
+        val pPix = proj.toPixels(p, null)
+        val seuilPx = 28f * resources.displayMetrics.density
+        var meilleur: GeoPoint? = null
+        var meilleureDist = Double.MAX_VALUE
+        for (s in sommetsSession) {
+            val sPix = proj.toPixels(s, null)
+            val d = Math.hypot((sPix.x - pPix.x).toDouble(), (sPix.y - pPix.y).toDouble())
+            if (d <= seuilPx && d < meilleureDist) { meilleureDist = d; meilleur = s }
+        }
+        return meilleur?.let { GeoPoint(it.latitude, it.longitude) }
+    }
+
+    /** Cadre la carte pour englober [points] (patron de [CarteGeometrieFragment.recadrer] : box
+     *  artificielle si point unique, marge sinon). Différé au prochain layout (zoomToBoundingBox
+     *  exige une carte déjà mesurée). Marque le cadrage comme imposé (le 1er fix GPS ne recentre
+     *  plus). */
+    private fun cadrerSur(points: List<GeoPoint>) {
+        if (points.isEmpty()) return
+        cadrageInitialFait = true
+        binding.map.post {
+            val box = if (points.size == 1) {
+                val pt = points[0]; val o = 0.004
+                BoundingBox(pt.latitude + o, pt.longitude + o, pt.latitude - o, pt.longitude - o)
+            } else BoundingBox.fromGeoPoints(points)
+            val degenere = (box.latNorth - box.latSouth) < 0.0001 && (box.lonEast - box.lonWest) < 0.0001
+            try {
+                if (degenere) {
+                    val pt = points[0]; val o = 0.004
+                    binding.map.zoomToBoundingBox(
+                        BoundingBox(pt.latitude + o, pt.longitude + o, pt.latitude - o, pt.longitude - o), false)
+                } else {
+                    binding.map.zoomToBoundingBox(box.increaseByScale(1.8f), false)
+                }
+            } catch (_: Exception) {}
         }
     }
 
     override fun singleTapConfirmedHelper(p: GeoPoint): Boolean {
+        // Aimantage : si le tap tombe près d'un sommet d'une station déjà posée, on réutilise
+        // exactement ce sommet (pour raccorder proprement deux stations voisines).
+        val cible = snapVersSommet(p) ?: p
         when (mode) {
-            Mode.POINT -> pointChoisi = p
-            Mode.POLYGONE -> sommets.add(p)
+            Mode.POINT -> pointChoisi = cible
+            Mode.POLYGONE -> sommets.add(cible)
         }
         redessiner()
         majBoutons()
@@ -346,6 +479,17 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
         setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
         isDraggable = true
         setInfoWindow(null)
+    }
+
+    /** Petit disque plein (liseré blanc) pour matérialiser un sommet d'une station déjà posée. */
+    private fun cercleSommet(couleur: Int): android.graphics.drawable.Drawable {
+        val d = (12 * resources.displayMetrics.density).toInt()
+        return android.graphics.drawable.GradientDrawable().apply {
+            shape = android.graphics.drawable.GradientDrawable.OVAL
+            setColor(couleur)
+            setStroke((2 * resources.displayMetrics.density).toInt(), Color.WHITE)
+            setSize(d, d)
+        }
     }
 
     private fun majBoutons() {

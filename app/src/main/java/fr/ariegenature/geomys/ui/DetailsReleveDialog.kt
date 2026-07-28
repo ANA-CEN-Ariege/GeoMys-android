@@ -114,6 +114,83 @@ fun observateursPourDetailsReleve(config: GeoNatureConfig): List<Pair<Int, Strin
         l.map { it.idRole to it.nomComplet }
     } catch (_: Exception) { emptyList() }
 
+/** Sélecteur MULTIPLE d'observateurs, PARTAGÉ Occtax ([ouvrirDialogDetailsReleve]) ↔ OccHab
+ *  ([ouvrirDialogDetailsOccHab]) : un champ de recherche (ExposedDropdownMenu +
+ *  [AdaptateurAutocomplete], filtre insensible aux accents) qui AJOUTE à une liste affichée
+ *  dessous, chaque entrée retirable via « ✕ ». Construit ses vues dans [container] et renvoie
+ *  un getter des couples (id, nom) choisis, dans l'ordre d'ajout (dédoublonnés par id).
+ *  Si [options] est vide (cache non chargé), les entrées initiales restent affichées
+ *  (retirables) sans champ d'ajout — « — » si rien. */
+internal fun construireSelecteurMultiObservateurs(
+    ctx: Context,
+    container: LinearLayout,
+    options: List<Pair<Int, String>>,
+    idsInitial: List<Int>,
+    nomsInitial: List<String>,
+): () -> List<Pair<Int, String>> {
+    val density = ctx.resources.displayMetrics.density
+    // LinkedHashMap : conserve l'ordre d'ajout, dédoublonne par id.
+    val choisis = LinkedHashMap<Int, String>()
+    idsInitial.forEachIndexed { i, id ->
+        choisis[id] = options.firstOrNull { it.first == id }?.second
+            ?: nomsInitial.getOrNull(i)?.takeIf { it.isNotBlank() }
+            ?: id.toString()
+    }
+    val liste = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
+    fun rafraichir() {
+        liste.removeAllViews()
+        choisis.forEach { (id, nom) ->
+            liste.addView(LinearLayout(ctx).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = android.view.Gravity.CENTER_VERTICAL
+                addView(TextView(ctx).apply {
+                    text = nom; textSize = 15f
+                    layoutParams = LinearLayout.LayoutParams(0,
+                        LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                })
+                addView(TextView(ctx).apply {
+                    text = "✕"; textSize = 16f
+                    setTextColor(couleurErreur(ctx))
+                    setPadding((12 * density).toInt(), (4 * density).toInt(),
+                        (4 * density).toInt(), (4 * density).toInt())
+                    isClickable = true
+                    setOnClickListener { choisis.remove(id); rafraichir() }
+                })
+            })
+        }
+    }
+    if (options.isEmpty()) {
+        // Pas de cache : on affiche seulement les éventuels libellés initiaux (retirables).
+        if (choisis.isEmpty()) container.addView(TextView(ctx).apply {
+            text = "—"; textSize = 15f; setTextColor(couleurSecondaire(ctx))
+        })
+        container.addView(liste); rafraichir()
+        return { choisis.map { (id, nom) -> id to nom } }
+    }
+    // Même widget que Paramètres (ExposedDropdownMenu) : la liste des observateurs se déploie
+    // au 1er tap ; on tape pour filtrer (insensible aux accents), on choisit pour ajouter.
+    val til = (android.view.LayoutInflater.from(ctx)
+        .inflate(R.layout.champ_dropdown_releve, container, false)
+            as com.google.android.material.textfield.TextInputLayout)
+        .apply { hint = "Ajouter un observateur" }
+    til.findViewById<MaterialAutoCompleteTextView>(R.id.ac_champ_releve).apply {
+        setAdapter(AdaptateurAutocomplete(ctx, options.map { it.second }))
+        threshold = 1
+        setOnClickListener { setText("", false); showDropDown() }
+        setOnItemClickListener { _, _, pos, _ ->
+            masquerClavier(this)
+            val txt = (adapter.getItem(pos) as? String).orEmpty()
+            options.firstOrNull { it.second == txt }?.let { choisis[it.first] = it.second }
+            setText("", false)
+            rafraichir()
+        }
+    }
+    container.addView(til)
+    container.addView(liste)
+    rafraichir()
+    return { choisis.map { (id, nom) -> id to nom } }
+}
+
 /** Résultat du dialog « Détails du relevé » : les sélections éditables (jeu de données,
  *  observateur) + les champs additionnels OCCTAX_RELEVE collectés. */
 data class DetailsReleveResult(
@@ -274,9 +351,8 @@ fun ouvrirDialogDetailsReleve(
         return { idChoisi?.let { id -> id to (nomChoisi ?: id.toString()) } }
     }
 
-    // Sélecteur MULTIPLE (observateurs) : un champ de recherche qui AJOUTE à une liste affichée
-    // dessous (chaque entrée retirable via « ✕ »). Renvoie un getter des couples (id, nom) choisis,
-    // dans l'ordre d'ajout. Si [options] est vide (cache non chargé), retombe en lecture seule.
+    // Sélecteur MULTIPLE (observateurs) : cœur partagé avec OccHab, cf.
+    // [construireSelecteurMultiObservateurs] — seul le titre reste local (style Occtax).
     fun selecteurMulti(
         label: String,
         options: List<Pair<Int, String>>,
@@ -284,61 +360,7 @@ fun ouvrirDialogDetailsReleve(
         nomsInitial: List<String>,
     ): () -> List<Pair<Int, String>> {
         racine.addView(titre(label))
-        // LinkedHashMap : conserve l'ordre d'ajout, dédoublonne par id.
-        val choisis = LinkedHashMap<Int, String>()
-        idsInitial.forEachIndexed { i, id ->
-            choisis[id] = options.firstOrNull { it.first == id }?.second
-                ?: nomsInitial.getOrNull(i)?.takeIf { it.isNotBlank() }
-                ?: id.toString()
-        }
-        val liste = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
-        fun rafraichir() {
-            liste.removeAllViews()
-            choisis.forEach { (id, nom) ->
-                liste.addView(LinearLayout(ctx).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = android.view.Gravity.CENTER_VERTICAL
-                    addView(TextView(ctx).apply {
-                        text = nom; textSize = 15f
-                        layoutParams = LinearLayout.LayoutParams(0,
-                            LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                    })
-                    addView(TextView(ctx).apply {
-                        text = "✕"; textSize = 16f
-                        setTextColor(0xFFC62828.toInt())
-                        setPadding((12 * density).toInt(), (4 * density).toInt(),
-                            (4 * density).toInt(), (4 * density).toInt())
-                        isClickable = true
-                        setOnClickListener { choisis.remove(id); rafraichir() }
-                    })
-                })
-            }
-        }
-        if (options.isEmpty()) {
-            // Pas de cache : on affiche seulement les éventuels libellés initiaux, non éditables.
-            if (choisis.isEmpty()) ligneLecture(label, "—")
-            racine.addView(liste); rafraichir()
-            return { choisis.map { (id, nom) -> id to nom } }
-        }
-        // Même widget que Paramètres (ExposedDropdownMenu) : la liste des observateurs se déploie
-        // au 1er tap ; on tape pour filtrer (insensible aux accents), on choisit pour ajouter.
-        val til = champDropdown("Ajouter un observateur")
-        til.findViewById<MaterialAutoCompleteTextView>(R.id.ac_champ_releve).apply {
-            setAdapter(AdaptateurAutocomplete(ctx, options.map { it.second }))
-            threshold = 1
-            setOnClickListener { setText("", false); showDropDown() }
-            setOnItemClickListener { _, _, pos, _ ->
-                masquerClavier(this)
-                val txt = (adapter.getItem(pos) as? String).orEmpty()
-                options.firstOrNull { it.second == txt }?.let { choisis[it.first] = it.second }
-                setText("", false)
-                rafraichir()
-            }
-        }
-        racine.addView(til)
-        racine.addView(liste)
-        rafraichir()
-        return { choisis.map { (id, nom) -> id to nom } }
+        return construireSelecteurMultiObservateurs(ctx, racine, options, idsInitial, nomsInitial)
     }
 
     val getDataset = selecteur("Jeu de données", datasets, idDatasetInitial, nomDatasetInitial)
@@ -431,7 +453,7 @@ fun ouvrirDialogDetailsReleve(
 
     val btnAjouterFin = champDateHeure().apply { text = "＋" }
     val btnRetirerFin = champDateHeure().apply {
-        text = "✕"; setTextColor(0xFFC62828.toInt()); background = null
+        text = "✕"; setTextColor(couleurErreur(ctx)); background = null
     }
     fun majAffichageFin() {
         titreFin.visibility = if (finActive) android.view.View.VISIBLE else android.view.View.GONE

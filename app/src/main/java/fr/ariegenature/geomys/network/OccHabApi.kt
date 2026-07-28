@@ -75,26 +75,42 @@ object OccHabApi {
      * (liste des modules autorisés, chacun avec son `cruved`). Best-effort : renvoie
      * [OccHabAcces.ABSENT] si l'appel échoue ou si le module n'est pas trouvé.
      */
-    suspend fun detecterModule(config: GeoNatureConfig): OccHabAcces = withContext(Dispatchers.IO) {
+    suspend fun detecterModule(config: GeoNatureConfig): OccHabAcces =
+        detecterModules(config, setOf(MODULE_CODE))[MODULE_CODE] ?: OccHabAcces.ABSENT
+
+    /**
+     * Détection GÉNÉRIQUE des droits par module via `GET /api/gn_commons/modules` (UN seul
+     * appel pour tous les [codes]). N'inclut dans la map QUE les modules trouvés dans la
+     * réponse : un module absent (pas installé / aucun droit) n'y figure pas — l'appelant
+     * choisit son défaut (ABSENT pour OccHab, « autorisé » pour Occtax afin de ne pas
+     * verrouiller l'app sur un serveur qui ne publie pas ce endpoint). Best-effort : map
+     * vide sur toute erreur.
+     */
+    suspend fun detecterModules(
+        config: GeoNatureConfig,
+        codes: Set<String>,
+    ): Map<String, OccHabAcces> = withContext(Dispatchers.IO) {
         val base = config.urlServeur.trim().trimEnd('/')
         val (token, _, cookies) = GeoNatureAuth.loginAvecCookies(base, config.login, config.motDePasse)
-            ?: return@withContext OccHabAcces.ABSENT
+            ?: return@withContext emptyMap()
         try {
             val conn = HttpClient.get(URL("$base/api/gn_commons/modules"), token, cookies, 15000)
-            if (conn.responseCode != 200) return@withContext OccHabAcces.ABSENT
+            if (conn.responseCode != 200) return@withContext emptyMap()
             val text = conn.inputStream.bufferedReader().readText()
             val arr = JSONArray(text)
+            val resultat = mutableMapOf<String, OccHabAcces>()
             for (i in 0 until arr.length()) {
                 val m = arr.optJSONObject(i) ?: continue
-                if (m.optString("module_code") != MODULE_CODE) continue
+                val code = m.optString("module_code")
+                if (code !in codes) continue
                 val cruved = m.optJSONObject("cruved")
                 val c = cruved?.optInt("C", 0) ?: 0
                 val r = cruved?.optInt("R", 0) ?: 0
-                return@withContext OccHabAcces(disponible = true, peutCreer = c > 0, peutLire = r > 0)
+                resultat[code] = OccHabAcces(disponible = true, peutCreer = c > 0, peutLire = r > 0)
             }
-            OccHabAcces.ABSENT
+            resultat
         } catch (_: Exception) {
-            OccHabAcces.ABSENT
+            emptyMap()
         }
     }
 

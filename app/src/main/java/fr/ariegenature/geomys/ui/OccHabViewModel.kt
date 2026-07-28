@@ -77,12 +77,23 @@ class OccHabViewModel : ViewModel() {
     var station = OccHabStation()
         private set
 
+    /** Ids des stations ENREGISTRÉES au fil de l'eau pendant la session courante, dans l'ordre de
+     *  saisie. Sert à réafficher, sur la carte de saisie, les stations déjà posées (avec leur
+     *  emprise) quand on enchaîne une nouvelle station. Vidé au démarrage d'une session. */
+    private val _stationsSession = LinkedHashSet<String>()
+    val stationsSession: Set<String> get() = _stationsSession
+
+    /** Mémorise qu'une station a été enregistrée dans la session (appelé aux points de sauvegarde
+     *  au fil de l'eau). Idempotent. */
+    fun enregistrerDansSession(id: String) { _stationsSession.add(id) }
+
     /** Démarre une nouvelle SESSION (tuile OccHab) : détails aux défauts serveur, JDD à saisir,
-     *  station vierge. */
+     *  station vierge, aucune station de session. */
     fun demarrerSession(defauts: OccHabDetailsSession) {
         details = defauts
         jddDefini = false
         station = OccHabStation()
+        _stationsSession.clear()
     }
 
     /** Nouvelle station dans la MÊME session : garde les [details], repart d'une géométrie et

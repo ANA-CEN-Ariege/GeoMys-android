@@ -262,7 +262,7 @@ class ConfigGeoNatureFragment : Fragment() {
             binding.tvResultatTest.visibility = View.VISIBLE
             binding.tvResultatTest.text = msg
             binding.tvResultatTest.setTextColor(
-                if (success) 0xFF2E7D32.toInt() else 0xFFC62828.toInt()
+                if (success) couleurSucces(requireContext()) else couleurErreur(requireContext())
             )
             updateStatusIndicator()
             // Connexion OK → on révèle uniquement le bouton "Charger les données".
@@ -665,7 +665,7 @@ class ConfigGeoNatureFragment : Fragment() {
         else
             getString(R.string.configuration_incomplete)
         binding.tvStatutConfig.setTextColor(
-            if (configured) 0xFF2E7D32.toInt() else 0xFFE65100.toInt()
+            if (configured) couleurSucces(requireContext()) else couleurAvertissement(requireContext())
         )
         // Coche du bouton « Valider » : verte si config valide, orange tant qu'elle ne l'est pas.
         binding.fabValider.setImageResource(

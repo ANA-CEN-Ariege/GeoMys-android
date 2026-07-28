@@ -86,12 +86,23 @@
             android:textColor="?attr/colorError"
             android:textSize="12sp"
             android:visibility="gone" />
+
+        <!-- État « ✅ Envoyée » — même marqueur que « Mes stations » (item_occhab_station). -->
+        <TextView
+            android:id="@+id/tv_etat"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:textSize="12sp"
+            android:visibility="gone" />
     </LinearLayout>
 
     <ImageButton
         android:id="@+id/btn_liste"
-        android:layout_width="36dp"
-        android:layout_height="36dp"
+        android:layout_width="44dp"
+        android:layout_height="48dp"
+        android:paddingHorizontal="4dp"
+        android:paddingVertical="6dp"
         android:background="?attr/selectableItemBackgroundBorderless"
         android:contentDescription="Lister les espèces"
         android:src="@drawable/ic_list"
@@ -100,8 +111,10 @@
 
     <ImageButton
         android:id="@+id/btn_envoyer"
-        android:layout_width="36dp"
-        android:layout_height="36dp"
+        android:layout_width="44dp"
+        android:layout_height="48dp"
+        android:paddingHorizontal="4dp"
+        android:paddingVertical="6dp"
         android:background="?attr/selectableItemBackgroundBorderless"
         android:contentDescription="Envoyer au serveur"
         android:src="@drawable/ic_send"
@@ -110,8 +123,10 @@
 
     <ImageButton
         android:id="@+id/btn_editer"
-        android:layout_width="36dp"
-        android:layout_height="36dp"
+        android:layout_width="44dp"
+        android:layout_height="48dp"
+        android:paddingHorizontal="4dp"
+        android:paddingVertical="6dp"
         android:background="?attr/selectableItemBackgroundBorderless"
         android:contentDescription="Continuer la saisie"
         android:src="@drawable/ic_edit"
@@ -120,8 +135,10 @@
 
     <ImageButton
         android:id="@+id/btn_supprimer"
-        android:layout_width="36dp"
-        android:layout_height="36dp"
+        android:layout_width="44dp"
+        android:layout_height="48dp"
+        android:paddingHorizontal="4dp"
+        android:paddingVertical="6dp"
         android:background="?attr/selectableItemBackgroundBorderless"
         android:contentDescription="Supprimer"
         android:src="@drawable/ic_delete"

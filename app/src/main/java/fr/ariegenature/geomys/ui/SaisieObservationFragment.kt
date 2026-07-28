@@ -889,6 +889,14 @@ class SaisieObservationFragment : Fragment() {
         if (pendingObs.isNotEmpty()) {
             findNavController().previousBackStackEntry?.savedStateHandle
                 ?.set("demarrerSaisieSuivante", true)
+            // Feedback d'enregistrement (comme la coche OccHab et la snackbar mono-taxon) :
+            // sans lui, la coche restait silencieuse et l'utilisateur doutait de la sauvegarde.
+            val n = pendingObs.size
+            android.widget.Toast.makeText(
+                requireContext(),
+                "Relevé enregistré ($n espèce${if (n > 1) "s" else ""}) — retrouvez-le dans « Mes saisies »",
+                android.widget.Toast.LENGTH_SHORT,
+            ).show()
         }
         findNavController().navigateUp()
     }

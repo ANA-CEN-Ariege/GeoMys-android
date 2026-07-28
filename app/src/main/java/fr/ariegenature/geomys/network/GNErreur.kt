@@ -21,6 +21,10 @@ package fr.ariegenature.geomys.network
 sealed class GNErreur(message: String) : Exception(message) {
     class AuthEchouee(val code: Int) : GNErreur("Authentification refusée (HTTP $code)")
     class EnvoiEchoue(val code: Int, val msg: String) : GNErreur("Envoi échoué HTTP $code : $msg")
+    /** Envoi au statut INCERTAIN : la requête a été émise mais la réponse s'est perdue (coupure
+     *  réseau après émission). L'objet a PEUT-ÊTRE été créé côté serveur — un ré-envoi doit
+     *  vérifier l'existence avant de re-POSTer (anti-doublon). */
+    class EnvoiIncertain(val msg: String) : GNErreur(msg)
     class AucuneObservationCompatible : GNErreur("Aucune observation n'a de cd_nom résolu.")
     /** Le jeu de données configuré n'existe pas sur le serveur ciblé (id absent du cache
      *  datasets). Détecté avant l'envoi pour éviter le 500 opaque (FK invalide). */
@@ -33,7 +37,7 @@ sealed class GNErreur(message: String) : Exception(message) {
 fun humaniserErreurReseau(e: Throwable): String {
     if (e is GNErreur.DatasetInvalide) {
         return "Le jeu de données configuré (id ${e.id}) n'existe pas sur ce serveur.\n\n" +
-            "Ouvre la config GeoNature et sélectionne un jeu de données valide."
+            "Ouvrez la config GeoNature et sélectionnez un jeu de données valide."
     }
     val code = when (e) {
         is GNErreur.EnvoiEchoue -> e.code
@@ -44,7 +48,7 @@ fun humaniserErreurReseau(e: Throwable): String {
     // diagnostic : "field 'id_dataset' is required", "RoleNotAllowedException", etc.).
     val detail = (e as? GNErreur.EnvoiEchoue)?.msg?.takeIf { it.isNotBlank() }
     return when (code) {
-        401 -> "Identifiants expirés — reconnecte-toi depuis la config GeoNature (HTTP 401)."
+        401 -> "Identifiants expirés — reconnectez-vous depuis la config GeoNature (HTTP 401)."
         403 -> "Pas de droit d'accès à cette ressource (CRUVED) (HTTP 403)."
         404 -> "Ressource introuvable côté serveur (HTTP 404)."
         in 500..599 -> buildString {

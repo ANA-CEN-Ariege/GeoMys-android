@@ -251,6 +251,7 @@ class OccHabHabitatFragment : Fragment() {
         // session fusionnés — est (ré)écrite dans « Mes stations » dès qu'un habitat est validé.
         val station = occhabViewModel.stationAEnregistrer()
         fr.ariegenature.geomys.store.OccHabStore(requireContext()).remplacer(station.id, station)
+        occhabViewModel.enregistrerDansSession(station.id)
         findNavController().naviguerSur(R.id.action_occhab_habitat_to_liste)
     }
 

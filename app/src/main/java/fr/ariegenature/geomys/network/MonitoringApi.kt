@@ -134,6 +134,27 @@ object MonitoringApi {
         } catch (_: Exception) { null }
     }
 
+    /** L'utilisateur peut-il CRÉER des données sur ce protocole (CRUVED C > 0) ? Lit la
+     *  mémoire puis le cache disque modules — pas d'appel réseau. Défaut TRUE quand le bloc
+     *  cruved est absent (vieux serveur, cache antérieur) ou le module inconnu du cache :
+     *  même philosophie que [MonitoringModule.aAuMoinsUnDroit], on ne verrouille jamais en
+     *  silence — le serveur refusera lui-même le cas échéant. Gate les flèches d'envoi de
+     *  « Mes visites » (cohérent avec le gating OccHab/Occtax des listes). */
+    fun moduleAutoriseCreation(moduleCode: String): Boolean {
+        moduleParCode(moduleCode)?.cruved?.let { return (it["C"] ?: 0) > 0 }
+        val json = MonitoringCache.getJson(MonitoringCache.keyModules()) ?: return true
+        return try {
+            val arr = json.parserTableauJson("data", "items", "modules") ?: return true
+            for (i in 0 until arr.length()) {
+                val item = arr.optJSONObject(i) ?: continue
+                if (item.optString("module_code") != moduleCode) continue
+                val cruved = item.optJSONObject("cruved") ?: return true
+                return cruved.optInt("C", 0) > 0
+            }
+            true
+        } catch (_: Exception) { true }
+    }
+
     /** GET /api/monitorings/modules — liste les modules de suivi disponibles sur l'instance.
      *  Renvoie [] silencieusement si HTTP 404 (gn_module_monitoring non installé).
      *  Sur toute autre erreur HTTP (5xx, parse), propage l'exception. Sur erreur **réseau**
@@ -1693,7 +1714,7 @@ object MonitoringApi {
             val base = config.urlServeur.trim().trimEnd('/')
             val auth = GeoNatureAuth.loginAvecCookies(base, config.login, config.motDePasse)
                 ?: throw GNErreur.AuthEchouee(401)
-            val (token, _, cookies) = auth
+            val (token, idRoleAuth, cookies) = auth
 
             val properties = JSONObject()
             // Lien au parent : injecté dans properties (le sélecteur de parent est masqué
@@ -1715,7 +1736,10 @@ object MonitoringApi {
             }
             // `id_digitiser` : le serveur attend l'id_role de l'utilisateur qui enregistre.
             // Contrainte NOT NULL côté DB monitoring → un 500 silencieux sans ce champ.
-            val idRole = config.idRoleUtilisateur.takeIf { it > 0 }
+            // Dérivé EN DIRECT du login courant (comme Occtax/OccHab) plutôt que de la copie
+            // persistée `config.idRoleUtilisateur` : évite d'estampiller l'ancien auteur après un
+            // changement de compte. Repli sur la valeur persistée si l'auth ne l'a pas renvoyé.
+            val idRole = idRoleAuth ?: config.idRoleUtilisateur.takeIf { it > 0 }
             if (idRole != null && !properties.has("id_digitiser")) {
                 properties.put("id_digitiser", idRole)
             }

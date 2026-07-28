@@ -49,7 +49,7 @@ suspend fun envoyerSortieVersGeoNature(
             sortieStore.marquerEnvoyee(sortie.id)
             val msg = buildString {
                 if (res.nbTotal == 0) {
-                    append("Toutes les observations avaient déjà été transmises — sortie marquée envoyée.")
+                    append("Toutes les observations avaient déjà été transmises — saisie marquée envoyée.")
                 } else {
                     append("${res.nbCrees}/${res.nbTotal} relevé")
                     if (res.nbTotal > 1) append("s")
@@ -86,7 +86,7 @@ suspend fun envoyerSortieVersGeoNature(
             val msg = buildString {
                 append("Envoi partiel : $transmises/$total observation(s) transmise(s)")
                 res.messageDerniereErreur?.let { append("\nDernière erreur : $it") }
-                append("\n→ Ré-envoyez la sortie : seules les observations restantes partiront.")
+                append("\n→ Ré-envoyez la saisie : seules les observations restantes partiront.")
             }
             sortieStore.marquerErreurEnvoi(sortie.id, msg)
             ResultatEnvoiSortie(false, msg)

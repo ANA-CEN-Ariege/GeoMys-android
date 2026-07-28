@@ -57,12 +57,15 @@
     <!-- Bouton terminer / quitter — petit cercle vert avec coche, en HAUT À DROITE.
          Visible uniquement en mode actif (sur la carte) ; masqué en mode config (écran de
          sélection du taxon) via updateModeUI() côté fragment. -->
+    <!-- Zone cliquable 48dp (minimum tactile Material — gants/froid) ; le padding transparent
+         garde l'icône à 32dp visuels, la marge est réduite d'autant (position inchangée). -->
     <ImageButton
         android:id="@+id/btn_retour"
-        android:layout_width="32dp"
-        android:layout_height="32dp"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
         android:layout_gravity="top|end"
-        android:layout_margin="16dp"
+        android:layout_margin="8dp"
+        android:padding="8dp"
         android:background="?attr/selectableItemBackgroundBorderless"
         android:contentDescription="Terminer la saisie"
         android:scaleType="fitCenter"

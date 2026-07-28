@@ -116,10 +116,24 @@ class OccHabStationsFragment : Fragment() {
         binding.tabLayout.getTabAt(1)?.text = "Envoyées (${toutes.count { it.envoyeGeoNature }})"
     }
 
+    /** true pendant un envoi : les actions concurrentes (2ᵉ envoi, suppression) sont refusées
+     *  avec un toast — la liste reste consultable, contrairement à l'ancien modal bloquant. */
+    private var envoiEnCours = false
+
     private fun confirmerSuppression(station: OccHabStation) {
+        if (envoiEnCours) {
+            android.widget.Toast.makeText(requireContext(), "Un envoi est en cours — réessayez ensuite.",
+                android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
+        // Même contexte que le dialogue de « Mes saisies » : date + contenu, pour savoir ce
+        // qu'on s'apprête à perdre.
+        val date = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date(station.date))
+        val nbHab = station.habitats.size
+        val descr = if (nbHab == 1) "station du $date (1 habitat)" else "station du $date ($nbHab habitats)"
         AlertDialog.Builder(requireContext())
             .setTitle("Supprimer la station ?")
-            .setMessage("Cette action est définitive.")
+            .setMessage("Supprimer la $descr ? Cette action est définitive.")
             .setPositiveButton("Supprimer") { _, _ ->
                 occHabStore.supprimer(station.id)
                 rafraichir()
@@ -129,20 +143,25 @@ class OccHabStationsFragment : Fragment() {
     }
 
     private fun envoyerStation(station: OccHabStation) {
+        if (envoiEnCours) {
+            android.widget.Toast.makeText(requireContext(), "Un envoi est déjà en cours…",
+                android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
         val gnConfig = GeoNatureConfig(requireContext())
         if (!gnConfig.estConfiguree) {
             AlertDialog.Builder(requireContext())
                 .setTitle("Configuration requise")
-                .setMessage("La connexion GeoNature n'est pas configurée. Ouvre la configuration (⚙️) avant d'envoyer.")
+                .setMessage("La connexion GeoNature n'est pas configurée. Ouvrez la configuration (⚙️) avant d'envoyer.")
                 .setPositiveButton("OK", null)
                 .show()
             return
         }
-        val dialogEnvoi = AlertDialog.Builder(requireContext())
-            .setTitle("Envoi en cours…")
-            .setMessage("Envoi de la station vers GeoNature.")
-            .setCancelable(false)
-            .show()
+        // Progression INLINE (même patron que « Mes visites ») : la liste reste consultable.
+        envoiEnCours = true
+        binding.progressEnvoi.visibility = View.VISIBLE
+        binding.tvMessageEnvoi.visibility = View.VISIBLE
+        binding.tvMessageEnvoi.text = "Envoi de la station vers GeoNature…"
         viewLifecycleOwner.lifecycleScope.launch {
             try {
                 val res = OccHabUpload.envoyer(station, gnConfig)
@@ -150,8 +169,24 @@ class OccHabStationsFragment : Fragment() {
                 if (!isAdded) return@launch
                 rafraichir()
                 AlertDialog.Builder(requireContext())
-                    .setTitle("OccHab")
-                    .setMessage("Station envoyée (${res.nbHabitats} habitat(s)).")
+                    // « Envoi » : même titre de récap que Mes saisies / Mes visites.
+                    .setTitle("Envoi")
+                    .setMessage(
+                        if (res.dejaPresente)
+                            "Station déjà enregistrée sur GeoNature lors d'une tentative précédente — aucun doublon créé."
+                        else
+                            "Station envoyée (${res.nbHabitats} habitat(s))."
+                    )
+                    .setPositiveButton("OK", null).show()
+            } catch (e: GNErreur.EnvoiIncertain) {
+                // Réseau coupé après l'émission : on NE marque PAS d'échec net (qui inviterait à
+                // re-POSTer). Statut incertain → le prochain envoi vérifiera l'existence par UUID.
+                occHabStore.marquerEnvoiIncertain(station.id, e.msg)
+                if (!isAdded) return@launch
+                rafraichir()
+                AlertDialog.Builder(requireContext())
+                    .setTitle("Envoi interrompu")
+                    .setMessage(e.msg + "\n\nRenvoyez la station : l'application vérifiera d'abord côté serveur pour éviter un doublon.")
                     .setPositiveButton("OK", null).show()
             } catch (e: Exception) {
                 val msg = (e as? GNErreur)?.message ?: e.message ?: "Erreur d'envoi"
@@ -163,7 +198,11 @@ class OccHabStationsFragment : Fragment() {
                     .setMessage(msg)
                     .setPositiveButton("OK", null).show()
             } finally {
-                runCatching { dialogEnvoi.dismiss() }
+                envoiEnCours = false
+                _binding?.let {
+                    it.progressEnvoi.visibility = View.GONE
+                    it.tvMessageEnvoi.visibility = View.GONE
+                }
             }
         }
     }
@@ -206,7 +245,7 @@ class OccHabStationAdapter(
                 station.envoyeGeoNature -> {
                     root.background = null
                     tvEtat.visibility = View.VISIBLE
-                    tvEtat.setTextColor(0xFF2E7D32.toInt())
+                    tvEtat.setTextColor(couleurSucces(root.context))
                     tvEtat.text = "✅ Envoyée"
                 }
                 erreur != null -> {

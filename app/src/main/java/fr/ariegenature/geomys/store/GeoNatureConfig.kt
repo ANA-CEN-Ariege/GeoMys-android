@@ -127,6 +127,15 @@ class GeoNatureConfig(context: Context) {
         get() = prefs.getBoolean("gn_occhab_creer", false)
         set(v) = prefs.edit().putBoolean("gn_occhab_creer", v).apply()
 
+    /** true si l'utilisateur a le droit de CRÉER des relevés Occtax (cruved C > 0 du module
+     *  OCCTAX, détecté à la synchro comme pour OccHab). Gate le bouton d'envoi de « Mes
+     *  saisies » — sans droit, le POST partirait en 403. Défaut TRUE (contrairement à OccHab) :
+     *  l'app repose sur Occtax, on ne verrouille jamais l'envoi sur un serveur qui ne publie
+     *  pas ses modules — le serveur refusera lui-même le cas échéant. */
+    var occtaxPeutCreer: Boolean
+        get() = prefs.getBoolean("gn_occtax_creer", true)
+        set(v) = prefs.edit().putBoolean("gn_occtax_creer", v).apply()
+
     /** Id de la liste HABREF du module OccHab (`OCCHAB.ID_LIST_HABITAT`), lue à la synchro.
      *  -1 = non configurée → tout le référentiel HABREF. Restreint l'autocomplétion habitat
      *  OccHab à la même liste que le web. */

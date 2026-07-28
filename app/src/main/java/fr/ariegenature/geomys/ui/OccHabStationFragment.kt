@@ -92,6 +92,7 @@ class OccHabStationFragment : Fragment() {
         val dejaEnregistree = occHabStore.charger().any { it.id == station.id }
         if (station.habitats.isNotEmpty() || dejaEnregistree) {
             occHabStore.remplacer(station.id, station)
+            occhabViewModel.enregistrerDansSession(station.id)
         }
     }
 
@@ -150,7 +151,7 @@ class OccHabStationFragment : Fragment() {
                 setImageResource(R.drawable.ic_delete)
                 background = null
                 contentDescription = "Supprimer l'habitat"
-                setColorFilter(0xFFC62828.toInt())
+                setColorFilter(couleurErreur(requireContext()))
                 setOnClickListener {
                     occhabViewModel.supprimerHabitat(h.id)
                     rafraichirHabitats()

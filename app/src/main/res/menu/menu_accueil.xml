@@ -8,7 +8,7 @@
         android:title="Mes visites" />
     <item
         android:id="@+id/menu_mes_stations"
-        android:title="Mes stations OccHab" />
+        android:title="Mes stations" />
     <item
         android:id="@+id/menu_explorer"
         android:title="Explorer" />

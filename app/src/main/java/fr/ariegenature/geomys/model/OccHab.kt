@@ -137,3 +137,23 @@ data class OccHabStation(
      *  dès qu'un envoi est confirmé, ou qu'un échec NET (rejet serveur) prouve la non-création. */
     var envoiIncertain: Boolean = false,
 )
+
+/**
+ * SAISIE OccHab = groupe de [stations] saisies dans une même session (tuile OccHab), sur le modèle
+ * d'Occtax où une `Sortie` regroupe des `Observation`. Persistée d'un bloc dans « Mes stations »,
+ * envoyée d'un bloc, et rééditable (ajouter / modifier ses stations).
+ *
+ * L'état d'envoi vit à DEUX niveaux : chaque [OccHabStation] garde le sien ([OccHabStation
+ * .envoyeGeoNature]/uuidStation…) = anti-doublon PAR station (comme `Observation.envoyeeServeur`) ;
+ * [envoyeGeoNature] au niveau saisie est DÉRIVÉ (vrai quand toutes les stations sont envoyées).
+ */
+data class OccHabSaisie(
+    val id: String = UUID.randomUUID().toString(),
+    /** Date de création locale (epoch millis) — tri + affichage de « Mes stations ». */
+    val date: Long = System.currentTimeMillis(),
+    var stations: List<OccHabStation> = emptyList(),
+    /** true si TOUTES les stations de la saisie ont été envoyées (dérivé, recalculé au store). */
+    var envoyeGeoNature: Boolean = false,
+    /** Message du dernier échec d'envoi de la saisie (humanisé) — cadre rouge. */
+    var derniereErreurEnvoi: String? = null,
+)

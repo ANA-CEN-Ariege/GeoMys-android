@@ -58,7 +58,7 @@
         android:paddingHorizontal="4dp"
         android:paddingVertical="6dp"
         android:background="?attr/selectableItemBackgroundBorderless"
-        android:contentDescription="Modifier la station"
+        android:contentDescription="Modifier la saisie"
         android:src="@drawable/ic_edit"
         android:visibility="gone"
         app:tint="?attr/colorPrimary" />

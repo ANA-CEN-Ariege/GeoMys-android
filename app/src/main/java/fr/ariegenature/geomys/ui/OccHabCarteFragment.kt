@@ -257,17 +257,16 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
         return pts
     }
 
-    /** Dessine, en LECTURE SEULE (pins/polygones VERTS, non draggables, taps traversants), les
-     *  AUTRES stations déjà posées dans la session — la station courante est exclue. Renvoie tous
-     *  leurs points pour le cadrage de l'emprise. */
+    /** Dessine, en ROUGE, les AUTRES stations de la SAISIE courante (la station en cours d'édition
+     *  est exclue) : pins pour les points, contour + cercles aux sommets pour les polygones. Ces
+     *  stations sont CLIQUABLES pour être rééditées ([editerStationExistante]). Renvoie tous leurs
+     *  points pour le cadrage de l'emprise et alimente les cibles d'aimantage. */
     private fun afficherStationsSession(): List<GeoPoint> {
         overlaysSession.forEach { binding.map.overlays.remove(it) }
         overlaysSession.clear()
-        val parId = fr.ariegenature.geomys.store.OccHabStore(requireContext())
-            .charger().associateBy { it.id }
-        val autres = occhabViewModel.stationsSession
-            .filter { it != occhabViewModel.station.id }
-            .mapNotNull { parId[it] }
+        val autres = fr.ariegenature.geomys.store.OccHabStore(requireContext())
+            .stationsDeSaisie(occhabViewModel.saisieId)
+            .filter { it.id != occhabViewModel.station.id }
         val pts = mutableListOf<GeoPoint>()
         val rouge = 0xFFD32F2F.toInt() // même rouge que le pin ic_pin_drop.
         autres.forEach { st ->
@@ -286,7 +285,7 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
                             fillPaint.color = 0x33D32F2F
                             outlinePaint.color = rouge
                             outlinePaint.strokeWidth = 4f
-                            setOnClickListener { _, _, _ -> false } // laisse passer le tap.
+                            setOnClickListener { _, _, _ -> editerStationExistante(st); true } // tap = éditer.
                         }
                         binding.map.overlays.add(poly)
                         overlaysSession.add(poly)
@@ -314,7 +313,7 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
                     setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
                     isDraggable = false
                     setInfoWindow(null)
-                    setOnMarkerClickListener { _, _ -> false } // non interactif : tap traversant.
+                    setOnMarkerClickListener { _, _ -> editerStationExistante(st); true } // tap = éditer.
                 }
                 binding.map.overlays.add(m)
                 overlaysSession.add(m)
@@ -326,6 +325,26 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
         sommetsSession.clear()
         sommetsSession.addAll(pts)
         return pts
+    }
+
+    /** Recharge une station EXISTANTE de la saisie pour l'éditer, EN PLACE (sans navigation) : sa
+     *  géométrie devient l'objet en cours (draggable), les autres stations restent en lecture
+     *  seule. « Valider » enchaînera sur la liste des habitats (la station en porte). */
+    private fun editerStationExistante(st: fr.ariegenature.geomys.model.OccHabStation) {
+        occhabViewModel.reprendreStation(st)
+        // Purge l'objet en cours d'édition précédent.
+        pointChoisi = null
+        sommets.clear()
+        markerPoint?.let { binding.map.overlays.remove(it) }; markerPoint = null
+        markersSommets.forEach { binding.map.overlays.remove(it) }; markersSommets.clear()
+        overlayForme?.let { binding.map.overlays.remove(it) }; overlayForme = null
+        cadrageInitialFait = false
+        val ptsCourant = preremplirDepuisViewModel() // charge la géométrie de st (mode + redessine)
+        val ptsSession = afficherStationsSession()   // redessine les autres (st exclue désormais)
+        mettreEnEvidenceBoutonMode()
+        majBoutons()
+        cadrerSur(ptsCourant + ptsSession)
+        Toast.makeText(requireContext(), "Station chargée — modifiez puis validez", Toast.LENGTH_SHORT).show()
     }
 
     /** Aimante [p] sur le sommet de session le plus proche s'il est à moins de ~28 dp à l'écran

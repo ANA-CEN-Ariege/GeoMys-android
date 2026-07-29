@@ -73,6 +73,9 @@ class TaxonsListeFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        // Edge-to-edge (Android 15, targetSdk 35+) : sans ça l'en-tête passe SOUS la barre de
+        // statut et le bas de liste sous la barre de navigation. Pad le haut + le bas de l'écran.
+        binding.root.applySystemBarInsets()
 
         binding.btnRetour.setOnClickListener { findNavController().navigateUp() }
         val adapter = TaxonAdapter(emptyList())

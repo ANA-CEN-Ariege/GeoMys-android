@@ -23,10 +23,10 @@ android {
         // pour distribuer deux applis distinctes depuis une seule base de code.
         minSdk = 24
         targetSdk = 36
-        // versionCode 170 (et non 169) : un AAB 169 a déjà été déposé sur la console Play, qui
-        // exige un versionCode unique par upload. versionName reste 1.3.5 (même contenu).
-        versionCode = 170
-        versionName = "1.3.5"
+        // versionCode 171 : 170 (= v1.3.5) déjà déposé sur la console Play, qui exige un
+        // versionCode unique par upload (un code déposé est consommé à jamais → bump systématique).
+        versionCode = 171
+        versionName = "1.3.6"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

@@ -112,6 +112,7 @@ class SortiesFragment : Fragment() {
         binding.recyclerView.adapter = adapter
 
         binding.btnImporterGpx.setOnClickListener { lancerImport() }
+        binding.btnToutEnvoyer.setOnClickListener { confirmerEnvoiTout() }
 
         setupTabs()
         refreshList()
@@ -154,6 +155,24 @@ class SortiesFragment : Fragment() {
         binding.emptyView.visibility = if (filtrees.isEmpty()) View.VISIBLE else View.GONE
         binding.recyclerView.visibility = if (filtrees.isEmpty()) View.GONE else View.VISIBLE
         binding.tvEmpty.text = emptyMsg
+        majBoutonToutEnvoyer(toutes)
+    }
+
+    /** Sorties réellement envoyables : à envoyer (ni envoyée ni importée) ET au moins une obs
+     *  déterminée (cd_nom résolu) — mêmes conditions que le bouton d'envoi d'une ligne. */
+    private fun sortiesEnvoyables(toutes: List<Sortie>) = toutes.filter {
+        !it.envoyeGeoNature && !it.estImportee && it.observations.any { o -> o.cdNom != null }
+    }
+
+    /** Bouton « Tout envoyer » : visible seulement dans l'onglet « À envoyer », hors envoi en
+     *  cours, avec droit de création OCCTAX (CRUVED C) et au moins une sortie envoyable. */
+    private fun majBoutonToutEnvoyer(toutes: List<Sortie>) {
+        val autorise = GeoNatureConfig(requireContext()).occtaxPeutCreer
+        val nb = sortiesEnvoyables(toutes).size
+        val visible = ongletCourant == 0 && autorise && nb > 0 && !envoiEnCours
+        binding.btnToutEnvoyer.visibility = if (visible) View.VISIBLE else View.GONE
+        binding.btnToutEnvoyer.isEnabled = !envoiEnCours
+        binding.btnToutEnvoyer.text = "Tout envoyer ($nb)"
     }
 
     private fun updateTabCounts(toutes: List<Sortie>) {
@@ -233,6 +252,71 @@ class SortiesFragment : Fragment() {
                     it.progressEnvoi.visibility = View.GONE
                     it.tvMessageEnvoi.visibility = View.GONE
                 }
+            }
+        }
+    }
+
+    /** « Tout envoyer » : confirme, puis pousse séquentiellement toutes les sorties envoyables
+     *  (chacune via [envoyerSortieVersGeoNature], anti-doublon par observation déjà partie).
+     *  Récapitulatif agrégé à la fin ; la liste se met à jour au fil des envois. */
+    private fun confirmerEnvoiTout() {
+        if (envoiEnCours) {
+            android.widget.Toast.makeText(requireContext(), "Un envoi est déjà en cours…",
+                android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
+        val gnConfig = GeoNatureConfig(requireContext())
+        if (!gnConfig.connexionConfiguree) {
+            AlertDialog.Builder(requireContext())
+                .setTitle("Configuration requise")
+                .setMessage("La connexion GeoNature n'est pas configurée. Ouvrez la configuration (⚙️) avant d'envoyer.")
+                .setPositiveButton("OK", null)
+                .show()
+            return
+        }
+        val aEnvoyer = sortiesEnvoyables(sortieStore.charger())
+        if (aEnvoyer.isEmpty()) return
+        AlertDialog.Builder(requireContext())
+            .setTitle("Tout envoyer")
+            .setMessage("Envoyer les ${aEnvoyer.size} saisie(s) en attente vers GeoNature ?")
+            .setPositiveButton("Envoyer") { _, _ -> lancerEnvoiTout(aEnvoyer, gnConfig) }
+            .setNegativeButton(R.string.annuler, null)
+            .show()
+    }
+
+    private fun lancerEnvoiTout(sorties: List<Sortie>, gnConfig: GeoNatureConfig) {
+        envoiEnCours = true
+        binding.btnToutEnvoyer.visibility = View.GONE
+        binding.progressEnvoi.visibility = View.VISIBLE
+        binding.tvMessageEnvoi.visibility = View.VISIBLE
+        viewLifecycleOwner.lifecycleScope.launch {
+            var succes = 0
+            var echecs = 0
+            val messages = mutableListOf<String>()
+            try {
+                sorties.forEachIndexed { i, sortie ->
+                    _binding?.tvMessageEnvoi?.text = "Envoi ${i + 1}/${sorties.size} vers GeoNature…"
+                    val res = envoyerSortieVersGeoNature(sortie, sortieStore, gnConfig)
+                    if (res.succes) succes++ else { echecs++; messages.add(res.message) }
+                    if (isAdded && _binding != null) refreshList()
+                }
+                if (!isAdded || _binding == null) return@launch
+                val recap = buildString {
+                    append("$succes saisie(s) envoyée(s)")
+                    if (echecs > 0) append(", $echecs échec(s)")
+                    if (messages.isNotEmpty()) { append("\n\n"); append(messages.joinToString("\n")) }
+                }
+                AlertDialog.Builder(requireContext())
+                    .setTitle(if (echecs == 0) "Envoi" else "Erreur d'envoi")
+                    .setMessage(recap)
+                    .setPositiveButton("OK", null).show()
+            } finally {
+                envoiEnCours = false
+                _binding?.let {
+                    it.progressEnvoi.visibility = View.GONE
+                    it.tvMessageEnvoi.visibility = View.GONE
+                }
+                if (isAdded && _binding != null) refreshList()
             }
         }
     }

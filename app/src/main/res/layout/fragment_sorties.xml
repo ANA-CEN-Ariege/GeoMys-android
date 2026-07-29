@@ -74,6 +74,20 @@
         android:textSize="12sp"
         android:visibility="gone" />
 
+    <!-- Envoi groupé : transfère d'un coup toutes les saisies encore à envoyer (onglet « À
+         envoyer »). Masqué hors de cet onglet, pendant un envoi, ou sans droit de création. -->
+    <Button
+        android:id="@+id/btn_tout_envoyer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="16dp"
+        android:layout_marginTop="8dp"
+        android:backgroundTint="@color/green_85"
+        android:text="Tout envoyer"
+        android:textAllCaps="false"
+        android:textColor="@android:color/white"
+        android:visibility="gone" />
+
     <!-- Vue vide -->
     <LinearLayout
         android:id="@+id/empty_view"

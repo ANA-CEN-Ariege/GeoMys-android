@@ -612,9 +612,9 @@ class TraceFragment : Fragment() {
         if (inMode) {
             binding.tvBandeauPositionnement.text = when {
                 obsARepositionnerIds.isNotEmpty() -> getString(R.string.repositionner_observation)
-                modeGeom == ModeGeom.LINE -> "Tap sur la carte pour poser chaque sommet (drag pour ajuster)"
-                modeGeom == ModeGeom.POLYGON -> "Tap pour les sommets du polygone (drag pour ajuster)"
-                else -> "Tap pour positionner, drag pour ajuster"
+                modeGeom == ModeGeom.LINE -> "Touchez pour ajouter des sommets · appui long pour déplacer"
+                modeGeom == ModeGeom.POLYGON -> "Touchez pour ajouter des sommets (≥ 3) · appui long pour déplacer"
+                else -> "Touchez pour placer le point · appui long pour le déplacer"
             }
             // Libellé du bouton de validation dépend du mode (et du repositionnement).
             binding.btnValiderPosition.text = when {

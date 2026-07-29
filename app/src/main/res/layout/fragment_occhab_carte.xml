@@ -21,18 +21,35 @@
         android:layout_gravity="top|start"
         android:layout_margin="12dp" />
 
+    <!-- Bouton terminer la saisie OccHab — petit cercle vert avec coche, HAUT DROITE. Même
+         style, position et rôle que la coche d'Occtax (TraceFragment.btn_retour) : zone tactile
+         48dp (gants/froid), icône à 32dp visuels via le padding transparent. -->
+    <ImageButton
+        android:id="@+id/btn_retour"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_gravity="top|end"
+        android:layout_margin="8dp"
+        android:padding="8dp"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:contentDescription="Terminer la saisie"
+        android:scaleType="fitCenter"
+        android:src="@drawable/coche" />
+
+    <!-- Bandeau d'instructions — MÊME style/position que la Saisie multi-taxons
+         (bandeau_dark #A6000000, blanc, haut-centre) : le badge_bg #40FFFFFF précédent (blanc
+         translucide sur texte blanc) était illisible. -->
     <TextView
         android:id="@+id/tv_instructions"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="top|center_horizontal"
         android:layout_marginTop="64dp"
-        android:background="@drawable/badge_bg"
-        android:paddingHorizontal="12dp"
-        android:paddingVertical="6dp"
+        android:background="@drawable/bandeau_dark"
+        android:paddingHorizontal="16dp"
+        android:paddingVertical="10dp"
         android:textColor="@android:color/white"
-        android:textSize="13sp"
-        android:textStyle="bold" />
+        android:textSize="14sp" />
 
     <!-- Sélecteur de mode géométrique (point / polygone), centré verticalement à gauche —
          même emplacement/habillage que le sélecteur d'Occtax. -->

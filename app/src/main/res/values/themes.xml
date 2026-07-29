@@ -5,7 +5,11 @@
         <item name="colorOnPrimary">@color/colorOnPrimary</item>
         <item name="colorSecondary">@color/colorSecondary</item>
         <item name="colorOnSecondary">@color/colorOnSecondary</item>
-        <item name="android:statusBarColor">@android:color/transparent</item>
+        <!-- Pas de android:statusBarColor : DÉPRÉCIÉ en Android 15 (affichage bord-à-bord) et
+             signalé par la console Play. Avec enableEdgeToEdge (MainActivity), la barre de statut
+             est déjà transparente par défaut → aucun changement visuel en le retirant. -->
+        <!-- windowLightStatusBar=false = icônes de statut CLAIRES (fond accueil sombre) ; NON
+             déprécié (contrôle l'apparence, pas la couleur de barre). -->
         <item name="android:windowLightStatusBar" tools:targetApi="m">false</item>
         <!-- App de terrain → fond sombre type accueil partout pour optimiser la lisibilité
              en plein soleil. Toutes les fenêtres (Activity + fragments via ?android:

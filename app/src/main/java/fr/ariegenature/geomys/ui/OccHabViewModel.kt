@@ -77,27 +77,23 @@ class OccHabViewModel : ViewModel() {
     var station = OccHabStation()
         private set
 
-    /** Ids des stations ENREGISTRÉES au fil de l'eau pendant la session courante, dans l'ordre de
-     *  saisie. Sert à réafficher, sur la carte de saisie, les stations déjà posées (avec leur
-     *  emprise) quand on enchaîne une nouvelle station. Vidé au démarrage d'une session. */
-    private val _stationsSession = LinkedHashSet<String>()
-    val stationsSession: Set<String> get() = _stationsSession
+    /** Id de la SAISIE OccHab en cours (groupe des stations de la session). Une station enregistrée
+     *  au fil de l'eau est écrite dans cette saisie (cf. [OccHabStore.upsertStation]). Nouvelle
+     *  saisie à chaque [demarrerSession] ; repris à l'identique en réédition ([reprendreSaisie]). */
+    var saisieId: String = java.util.UUID.randomUUID().toString()
+        private set
 
-    /** Mémorise qu'une station a été enregistrée dans la session (appelé aux points de sauvegarde
-     *  au fil de l'eau). Idempotent. */
-    fun enregistrerDansSession(id: String) { _stationsSession.add(id) }
-
-    /** Démarre une nouvelle SESSION (tuile OccHab) : détails aux défauts serveur, JDD à saisir,
-     *  station vierge, aucune station de session. */
+    /** Démarre une nouvelle SESSION (tuile OccHab) = une nouvelle SAISIE : détails aux défauts
+     *  serveur, JDD à saisir, station vierge. */
     fun demarrerSession(defauts: OccHabDetailsSession) {
         details = defauts
         jddDefini = false
         station = OccHabStation()
-        _stationsSession.clear()
+        saisieId = java.util.UUID.randomUUID().toString()
     }
 
-    /** Nouvelle station dans la MÊME session : garde les [details], repart d'une géométrie et
-     *  d'habitats vierges. */
+    /** Nouvelle station dans la MÊME saisie : garde les [details] et [saisieId], repart d'une
+     *  géométrie et d'habitats vierges. */
     fun nouvelleStation() { station = OccHabStation() }
 
     fun definirGeometrie(type: String, lat: Double, lon: Double, coordsJson: String?) {
@@ -130,9 +126,33 @@ class OccHabViewModel : ViewModel() {
         if (details.idDataset != null) jddDefini = true
     }
 
-    /** Reprend une station existante pour édition (depuis « Mes stations ») : charge sa géométrie,
-     *  ses habitats ET ses détails ; le JDD est considéré défini. */
-    fun reprendre(existante: OccHabStation) {
+    /** Reprend une SAISIE existante pour réédition (depuis « Mes stations ») : fixe la [saisieId]
+     *  courante, hérite les détails de sa 1ʳᵉ station (pour une station AJOUTÉE), et repart d'une
+     *  station vierge (la carte affichera les stations existantes, « Valider » en ajoute une). */
+    fun reprendreSaisie(saisie: fr.ariegenature.geomys.model.OccHabSaisie) {
+        saisieId = saisie.id
+        station = OccHabStation()
+        val premiere = saisie.stations.firstOrNull()
+        details = if (premiere == null) OccHabDetailsSession() else OccHabDetailsSession(
+            idDataset = premiere.idDataset,
+            observateursIds = premiere.observateursIds,
+            observateursNoms = premiere.observateursNoms,
+            observateursTxt = premiere.observateursTxt,
+            dateMin = premiere.dateMin,
+            dateMax = premiere.dateMax,
+            altitudeMin = premiere.altitudeMin,
+            altitudeMax = premiere.altitudeMax,
+            surface = premiere.surface,
+            idNomCalculSurface = premiere.idNomCalculSurface,
+            idNomObjetGeographique = premiere.idNomObjetGeographique,
+            comment = premiere.comment,
+        )
+        jddDefini = premiere?.idDataset != null
+    }
+
+    /** Reprend une STATION existante de la saisie courante pour l'éditer (garde la [saisieId]) :
+     *  charge sa géométrie, ses habitats ET ses détails ; le JDD est considéré défini. */
+    fun reprendreStation(existante: OccHabStation) {
         station = existante.copy(habitats = existante.habitats.map { it.copy() })
         details = OccHabDetailsSession(
             idDataset = existante.idDataset,

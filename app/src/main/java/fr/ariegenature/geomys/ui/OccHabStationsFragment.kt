@@ -32,9 +32,8 @@ import androidx.recyclerview.widget.RecyclerView
 import fr.ariegenature.geomys.R
 import fr.ariegenature.geomys.databinding.FragmentOcchabStationsBinding
 import fr.ariegenature.geomys.databinding.ItemOcchabStationBinding
-import fr.ariegenature.geomys.model.OccHabStation
-import fr.ariegenature.geomys.network.GNErreur
-import fr.ariegenature.geomys.network.OccHabUpload
+import fr.ariegenature.geomys.model.OccHabSaisie
+import fr.ariegenature.geomys.network.envoyerSaisieOccHabVersGeoNature
 import fr.ariegenature.geomys.store.GeoNatureConfig
 import fr.ariegenature.geomys.store.OccHabStore
 import com.google.android.material.tabs.TabLayout
@@ -43,15 +42,21 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/** « Mes stations » OccHab : liste des stations saisies localement, avec envoi/édition/
- *  suppression par ligne (calqué sur [SortiesFragment]). L'envoi se fait ici (pas au formulaire). */
+/** « Mes stations » OccHab : liste des SAISIES saisies localement (chacune regroupe 1..N stations),
+ *  avec envoi/édition/suppression par saisie (calqué sur [SortiesFragment]). L'envoi transfère
+ *  TOUTE la saisie (envoi partiel sans perte) ; l'édition rouvre la carte pour ajouter/rééditer
+ *  ses stations. */
 class OccHabStationsFragment : Fragment() {
     private var _binding: FragmentOcchabStationsBinding? = null
     private val binding get() = _binding!!
     private lateinit var occHabStore: OccHabStore
-    private lateinit var adapter: OccHabStationAdapter
+    private lateinit var adapter: OccHabSaisieAdapter
     private val occhabViewModel: OccHabViewModel by activityViewModels()
     private var ongletCourant = 0
+
+    /** true pendant un envoi : les actions concurrentes sont refusées avec un toast — la liste
+     *  reste consultable, pas de modal bloquant. */
+    private var envoiEnCours = false
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         _binding = FragmentOcchabStationsBinding.inflate(inflater, container, false)
@@ -64,15 +69,15 @@ class OccHabStationsFragment : Fragment() {
         appliquerBandeauNavigation(binding.bandeauSaisie.root, findNavController(), "Mes stations")
         occHabStore = OccHabStore(requireContext())
 
-        adapter = OccHabStationAdapter(
+        adapter = OccHabSaisieAdapter(
             onDelete = { confirmerSuppression(it) },
-            onEdit = { station ->
-                // Édition : on recharge la station puis on passe par la CARTE (géométrie
-                // préchargée, modifiable) ; « Valider » enchaîne sur le formulaire pré-rempli.
-                occhabViewModel.reprendre(station)
+            onEdit = { saisie ->
+                // Réédition : on reprend la SAISIE puis on passe par la CARTE (ses stations
+                // affichées, « Valider » ajoute une station, taper une station l'édite).
+                occhabViewModel.reprendreSaisie(saisie)
                 findNavController().naviguerSur(R.id.action_occhab_stations_to_carte)
             },
-            onEnvoyer = { envoyerStation(it) },
+            onEnvoyer = { envoyerSaisie(it) },
             // CRUVED C du module OCCHAB (détecté à la synchro) : sans droit de création, le POST
             // partirait en 403 — on masque le bouton d'envoi.
             envoiAutorise = GeoNatureConfig(requireContext()).occhabPeutCreer,
@@ -107,42 +112,36 @@ class OccHabStationsFragment : Fragment() {
         binding.emptyView.visibility = if (vide) View.VISIBLE else View.GONE
         binding.recyclerView.visibility = if (vide) View.GONE else View.VISIBLE
         binding.tvEmpty.text = if (ongletCourant == 1)
-            "Aucune station envoyée."
-        else "Aucune station en attente d'envoi.\nCréez-en une depuis « OccHab » sur l'accueil."
+            "Aucune saisie envoyée."
+        else "Aucune saisie en attente d'envoi.\nCréez-en une depuis « OccHab » sur l'accueil."
     }
 
-    private fun updateTabCounts(toutes: List<OccHabStation>) {
+    private fun updateTabCounts(toutes: List<OccHabSaisie>) {
         binding.tabLayout.getTabAt(0)?.text = "À envoyer (${toutes.count { !it.envoyeGeoNature }})"
         binding.tabLayout.getTabAt(1)?.text = "Envoyées (${toutes.count { it.envoyeGeoNature }})"
     }
 
-    /** true pendant un envoi : les actions concurrentes (2ᵉ envoi, suppression) sont refusées
-     *  avec un toast — la liste reste consultable, contrairement à l'ancien modal bloquant. */
-    private var envoiEnCours = false
-
-    private fun confirmerSuppression(station: OccHabStation) {
+    private fun confirmerSuppression(saisie: OccHabSaisie) {
         if (envoiEnCours) {
             android.widget.Toast.makeText(requireContext(), "Un envoi est en cours — réessayez ensuite.",
                 android.widget.Toast.LENGTH_SHORT).show()
             return
         }
-        // Même contexte que le dialogue de « Mes saisies » : date + contenu, pour savoir ce
-        // qu'on s'apprête à perdre.
-        val date = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date(station.date))
-        val nbHab = station.habitats.size
-        val descr = if (nbHab == 1) "station du $date (1 habitat)" else "station du $date ($nbHab habitats)"
+        val date = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date(saisie.date))
+        val n = saisie.stations.size
+        val descr = if (n == 1) "saisie du $date (1 station)" else "saisie du $date ($n stations)"
         AlertDialog.Builder(requireContext())
-            .setTitle("Supprimer la station ?")
+            .setTitle("Supprimer la saisie ?")
             .setMessage("Supprimer la $descr ? Cette action est définitive.")
             .setPositiveButton("Supprimer") { _, _ ->
-                occHabStore.supprimer(station.id)
+                occHabStore.supprimer(saisie.id)
                 rafraichir()
             }
             .setNegativeButton(R.string.annuler, null)
             .show()
     }
 
-    private fun envoyerStation(station: OccHabStation) {
+    private fun envoyerSaisie(saisie: OccHabSaisie) {
         if (envoiEnCours) {
             android.widget.Toast.makeText(requireContext(), "Un envoi est déjà en cours…",
                 android.widget.Toast.LENGTH_SHORT).show()
@@ -157,45 +156,19 @@ class OccHabStationsFragment : Fragment() {
                 .show()
             return
         }
-        // Progression INLINE (même patron que « Mes visites ») : la liste reste consultable.
+        // Progression INLINE (patron « Mes visites ») : la liste reste consultable.
         envoiEnCours = true
         binding.progressEnvoi.visibility = View.VISIBLE
         binding.tvMessageEnvoi.visibility = View.VISIBLE
-        binding.tvMessageEnvoi.text = "Envoi de la station vers GeoNature…"
+        binding.tvMessageEnvoi.text = "Envoi de la saisie vers GeoNature…"
         viewLifecycleOwner.lifecycleScope.launch {
             try {
-                val res = OccHabUpload.envoyer(station, gnConfig)
-                occHabStore.marquerEnvoyee(station.id, res.idStationServeur)
-                if (!isAdded) return@launch
+                val res = envoyerSaisieOccHabVersGeoNature(saisie, occHabStore, gnConfig)
+                if (!isAdded || _binding == null) return@launch
                 rafraichir()
                 AlertDialog.Builder(requireContext())
-                    // « Envoi » : même titre de récap que Mes saisies / Mes visites.
-                    .setTitle("Envoi")
-                    .setMessage(
-                        if (res.dejaPresente)
-                            "Station déjà enregistrée sur GeoNature lors d'une tentative précédente — aucun doublon créé."
-                        else
-                            "Station envoyée (${res.nbHabitats} habitat(s))."
-                    )
-                    .setPositiveButton("OK", null).show()
-            } catch (e: GNErreur.EnvoiIncertain) {
-                // Réseau coupé après l'émission : on NE marque PAS d'échec net (qui inviterait à
-                // re-POSTer). Statut incertain → le prochain envoi vérifiera l'existence par UUID.
-                occHabStore.marquerEnvoiIncertain(station.id, e.msg)
-                if (!isAdded) return@launch
-                rafraichir()
-                AlertDialog.Builder(requireContext())
-                    .setTitle("Envoi interrompu")
-                    .setMessage(e.msg + "\n\nRenvoyez la station : l'application vérifiera d'abord côté serveur pour éviter un doublon.")
-                    .setPositiveButton("OK", null).show()
-            } catch (e: Exception) {
-                val msg = (e as? GNErreur)?.message ?: e.message ?: "Erreur d'envoi"
-                occHabStore.marquerErreurEnvoi(station.id, msg)
-                if (!isAdded) return@launch
-                rafraichir()
-                AlertDialog.Builder(requireContext())
-                    .setTitle("Erreur d'envoi")
-                    .setMessage(msg)
+                    .setTitle(if (res.succes) "Envoi" else "Erreur d'envoi")
+                    .setMessage(res.message)
                     .setPositiveButton("OK", null).show()
             } finally {
                 envoiEnCours = false
@@ -210,17 +183,17 @@ class OccHabStationsFragment : Fragment() {
     override fun onDestroyView() { super.onDestroyView(); _binding = null }
 }
 
-class OccHabStationAdapter(
-    private val onDelete: (OccHabStation) -> Unit,
-    private val onEdit: (OccHabStation) -> Unit,
-    private val onEnvoyer: (OccHabStation) -> Unit,
+class OccHabSaisieAdapter(
+    private val onDelete: (OccHabSaisie) -> Unit,
+    private val onEdit: (OccHabSaisie) -> Unit,
+    private val onEnvoyer: (OccHabSaisie) -> Unit,
     /** CRUVED C du module OCCHAB : false → bouton d'envoi masqué (le POST serait refusé). */
     private val envoiAutorise: Boolean = true,
-) : RecyclerView.Adapter<OccHabStationAdapter.ViewHolder>() {
-    private var items: List<OccHabStation> = emptyList()
+) : RecyclerView.Adapter<OccHabSaisieAdapter.ViewHolder>() {
+    private var items: List<OccHabSaisie> = emptyList()
     private val fmt = SimpleDateFormat("dd MMM yyyy HH:mm", Locale.getDefault())
 
-    fun submitList(list: List<OccHabStation>) {
+    fun submitList(list: List<OccHabSaisie>) {
         items = list
         notifyDataSetChanged()
     }
@@ -233,23 +206,23 @@ class OccHabStationAdapter(
     }
 
     override fun onBindViewHolder(holder: ViewHolder, position: Int) {
-        val station = items[position]
+        val saisie = items[position]
+        val density = holder.binding.root.resources.displayMetrics.density
         with(holder.binding) {
-            tvDate.text = fmt.format(Date(station.date))
-            val geom = if (station.geometryType == "Polygon") "polygone" else "point"
-            val nbHab = station.habitats.size
-            tvInfos.text = "$geom · $nbHab habitat${if (nbHab > 1) "s" else ""}"
+            tvDate.text = fmt.format(Date(saisie.date))
+            val n = saisie.stations.size
+            tvInfos.text = "$n station${if (n > 1) "s" else ""}"
 
-            val erreur = station.derniereErreurEnvoi
+            val erreur = saisie.derniereErreurEnvoi
             when {
-                station.envoyeGeoNature -> {
+                saisie.envoyeGeoNature -> {
                     root.background = null
                     tvEtat.visibility = View.VISIBLE
                     tvEtat.setTextColor(couleurSucces(root.context))
                     tvEtat.text = "✅ Envoyée"
                 }
                 erreur != null -> {
-                    root.background = cadreColore(couleurErreur(root.context), root.resources.displayMetrics.density)
+                    root.background = cadreColore(couleurErreur(root.context), density)
                     tvEtat.visibility = View.VISIBLE
                     tvEtat.setTextColor(couleurErreur(root.context))
                     tvEtat.text = "⚠ ${erreur.lineSequence().first()}"
@@ -260,13 +233,14 @@ class OccHabStationAdapter(
                 }
             }
 
-            btnSupprimer.setOnClickListener { onDelete(station) }
-            val peutEditer = !station.envoyeGeoNature
+            btnSupprimer.setOnClickListener { onDelete(saisie) }
+            val peutEditer = !saisie.envoyeGeoNature
             btnEditer.visibility = if (peutEditer) View.VISIBLE else View.GONE
-            btnEditer.setOnClickListener { onEdit(station) }
-            val peutEnvoyer = peutEditer && envoiAutorise && station.habitats.any { it.cdHab > 0 }
+            btnEditer.setOnClickListener { onEdit(saisie) }
+            val peutEnvoyer = peutEditer && envoiAutorise &&
+                saisie.stations.any { st -> st.habitats.any { it.cdHab > 0 } }
             btnEnvoyer.visibility = if (peutEnvoyer) View.VISIBLE else View.GONE
-            btnEnvoyer.setOnClickListener { onEnvoyer(station) }
+            btnEnvoyer.setOnClickListener { onEnvoyer(saisie) }
         }
     }
 

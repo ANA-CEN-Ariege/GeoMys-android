@@ -20,30 +20,45 @@ package fr.ariegenature.geomys.store
 
 import android.content.Context
 import fr.ariegenature.geomys.model.OccHabHabitat
+import fr.ariegenature.geomys.model.OccHabSaisie
 import fr.ariegenature.geomys.model.OccHabStation
 import com.google.gson.reflect.TypeToken
 import java.io.File
 import java.lang.reflect.Type
 
 /**
- * Stockage local des stations OccHab saisies (« Mes stations »), sur [JsonCollectionStore] comme
+ * Stockage local des SAISIES OccHab (« Mes stations »), sur [JsonCollectionStore] comme
  * [SortieStore] : cache process-wide, quarantaine, écriture durable par `commit()`, normalisation
- * post-Gson, lire-modifier-écrire atomique.
+ * post-Gson, lire-modifier-écrire atomique. Une saisie ([OccHabSaisie]) regroupe les stations
+ * saisies dans une même session (cf. `Sortie` regroupe des `Observation`).
  *
- * Ne contient QUE les stations créées localement. Les stations lues depuis le serveur
- * (consultation lecture seule) ne sont pas persistées ici.
+ * Ne contient QUE des saisies créées localement. Les stations lues depuis le serveur (consultation
+ * lecture seule) ne sont pas persistées ici.
  */
-class OccHabStore(context: Context) : JsonCollectionStore<OccHabStation>() {
+class OccHabStore(context: Context) : JsonCollectionStore<OccHabSaisie>() {
     private val prefs = context.getSharedPreferences("occhab_store", Context.MODE_PRIVATE)
     private val filesDir = context.filesDir
-    private val key = "stations_sauvegardees"
+    private val key = "saisies_sauvegardees"
+
+    init {
+        // Ancien format « une station = une entrée » (clé stations_sauvegardees) : on repart de
+        // zéro (décision produit — OccHab récent, peu de données en attente). Purge une seule fois.
+        if (!ancienStorePurge) {
+            synchronized(VERROU) {
+                if (!ancienStorePurge) {
+                    prefs.edit().remove("stations_sauvegardees").apply()
+                    ancienStorePurge = true
+                }
+            }
+        }
+    }
 
     override val nom = "OccHabStore"
     override val verrou get() = VERROU
-    override var cache: List<OccHabStation>?
+    override var cache: List<OccHabSaisie>?
         get() = mem
         set(v) { mem = v }
-    override val typeListe: Type = object : TypeToken<MutableList<OccHabStation?>>() {}.type
+    override val typeListe: Type = object : TypeToken<MutableList<OccHabSaisie?>>() {}.type
 
     override fun lireBrut(): String? = prefs.getString(key, null)
     override fun ecrireBrut(json: String): Boolean = prefs.edit().putString(key, json).commit()
@@ -53,72 +68,134 @@ class OccHabStore(context: Context) : JsonCollectionStore<OccHabStation>() {
             if (!q.exists()) q.writeText(json)
         } catch (_: Exception) {}
     }
-    override fun normaliser(item: OccHabStation): OccHabStation? = normaliserStation(item)
+    override fun normaliser(item: OccHabSaisie): OccHabSaisie? = normaliserSaisie(item)
 
     companion object {
-        @Volatile private var mem: List<OccHabStation>? = null
+        @Volatile private var mem: List<OccHabSaisie>? = null
         private val VERROU = Any()
+        @Volatile private var ancienStorePurge = false
 
         /** Réinitialise le cache mémoire process-wide. Réservé aux TESTS. */
         @androidx.annotation.VisibleForTesting
         fun reinitialiserCacheMemoire() { mem = null }
     }
 
-    fun ajouter(station: OccHabStation): Boolean = muter { it.add(0, station) }
+    fun ajouterSaisie(saisie: OccHabSaisie): Boolean = muter { it.add(0, saisie) }
 
-    /** Remplace la station [id] en préservant sa position (reprise d'édition). Ajoute en tête
-     *  si l'id n'existe pas. */
-    fun remplacer(id: String, stationMaj: OccHabStation): Boolean = muter { liste ->
+    /** Remplace la saisie [id] en préservant sa position ; ajoute en tête si absente. */
+    fun remplacerSaisie(id: String, saisieMaj: OccHabSaisie): Boolean = muter { liste ->
         val idx = liste.indexOfFirst { it.id == id }
-        if (idx >= 0) liste[idx] = stationMaj else liste.add(0, stationMaj)
+        if (idx >= 0) liste[idx] = saisieMaj else liste.add(0, saisieMaj)
     }
 
+    /** Supprime toute la saisie [id] (cascade sur ses stations). */
     fun supprimer(id: String) { muter { liste -> liste.removeAll { it.id == id } } }
 
-    /** Marque la station comme envoyée (efface l'erreur d'un échec précédent) et enregistre
-     *  l'id_station attribué par le serveur. */
-    fun marquerEnvoyee(id: String, idStationServeur: Int?) {
+    /** Sauvegarde AU FIL DE L'EAU d'une station dans la saisie [saisieId] : insère ou remplace la
+     *  station (par son id), crée la saisie si elle n'existe pas encore (1ʳᵉ station de la session). */
+    fun upsertStation(saisieId: String, station: OccHabStation): Boolean = muter { liste ->
+        val idx = liste.indexOfFirst { it.id == saisieId }
+        if (idx < 0) {
+            liste.add(0, OccHabSaisie(id = saisieId, stations = listOf(station)))
+        } else {
+            val stations = liste[idx].stations.toMutableList()
+            val j = stations.indexOfFirst { it.id == station.id }
+            if (j >= 0) stations[j] = station else stations.add(station)
+            liste[idx] = recalc(liste[idx].copy(stations = stations))
+        }
+    }
+
+    /** Retire une station de la saisie ; supprime la saisie si elle devient vide. */
+    fun supprimerStation(saisieId: String, stationId: String) {
         muter { liste ->
-            val idx = liste.indexOfFirst { it.id == id }
-            if (idx >= 0) liste[idx] = liste[idx].copy(
+            val idx = liste.indexOfFirst { it.id == saisieId }
+            if (idx >= 0) {
+                val stations = liste[idx].stations.filterNot { it.id == stationId }
+                if (stations.isEmpty()) liste.removeAt(idx)
+                else liste[idx] = recalc(liste[idx].copy(stations = stations))
+            }
+        }
+    }
+
+    /** Stations d'une saisie (lecture — pour la carte de réédition). Vide si saisie inconnue. */
+    fun stationsDeSaisie(saisieId: String): List<OccHabStation> =
+        charger().firstOrNull { it.id == saisieId }?.stations ?: emptyList()
+
+    /** Marque une station envoyée + recalcule l'état de la saisie (envoyée = toutes envoyées). */
+    fun marquerStationEnvoyee(saisieId: String, stationId: String, idStationServeur: Int?) =
+        majStation(saisieId, stationId) {
+            it.copy(
                 envoyeGeoNature = true,
-                idStationServeur = idStationServeur ?: liste[idx].idStationServeur,
+                idStationServeur = idStationServeur ?: it.idStationServeur,
                 derniereErreurEnvoi = null,
-                envoiIncertain = false, // envoi confirmé : plus d'incertitude.
+                envoiIncertain = false, // envoi confirmé.
+            )
+        }
+
+    /** Échec NET d'une station (rejet serveur / non émise) : la station n'a PAS été créée. */
+    fun marquerStationErreur(saisieId: String, stationId: String, message: String) =
+        majStation(saisieId, stationId) {
+            it.copy(derniereErreurEnvoi = message.take(200), envoiIncertain = false)
+        }
+
+    /** Envoi INCERTAIN d'une station (réseau coupé après émission — peut-être créée). */
+    fun marquerStationIncertain(saisieId: String, stationId: String, message: String) =
+        majStation(saisieId, stationId) {
+            it.copy(derniereErreurEnvoi = message.take(200), envoiIncertain = true)
+        }
+
+    /** Message d'erreur AU NIVEAU SAISIE (résumé d'un envoi partiel). N'affecte pas l'envoi
+     *  station par station (déjà persisté). */
+    fun marquerErreurSaisie(saisieId: String, message: String) {
+        muter { liste ->
+            val idx = liste.indexOfFirst { it.id == saisieId }
+            if (idx >= 0) liste[idx] = liste[idx].copy(
+                derniereErreurEnvoi = message.take(200),
+                envoyeGeoNature = false,
             )
         }
     }
 
-    /** Mémorise un échec d'envoi NET (rejet serveur / requête non émise) : la station n'a PAS
-     *  été créée. Efface l'incertitude éventuelle d'une tentative précédente. Cadre rouge. */
-    fun marquerErreurEnvoi(id: String, message: String) {
+    private fun majStation(saisieId: String, stationId: String, transform: (OccHabStation) -> OccHabStation) {
         muter { liste ->
-            val idx = liste.indexOfFirst { it.id == id }
-            if (idx >= 0) liste[idx] = liste[idx].copy(
-                derniereErreurEnvoi = message.take(200),
-                envoiIncertain = false,
-            )
+            val idx = liste.indexOfFirst { it.id == saisieId }
+            if (idx >= 0) {
+                val stations = liste[idx].stations.toMutableList()
+                val j = stations.indexOfFirst { it.id == stationId }
+                if (j >= 0) {
+                    stations[j] = transform(stations[j])
+                    liste[idx] = recalc(liste[idx].copy(stations = stations))
+                }
+            }
         }
     }
 
-    /** Mémorise un envoi au statut INCERTAIN (réseau coupé après l'émission : la station a
-     *  peut-être été créée). Le prochain envoi vérifiera d'abord l'existence côté serveur. */
-    fun marquerEnvoiIncertain(id: String, message: String) {
-        muter { liste ->
-            val idx = liste.indexOfFirst { it.id == id }
-            if (idx >= 0) liste[idx] = liste[idx].copy(
-                derniereErreurEnvoi = message.take(200),
-                envoiIncertain = true,
-            )
-        }
+    /** Recalcule l'état DÉRIVÉ d'une saisie : envoyée ssi toutes ses stations le sont ; l'erreur
+     *  saisie reflète la 1ʳᵉ station restant à envoyer en erreur (effacée si tout est parti). */
+    private fun recalc(saisie: OccHabSaisie): OccHabSaisie {
+        val toutesEnvoyees = saisie.stations.isNotEmpty() && saisie.stations.all { it.envoyeGeoNature }
+        val erreur = if (toutesEnvoyees) null else saisie.stations
+            .firstOrNull { !it.envoyeGeoNature && it.derniereErreurEnvoi != null }?.derniereErreurEnvoi
+        return saisie.copy(envoyeGeoNature = toutesEnvoyees, derniereErreurEnvoi = erreur)
     }
 }
 
 // ── Normalisation post-Gson ───────────────────────────────────────────────────────────────
-// Gson instancie par Unsafe sans passer par le constructeur : les champs ABSENTS du JSON
-// restent null, y compris les listes NON-NULLABLES ajoutées par des versions plus récentes.
-// On reconstruit par CONSTRUCTEUR explicite (pas copy() : il crasherait sur les champs null).
-// Même filet que SortieStore.normaliserSortie / OutboxMonitoring.normaliser.
+// Gson instancie par Unsafe sans passer par le constructeur : les champs ABSENTS du JSON restent
+// null, y compris les listes NON-NULLABLES. On reconstruit par CONSTRUCTEUR explicite. Même filet
+// que SortieStore.normaliserSortie / OutboxMonitoring.normaliser.
+
+@Suppress("SENSELESS_COMPARISON", "USELESS_ELVIS")
+private fun normaliserSaisie(s: OccHabSaisie): OccHabSaisie? {
+    if (s.id == null || s.stations == null) return null
+    return OccHabSaisie(
+        id = s.id,
+        date = s.date,
+        stations = s.stations.mapNotNull { st -> if (st == null) null else normaliserStation(st) },
+        envoyeGeoNature = s.envoyeGeoNature,
+        derniereErreurEnvoi = s.derniereErreurEnvoi,
+    )
+}
 
 // Écarte (retour null) une entrée structurellement invalide (id/habitats null via Gson), sinon
 // reconstruit une station sûre par CONSTRUCTEUR explicite (pas copy() : il crasherait sur null).

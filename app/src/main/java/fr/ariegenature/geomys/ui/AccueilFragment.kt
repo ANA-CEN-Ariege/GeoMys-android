@@ -203,7 +203,7 @@ class AccueilFragment : Fragment() {
             it.etat == SaisieEnAttente.Etat.PENDING || it.etat == SaisieEnAttente.Etat.ERROR
         }
 
-    /** Nombre de stations OccHab non encore envoyées (« Mes stations », onglet À envoyer). */
+    /** Nombre de SAISIES OccHab non encore envoyées (« Mes stations », onglet À envoyer). */
     private fun nbStationsEnAttente(): Int =
         fr.ariegenature.geomys.store.OccHabStore(requireContext()).charger().count { !it.envoyeGeoNature }
 

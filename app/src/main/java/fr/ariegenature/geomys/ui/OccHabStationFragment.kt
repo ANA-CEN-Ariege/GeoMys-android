@@ -89,10 +89,10 @@ class OccHabStationFragment : Fragment() {
      *  un habitat, ou dès qu'elle y existe déjà (mise à jour après édition/suppression). */
     private fun sauvegarderAuFilDeLEau() {
         val station = occhabViewModel.stationAEnregistrer()
-        val dejaEnregistree = occHabStore.charger().any { it.id == station.id }
+        val dejaEnregistree = occHabStore.stationsDeSaisie(occhabViewModel.saisieId)
+            .any { it.id == station.id }
         if (station.habitats.isNotEmpty() || dejaEnregistree) {
-            occHabStore.remplacer(station.id, station)
-            occhabViewModel.enregistrerDansSession(station.id)
+            occHabStore.upsertStation(occhabViewModel.saisieId, station)
         }
     }
 

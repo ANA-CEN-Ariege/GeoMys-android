@@ -151,24 +151,12 @@ class OccHabViewModel : ViewModel() {
     }
 
     /** Reprend une STATION existante de la saisie courante pour l'éditer (garde la [saisieId]) :
-     *  charge sa géométrie, ses habitats ET ses détails ; le JDD est considéré défini. */
+     *  charge SEULEMENT sa géométrie et ses habitats. On NE recharge PAS [details] : le JDD /
+     *  observateurs / dates sont COMMUNS à la saisie (édités via « Détails ») — les écraser avec
+     *  ceux d'une station rétrograderait silencieusement la session en cours. La station rééditée
+     *  ré-hérite les détails de session à l'enregistrement ([stationAEnregistrer]). */
     fun reprendreStation(existante: OccHabStation) {
         station = existante.copy(habitats = existante.habitats.map { it.copy() })
-        details = OccHabDetailsSession(
-            idDataset = existante.idDataset,
-            observateursIds = existante.observateursIds,
-            observateursNoms = existante.observateursNoms,
-            observateursTxt = existante.observateursTxt,
-            dateMin = existante.dateMin,
-            dateMax = existante.dateMax,
-            altitudeMin = existante.altitudeMin,
-            altitudeMax = existante.altitudeMax,
-            surface = existante.surface,
-            idNomCalculSurface = existante.idNomCalculSurface,
-            idNomObjetGeographique = existante.idNomObjetGeographique,
-            comment = existante.comment,
-        )
-        jddDefini = true
     }
 
     /** Station à enregistrer/envoyer = géométrie + habitats (station courante) fusionnés avec les

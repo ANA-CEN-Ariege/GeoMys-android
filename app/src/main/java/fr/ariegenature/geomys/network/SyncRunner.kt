@@ -154,6 +154,11 @@ object SyncRunner {
                 val occhab = async {
                     try {
                         val modules = OccHabApi.detecterModules(config, setOf(OccHabApi.MODULE_CODE, "OCCTAX"))
+                        // Map VIDE = appel RATÉ (offline/timeout/annulé) → on NE TOUCHE PAS aux
+                        // drapeaux : sinon un simple incident de synchro ferait DISPARAÎTRE la tuile
+                        // OccHab et bloquerait l'envoi. Non vide (OCCTAX présent sur toute instance
+                        // GeoNature) = appel réussi, on peut mettre les droits à jour.
+                        if (modules.isNotEmpty()) {
                         modules["OCCTAX"]?.let { config.occtaxPeutCreer = it.peutCreer }
                         val acces = modules[OccHabApi.MODULE_CODE] ?: OccHabAcces.ABSENT
                         config.occhabDisponible = acces.disponible
@@ -186,6 +191,7 @@ object SyncRunner {
                                 if (defauts.isNotEmpty()) config.occhabDefautsNomencJson = gson.toJson(defauts)
                             } catch (_: Exception) { /* formConfig/défauts OccHab optionnels */ }
                         }
+                        } // fin if (modules.isNotEmpty())
                     } catch (_: Exception) { /* OccHab optionnel */ }
                 }
                 listOf(

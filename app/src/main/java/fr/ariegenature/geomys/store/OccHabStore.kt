@@ -156,7 +156,9 @@ class OccHabStore(context: Context) : JsonCollectionStore<OccHabSaisie>() {
         }
     }
 
-    private fun majStation(saisieId: String, stationId: String, transform: (OccHabStation) -> OccHabStation) {
+    /** Applique [transform] à une station et recalcule l'état de la saisie. Renvoie le succès de
+     *  la PERSISTANCE (false = commit disque échoué → l'appelant peut requalifier en incertain). */
+    private fun majStation(saisieId: String, stationId: String, transform: (OccHabStation) -> OccHabStation): Boolean =
         muter { liste ->
             val idx = liste.indexOfFirst { it.id == saisieId }
             if (idx >= 0) {
@@ -168,7 +170,6 @@ class OccHabStore(context: Context) : JsonCollectionStore<OccHabSaisie>() {
                 }
             }
         }
-    }
 
     /** Recalcule l'état DÉRIVÉ d'une saisie : envoyée ssi toutes ses stations le sont ; l'erreur
      *  saisie reflète la 1ʳᵉ station restant à envoyer en erreur (effacée si tout est parti). */

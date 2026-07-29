@@ -19,8 +19,11 @@
 package fr.ariegenature.geomys.network
 
 import fr.ariegenature.geomys.model.OccHabSaisie
+import fr.ariegenature.geomys.model.OccHabStation
 import fr.ariegenature.geomys.store.GeoNatureConfig
 import fr.ariegenature.geomys.store.OccHabStore
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /** Résultat d'un envoi de saisie OccHab : [succes] + [message] humanisé prêt à afficher. */
 data class ResultatEnvoiOccHab(val succes: Boolean, val message: String)
@@ -41,30 +44,52 @@ suspend fun envoyerSaisieOccHabVersGeoNature(
     saisie: OccHabSaisie,
     store: OccHabStore,
     config: GeoNatureConfig,
-): ResultatEnvoiOccHab {
+    /** Envoi d'UNE station — injectable pour les tests (défaut : le POST réseau réel). */
+    envoyer: suspend (OccHabStation, GeoNatureConfig) -> OccHabEnvoiResult = OccHabUpload::envoyer,
+): ResultatEnvoiOccHab = withContext(Dispatchers.IO) {
+    // Sur IO : les commits synchrones du store (gson.toJson + prefs.commit) ne bloquent PAS le
+    // thread UI à l'envoi d'une saisie multi-stations.
     val aEnvoyer = saisie.stations.filter { !it.envoyeGeoNature }
     val dejaEnvoyees = saisie.stations.size - aEnvoyer.size
     val total = saisie.stations.size
 
     if (aEnvoyer.isEmpty()) {
         // Tout avait déjà été transmis (la saisie est déjà marquée envoyée au store).
-        return ResultatEnvoiOccHab(true, "Toutes les stations avaient déjà été transmises.")
+        return@withContext ResultatEnvoiOccHab(true, "Toutes les stations avaient déjà été transmises.")
     }
 
     var nbCrees = 0
     var derniereErreur: String? = null
     for (station in aEnvoyer) {
         try {
-            val res = OccHabUpload.envoyer(station, config)
+            val res = envoyer(station, config)
             // L'ACQUIS d'abord : la station créée est marquée AVANT tout le reste — un ré-envoi
             // ne la re-postera pas (recalcule aussi l'état de la saisie).
-            store.marquerStationEnvoyee(saisie.id, station.id, res.idStationServeur)
-            nbCrees++
+            val persiste = store.marquerStationEnvoyee(saisie.id, station.id, res.idStationServeur)
+            if (persiste) {
+                nbCrees++
+            } else {
+                // POST réussi mais écriture disque échouée (disque plein…) : la station EST créée
+                // côté serveur mais non marquée localement → on la passe en INCERTAIN pour que le
+                // ré-envoi vérifie l'existence par UUID au lieu de re-POSTer (anti-doublon).
+                store.marquerStationIncertain(saisie.id, station.id,
+                    "Station transmise mais enregistrement local incomplet — vérification au prochain envoi.")
+                derniereErreur = "Enregistrement local incomplet"
+            }
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: GNErreur.EnvoiIncertain) {
             store.marquerStationIncertain(saisie.id, station.id, e.msg)
             derniereErreur = e.msg
+        } catch (e: GNErreur.EnvoiEchoue) {
+            // Un 5xx a PU committer la station côté serveur avant l'échec (500 en sérialisant la
+            // réponse, 504 après l'INSERT). Le module OccHab n'a AUCUNE contrainte d'unicité →
+            // on la traite comme INCERTAINE (le ré-envoi vérifiera par UUID) et non comme un échec
+            // net qui inviterait à re-POSTer → anti-doublon.
+            val msg = humaniserErreurReseau(e)
+            if (e.code >= 500) store.marquerStationIncertain(saisie.id, station.id, msg)
+            else store.marquerStationErreur(saisie.id, station.id, msg)
+            derniereErreur = msg
         } catch (e: Exception) {
             val msg = humaniserErreurReseau(e)
             store.marquerStationErreur(saisie.id, station.id, msg)
@@ -72,7 +97,7 @@ suspend fun envoyerSaisieOccHabVersGeoNature(
         }
     }
 
-    return if (nbCrees == aEnvoyer.size) {
+    if (nbCrees == aEnvoyer.size) {
         // Envoi COMPLET (la saisie a été marquée envoyée par le dernier marquerStationEnvoyee).
         val msg = buildString {
             append("$nbCrees station")

@@ -93,10 +93,11 @@ object OccHabApi {
         val base = config.urlServeur.trim().trimEnd('/')
         val (token, _, cookies) = GeoNatureAuth.loginAvecCookies(base, config.login, config.motDePasse)
             ?: return@withContext emptyMap()
+        var conn: java.net.HttpURLConnection? = null
         try {
-            val conn = HttpClient.get(URL("$base/api/gn_commons/modules"), token, cookies, 15000)
+            conn = HttpClient.get(URL("$base/api/gn_commons/modules"), token, cookies, 15000)
             if (conn.responseCode != 200) return@withContext emptyMap()
-            val text = conn.inputStream.bufferedReader().readText()
+            val text = conn.inputStream.bufferedReader().use { it.readText() }
             val arr = JSONArray(text)
             val resultat = mutableMapOf<String, OccHabAcces>()
             for (i in 0 until arr.length()) {
@@ -109,8 +110,12 @@ object OccHabApi {
                 resultat[code] = OccHabAcces(disponible = true, peutCreer = c > 0, peutLire = r > 0)
             }
             resultat
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e // ne PAS avaler l'annulation (sinon un sync annulé réinitialise les drapeaux).
         } catch (_: Exception) {
             emptyMap()
+        } finally {
+            conn?.disconnect()
         }
     }
 

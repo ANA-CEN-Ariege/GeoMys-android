@@ -331,6 +331,12 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
      *  géométrie devient l'objet en cours (draggable), les autres stations restent en lecture
      *  seule. « Valider » enchaînera sur la liste des habitats (la station en porte). */
     private fun editerStationExistante(st: fr.ariegenature.geomys.model.OccHabStation) {
+        // Une station déjà envoyée n'est pas rééditable : ses modifications ne repartiraient jamais
+        // (elle reste marquée envoyée), et sans id serveur fiable un ré-envoi la dupliquerait.
+        if (st.envoyeGeoNature) {
+            Toast.makeText(requireContext(), "Station déjà envoyée — non modifiable.", Toast.LENGTH_SHORT).show()
+            return
+        }
         occhabViewModel.reprendreStation(st)
         // Purge l'objet en cours d'édition précédent.
         pointChoisi = null

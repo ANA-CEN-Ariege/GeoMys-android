@@ -23,8 +23,8 @@ android {
         // pour distribuer deux applis distinctes depuis une seule base de code.
         minSdk = 24
         targetSdk = 36
-        versionCode = 168
-        versionName = "1.3.4"
+        versionCode = 169
+        versionName = "1.3.5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

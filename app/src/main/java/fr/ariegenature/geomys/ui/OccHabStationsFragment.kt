@@ -84,6 +84,7 @@ class OccHabStationsFragment : Fragment() {
         )
         binding.recyclerView.layoutManager = LinearLayoutManager(requireContext())
         binding.recyclerView.adapter = adapter
+        binding.btnToutEnvoyer.setOnClickListener { confirmerEnvoiTout() }
         setupTabs()
         rafraichir()
     }
@@ -114,6 +115,23 @@ class OccHabStationsFragment : Fragment() {
         binding.tvEmpty.text = if (ongletCourant == 1)
             "Aucune saisie envoyée."
         else "Aucune saisie en attente d'envoi.\nCréez-en une depuis « OccHab » sur l'accueil."
+        majBoutonToutEnvoyer(toutes)
+    }
+
+    /** Nombre de saisies réellement envoyables (à envoyer + au moins un habitat renseigné). */
+    private fun saisiesEnvoyables(toutes: List<OccHabSaisie>) = toutes.filter { saisie ->
+        !saisie.envoyeGeoNature && saisie.stations.any { st -> st.habitats.any { it.cdHab > 0 } }
+    }
+
+    /** Bouton « Tout envoyer » : visible seulement dans l'onglet « À envoyer », hors envoi en
+     *  cours, avec droit de création (CRUVED C) et au moins une saisie envoyable. */
+    private fun majBoutonToutEnvoyer(toutes: List<OccHabSaisie>) {
+        val autorise = GeoNatureConfig(requireContext()).occhabPeutCreer
+        val nb = saisiesEnvoyables(toutes).size
+        val visible = ongletCourant == 0 && autorise && nb > 0 && !envoiEnCours
+        binding.btnToutEnvoyer.visibility = if (visible) View.VISIBLE else View.GONE
+        binding.btnToutEnvoyer.isEnabled = !envoiEnCours
+        binding.btnToutEnvoyer.text = "Tout envoyer ($nb)"
     }
 
     private fun updateTabCounts(toutes: List<OccHabSaisie>) {
@@ -176,6 +194,71 @@ class OccHabStationsFragment : Fragment() {
                     it.progressEnvoi.visibility = View.GONE
                     it.tvMessageEnvoi.visibility = View.GONE
                 }
+            }
+        }
+    }
+
+    /** « Tout envoyer » : confirme, puis pousse séquentiellement toutes les saisies envoyables
+     *  (chacune via [envoyerSaisieOccHabVersGeoNature], envoi partiel sans perte + anti-doublon
+     *  par station). Récapitulatif agrégé à la fin. */
+    private fun confirmerEnvoiTout() {
+        if (envoiEnCours) {
+            android.widget.Toast.makeText(requireContext(), "Un envoi est déjà en cours…",
+                android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
+        val gnConfig = GeoNatureConfig(requireContext())
+        if (!gnConfig.estConfiguree) {
+            AlertDialog.Builder(requireContext())
+                .setTitle("Configuration requise")
+                .setMessage("La connexion GeoNature n'est pas configurée. Ouvrez la configuration (⚙️) avant d'envoyer.")
+                .setPositiveButton("OK", null)
+                .show()
+            return
+        }
+        val aEnvoyer = saisiesEnvoyables(occHabStore.charger())
+        if (aEnvoyer.isEmpty()) return
+        AlertDialog.Builder(requireContext())
+            .setTitle("Tout envoyer")
+            .setMessage("Envoyer les ${aEnvoyer.size} saisie(s) en attente vers GeoNature ?")
+            .setPositiveButton("Envoyer") { _, _ -> lancerEnvoiTout(aEnvoyer, gnConfig) }
+            .setNegativeButton(R.string.annuler, null)
+            .show()
+    }
+
+    private fun lancerEnvoiTout(saisies: List<OccHabSaisie>, gnConfig: GeoNatureConfig) {
+        envoiEnCours = true
+        binding.btnToutEnvoyer.visibility = View.GONE
+        binding.progressEnvoi.visibility = View.VISIBLE
+        binding.tvMessageEnvoi.visibility = View.VISIBLE
+        viewLifecycleOwner.lifecycleScope.launch {
+            var succes = 0
+            var echecs = 0
+            val messages = mutableListOf<String>()
+            try {
+                saisies.forEachIndexed { i, saisie ->
+                    _binding?.tvMessageEnvoi?.text = "Envoi ${i + 1}/${saisies.size} vers GeoNature…"
+                    val res = envoyerSaisieOccHabVersGeoNature(saisie, occHabStore, gnConfig)
+                    if (res.succes) succes++ else { echecs++; messages.add(res.message) }
+                    if (isAdded && _binding != null) rafraichir()
+                }
+                if (!isAdded || _binding == null) return@launch
+                val recap = buildString {
+                    append("$succes saisie(s) envoyée(s)")
+                    if (echecs > 0) append(", $echecs échec(s)")
+                    if (messages.isNotEmpty()) { append("\n\n"); append(messages.joinToString("\n")) }
+                }
+                AlertDialog.Builder(requireContext())
+                    .setTitle(if (echecs == 0) "Envoi" else "Erreur d'envoi")
+                    .setMessage(recap)
+                    .setPositiveButton("OK", null).show()
+            } finally {
+                envoiEnCours = false
+                _binding?.let {
+                    it.progressEnvoi.visibility = View.GONE
+                    it.tvMessageEnvoi.visibility = View.GONE
+                }
+                if (isAdded && _binding != null) rafraichir()
             }
         }
     }

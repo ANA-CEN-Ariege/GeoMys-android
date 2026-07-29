@@ -58,6 +58,11 @@ class SaisiesEnAttenteFragment : Fragment() {
      *  1 = Envoyées (groupes entièrement transmis). Mêmes onglets que les autres « Mes X ». */
     private var ongletCourant = 0
 
+    /** true pendant un envoi (groupe ou « Tout envoyer ») : masque le bouton d'envoi global et
+     *  refuse un second déclenchement. OutboxEnvoi sérialise déjà côté réseau (mutex), ce drapeau
+     *  ne fait que garder l'UI cohérente. */
+    private var envoiEnCours = false
+
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         binding.root.applySystemBarInsets(includeIme = true)
@@ -65,6 +70,7 @@ class SaisiesEnAttenteFragment : Fragment() {
         binding.rvSaisies.layoutManager =
             androidx.recyclerview.widget.LinearLayoutManager(requireContext())
         binding.rvSaisies.adapter = adapterAttente
+        binding.btnToutEnvoyer.setOnClickListener { confirmerEnvoiTout() }
         binding.tabLayout.addTab(binding.tabLayout.newTab().setText("À envoyer"))
         binding.tabLayout.addTab(binding.tabLayout.newTab().setText("Envoyées"))
         binding.tabLayout.addOnTabSelectedListener(
@@ -146,6 +152,24 @@ class SaisiesEnAttenteFragment : Fragment() {
         binding.tabLayout.getTabAt(0)?.text = "À envoyer ($enAttente)"
         binding.tabLayout.getTabAt(1)?.text = "Envoyées ($envoyees)"
         peuplerListe(toutes)
+        majBoutonToutEnvoyer(toutes)
+    }
+
+    /** Bouton « Tout envoyer » : visible seulement dans l'onglet « À envoyer », hors envoi en
+     *  cours, et s'il reste au moins une donnée en attente dans un protocole AUTORISÉ (CRUVED C —
+     *  même garde que les flèches par groupe : sans droit, le POST partirait en 403). */
+    private fun majBoutonToutEnvoyer(toutes: List<SaisieEnAttente>) {
+        val memo = mutableMapOf<String, Boolean>()
+        val nb = toutes.count { s ->
+            (s.etat == SaisieEnAttente.Etat.PENDING || s.etat == SaisieEnAttente.Etat.ERROR) &&
+                memo.getOrPut(s.moduleCode) {
+                    fr.ariegenature.geomys.network.MonitoringApi.moduleAutoriseCreation(s.moduleCode)
+                }
+        }
+        val visible = ongletCourant == 0 && nb > 0 && !envoiEnCours
+        binding.btnToutEnvoyer.visibility = if (visible) View.VISIBLE else View.GONE
+        binding.btnToutEnvoyer.isEnabled = !envoiEnCours
+        binding.btnToutEnvoyer.text = "Tout envoyer ($nb)"
     }
 
     // ── Terminologie monitoring : chaque item est nommé par le LABEL SERVEUR de son type
@@ -437,7 +461,7 @@ class SaisiesEnAttenteFragment : Fragment() {
             header.addView(creerIconeAction(
                 fr.ariegenature.geomys.R.drawable.ic_send,
                 "Envoyer les données restantes",
-                tintBleu = true,
+                tint = couleurEnvoi(),
             ) { lancerEnvoiGroupe(s.uuid) })
         }
         row.addView(header)
@@ -480,30 +504,31 @@ class SaisiesEnAttenteFragment : Fragment() {
             parent.addView(creerIconeAction(
                 fr.ariegenature.geomys.R.drawable.ic_send,
                 "Envoyer ce groupe",
-                tintBleu = true,
+                tint = couleurEnvoi(),
             ) { lancerEnvoiGroupe(s.uuid) })
         }
         parent.addView(creerIconeAction(
             fr.ariegenature.geomys.R.drawable.ic_edit,
             "Éditer ${ceTypeDe(s)}",
-            tintBleu = true,
+            tint = couleurEdition(),
         ) { ouvrirEdition(s) })
         parent.addView(creerIconeAction(
             fr.ariegenature.geomys.R.drawable.ic_delete,
             "Supprimer ${ceTypeDe(s)}",
-            tintBleu = false,
+            tint = couleurErreur(requireContext()),
         ) {
             val nbEnfants = OutboxMonitoring.descendants(s.uuid).size
             demanderSuppression(s, nbEnfants)
         })
     }
 
-    /** ImageButton compact avec fond borderless (ripple) pour ne pas alourdir la ligne. La
-     *  couleur d'icône suit le thème primaire pour Envoyer/Éditer, rouge pour Supprimer. */
+    /** ImageButton compact avec fond borderless (ripple) pour ne pas alourdir la ligne. [tint]
+     *  est la couleur d'icône à appliquer : vert d'envoi ([couleurEnvoi]) pour la flèche ➤,
+     *  jaune clair pour Éditer, rouge d'erreur pour Supprimer. */
     private fun creerIconeAction(
         drawableId: Int,
         description: String,
-        tintBleu: Boolean,
+        tint: Int,
         action: () -> Unit,
     ): android.widget.ImageButton {
         val ctx = requireContext()
@@ -521,15 +546,21 @@ class SaisiesEnAttenteFragment : Fragment() {
             layoutParams = LinearLayout.LayoutParams(
                 (48 * density).toInt(), (48 * density).toInt(),
             )
-            // Icônes d'action : jaune clair pour Envoyer/Éditer (cohérence cliquable),
-            // colorError pour Supprimer (sémantique destructive maintenue).
-            val couleur = if (tintBleu)
-                androidx.core.content.ContextCompat.getColor(ctx, fr.ariegenature.geomys.R.color.jaune_clair)
-            else couleurErreur(ctx)
-            setColorFilter(couleur)
+            setColorFilter(tint)
             setOnClickListener { action() }
         }
     }
+
+    /** Vert d'envoi (@color/colorSecondary) — IDENTIQUE à la flèche ➤ « Envoyer » de « Mes
+     *  saisies » et « Mes stations » (app:tint colorSecondary sur ic_send). */
+    private fun couleurEnvoi(): Int = androidx.core.content.ContextCompat.getColor(
+        requireContext(), fr.ariegenature.geomys.R.color.colorSecondary,
+    )
+
+    /** Jaune clair des icônes cliquables (Éditer). */
+    private fun couleurEdition(): Int = androidx.core.content.ContextCompat.getColor(
+        requireContext(), fr.ariegenature.geomys.R.color.jaune_clair,
+    )
 
     /** Navigation vers [NouvelleVisiteFragment] en mode édition pour la saisie [s]. Le
      *  fragment va récupérer les autres meta (parent serveur, type, etc.) directement
@@ -648,9 +679,77 @@ class SaisiesEnAttenteFragment : Fragment() {
             .show()
     }
 
+    /** « Tout envoyer » : confirme, puis pousse TOUTE la file en attente d'un coup, dans l'ordre
+     *  parent → enfant ([OutboxEnvoi.envoyerTout]). Anti-doublon assuré par objetCree. */
+    private fun confirmerEnvoiTout() {
+        if (envoiEnCours) {
+            android.widget.Toast.makeText(requireContext(), "Un envoi est déjà en cours…",
+                android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
+        val config = GeoNatureConfig(requireContext())
+        if (!config.estConfiguree) {
+            AlertDialog.Builder(requireContext())
+                .setTitle("Configuration requise")
+                .setMessage("La connexion GeoNature n'est pas configurée. Ouvrez la configuration (⚙️) avant d'envoyer.")
+                .setPositiveButton("OK", null)
+                .show()
+            return
+        }
+        val nb = OutboxMonitoring.tout().count {
+            it.etat == SaisieEnAttente.Etat.PENDING || it.etat == SaisieEnAttente.Etat.ERROR
+        }
+        if (nb == 0) return
+        AlertDialog.Builder(requireContext())
+            .setTitle("Tout envoyer")
+            .setMessage("Envoyer les $nb donnée(s) en attente vers GeoNature ?")
+            .setPositiveButton("Envoyer") { _, _ -> lancerEnvoiTout(config) }
+            .setNegativeButton("Annuler", null)
+            .show()
+    }
+
+    private fun lancerEnvoiTout(config: GeoNatureConfig) {
+        envoiEnCours = true
+        binding.btnToutEnvoyer.visibility = View.GONE
+        binding.progressEnvoi.visibility = View.VISIBLE
+        binding.tvMessageEnvoi.visibility = View.VISIBLE
+        binding.tvMessageEnvoi.text = "Préparation de l'envoi…"
+        viewLifecycleOwner.lifecycleScope.launch {
+            try {
+                val res = OutboxEnvoi.envoyerTout(config) { envoyees, total, msg ->
+                    activity?.runOnUiThread {
+                        // Callback venant du bloc Dispatchers.IO : peut arriver après onDestroyView.
+                        val b = _binding ?: return@runOnUiThread
+                        b.tvMessageEnvoi.text = "Envoi $envoyees/$total · $msg".trim().trimEnd('·', ' ')
+                        rafraichir()
+                    }
+                }
+                if (!isAdded || _binding == null) return@launch
+                val recap = buildString {
+                    append("Envoi terminé · ${res.succes} succès, ${res.echecs} échec(s)")
+                    if (res.messages.isNotEmpty()) { append("\n\n"); append(res.messages.joinToString("\n")) }
+                }
+                AlertDialog.Builder(requireContext())
+                    .setTitle("Envoi")
+                    .setMessage(recap)
+                    .setPositiveButton("OK", null)
+                    .show()
+            } finally {
+                envoiEnCours = false
+                _binding?.let {
+                    it.progressEnvoi.visibility = View.GONE
+                    it.tvMessageEnvoi.visibility = View.GONE
+                }
+                rafraichir()
+            }
+        }
+    }
+
     /** F : envoi du sous-arbre — progression + récap final. On ne pousse que la saisie
      *  [uuidRacine] et ses descendants locaux (déclenché par « Envoyer ce groupe »). */
     private fun lancerEnvoiGroupe(uuidRacine: String) {
+        envoiEnCours = true
+        binding.btnToutEnvoyer.visibility = View.GONE
         binding.progressEnvoi.visibility = View.VISIBLE
         binding.tvMessageEnvoi.visibility = View.VISIBLE
         binding.tvMessageEnvoi.text = "Préparation du groupe…"
@@ -666,6 +765,7 @@ class SaisiesEnAttenteFragment : Fragment() {
                     rafraichir()
                 }
             }
+            envoiEnCours = false
             if (!isAdded || _binding == null) return@launch
             binding.progressEnvoi.visibility = View.GONE
             val recap = buildString {

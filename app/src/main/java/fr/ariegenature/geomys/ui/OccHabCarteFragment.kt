@@ -30,13 +30,17 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageButton
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.drawable.toBitmap
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
+import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import fr.ariegenature.geomys.R
 import fr.ariegenature.geomys.databinding.FragmentOcchabCarteBinding
+import fr.ariegenature.geomys.network.envoyerSaisieOccHabVersGeoNature
+import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.osmdroid.config.Configuration
 import org.osmdroid.events.MapEventsReceiver
@@ -137,6 +141,10 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         binding.bandeauSaisie.root.applyStatusBarMargin()
+        // Coche verte (haut-droite) sous la barre d'état, comme la coche d'Occtax.
+        binding.btnRetour.applyStatusBarMargin()
+        // Bandeau d'instructions sous la barre d'état, comme la Saisie multi-taxons.
+        binding.tvInstructions.applyStatusBarMargin()
         // Comme Occtax : les clusters de coins ET le bandeau du bas passent au-dessus de la barre
         // système (marge XML + inset). Les 100dp de marge des clusters les gardent au-dessus du
         // bandeau du bas, qui ne les masque donc pas.
@@ -215,6 +223,9 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
             binding.map.controller.setZoom(11.0)
             binding.map.controller.setCenter(GeoPoint(42.93, 1.40))
         }
+
+        // Coche verte : terminer la saisie OccHab (même geste qu'en Occtax).
+        binding.btnRetour.setOnClickListener { terminerSaisie() }
 
         binding.btnModePoint.setOnClickListener { changerMode(Mode.POINT) }
         binding.btnModePolygone.setOnClickListener { changerMode(Mode.POLYGONE) }
@@ -414,6 +425,7 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
     private fun changerMode(m: Mode) {
         mode = m
         mettreEnEvidenceBoutonMode()
+        // Même texte que la Saisie multi-taxons (TraceFragment).
         binding.tvInstructions.text = if (m == Mode.POINT)
             "Touchez pour placer le point · appui long pour le déplacer" else
             "Touchez pour ajouter des sommets (≥ 3) · appui long pour déplacer"
@@ -448,7 +460,15 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
                 markerPoint = markerDraggable(pt).apply {
                     setOnMarkerDragListener(object : Marker.OnMarkerDragListener {
                         override fun onMarkerDrag(m: Marker) { pointChoisi = m.position }
-                        override fun onMarkerDragEnd(m: Marker) { pointChoisi = m.position; majBoutons() }
+                        override fun onMarkerDragEnd(m: Marker) {
+                            // Aimantage au relâcher : lâché près d'un sommet d'une autre station,
+                            // le point se raccorde exactement dessus (comme au tap).
+                            val cible = snapVersSommet(m.position) ?: m.position
+                            pointChoisi = cible
+                            m.position = cible
+                            majBoutons()
+                            binding.map.invalidate()
+                        }
                         override fun onMarkerDragStart(m: Marker) {}
                     })
                 }
@@ -467,7 +487,20 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
                             val i = markersSommets.indexOf(m)
                             if (i in sommets.indices) { sommets[i] = m.position; redessinerForme() }
                         }
-                        override fun onMarkerDragEnd(m: Marker) { majBoutons() }
+                        override fun onMarkerDragEnd(m: Marker) {
+                            // Aimantage au relâcher : lâché près d'un sommet d'une AUTRE station,
+                            // le sommet déplacé se raccorde exactement dessus (comme au tap). Ne
+                            // s'aimante jamais aux autres sommets du même polygone (sommetsSession
+                            // = uniquement les stations voisines).
+                            val i = markersSommets.indexOf(m)
+                            if (i in sommets.indices) {
+                                val cible = snapVersSommet(m.position) ?: m.position
+                                sommets[i] = cible
+                                m.position = cible
+                                redessinerForme()
+                            }
+                            majBoutons()
+                        }
                         override fun onMarkerDragStart(m: Marker) {}
                     })
                 }
@@ -547,6 +580,85 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
             findNavController().naviguerSur(R.id.action_occhab_carte_to_habitat)
         else
             findNavController().naviguerSur(R.id.action_occhab_carte_to_liste)
+    }
+
+    /** Coche verte (haut-droite) — même rôle qu'en Occtax : TERMINER la saisie OccHab en cours.
+     *  Les stations validées étant déjà enregistrées au fil de l'eau, « terminer » revient à
+     *  quitter vers l'accueil ; on propose aussi l'envoi immédiat (comme la coche d'Occtax offre
+     *  « enregistrer et envoyer »). L'éventuelle géométrie en cours NON validée est abandonnée,
+     *  comme le réticule non validé d'Occtax. */
+    private fun terminerSaisie() {
+        val store = fr.ariegenature.geomys.store.OccHabStore(requireContext())
+        val saisie = store.charger().firstOrNull { it.id == occhabViewModel.saisieId }
+        val stations = saisie?.stations ?: emptyList()
+        // Aucune station enregistrée dans cette saisie → rien à conserver, on quitte directement
+        // (comme la coche d'Occtax quand la sortie est vide).
+        if (saisie == null || stations.isEmpty()) { allerAccueil(); return }
+
+        val gnConfig = fr.ariegenature.geomys.store.GeoNatureConfig(requireContext())
+        // Envoi proposé seulement si utile ET autorisé (config OK, CRUVED C, au moins une station
+        // avec un habitat renseigné) — même garde que le bouton d'envoi de « Mes stations ».
+        val peutEnvoyer = gnConfig.estConfiguree && gnConfig.occhabPeutCreer &&
+            !saisie.envoyeGeoNature &&
+            stations.any { st -> st.habitats.any { it.cdHab > 0 } }
+
+        val optQuitter = "Enregistrer et quitter"
+        val optEnvoyer = "Enregistrer et envoyer sur GeoNature"
+        val optContinuer = "Continuer la saisie"
+        val options = mutableListOf(optQuitter)
+        if (peutEnvoyer) options.add(optEnvoyer)
+        options.add(optContinuer)
+
+        AlertDialog.Builder(requireContext())
+            .setTitle("Terminer la saisie OccHab")
+            .setItems(options.toTypedArray()) { _, which ->
+                when (options[which]) {
+                    optQuitter -> allerAccueil()
+                    optEnvoyer -> envoyerPuisQuitter(saisie, store, gnConfig)
+                    // optContinuer : ne rien faire, rester sur la carte.
+                }
+            }.show()
+    }
+
+    /** Regagne l'accueil (les stations validées sont déjà persistées au fil de l'eau). */
+    private fun allerAccueil() {
+        findNavController().popBackStack(R.id.accueilFragment, false)
+    }
+
+    /** Envoie TOUTE la saisie vers GeoNature (envoi partiel sans perte géré par le wrapper), puis
+     *  regagne l'accueil. Progression bloquante minimale le temps de l'appel. */
+    private fun envoyerPuisQuitter(
+        saisie: fr.ariegenature.geomys.model.OccHabSaisie,
+        store: fr.ariegenature.geomys.store.OccHabStore,
+        gnConfig: fr.ariegenature.geomys.store.GeoNatureConfig,
+    ) {
+        val densite = resources.displayMetrics.density
+        val contenu = android.widget.LinearLayout(requireContext()).apply {
+            orientation = android.widget.LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER_VERTICAL
+            val p = (20 * densite).toInt(); setPadding(p, p, p, p)
+            addView(android.widget.ProgressBar(requireContext()))
+            addView(android.widget.TextView(requireContext()).apply {
+                text = "Envoi de la saisie vers GeoNature…"
+                setPadding((16 * densite).toInt(), 0, 0, 0)
+            })
+        }
+        val progres = AlertDialog.Builder(requireContext())
+            .setView(contenu).setCancelable(false).create()
+        progres.show()
+        viewLifecycleOwner.lifecycleScope.launch {
+            try {
+                val res = envoyerSaisieOccHabVersGeoNature(saisie, store, gnConfig)
+                if (!isAdded || _binding == null) return@launch
+                AlertDialog.Builder(requireContext())
+                    .setTitle(if (res.succes) "Envoi" else "Erreur d'envoi")
+                    .setMessage(res.message)
+                    .setPositiveButton("OK") { _, _ -> allerAccueil() }
+                    .show()
+            } finally {
+                runCatching { progres.dismiss() }
+            }
+        }
     }
 
     override fun onResume() {

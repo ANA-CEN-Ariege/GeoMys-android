@@ -134,26 +134,25 @@ object MonitoringApi {
         } catch (_: Exception) { null }
     }
 
-    /** L'utilisateur peut-il CRÉER des données sur ce protocole (CRUVED C > 0) ? Lit la
-     *  mémoire puis le cache disque modules — pas d'appel réseau. Défaut TRUE quand le bloc
-     *  cruved est absent (vieux serveur, cache antérieur) ou le module inconnu du cache :
-     *  même philosophie que [MonitoringModule.aAuMoinsUnDroit], on ne verrouille jamais en
-     *  silence — le serveur refusera lui-même le cas échéant. Gate les flèches d'envoi de
-     *  « Mes visites » (cohérent avec le gating OccHab/Occtax des listes). */
-    fun moduleAutoriseCreation(moduleCode: String): Boolean {
-        moduleParCode(moduleCode)?.cruved?.let { return (it["C"] ?: 0) > 0 }
-        val json = MonitoringCache.getJson(MonitoringCache.keyModules()) ?: return true
-        return try {
-            val arr = json.parserTableauJson("data", "items", "modules") ?: return true
-            for (i in 0 until arr.length()) {
-                val item = arr.optJSONObject(i) ?: continue
-                if (item.optString("module_code") != moduleCode) continue
-                val cruved = item.optJSONObject("cruved") ?: return true
-                return cruved.optInt("C", 0) > 0
-            }
-            true
-        } catch (_: Exception) { true }
-    }
+    /** L'utilisateur peut-il CRÉER des données (visites/observations) sur ce protocole ?
+     *
+     *  Renvoie TOUJOURS true : le serveur reste seul juge (il rejette par 403 le cas échéant),
+     *  exactement comme l'interface web GeoNature qui n'empêche pas la saisie côté client. On ne
+     *  verrouille jamais l'envoi en silence.
+     *
+     *  Pourquoi ne PAS gater sur le CRUVED de `/api/monitorings/modules` ? Ce `cruved` ne reflète
+     *  PAS le droit de créer une visite : il vaut `C:0` pour TOUS les protocoles, y compris pour
+     *  un utilisateur qui crée sans problème des visites sur le web (constaté sur l'instance
+     *  ANA-CEN : 13 modules, tous `C:0 / E:3 / R:3`). C'est le droit sur l'OBJET « module »
+     *  lui-même (éditer la définition du protocole — réservé aux admins), pas sur ses DONNÉES.
+     *  Gater dessus masquait à tort les flèches ➤ d'envoi ET le bouton « Tout envoyer » de « Mes
+     *  visites » à des utilisateurs pourtant habilités. Occtax/OccHab s'appuient sur un autre
+     *  signal (cruved de gn_commons/modules, lui fiable) et conservent donc leur gating.
+     *
+     *  [moduleCode] conservé pour l'API (et un éventuel gating futur basé sur le bon signal :
+     *  cruved par type d'objet, absent de la liste des modules). */
+    @Suppress("UNUSED_PARAMETER")
+    fun moduleAutoriseCreation(moduleCode: String): Boolean = true
 
     /** GET /api/monitorings/modules — liste les modules de suivi disponibles sur l'instance.
      *  Renvoie [] silencieusement si HTTP 404 (gn_module_monitoring non installé).

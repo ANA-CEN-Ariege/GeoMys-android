@@ -59,6 +59,20 @@
             app:tabSelectedTextColor="@color/jaune_clair"
             app:tabTextColor="?attr/colorOnSurfaceVariant" />
 
+        <!-- Envoi groupé : pousse d'un coup TOUTE la file en attente (parent → enfant), en
+             s'appuyant sur OutboxEnvoi.envoyerTout. Masqué hors de l'onglet « À envoyer »,
+             pendant un envoi, ou si aucun protocole autorisé n'a de donnée en attente. -->
+        <Button
+            android:id="@+id/btn_tout_envoyer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:backgroundTint="@color/green_85"
+            android:text="Tout envoyer"
+            android:textAllCaps="false"
+            android:textColor="@android:color/white"
+            android:visibility="gone" />
+
         <!-- RecyclerView (recyclage : seules les lignes visibles sont construites), cohérent
              avec « Mes saisies » / « Mes stations ». Remplace l'ancien ScrollView + LinearLayout
              reconstruit intégralement à chaque refresh ; les items (headers protocole/groupe,

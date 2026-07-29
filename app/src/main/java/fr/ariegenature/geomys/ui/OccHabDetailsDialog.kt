@@ -180,9 +180,17 @@ fun ouvrirDialogDetailsOccHab(
     var etComment: EditText? = null
     var lireMethode: () -> Int? = { null }
     var lireNature: () -> Int? = { null }
+    // Visibilité des spinners station pilotée par OCCHAB.formConfig (les EditText s'auto-testent
+    // via `et != null`). Les flags sont relus à « Valider » pour PRÉSERVER la valeur d'un champ
+    // masqué plutôt que de l'effacer.
+    var methodeVisible = false
+    var natureVisible = false
     if (!jddSeul) {
-        // Observateurs : MÊME widget multi-sélection qu'Occtax (« Détails du relevé ») —
-        // recherche + entrées retirables « ✕ ». Appliqué au ViewModel seulement à « Valider ».
+        // Visibilité pilotée serveur (parité web occhab-form) — défaut « visible » si la clé est
+        // absente (occhabChampVisible). Clés = celles du formulaire web du module OccHab.
+        val vDateMin = config.occhabChampVisible("date_min")
+        val vDateMax = config.occhabChampVisible("date_max")
+        // Observateurs : toujours proposés (visibilité serveur via OBSERVER_AS_TXT, pas formConfig).
         racine.addView(label("Observateurs"))
         lireObservateurs = construireSelecteurMultiObservateurs(
             context, racine, observateursPourDetailsReleve(config),
@@ -192,33 +200,42 @@ fun ouvrirDialogDetailsOccHab(
         // Dates début / fin.
         val calDebut = Calendar.getInstance().apply { timeInMillis = pendingDateMin ?: System.currentTimeMillis() }
         val calFin = Calendar.getInstance().apply { timeInMillis = pendingDateMax ?: calDebut.timeInMillis }
-        champClic("Date de début", dateFmt.format(calDebut.time)) { tv ->
+        if (vDateMin) champClic("Date de début", dateFmt.format(calDebut.time)) { tv ->
             choisirDateHeure(calDebut) {
                 pendingDateMin = calDebut.timeInMillis
                 tv.text = dateFmt.format(calDebut.time)
             }
         }
-        champClic("Date de fin", pendingDateMax?.let { dateFmt.format(Date(it)) } ?: "—") { tv ->
+        if (vDateMax) champClic("Date de fin", pendingDateMax?.let { dateFmt.format(Date(it)) } ?: "—") { tv ->
             choisirDateHeure(calFin) {
                 pendingDateMax = calFin.timeInMillis
                 tv.text = dateFmt.format(calFin.time)
             }
         }
 
-        // Altitudes / surface / nomenclatures / commentaire (lus à la validation).
-        etAltMin = champNombre("Altitude min (m)", d.altitudeMin?.toString())
-        etAltMax = champNombre("Altitude max (m)", d.altitudeMax?.toString())
-        etSurface = champNombre("Surface (m²)", d.surface?.toString())
-        lireMethode = spinner("Méthode de calcul de la surface", "METHOD_CALCUL_SURFACE", d.idNomCalculSurface)
-        lireNature = spinner("Nature de l'objet géographique", "NAT_OBJ_GEO", d.idNomObjetGeographique)
-        racine.addView(label("Commentaire"))
-        etComment = EditText(context).apply {
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or
-                InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
-            minLines = 2
-            setText(d.comment.orEmpty())
+        // Altitudes / surface / nomenclatures / commentaire (créés seulement si visibles ;
+        // `area` = m² entiers côté serveur = BigInteger, donc pas de décimale). Lus à la validation.
+        if (config.occhabChampVisible("altitude_min")) etAltMin = champNombre("Altitude min (m)", d.altitudeMin?.toString())
+        if (config.occhabChampVisible("altitude_max")) etAltMax = champNombre("Altitude max (m)", d.altitudeMax?.toString())
+        if (config.occhabChampVisible("area")) etSurface = champNombre("Surface (m²)", d.surface?.toString())
+        if (config.occhabChampVisible("area_surface_calculation")) {
+            lireMethode = spinner("Méthode de calcul de la surface", "METHOD_CALCUL_SURFACE", d.idNomCalculSurface)
+            methodeVisible = true
         }
-        racine.addView(etComment)
+        if (config.occhabChampVisible("geographic_object")) {
+            lireNature = spinner("Nature de l'objet géographique", "NAT_OBJ_GEO", d.idNomObjetGeographique)
+            natureVisible = true
+        }
+        if (config.occhabChampVisible("comment")) {
+            racine.addView(label("Commentaire"))
+            etComment = EditText(context).apply {
+                inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or
+                    InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+                minLines = 2
+                setText(d.comment.orEmpty())
+            }
+            racine.addView(etComment)
+        }
     }
 
     val dlg = AlertDialog.Builder(context)
@@ -250,12 +267,14 @@ fun ouvrirDialogDetailsOccHab(
                     it.observateursNoms = obs.map { o -> o.second }
                     it.dateMin = pendingDateMin
                     it.dateMax = fin
-                    it.altitudeMin = etAltMin?.text?.toString()?.trim()?.toIntOrNull()
-                    it.altitudeMax = etAltMax?.text?.toString()?.trim()?.toIntOrNull()
-                    it.surface = etSurface?.text?.toString()?.trim()?.toLongOrNull()
-                    it.idNomCalculSurface = lireMethode()
-                    it.idNomObjetGeographique = lireNature()
-                    it.comment = etComment?.text?.toString()?.trim()?.takeIf { s -> s.isNotEmpty() }
+                    // Champ MASQUÉ par formConfig (widget non créé) → on PRÉSERVE la valeur
+                    // existante (jamais effacée), comme Occtax/monitoring.
+                    it.altitudeMin = if (etAltMin != null) etAltMin?.text?.toString()?.trim()?.toIntOrNull() else d.altitudeMin
+                    it.altitudeMax = if (etAltMax != null) etAltMax?.text?.toString()?.trim()?.toIntOrNull() else d.altitudeMax
+                    it.surface = if (etSurface != null) etSurface?.text?.toString()?.trim()?.toLongOrNull() else d.surface
+                    it.idNomCalculSurface = if (methodeVisible) lireMethode() else d.idNomCalculSurface
+                    it.idNomObjetGeographique = if (natureVisible) lireNature() else d.idNomObjetGeographique
+                    it.comment = if (etComment != null) etComment?.text?.toString()?.trim()?.takeIf { s -> s.isNotEmpty() } else d.comment
                 }
             }
             onValide()

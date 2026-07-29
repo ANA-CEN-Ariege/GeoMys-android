@@ -150,4 +150,23 @@ class TaxRefCacheTest {
         // Trop éloigné de tout.
         assertNull(TaxRefCache.chercherApproche("zzzzzz"))
     }
+
+    @Test
+    fun set_concurrents_ne_perdent_aucune_entree() {
+        // set() = lire-modifier-écrire de TOUTE la map ; sans le verrou de TaxRefCache, deux
+        // résolutions en ligne concurrentes s'écrasent une entrée (lost update).
+        val nb = 8; val parThread = 40
+        val depart = java.util.concurrent.CountDownLatch(1)
+        val fin = java.util.concurrent.CountDownLatch(nb)
+        (0 until nb).forEach { e ->
+            Thread {
+                depart.await()
+                for (i in 0 until parThread) TaxRefCache.set("t-$e-$i", 1000 * e + i, "Sci $e $i")
+                fin.countDown()
+            }.start()
+        }
+        depart.countDown()
+        fin.await()
+        assertEquals("aucune entrée perdue", nb * parThread, TaxRefCache.count)
+    }
 }

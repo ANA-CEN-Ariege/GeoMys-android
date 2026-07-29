@@ -96,6 +96,10 @@ object TaxRefCache {
         .create()
 
     @Volatile private var mem: Map<String, TaxRefEntry>? = null
+    // Verrou process-wide sérialisant les lire-modifier-écrire du cache principal (charger / set /
+    // ajouter / sauvegarder) : une résolution en ligne (`set`, sur IO) peut courir en parallèle
+    // d'une synchro (`remplacerTout`, IO) → sans lock, lost-update et divergence mem↔disque.
+    private val verrou = Any()
     @Volatile private var memGroupes: Map<String, String>? = null
     @Volatile private var memGroupes1: Map<String, String>? = null
     @Volatile private var memRegnes: Map<String, String>? = null
@@ -296,14 +300,14 @@ object TaxRefCache {
         return prev[m]
     }
 
-    fun set(nom: String, cdNom: Int, sciNom: String, nomFr: String? = null) {
-        val cache = charger().toMutableMap()
+    fun set(nom: String, cdNom: Int, sciNom: String, nomFr: String? = null) = synchronized(verrou) {
+        val cache = chargerInterne().toMutableMap()
         cache[normaliser(nom)] = TaxRefEntry(cdNom, sciNom, nomFr?.takeIf { it.isNotEmpty() })
         sauvegarder(cache)
     }
 
-    fun ajouter(entries: Map<String, TaxRefEntry>) {
-        val cache = charger().toMutableMap()
+    fun ajouter(entries: Map<String, TaxRefEntry>) = synchronized(verrou) {
+        val cache = chargerInterne().toMutableMap()
         cache.putAll(entries)
         sauvegarder(cache)
     }
@@ -593,7 +597,10 @@ object TaxRefCache {
                 }
             }.joinToString("")
 
-    private fun charger(): Map<String, TaxRefEntry> {
+    // Verrouillé : sérialise avec set/ajouter/sauvegarder (le corps réel est [chargerInterne]).
+    private fun charger(): Map<String, TaxRefEntry> = synchronized(verrou) { chargerInterne() }
+
+    private fun chargerInterne(): Map<String, TaxRefEntry> {
         mem?.let { return it }
         val f = fichier(FILE_CACHE)
         if (!f.exists()) return emptyMap()
@@ -637,9 +644,9 @@ object TaxRefCache {
 
     /** Remplace TOUT le cache (chemin de synchro, après [vider]) — écriture streaming directe, sans
      *  recharger ni copier la map existante. Évite les pics mémoire sur les gros référentiels. */
-    fun remplacerTout(entries: Map<String, TaxRefEntry>) = sauvegarder(entries)
+    fun remplacerTout(entries: Map<String, TaxRefEntry>) = synchronized(verrou) { sauvegarder(entries) }
 
-    private fun sauvegarder(cache: Map<String, TaxRefEntry>) {
+    private fun sauvegarder(cache: Map<String, TaxRefEntry>) = synchronized(verrou) {
         ecrireCacheStream(cache)
         mem = cache
         memEntreesParCdNom = null

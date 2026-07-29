@@ -85,6 +85,22 @@ class ConfigGeoNatureFragment : Fragment() {
         gnConfig = GeoNatureConfig(requireContext())
 
         binding.etUrl.setText(gnConfig.urlServeur)
+        // Avertissement NON bloquant si l'URL est en http:// (mot de passe transmis EN CLAIR sur
+        // le réseau). On n'interdit pas (instances internes légitimes), on signale.
+        binding.tilUrl.setHelperTextColor(
+            android.content.res.ColorStateList.valueOf(couleurAvertissement(requireContext())))
+        fun majAvertissementHttp(url: String?) {
+            binding.tilUrl.helperText =
+                if (url?.trim()?.startsWith("http://", ignoreCase = true) == true)
+                    "⚠ Connexion NON chiffrée (http) : votre mot de passe transite en clair. Préférez https://."
+                else null
+        }
+        majAvertissementHttp(gnConfig.urlServeur)
+        binding.etUrl.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun afterTextChanged(s: android.text.Editable?) { majAvertissementHttp(s?.toString()) }
+        })
         binding.etLogin.setText(gnConfig.login)
         binding.etMotDePasse.setText(gnConfig.motDePasse)
         binding.etTaxaListe.setText(gnConfig.taxaListeId)

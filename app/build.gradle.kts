@@ -23,10 +23,9 @@ android {
         // pour distribuer deux applis distinctes depuis une seule base de code.
         minSdk = 24
         targetSdk = 36
-        // versionCode 171 : 170 (= v1.3.5) déjà déposé sur la console Play, qui exige un
-        // versionCode unique par upload (un code déposé est consommé à jamais → bump systématique).
-        versionCode = 171
-        versionName = "1.3.6"
+        // versionCode croissant partagé github/play (un code déposé sur Play est consommé à jamais).
+        versionCode = 172
+        versionName = "1.3.7"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

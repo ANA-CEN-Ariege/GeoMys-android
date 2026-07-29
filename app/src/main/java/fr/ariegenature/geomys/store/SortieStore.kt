@@ -184,6 +184,7 @@ private fun normaliserObservation(o: Observation): Observation? {
         dateFinReleve = o.dateFinReleve,
         champsReleveExtra = o.champsReleveExtra ?: emptyMap(),
         envoyeeServeur = o.envoyeeServeur,
+        releveSansEspece = o.releveSansEspece,
     )
 }
 

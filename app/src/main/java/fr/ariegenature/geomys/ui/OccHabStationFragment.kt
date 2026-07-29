@@ -72,28 +72,24 @@ class OccHabStationFragment : Fragment() {
         // Coche verte « terminer » (comme la saisie multi-taxons) : la station est déjà
         // enregistrée au fil de l'eau — on repart simplement sur une carte vierge.
         binding.btnTerminer.setOnClickListener {
-            if (occhabViewModel.station.habitats.isNotEmpty()) {
-                Toast.makeText(
-                    requireContext(),
-                    "Votre station est enregistrée dans « Mes stations »",
-                    Toast.LENGTH_LONG,
-                ).show()
-            }
+            // La station (avec ou SANS habitat) est persistée avant de repartir sur une carte vierge.
+            sauvegarderAuFilDeLEau()
+            Toast.makeText(
+                requireContext(),
+                "Votre station est enregistrée dans « Mes stations »",
+                Toast.LENGTH_LONG,
+            ).show()
             occhabViewModel.nouvelleStation()
             findNavController().naviguerSur(R.id.action_occhab_station_to_carte)
         }
     }
 
-    /** Enregistrement AU FIL DE L'EAU (comme les saisies Occtax) : la station courante —
-     *  détails de session fusionnés — est (ré)écrite dans le store dès qu'elle porte au moins
-     *  un habitat, ou dès qu'elle y existe déjà (mise à jour après édition/suppression). */
+    /** Enregistrement AU FIL DE L'EAU (comme les saisies Occtax) : la station courante — détails
+     *  de session fusionnés — est (ré)écrite dans le store. Les habitats sont FACULTATIFS : une
+     *  station à géométrie valide est enregistrable même sans habitat (on arrive ici après la
+     *  carte, la géométrie est donc déjà définie). */
     private fun sauvegarderAuFilDeLEau() {
-        val station = occhabViewModel.stationAEnregistrer()
-        val dejaEnregistree = occHabStore.stationsDeSaisie(occhabViewModel.saisieId)
-            .any { it.id == station.id }
-        if (station.habitats.isNotEmpty() || dejaEnregistree) {
-            occHabStore.upsertStation(occhabViewModel.saisieId, station)
-        }
+        occHabStore.upsertStation(occhabViewModel.saisieId, occhabViewModel.stationAEnregistrer())
     }
 
     override fun onResume() {

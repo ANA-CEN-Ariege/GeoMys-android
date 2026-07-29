@@ -65,11 +65,12 @@ object OccHabUpload {
                 ?: throw GNErreur.EnvoiEchoue(0, "id_dataset invalide")
             if (!config.datasetAcceptablePourEnvoi(datasetId)) throw GNErreur.DatasetInvalide(datasetId)
 
-            // Au moins un habitat avec un code HABREF : sinon rien à envoyer (cd_hab obligatoire).
+            // Habitats OPTIONNELS : une station peut être envoyée sans aucun habitat — le serveur
+            // l'accepte (`habitats` n'est pas `required` dans StationSchema, `validate_habitats` ne
+            // contrôle que l'appartenance ; parité web où l'on ajoute les habitats après). On ne
+            // garde que ceux portant un code HABREF valide (les incomplets sont ignorés) ; le
+            // tableau `habitats` peut donc être vide.
             val habitatsValides = station.habitats.filter { it.cdHab > 0 }
-            if (habitatsValides.isEmpty()) {
-                throw GNErreur.EnvoiEchoue(0, "La station doit contenir au moins un habitat (code HABREF).")
-            }
 
             // Anti-doublon : une tentative précédente s'est soldée par un statut INCERTAIN (réseau
             // coupé après l'émission) → la station a peut-être déjà été créée. Le serveur OccHab

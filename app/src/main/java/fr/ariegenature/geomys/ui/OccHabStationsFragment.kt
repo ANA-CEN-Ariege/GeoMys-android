@@ -118,9 +118,10 @@ class OccHabStationsFragment : Fragment() {
         majBoutonToutEnvoyer(toutes)
     }
 
-    /** Nombre de saisies réellement envoyables (à envoyer + au moins un habitat renseigné). */
+    /** Saisies réellement envoyables : à envoyer + au moins une station (les habitats sont
+     *  FACULTATIFS — une station sans habitat est envoyable). */
     private fun saisiesEnvoyables(toutes: List<OccHabSaisie>) = toutes.filter { saisie ->
-        !saisie.envoyeGeoNature && saisie.stations.any { st -> st.habitats.any { it.cdHab > 0 } }
+        !saisie.envoyeGeoNature && saisie.stations.isNotEmpty()
     }
 
     /** Bouton « Tout envoyer » : visible seulement dans l'onglet « À envoyer », hors envoi en
@@ -320,8 +321,7 @@ class OccHabSaisieAdapter(
             val peutEditer = !saisie.envoyeGeoNature
             btnEditer.visibility = if (peutEditer) View.VISIBLE else View.GONE
             btnEditer.setOnClickListener { onEdit(saisie) }
-            val peutEnvoyer = peutEditer && envoiAutorise &&
-                saisie.stations.any { st -> st.habitats.any { it.cdHab > 0 } }
+            val peutEnvoyer = peutEditer && envoiAutorise && saisie.stations.isNotEmpty()
             btnEnvoyer.visibility = if (peutEnvoyer) View.VISIBLE else View.GONE
             btnEnvoyer.setOnClickListener { onEnvoyer(saisie) }
         }

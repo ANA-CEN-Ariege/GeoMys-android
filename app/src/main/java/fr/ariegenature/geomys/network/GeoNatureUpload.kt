@@ -89,7 +89,10 @@ object GeoNatureUpload {
             val (token, idRole, cookies) = GeoNatureAuth.loginAvecCookies(base, config.login, config.motDePasse)
                 ?: throw GNErreur.AuthEchouee(401)
 
-            val obsValides = sortie.observations.filter { it.cdNom != null }
+            // On inclut aussi les « relevés sans espèce » (placeholders sans cd_nom) : ils créent
+            // un relevé VIDE (aucune occurrence) côté serveur. Les autres obs sans cd_nom (espèce
+            // non résolue) restent exclues de l'envoi.
+            val obsValides = sortie.observations.filter { it.cdNom != null || it.releveSansEspece }
             if (obsValides.isEmpty()) throw GNErreur.AucuneObservationCompatible()
 
             // Ré-envoi après succès PARTIEL : les obs déjà créées côté serveur lors d'un envoi
@@ -314,12 +317,24 @@ object GeoNatureUpload {
                 }
                 if (premierIdReleve == null) premierIdReleve = idReleve
 
+                // Relevé SANS ESPÈCE : le groupe ne porte que des placeholders (aucune occurrence
+                // réelle). Le relevé vient d'être créé avec un t_occurrences_occtax VIDE et on le
+                // CONSERVE tel quel — rien à poster, PAS de rollback « relevé orphelin ». Le(s)
+                // placeholder(s) sont marqués créés (comptés comme le relevé) pour ne pas repartir
+                // au prochain envoi.
+                val occurrencesReelles = groupe.filter { it.cdNom != null }
+                if (occurrencesReelles.isEmpty()) {
+                    nbCrees++
+                    groupe.forEach { obsCreesIds.add(it.id) }
+                    continue
+                }
+
                 // Une occurrence par taxon — toutes attachées au même relevé.
                 var nbReussisGroupe = 0
                 // Ids des médias gn_commons uploadés pour ce groupe : sert au rollback si
                 // toutes les occurrences du groupe échouent (pattern gn_mobile_occtax officiel).
                 val mediaIdsGroupe = mutableListOf<Int>()
-                for (obs in groupe) {
+                for (obs in occurrencesReelles) {
                     // ── Étape A : upload des médias par counting AVANT le POST de l'occurrence ──
                     // (chaque media uploadé renvoie un JSON Media à inclure dans le counting).
                     val mediasParCounting = mutableListOf<List<JSONObject>>()

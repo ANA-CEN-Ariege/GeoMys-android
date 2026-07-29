@@ -169,7 +169,14 @@ class OccHabHabitatFragment : Fragment() {
             valExistante ?: if (estNouveau) gnConfig.occhabDefautNomenclature(mnem) else null
         fun visible(champC: String) = gnConfig.occhabChampVisible(champC)
 
-        racine.addView(label("Habitat (HABREF) *")); racine.addView(champ)
+        racine.addView(label("Habitat (HABREF)")); racine.addView(champ)
+        // Habitat facultatif : on peut n'enregistrer que la station (géométrie + détails).
+        racine.addView(TextView(ctx).apply {
+            text = "Facultatif : validez sans habitat pour n'enregistrer que la station."
+            textSize = 12f
+            setTextColor(couleurSecondaire(ctx))
+            setPadding(0, (4 * density).toInt(), 0, 0)
+        })
 
         lireInteret = if (visible("community_interest")) {
             val (sp, lire) = construireSpinner("HAB_INTERET_COM", idInit(ex?.idNomInteretCommunautaire, "HAB_INTERET_COM"))
@@ -223,32 +230,37 @@ class OccHabHabitatFragment : Fragment() {
 
     private fun valider() {
         val cd = cdHabChoisi
-        if (cd == null || cd <= 0) {
-            toast("Choisissez un habitat dans la liste HABREF")
+        if (cd != null && cd > 0) {
+            // Un habitat est renseigné → on l'ajoute / le met à jour sur la station.
+            val libelle = champHab?.text?.toString()?.trim().orEmpty()
+            // Champ VISIBLE → sa valeur fait foi (vide = effacé) ; champ MASQUÉ par formConfig →
+            // on préserve la valeur existante. L'ancien repli `?: existant?.x` empêchait d'EFFACER
+            // un champ visible (la valeur précédente réapparaissait).
+            val habitat = (existant ?: OccHabHabitat()).copy(
+                cdHab = cd,
+                habitatLabel = libelle,
+                nomCite = libelle,
+                determiner = champDeterminateur?.let { it.text?.toString()?.trim()?.takeIf { s -> s.isNotEmpty() } }
+                    ?: if (champDeterminateur == null) existant?.determiner else null,
+                precisionTechnique = champPrecision?.let { it.text?.toString()?.trim()?.takeIf { s -> s.isNotEmpty() } }
+                    ?: if (champPrecision == null) existant?.precisionTechnique else null,
+                recouvrement = champRecouvr?.let { it.text?.toString()?.trim()?.toDoubleOrNull() }
+                    ?: if (champRecouvr == null) existant?.recouvrement else null,
+                idNomTechniqueCollecte = lireTech(),
+                idNomAbondance = lireAbon(),
+                idNomTypeDetermination = lireTypeDeterm(),
+                idNomInteretCommunautaire = lireInteret(),
+            )
+            occhabViewModel.ajouterOuMajHabitat(habitat)
+        } else if (existant != null) {
+            // On ÉDITAIT un habitat existant mais le champ HABREF a été vidé : on ne peut pas
+            // enregistrer un habitat sans code (pour le SUPPRIMER, utiliser la poubelle de la liste).
+            toast("Choisissez un habitat dans la liste HABREF (ou supprimez-le depuis la liste)")
             return
         }
-        val libelle = champHab?.text?.toString()?.trim().orEmpty()
-        // Champ VISIBLE → sa valeur fait foi (vide = effacé) ; champ MASQUÉ par formConfig →
-        // on préserve la valeur existante. L'ancien repli `?: existant?.x` empêchait d'EFFACER
-        // un champ visible (la valeur précédente réapparaissait).
-        val habitat = (existant ?: OccHabHabitat()).copy(
-            cdHab = cd,
-            habitatLabel = libelle,
-            nomCite = libelle,
-            determiner = champDeterminateur?.let { it.text?.toString()?.trim()?.takeIf { s -> s.isNotEmpty() } }
-                ?: if (champDeterminateur == null) existant?.determiner else null,
-            precisionTechnique = champPrecision?.let { it.text?.toString()?.trim()?.takeIf { s -> s.isNotEmpty() } }
-                ?: if (champPrecision == null) existant?.precisionTechnique else null,
-            recouvrement = champRecouvr?.let { it.text?.toString()?.trim()?.toDoubleOrNull() }
-                ?: if (champRecouvr == null) existant?.recouvrement else null,
-            idNomTechniqueCollecte = lireTech(),
-            idNomAbondance = lireAbon(),
-            idNomTypeDetermination = lireTypeDeterm(),
-            idNomInteretCommunautaire = lireInteret(),
-        )
-        occhabViewModel.ajouterOuMajHabitat(habitat)
-        // Enregistrement AU FIL DE L'EAU (comme les saisies Occtax) : la station — détails de
-        // session fusionnés — est (ré)écrite dans « Mes stations » dès qu'un habitat est validé.
+        // Habitat FACULTATIF : si aucun n'est renseigné (cd null, nouvel habitat), on n'ajoute rien
+        // et on enregistre la station telle quelle (géométrie + détails de session).
+        // Enregistrement AU FIL DE L'EAU (comme les saisies Occtax), avec 0..N habitats.
         val station = occhabViewModel.stationAEnregistrer()
         fr.ariegenature.geomys.store.OccHabStore(requireContext())
             .upsertStation(occhabViewModel.saisieId, station)

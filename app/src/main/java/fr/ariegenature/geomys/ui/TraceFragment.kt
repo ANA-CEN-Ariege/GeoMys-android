@@ -1091,7 +1091,7 @@ class TraceFragment : Fragment() {
             return
         }
 
-        val peutEnvoyerGn = gnConfig.estConfiguree && obs.any { it.cdNom != null }
+        val peutEnvoyerGn = gnConfig.estConfiguree && obs.any { it.cdNom != null || it.releveSansEspece }
 
         val options = mutableListOf(
             getString(R.string.enregistrer_quitter),

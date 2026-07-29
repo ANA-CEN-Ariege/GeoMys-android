@@ -152,6 +152,38 @@ class GeoNatureUploadEnvoyerTest {
         }
     }
 
+    /** Relevé SANS ESPÈCE : un placeholder (releveSansEspece=true, cd_nom null) crée le relevé
+     *  côté serveur SANS aucune occurrence, ne déclenche PAS de rollback (pas d'orphelin) et est
+     *  compté comme créé + remonté dans obsCreesIds (anti-doublon au ré-envoi). */
+    @Test
+    fun releve_sans_espece_cree_le_releve_sans_occurrence_ni_rollback() {
+        val nbOcc = java.util.concurrent.atomic.AtomicInteger(0)
+        val nbDelete = java.util.concurrent.atomic.AtomicInteger(0)
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                val path = request.path ?: ""
+                val json = MockResponse().setHeader("Content-Type", "application/json")
+                return when {
+                    path.startsWith("/api/auth/login") ->
+                        json.setResponseCode(200).setBody("""{"access_token":"t","user":{"id_role":1}}""")
+                    path.endsWith("/only/releve") -> json.setResponseCode(200).setBody("""{"id":100}""")
+                    path.contains("/occurrence") -> { nbOcc.incrementAndGet(); json.setResponseCode(200).setBody("{}") }
+                    request.method == "DELETE" -> { nbDelete.incrementAndGet(); json.setResponseCode(200).setBody("{}") }
+                    else -> MockResponse().setResponseCode(404)
+                }
+            }
+        }
+        val placeholder = obs("p1", releveId = "R1", cdNom = null).apply { releveSansEspece = true }
+        val res = runBlocking { GeoNatureUpload.envoyer(Sortie(observations = listOf(placeholder)), config) }
+        assertEquals("le relevé vide compte comme créé", 1, res.nbCrees)
+        assertEquals(1, res.nbTotal)
+        assertEquals(100, res.premierIdReleve)
+        assertEquals(listOf("p1"), res.obsCreesIds)
+        assertTrue("pas de relevé orphelin", res.relevesOrphelins.isEmpty())
+        assertEquals("aucune occurrence postée", 0, nbOcc.get())
+        assertEquals("aucun rollback DELETE", 0, nbDelete.get())
+    }
+
     @Test
     fun dataset_invalide_leve_une_erreur() {
         router()

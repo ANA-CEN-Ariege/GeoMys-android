@@ -143,6 +143,12 @@ data class Observation(
      *  SortieStore.marquerObservationsEnvoyees dès le retour d'envoi — anciens JSON sans le
      *  champ → false (défaut primitif Gson), comportement inchangé. */
     var envoyeeServeur: Boolean = false,
+    /** true = « relevé sans espèce » : cette Observation est un PLACEHOLDER qui ne porte AUCUN
+     *  taxon (cdNom null) — elle matérialise un relevé (géométrie + détails du relevé) créé
+     *  volontairement sans occurrence. À l'envoi, son relevé est créé côté GeoNature avec un
+     *  `t_occurrences_occtax` VIDE et n'est PAS supprimé (pas de rollback « relevé orphelin »).
+     *  Les vraies observations gardent false. Ancien JSON sans le champ → false (défaut Gson). */
+    var releveSansEspece: Boolean = false,
 )
 
 data class Sortie(

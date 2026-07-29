@@ -104,14 +104,14 @@ class SortieDetailFragment : Fragment() {
         }
         binding.btnExporter.setOnClickListener { exporterGpx() }
 
-        if (sortie.observations.isNotEmpty()) {
+        if (sortie.observations.any { !it.releveSansEspece }) {
             binding.btnListeEspeces.visibility = View.VISIBLE
             binding.btnListeEspeces.setOnClickListener { montrerListeEspeces() }
         }
 
         val peutEnvoyer = !sortie.envoyeGeoNature && !sortie.estImportee
             && gnConfig.estConfiguree
-            && sortie.observations.any { it.cdNom != null }
+            && sortie.observations.any { it.cdNom != null || it.releveSansEspece }
         if (peutEnvoyer) {
             binding.btnEnvoyerGn.visibility = View.VISIBLE
             binding.btnEnvoyerGn.setOnClickListener { envoyerVersGeoNature() }
@@ -120,6 +120,7 @@ class SortieDetailFragment : Fragment() {
 
     private fun montrerListeEspeces() {
         val agregees = sortie.observations
+            .filterNot { it.releveSansEspece }   // le placeholder « relevé sans espèce » n'est pas une espèce
             .groupBy { it.espece }
             .map { (espece, obs) -> espece to obs.sumOf { it.nombre } }
             .sortedBy { it.first }

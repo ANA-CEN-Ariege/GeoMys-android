@@ -1216,7 +1216,7 @@ class SaisieRapideFragment : Fragment() {
             return
         }
 
-        val peutEnvoyerGn = gnConfig.estConfiguree && obs.any { it.cdNom != null }
+        val peutEnvoyerGn = gnConfig.estConfiguree && obs.any { it.cdNom != null || it.releveSansEspece }
         val options = mutableListOf(getString(R.string.enregistrer_quitter))
         if (peutEnvoyerGn) options.add(getString(R.string.enregistrer_envoyer_gn))
         // Plus de « Supprimer la sortie » ici : la suppression reste possible depuis « Mes saisies ».

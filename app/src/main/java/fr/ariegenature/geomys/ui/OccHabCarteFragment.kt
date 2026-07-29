@@ -596,11 +596,10 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
         if (saisie == null || stations.isEmpty()) { allerAccueil(); return }
 
         val gnConfig = fr.ariegenature.geomys.store.GeoNatureConfig(requireContext())
-        // Envoi proposé seulement si utile ET autorisé (config OK, CRUVED C, au moins une station
-        // avec un habitat renseigné) — même garde que le bouton d'envoi de « Mes stations ».
+        // Envoi proposé seulement si utile ET autorisé (config OK, CRUVED C, au moins une station) —
+        // même garde que le bouton d'envoi de « Mes stations ». Les habitats sont FACULTATIFS.
         val peutEnvoyer = gnConfig.estConfiguree && gnConfig.occhabPeutCreer &&
-            !saisie.envoyeGeoNature &&
-            stations.any { st -> st.habitats.any { it.cdHab > 0 } }
+            !saisie.envoyeGeoNature && stations.isNotEmpty()
 
         val optQuitter = "Enregistrer et quitter"
         val optEnvoyer = "Enregistrer et envoyer sur GeoNature"

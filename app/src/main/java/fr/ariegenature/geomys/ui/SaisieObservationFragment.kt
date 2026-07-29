@@ -887,26 +887,73 @@ class SaisieObservationFragment : Fragment() {
     // ─── Enregistrement ───────────────────────────────────────────────────────
 
     private fun enregistrer() {
-        // Le lot est déjà sauvé au fil de l'eau (cf. synchroniserBatch via rafraichirListe) ;
-        // on resynchronise par sécurité puis on revient.
-        synchroniserBatch()
-        // Enchaînement : si le relevé contient au moins une espèce, on demande à la carte de
-        // repasser directement en mode positionnement pour placer le relevé suivant, au lieu
-        // de retomber dans l'état neutre. Le flag est posé sur l'entrée TraceFragment (= écran
-        // précédent) et consommé dans son onViewCreated au retour.
-        if (pendingObs.isNotEmpty()) {
-            findNavController().previousBackStackEntry?.savedStateHandle
-                ?.set("demarrerSaisieSuivante", true)
-            // Feedback d'enregistrement (comme la coche OccHab et la snackbar mono-taxon) :
-            // sans lui, la coche restait silencieuse et l'utilisateur doutait de la sauvegarde.
+        // Relevé SANS ESPÈCE : aucune espèce saisie → au lieu de ne rien enregistrer, on sauve un
+        // relevé placeholder (géométrie + détails du relevé, zéro occurrence). Il apparaît dans
+        // « Mes saisies » et s'envoie comme un relevé d'absence (parité web « relevé seul »).
+        val message: String
+        if (pendingObs.isEmpty()) {
+            enregistrerReleveSansEspece()
+            message = "Relevé sans espèce enregistré — retrouvez-le dans « Mes saisies »"
+        } else {
+            // Le lot est déjà sauvé au fil de l'eau (cf. synchroniserBatch via rafraichirListe) ;
+            // on resynchronise par sécurité puis on revient.
+            synchroniserBatch()
             val n = pendingObs.size
-            android.widget.Toast.makeText(
-                requireContext(),
-                "Relevé enregistré ($n espèce${if (n > 1) "s" else ""}) — retrouvez-le dans « Mes saisies »",
-                android.widget.Toast.LENGTH_SHORT,
-            ).show()
+            message = "Relevé enregistré ($n espèce${if (n > 1) "s" else ""}) — retrouvez-le dans « Mes saisies »"
         }
+        // Enchaînement : on demande à la carte de repasser directement en mode positionnement pour
+        // placer le relevé suivant. Le flag est posé sur l'entrée TraceFragment (= écran précédent)
+        // et consommé dans son onViewCreated au retour.
+        findNavController().previousBackStackEntry?.savedStateHandle
+            ?.set("demarrerSaisieSuivante", true)
+        // Feedback d'enregistrement (comme la coche OccHab et la snackbar mono-taxon).
+        android.widget.Toast.makeText(requireContext(), message, android.widget.Toast.LENGTH_SHORT).show()
         findNavController().navigateUp()
+    }
+
+    /** Enregistre un « relevé sans espèce » : un unique [Observation] placeholder
+     *  ([Observation.releveSansEspece] = true, sans cd_nom) portant la géométrie et les détails
+     *  COMMUNS du relevé (JDD, observateurs, dates, commentaire, habitat, additionnels…). Il
+     *  remplace tout le contenu du relevé courant (les espèces éventuellement retirées). */
+    private fun enregistrerReleveSansEspece() {
+        val releveId = releveIdSession
+        val base = traceViewModel.observations.value?.find { it.releveId == releveId }
+            ?: Observation(
+                id = java.util.UUID.randomUUID().toString(),
+                espece = "Relevé sans espèce", latitude = latitude, longitude = longitude,
+            )
+        val placeholder = base.copy(
+            espece = "Relevé sans espèce",
+            taxon = null,
+            cdNom = null,
+            nombre = 0,
+            nombreMax = null,
+            denombrementsAdditionnels = emptyList(),
+            mediaUrisCounting0 = emptyList(),
+            releveSansEspece = true,
+            latitude = latitude,
+            longitude = longitude,
+            geometryType = geometryTypeSession,
+            geometryCoordsJson = geometryCoordsJsonSession,
+            releveId = releveId,
+            // Détails du relevé — mêmes règles que synchroniserBatch (défauts serveur si session vide).
+            additionalFieldsReleve = additionalFieldsReleveSession.ifEmpty {
+                fr.ariegenature.geomys.ui.saisie.AdditionalFieldsRenderer
+                    .defautsChampsReleve(gnConfig.additionalFieldsOcctaxJsonActif, gnConfig.idDataset.toIntOrNull())
+            },
+            idDatasetReleve = idDatasetReleveSession ?: base.idDatasetReleve
+                ?: gnConfig.idDataset.toIntOrNull()?.takeIf { it > 0 },
+            observateursReleveIds = observateursReleveIdsSession,
+            observateursReleveNoms = observateursReleveNomsSession,
+            commentReleve = commentReleveSession.ifEmpty { null },
+            cdHabReleve = cdHabReleveSession,
+            habitatReleveLabel = habitatReleveLabelSession,
+            dateDebutReleve = dateDebutReleveSession,
+            dateFinReleve = dateFinReleveSession,
+            typGrpReleve = typGrpReleveSession.ifEmpty { null },
+            champsReleveExtra = champsReleveExtraSession,
+        )
+        traceViewModel.remplacerObservationsDuReleve(releveId, listOf(placeholder))
     }
 
     /** Reflète l'état courant de [pendingObs] dans le TraceViewModel (qui le persiste aussitôt

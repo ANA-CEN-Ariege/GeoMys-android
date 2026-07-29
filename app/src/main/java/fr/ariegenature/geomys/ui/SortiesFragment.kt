@@ -159,9 +159,11 @@ class SortiesFragment : Fragment() {
     }
 
     /** Sorties réellement envoyables : à envoyer (ni envoyée ni importée) ET au moins une obs
-     *  déterminée (cd_nom résolu) — mêmes conditions que le bouton d'envoi d'une ligne. */
+     *  déterminée (cd_nom résolu) OU un relevé sans espèce — mêmes conditions que le bouton
+     *  d'envoi d'une ligne. */
     private fun sortiesEnvoyables(toutes: List<Sortie>) = toutes.filter {
-        !it.envoyeGeoNature && !it.estImportee && it.observations.any { o -> o.cdNom != null }
+        !it.envoyeGeoNature && !it.estImportee &&
+            it.observations.any { o -> o.cdNom != null || o.releveSansEspece }
     }
 
     /** Bouton « Tout envoyer » : visible seulement dans l'onglet « À envoyer », hors envoi en
@@ -325,6 +327,7 @@ class SortiesFragment : Fragment() {
      *  l'écran de détail : une espèce par ligne, avec le nombre total d'individus. */
     private fun montrerListeEspeces(sortie: Sortie) {
         val agregees = sortie.observations
+            .filterNot { it.releveSansEspece }   // le placeholder « relevé sans espèce » n'est pas une espèce
             .groupBy { it.espece }
             .map { (espece, obs) -> espece to obs.sumOf { it.nombre } }
             .sortedBy { it.first }
@@ -390,7 +393,9 @@ class SortieAdapter(
         with(holder.binding) {
             tvDate.text = fmt.format(Date(sortie.date))
             tvDistance.text = "%.0f m".format(sortie.distanceTotale)
-            tvNbObs.text = "${sortie.observations.size} obs."
+            // On ne compte que les vraies observations (le placeholder « relevé sans espèce » n'en
+            // est pas une) ; un relevé sans espèce affiche donc « 0 obs. ».
+            tvNbObs.text = "${sortie.observations.count { !it.releveSansEspece }} obs."
             tvNbPts.text = "${sortie.pointsParcours.size} pts"
             // Dernier envoi en échec → cadre rouge + message, pour que l'échec reste visible
             // après la fermeture du dialog d'erreur. Reset explicite sinon (recyclage).
@@ -417,7 +422,7 @@ class SortieAdapter(
             // Bouton "Lister les espèces" : dès qu'il y a au moins une observation, ouvre le
             // même récapitulatif (espèce · cd_nom · nb ind.) que l'écran de détail, sans avoir
             // à ouvrir la carte.
-            val aDesObs = sortie.observations.isNotEmpty()
+            val aDesObs = sortie.observations.any { !it.releveSansEspece }
             btnListe.visibility = if (aDesObs) android.view.View.VISIBLE else android.view.View.GONE
             btnListe.setOnClickListener { onListe(sortie) }
             // Bouton "Continuer la saisie" : visible uniquement pour les sorties à envoyer
@@ -429,7 +434,8 @@ class SortieAdapter(
             // Bouton "Envoyer au serveur" : même conditions que l'édition (non envoyée, non
             // importée), droit de création OCCTAX (CRUVED C, comme OccHab) ET au moins une
             // obs déterminée (cd_nom résolu) — sinon rien à envoyer.
-            val peutEnvoyer = peutEditer && envoiAutorise && sortie.observations.any { it.cdNom != null }
+            val peutEnvoyer = peutEditer && envoiAutorise &&
+                sortie.observations.any { it.cdNom != null || it.releveSansEspece }
             btnEnvoyer.visibility = if (peutEnvoyer) android.view.View.VISIBLE else android.view.View.GONE
             btnEnvoyer.setOnClickListener { onEnvoyer(sortie) }
         }

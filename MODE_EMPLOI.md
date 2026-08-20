@@ -13,13 +13,21 @@ Application Android de terrain pour la saisie naturaliste connectée à un serve
 
 ## 1. Installation
 
-1. Télécharger l'application depuis ce lien [Latest version](https://github.com/ANA-CEN-Ariege/GeoMys-android/releases/latest/download/app-release.apk) ou la dernière version (`app-release.apk`) depuis la page [Releases GitHub](https://github.com/ANA-CEN-Ariege/GeoMys-android/releases) ou .
-3. Sur Android, autoriser l'installation depuis des sources inconnues si demandé.
-4. Ouvrir le fichier APK et installer.
+### Prérequis
+Aucun compte spécifique n'est à créer : l'application s'utilise avec un compte **GeoNature** existant.
 
-Aucun compte spécifique à créer : on utilise un compte **GeoNature** existant.
+### Méthode recommandée : Play Store
+1. Ouvrir la fiche de l'application : [GeoMys sur le Play Store](https://play.google.com/store/apps/details?id=fr.ariegenature.public.geomys&hl=fr)
+2. Appuyer sur **Installer**.
 
----
+### Méthode alternative : installation manuelle (APK)
+À réserver aux utilisateurs qui ne peuvent pas passer par le Play Store ou qui souhaitent une version précise.
+
+1. Télécharger l'APK :
+   - [Dernière version](https://github.com/ANA-CEN-Ariege/GeoMys-android/releases/latest/download/app-github-release.apk) (téléchargement direct)
+   - ou choisir le fichier `app-release.apk` sur la page [Releases GitHub](https://github.com/ANA-CEN-Ariege/GeoMys-android/releases)
+2. Si Android le demande, autoriser l'installation d'applications depuis des **sources inconnues** pour le navigateur ou le gestionnaire de fichiers utilisé.
+3. Ouvrir le fichier APK téléchargé, puis appuyer sur **Installer**.
 
 ## 2. Première configuration
 

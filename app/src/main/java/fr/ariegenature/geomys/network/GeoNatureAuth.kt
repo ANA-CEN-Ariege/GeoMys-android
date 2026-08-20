@@ -120,8 +120,11 @@ object GeoNatureAuth {
                             )
                         }
                         config.serveurCompatible = true
-                        Pair(true, "Connexion réussie" + (version?.let { " — GeoNature v$it" }
-                            ?: " (version GeoNature non détectée — minimum supporté : v$VERSION_GEONATURE_MINIMALE)"))
+                        // Version détectée → PAS de suffixe : elle est déjà affichée sur la ligne
+                        // « Serveur GeoNature v… » sous le message (évite la redondance). Non
+                        // détectée → on garde la note (aucune ligne de version n'est alors affichée).
+                        Pair(true, "Connexion réussie" + (if (version != null) ""
+                            else " (version GeoNature non détectée — minimum supporté : v$VERSION_GEONATURE_MINIMALE)"))
                     }
                     401, 403 -> Pair(false, "Identifiant ou mot de passe incorrect")
                     404 -> Pair(false, "URL serveur introuvable (HTTP 404) — vérifiez l'adresse")

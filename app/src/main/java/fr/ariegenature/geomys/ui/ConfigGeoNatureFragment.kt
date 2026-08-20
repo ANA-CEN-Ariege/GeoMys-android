@@ -26,6 +26,8 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ArrayAdapter
+import android.widget.Toast
+import androidx.activity.addCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
@@ -50,6 +52,15 @@ import fr.ariegenature.geomys.sync.SyncForegroundService
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.launch
+
+/** « Configuration complète » = saisie OCCTAX réellement réalisable (connexion + jeu de données /
+ *  liste / observateur présents dans les caches) ET des taxons chargés (une version TaxRef a été
+ *  enregistrée). Les deux signaux sont **prefs-backed** → lisibles instantanément dès le démarrage
+ *  SANS charger le cache TaxRef sur le thread principal (évite tout jank au lancement). Source
+ *  UNIQUE partagée par [MainActivity] (redirection au 1er lancement) et l'écran Paramètres (blocage
+ *  de sortie tant que ce n'est pas complet). */
+fun configurationComplete(cfg: GeoNatureConfig): Boolean =
+    cfg.saisieOcctaxValide && TaxRefCache.versionSauvegardee != null
 
 class ConfigGeoNatureFragment : Fragment() {
     private var _binding: FragmentConfigGeonatureBinding? = null
@@ -99,10 +110,23 @@ class ConfigGeoNatureFragment : Fragment() {
         binding.etUrl.addTextChangedListener(object : android.text.TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
             override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
-            override fun afterTextChanged(s: android.text.Editable?) { majAvertissementHttp(s?.toString()) }
+            override fun afterTextChanged(s: android.text.Editable?) {
+                majAvertissementHttp(s?.toString())
+                refleterEditionConnexion()
+            }
         })
         binding.etLogin.setText(gnConfig.login)
         binding.etMotDePasse.setText(gnConfig.motDePasse)
+        // Login / mot de passe n'avaient AUCUN retour à la frappe. Comme l'URL, toute modif
+        // « oublie » visuellement la connexion précédente (cf. refleterEditionConnexion). Watcher
+        // ajouté APRÈS setText pour que le pré-remplissage initial ne le déclenche pas.
+        val watcherConnexion = object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun afterTextChanged(s: android.text.Editable?) { refleterEditionConnexion() }
+        }
+        binding.etLogin.addTextChangedListener(watcherConnexion)
+        binding.etMotDePasse.addTextChangedListener(watcherConnexion)
         binding.etTaxaListe.setText(gnConfig.taxaListeId)
 
         // Restaure les spinners (datasets/listes/observateurs) depuis le cache local
@@ -204,7 +228,31 @@ class ConfigGeoNatureFragment : Fragment() {
 
         binding.fabValider.setOnClickListener {
             sauvegarderChamps()
-            findNavController().navigateUp()
+            if (configurationComplete(gnConfig)) {
+                findNavController().navigateUp()
+            } else {
+                Toast.makeText(
+                    requireContext(),
+                    "Configuration incomplète : renseignez la connexion, chargez les données, " +
+                        "puis choisissez jeu de données / liste / observateur.",
+                    Toast.LENGTH_LONG,
+                ).show()
+            }
+        }
+
+        // 1ʳᵉ configuration / config incomplète : on EMPÊCHE de quitter l'écran Paramètres tant que
+        // la config n'est pas complète (le retour système est intercepté). L'app est inutilisable
+        // sans connexion + données, et MainActivity a forcé cet écran au lancement (cf. son onCreate).
+        requireActivity().onBackPressedDispatcher.addCallback(viewLifecycleOwner) {
+            if (configurationComplete(gnConfig)) {
+                findNavController().navigateUp()
+            } else {
+                Toast.makeText(
+                    requireContext(),
+                    "Complétez la configuration (connexion, données, sélections) pour accéder à l'application.",
+                    Toast.LENGTH_LONG,
+                ).show()
+            }
         }
 
         // Version de l'instance GeoNature relevée au dernier test de connexion réussi —
@@ -235,6 +283,32 @@ class ConfigGeoNatureFragment : Fragment() {
                 }
             }
         }
+    }
+
+    /** Un des 3 champs de connexion (URL / login / mot de passe) diffère-t-il de la valeur
+     *  ENREGISTRÉE ? → la connexion affichée n'a pas encore été (re)testée ni enregistrée. */
+    private fun connexionEditeeNonEnregistree(): Boolean =
+        binding.etUrl.text.toString() != gnConfig.urlServeur ||
+            binding.etLogin.text.toString() != gnConfig.login ||
+            binding.etMotDePasse.text.toString() != gnConfig.motDePasse
+
+    /** Dès qu'un champ de connexion est modifié — AVANT tout « Tester la connexion » —, on
+     *  « oublie » VISUELLEMENT la connexion précédente : on masque « Chargement des données », mais
+     *  AUSSI « Sélections par défaut » + le résumé du cache (jeu de données / liste / observateur
+     *  dépendent d'une connexion valide ET de données chargées POUR cette identité), le résultat du
+     *  dernier test et les versions serveur/TaxRef. On invite à re-tester. L'invalidation RÉELLE
+     *  (jeton, caches, sélections) reste faite à l'ENREGISTREMENT ([sauvegarderChamps]) — pour ne
+     *  rien purger sur une édition en cours ou abandonnée (retour arrière = la config reste l'ancienne). */
+    private fun refleterEditionConnexion() {
+        if (_binding == null || !connexionEditeeNonEnregistree()) return
+        binding.llSectionCharger.visibility = View.GONE
+        binding.llSectionDonnees.visibility = View.GONE
+        binding.llCacheResume.visibility = View.GONE
+        binding.tvVersionGeonature.visibility = View.GONE
+        binding.tvTaxRefVersion.visibility = View.GONE
+        binding.tvResultatTest.visibility = View.VISIBLE
+        binding.tvResultatTest.text = "Connexion non testée — cliquez sur « Tester la connexion »."
+        binding.tvResultatTest.setTextColor(couleurAvertissement(requireContext()))
     }
 
     private fun sauvegarderChamps() {
@@ -287,6 +361,14 @@ class ConfigGeoNatureFragment : Fragment() {
             if (success) {
                 binding.llSectionCharger.visibility = View.VISIBLE
                 afficherVersionGeoNature()  // version serveur relevée pendant le test
+                // Connexion re-validée : on ré-affiche « Sélections par défaut » + résumé du cache
+                // UNIQUEMENT si des données sont chargées ET qu'une sélection tient encore. Après un
+                // changement d'identité (login/serveur/mdp), sauvegarderChamps a réinitialisé les
+                // sélections (idDataset vidé) → on laisse masqué : l'utilisateur doit « Charger les
+                // données » pour repeupler des sélections cohérentes avec la nouvelle identité.
+                val donnees = TaxRefCache.count > 0 && gnConfig.idDataset.trim().isNotEmpty()
+                binding.llSectionDonnees.visibility = if (donnees) View.VISIBLE else View.GONE
+                binding.llCacheResume.visibility = if (donnees) View.VISIBLE else View.GONE
             }
         }
     }
@@ -404,13 +486,15 @@ class ConfigGeoNatureFragment : Fragment() {
         binding.acListes.setOnItemClickListener { _, _, position, _ ->
             val labelChoisi = adapter.getItem(position) ?: return@setOnItemClickListener
             masquerClavier(binding.acListes)
-            val idx = noms.indexOf(labelChoisi)
-            if (idx >= 0) {
-                gnConfig.taxaListeId = listes[idx].id.toString()
-                binding.etTaxaListe.setText(gnConfig.taxaListeId)
-                updateAvertissementListe()
-                updateStatusIndicator()
-            }
+            // On résout depuis la liste IMMUABLE capturée (result), PAS le champ mutable `listes` :
+            // celui-ci peut avoir été vidé/repeuplé (restauration cache, re-sync) entre l'ouverture
+            // du menu et le clic → `listes[idx]` sur liste vide = IndexOutOfBounds (crash observé).
+            val choisie = noms.indexOf(labelChoisi).let { result.getOrNull(it) }
+                ?: return@setOnItemClickListener
+            gnConfig.taxaListeId = choisie.id.toString()
+            binding.etTaxaListe.setText(gnConfig.taxaListeId)
+            updateAvertissementListe()
+            updateStatusIndicator()
         }
         
         val currentId = gnConfig.taxaListeId.toIntOrNull()
@@ -444,12 +528,13 @@ class ConfigGeoNatureFragment : Fragment() {
         binding.acObservateurs.setOnItemClickListener { _, _, position, _ ->
             val labelChoisi = adapter.getItem(position) ?: return@setOnItemClickListener
             masquerClavier(binding.acObservateurs)
-            val idx = noms.indexOf(labelChoisi)
-            if (idx >= 0) {
-                gnConfig.observateurDefautId = observateurs[idx].idRole.toString()
-                gnConfig.observateurDefautNom = observateurs[idx].nomComplet
-                updateStatusIndicator()
-            }
+            // Résolution depuis la liste IMMUABLE capturée (result), pas le champ mutable
+            // `observateurs` (mêmes raisons que pour les listes : anti-IndexOutOfBounds).
+            val choisi = noms.indexOf(labelChoisi).let { result.getOrNull(it) }
+                ?: return@setOnItemClickListener
+            gnConfig.observateurDefautId = choisi.idRole.toString()
+            gnConfig.observateurDefautNom = choisi.nomComplet
+            updateStatusIndicator()
         }
         // Affiche la sélection courante si elle existe. Sinon, on présélectionne
         // automatiquement l'utilisateur connecté (id_role récupéré lors du login) —
@@ -675,7 +760,9 @@ class ConfigGeoNatureFragment : Fragment() {
         // fantôme (ex. dataset devenu inactif, donc absent du cache filtré active=true) passait
         // pour « complet » alors qu'une saisie partait dans le vide / invisible côté serveur.
         // On exige en plus que les taxons aient été chargés.
-        val configured = gnConfig.saisieOcctaxValide && TaxRefCache.count > 0
+        // Même définition que le blocage de sortie (helper configurationComplete) : la coche verte
+        // du bouton Valider signale exactement l'état qui permet de quitter l'écran.
+        val configured = configurationComplete(gnConfig)
         binding.tvStatutConfig.text = if (configured)
             getString(R.string.configuration_complete)
         else

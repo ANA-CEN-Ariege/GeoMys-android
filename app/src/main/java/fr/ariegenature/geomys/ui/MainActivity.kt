@@ -77,6 +77,17 @@ class MainActivity : AppCompatActivity() {
             }
             dansFluxSaisie = dansSaisie
         }
+
+        // 1ʳᵉ configuration / config incomplète : on arrive DIRECTEMENT sur l'écran Paramètres
+        // (l'app est inutilisable sans connexion + données chargées + sélections). L'écran
+        // Paramètres empêche d'en sortir tant que ce n'est pas complet (cf. ConfigGeoNatureFragment).
+        // Uniquement au lancement FRAIS : une recréation d'Activity (rotation, restauration process)
+        // restaure la pile de navigation existante — on n'y touche pas.
+        if (savedInstanceState == null &&
+            !configurationComplete(fr.ariegenature.geomys.store.GeoNatureConfig(this))
+        ) {
+            navController.navigate(R.id.action_accueil_to_config)
+        }
     }
 
     override fun onSupportNavigateUp(): Boolean {

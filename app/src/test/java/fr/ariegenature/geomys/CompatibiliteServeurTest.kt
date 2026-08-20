@@ -106,7 +106,9 @@ class CompatibiliteServeurTest {
         router(configServeur = """{"GEONATURE_VERSION":"2.16.4"}""")
         val (ok, msg) = runBlocking { GeoNatureAuth.testerConnexion(config) }
         assertTrue(ok)
-        assertTrue("le message doit afficher la version : $msg", msg.contains("GeoNature v2.16.4"))
+        // La version n'est plus RÉPÉTÉE dans le message (elle est affichée séparément dans l'UI,
+        // ligne « Serveur GeoNature v… ») : message épuré. Ce qui compte = elle est MÉMORISÉE.
+        assertEquals("Connexion réussie", msg)
         assertEquals("2.16.4", config.versionGeoNatureServeur)
     }
 

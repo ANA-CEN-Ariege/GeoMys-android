@@ -42,6 +42,7 @@ import fr.ariegenature.geomys.network.GeoNatureListe
 import fr.ariegenature.geomys.network.GeoNatureObservateur
 import fr.ariegenature.geomys.network.GeoNatureSync
 import fr.ariegenature.geomys.network.MonitoringApi
+import fr.ariegenature.geomys.network.MonitoringModules
 import fr.ariegenature.geomys.network.SyncRunner
 import fr.ariegenature.geomys.store.GeoNatureConfig
 import fr.ariegenature.geomys.store.MonitoringCache
@@ -804,7 +805,7 @@ class ConfigGeoNatureFragment : Fragment() {
                 } catch (_: Exception) { 0 }
                 intArrayOf(
                     TaxRefCache.nbTaxonsUniques, NomenclatureCache.count,
-                    MonitoringApi.countModulesEnCache(), nbListes, nbObservateurs,
+                    MonitoringModules.countModulesEnCache(), nbListes, nbObservateurs,
                 )
             }
             if (_binding == null) return@launch
@@ -845,7 +846,7 @@ class ConfigGeoNatureFragment : Fragment() {
 
         // Listes rattachées à des protocoles monitoring (id_list_taxonomy, filtré CRUVED) +
         // nombre de taxons UNIQUES couverts par ces listes (union, pas de double comptage).
-        val listesProtocoles = MonitoringApi.listesTaxonomieProtocolesEnCache()
+        val listesProtocoles = MonitoringModules.listesTaxonomieProtocolesEnCache()
         val cdNomsProtocoles = listesProtocoles.flatMap { TaxRefCache.cdNomsDansListe(it) }.toSet()
 
         val lignes = comptes.entries.sortedByDescending { it.value }

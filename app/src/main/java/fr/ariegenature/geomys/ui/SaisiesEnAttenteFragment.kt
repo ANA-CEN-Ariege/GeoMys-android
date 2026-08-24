@@ -163,7 +163,7 @@ class SaisiesEnAttenteFragment : Fragment() {
         val nb = toutes.count { s ->
             (s.etat == SaisieEnAttente.Etat.PENDING || s.etat == SaisieEnAttente.Etat.ERROR) &&
                 memo.getOrPut(s.moduleCode) {
-                    fr.ariegenature.geomys.network.MonitoringApi.moduleAutoriseCreation(s.moduleCode)
+                    fr.ariegenature.geomys.network.MonitoringModules.moduleAutoriseCreation(s.moduleCode)
                 }
         }
         val visible = ongletCourant == 0 && nb > 0 && !envoiEnCours
@@ -177,11 +177,11 @@ class SaisiesEnAttenteFragment : Fragment() {
     //    générique. Les messages portant sur l'ENSEMBLE (liste hétérogène) utilisent le terme
     //    neutre « donnée ». ─────────────────────────────────────────────────────────────────
     private fun labelDuType(s: SaisieEnAttente): String =
-        fr.ariegenature.geomys.network.MonitoringApi.labelTypeEnCache(s.moduleCode, s.objectType)
+        fr.ariegenature.geomys.network.MonitoringObjets.labelTypeEnCache(s.moduleCode, s.objectType)
             ?: s.objectType.replaceFirstChar { it.uppercase() }
 
     private fun typeMasculin(s: SaisieEnAttente): Boolean =
-        fr.ariegenature.geomys.network.MonitoringApi
+        fr.ariegenature.geomys.network.MonitoringObjets
             .genreTypeEnCache(s.moduleCode, s.objectType).equals("M", ignoreCase = true)
 
     private fun voyelleInitiale(mot: String): Boolean = mot.firstOrNull()?.let {
@@ -284,7 +284,7 @@ class SaisiesEnAttenteFragment : Fragment() {
     private fun creerHeaderProtocole(moduleCode: String): View {
         val ctx = requireContext()
         val density = resources.displayMetrics.density
-        val label = fr.ariegenature.geomys.network.MonitoringApi.labelModuleEnCache(moduleCode)
+        val label = fr.ariegenature.geomys.network.MonitoringModules.labelModuleEnCache(moduleCode)
             ?: moduleCode
         return TextView(ctx).apply {
             text = "🔬 $label"
@@ -314,10 +314,10 @@ class SaisiesEnAttenteFragment : Fragment() {
     private fun creerHeaderGroupe(racine: SaisieEnAttente): View? {
         val parentType = racine.parentObjectType?.takeIf { it.isNotEmpty() } ?: return null
         val parentId = racine.parentIdServeur ?: return null
-        val labelDirect = fr.ariegenature.geomys.network.MonitoringApi
+        val labelDirect = fr.ariegenature.geomys.network.MonitoringObjets
             .labelObjetEnCache(racine.moduleCode, parentType, parentId)
             ?: "$parentType #$parentId"
-        val ancetres = fr.ariegenature.geomys.network.MonitoringApi.chaineParentsEnCache(
+        val ancetres = fr.ariegenature.geomys.network.MonitoringObjets.chaineParentsEnCache(
             racine.moduleCode, parentType, parentId,
         )
         // Chaîne du plus haut au plus bas (parent direct en dernier). Chaque segment est
@@ -325,7 +325,7 @@ class SaisiesEnAttenteFragment : Fragment() {
         // schéma cache n'a pas de label, fallback sur le type technique capitalisé.
         val chemin = (ancetres.reversed().map { it.first to it.third } + (parentType to labelDirect))
             .joinToString(" › ") { (type, label) ->
-                val labelType = fr.ariegenature.geomys.network.MonitoringApi
+                val labelType = fr.ariegenature.geomys.network.MonitoringObjets
                     .labelTypeEnCache(racine.moduleCode, type)
                     ?: type.replaceFirstChar { it.uppercase() }
                 "$labelType : $label"
@@ -376,7 +376,7 @@ class SaisiesEnAttenteFragment : Fragment() {
     private val envoiAutoriseParModule = mutableMapOf<String, Boolean>()
     private fun envoiAutorise(s: SaisieEnAttente): Boolean =
         envoiAutoriseParModule.getOrPut(s.moduleCode) {
-            fr.ariegenature.geomys.network.MonitoringApi.moduleAutoriseCreation(s.moduleCode)
+            fr.ariegenature.geomys.network.MonitoringModules.moduleAutoriseCreation(s.moduleCode)
         }
 
     private fun creerLigne(s: SaisieEnAttente, fmtDate: SimpleDateFormat, profondeur: Int = 0): View {
@@ -436,7 +436,7 @@ class SaisiesEnAttenteFragment : Fragment() {
         }
         // Préfère le label humain du type (depuis le schéma cache) pour rester cohérent
         // avec le header de groupe (qui affiche par ex. "Visite", "Observation").
-        val labelType = fr.ariegenature.geomys.network.MonitoringApi
+        val labelType = fr.ariegenature.geomys.network.MonitoringObjets
             .labelTypeEnCache(s.moduleCode, s.objectType)
             ?: s.objectType.replaceFirstChar { it.uppercase() }
         // Si la saisie porte un cd_nom (typiquement une observation), on remplace le label
@@ -584,16 +584,16 @@ class SaisiesEnAttenteFragment : Fragment() {
      *  manque. */
     private fun construireFilPourEdition(s: SaisieEnAttente): String {
         val segments = mutableListOf<FilSegment>()
-        val moduleLabel = fr.ariegenature.geomys.network.MonitoringApi
+        val moduleLabel = fr.ariegenature.geomys.network.MonitoringModules
             .labelModuleEnCache(s.moduleCode) ?: s.moduleCode
         // Racine "Suivis › <protocole>".
         segments.addAll(filRacineSuivis(moduleLabel))
         val parentType = s.parentObjectType?.takeIf { it.isNotEmpty() }
         val parentId = s.parentIdServeur
         if (parentType != null && parentId != null) {
-            val labelDirect = fr.ariegenature.geomys.network.MonitoringApi
+            val labelDirect = fr.ariegenature.geomys.network.MonitoringObjets
                 .labelObjetEnCache(s.moduleCode, parentType, parentId) ?: "$parentType #$parentId"
-            val ancetres = fr.ariegenature.geomys.network.MonitoringApi
+            val ancetres = fr.ariegenature.geomys.network.MonitoringObjets
                 .chaineParentsEnCache(s.moduleCode, parentType, parentId)
             // ancetres = du parent direct vers le haut (type, id, label) → on inverse pour
             // lire haut→bas, puis on ajoute le parent direct en queue (cohérent avec

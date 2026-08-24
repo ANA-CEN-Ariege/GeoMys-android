@@ -34,7 +34,10 @@ import androidx.navigation.fragment.findNavController
 import fr.ariegenature.geomys.R
 import fr.ariegenature.geomys.databinding.FragmentSuiviDetailBinding
 import fr.ariegenature.geomys.network.MonitoringApi
+import fr.ariegenature.geomys.network.MonitoringDatalists
 import fr.ariegenature.geomys.network.MonitoringModule
+import fr.ariegenature.geomys.network.MonitoringModules
+import fr.ariegenature.geomys.network.MonitoringObjets
 import fr.ariegenature.geomys.store.GeoNatureConfig
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
@@ -74,7 +77,7 @@ class SuiviDetailFragment : Fragment() {
 
 
         binding.progressDetail.visibility = View.GONE
-        val module = MonitoringApi.moduleParCode(moduleCode)
+        val module = MonitoringModules.moduleParCode(moduleCode)
         if (module == null) {
             binding.tvLabel.text = moduleCode
             appliquerFilAriane(
@@ -154,7 +157,7 @@ class SuiviDetailFragment : Fragment() {
             }
             // Resolver des labels (id_role/id_nomenclature/id_dataset → nom lisible).
             val resolver = if (schema != null) {
-                runCatching { MonitoringApi.chargerResolveurLabels(config, moduleCode, schema) }
+                runCatching { MonitoringDatalists.chargerResolveurLabels(config, moduleCode, schema) }
                     .getOrNull() ?: MonitoringApi.LabelResolver()
             } else MonitoringApi.LabelResolver()
             // chargerResolveurLabels est un point de suspension : re-vérifier la vue après.
@@ -173,7 +176,7 @@ class SuiviDetailFragment : Fragment() {
                         if (!nomSchema.isNullOrEmpty()) e.copy(nom = nomSchema) else e
                     }
                 }.mapValues { (_, liste) ->
-                    MonitoringApi.trierEnfants(liste, emptyList())
+                    MonitoringObjets.trierEnfants(liste, emptyList())
                 }
 
             val counts = enfantsAffines.mapValues { it.value.size }
@@ -402,7 +405,7 @@ class SuiviDetailFragment : Fragment() {
                         imageTintList = android.content.res.ColorStateList.valueOf(
                             androidx.core.content.ContextCompat.getColor(ctx, R.color.jaune_clair))
                         setBackgroundResource(borderless)
-                        contentDescription = fr.ariegenature.geomys.network.MonitoringApi
+                        contentDescription = fr.ariegenature.geomys.network.MonitoringObjets
                             .libelleNouveau(moduleCode, typeSaisieEnfant)
                         layoutParams = LinearLayout.LayoutParams(
                             (40 * density).toInt(), (40 * density).toInt(),

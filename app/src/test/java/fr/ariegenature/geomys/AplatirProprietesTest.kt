@@ -18,7 +18,7 @@
 
 package fr.ariegenature.geomys
 
-import fr.ariegenature.geomys.network.MonitoringApi
+import fr.ariegenature.geomys.network.MonitoringObjets
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -31,13 +31,13 @@ class AplatirProprietesTest {
 
     @Test
     fun props_null_renvoie_map_vide() {
-        assertTrue(MonitoringApi.aplatirProprietes(null).isEmpty())
+        assertTrue(MonitoringObjets.aplatirProprietes(null).isEmpty())
     }
 
     @Test
     fun scalaires_conserves_et_stringifies() {
         val props = JSONObject("""{"nom":"Forêt","altitude":1200,"actif":true}""")
-        val map = MonitoringApi.aplatirProprietes(props)
+        val map = MonitoringObjets.aplatirProprietes(props)
         assertEquals("Forêt", map["nom"])
         assertEquals("1200", map["altitude"])
         assertEquals("true", map["actif"])
@@ -46,7 +46,7 @@ class AplatirProprietesTest {
     @Test
     fun chaine_vide_et_null_ignores() {
         val props = JSONObject("""{"vide":"","absent":null,"ok":"x"}""")
-        val map = MonitoringApi.aplatirProprietes(props)
+        val map = MonitoringObjets.aplatirProprietes(props)
         assertFalse(map.containsKey("vide"))
         assertFalse(map.containsKey("absent"))
         assertEquals("x", map["ok"])
@@ -55,7 +55,7 @@ class AplatirProprietesTest {
     @Test
     fun objets_et_tableaux_imbriques_ignores() {
         val props = JSONObject("""{"geom":{"type":"Point"},"tags":[1,2],"nom":"Site"}""")
-        val map = MonitoringApi.aplatirProprietes(props)
+        val map = MonitoringObjets.aplatirProprietes(props)
         assertFalse(map.containsKey("geom"))
         assertFalse(map.containsKey("tags"))
         assertEquals("Site", map["nom"])

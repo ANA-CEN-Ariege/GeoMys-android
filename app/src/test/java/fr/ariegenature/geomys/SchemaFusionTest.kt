@@ -18,7 +18,7 @@
 
 package fr.ariegenature.geomys
 
-import fr.ariegenature.geomys.network.MonitoringApi
+import fr.ariegenature.geomys.network.MonitoringSchemas
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -34,7 +34,7 @@ class SchemaFusionTest {
     fun fusion_union_des_cles() {
         val g = JSONObject("""{"type_widget":"text","required":false}""")
         val s = JSONObject("""{"label":"Spécifique"}""")
-        val out = MonitoringApi.fusionnerChamp(g, s)
+        val out = MonitoringSchemas.fusionnerChamp(g, s)
         assertEquals("text", out.getString("type_widget"))
         assertEquals("Spécifique", out.getString("label"))
         assertFalse(out.getBoolean("required"))
@@ -44,7 +44,7 @@ class SchemaFusionTest {
     fun fusion_specific_surcharge_generic() {
         val g = JSONObject("""{"type_widget":"text","required":false}""")
         val s = JSONObject("""{"required":true}""")
-        val out = MonitoringApi.fusionnerChamp(g, s)
+        val out = MonitoringSchemas.fusionnerChamp(g, s)
         assertTrue(out.getBoolean("required")) // specific gagne
         assertEquals("text", out.getString("type_widget"))
     }
@@ -52,9 +52,9 @@ class SchemaFusionTest {
     @Test
     fun fusion_avec_blocs_nuls() {
         val g = JSONObject("""{"type_widget":"date"}""")
-        assertEquals("date", MonitoringApi.fusionnerChamp(g, null).getString("type_widget"))
-        assertEquals("date", MonitoringApi.fusionnerChamp(null, g).getString("type_widget"))
-        assertEquals(0, MonitoringApi.fusionnerChamp(null, null).length())
+        assertEquals("date", MonitoringSchemas.fusionnerChamp(g, null).getString("type_widget"))
+        assertEquals("date", MonitoringSchemas.fusionnerChamp(null, g).getString("type_widget"))
+        assertEquals(0, MonitoringSchemas.fusionnerChamp(null, null).length())
     }
 
     // ── parserPropertiesFusionnees ──────────────────────────────────────────────
@@ -68,7 +68,7 @@ class SchemaFusionTest {
             }
             """.trimIndent(),
         )
-        val props = MonitoringApi.parserPropertiesFusionnees(schema)
+        val props = MonitoringSchemas.parserPropertiesFusionnees(schema)
         val comment = props.getValue("comment")
         assertEquals("textarea", comment.typeWidget) // vient du generic
         assertEquals("Remarque", comment.label)
@@ -79,7 +79,7 @@ class SchemaFusionTest {
     @Test
     fun champ_uniquement_generic_non_marque_specific() {
         val schema = JSONObject("""{"generic":{"a":{"type_widget":"text"}},"specific":{}}""")
-        val a = MonitoringApi.parserPropertiesFusionnees(schema).getValue("a")
+        val a = MonitoringSchemas.parserPropertiesFusionnees(schema).getValue("a")
         assertFalse(a.enSpecific)
     }
 
@@ -102,7 +102,7 @@ class SchemaFusionTest {
             }
             """.trimIndent(),
         )
-        val props = MonitoringApi.parserPropertiesFusionnees(schema)
+        val props = MonitoringSchemas.parserPropertiesFusionnees(schema)
         val veg = props.getValue("st_veg_lign_16_32")
         assertFalse("pas obligatoire statiquement", veg.obligatoire)
         assertEquals("l'expression doit être transportée",
@@ -116,7 +116,7 @@ class SchemaFusionTest {
     fun champ_specific_sans_widget_infere_via_type_util() {
         // Cas réel : un protocole ne déclare en specific que `type_util: date` sans type_widget.
         val schema = JSONObject("""{"generic":{},"specific":{"date_obs":{"type_util":"date"}}}""")
-        val p = MonitoringApi.parserPropertiesFusionnees(schema).getValue("date_obs")
+        val p = MonitoringSchemas.parserPropertiesFusionnees(schema).getValue("date_obs")
         assertEquals("date", p.typeWidget)
         assertTrue(p.enSpecific)
     }
@@ -124,12 +124,12 @@ class SchemaFusionTest {
     @Test
     fun repli_sur_bloc_properties_quand_ni_generic_ni_specific() {
         val schema = JSONObject("""{"properties":{"nom":{"type_widget":"text","label":"Nom"}}}""")
-        val props = MonitoringApi.parserPropertiesFusionnees(schema)
+        val props = MonitoringSchemas.parserPropertiesFusionnees(schema)
         assertEquals("Nom", props.getValue("nom").label)
     }
 
     @Test
     fun schema_vide_renvoie_map_vide() {
-        assertTrue(MonitoringApi.parserPropertiesFusionnees(JSONObject("{}")).isEmpty())
+        assertTrue(MonitoringSchemas.parserPropertiesFusionnees(JSONObject("{}")).isEmpty())
     }
 }

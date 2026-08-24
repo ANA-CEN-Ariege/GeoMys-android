@@ -18,7 +18,7 @@
 
 package fr.ariegenature.geomys
 
-import fr.ariegenature.geomys.network.MonitoringApi
+import fr.ariegenature.geomys.network.MonitoringObjets
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -30,48 +30,48 @@ class FormatGeometrieTest {
 
     @Test
     fun null_ou_sans_type_renvoie_null() {
-        assertNull(MonitoringApi.formatGeometrie(null))
-        assertNull(MonitoringApi.formatGeometrie(JSONObject("{}")))
+        assertNull(MonitoringObjets.formatGeometrie(null))
+        assertNull(MonitoringObjets.formatGeometrie(JSONObject("{}")))
     }
 
     @Test
     fun point_affiche_les_hemispheres() {
         // [lon, lat] = [1.4, 42.9] → Nord / Est.
-        val ne = MonitoringApi.formatGeometrie(JSONObject("""{"type":"Point","coordinates":[1.4,42.9]}"""))!!
+        val ne = MonitoringObjets.formatGeometrie(JSONObject("""{"type":"Point","coordinates":[1.4,42.9]}"""))!!
         assertTrue(ne.contains("N"))
         assertTrue(ne.contains("E"))
         assertTrue(ne.contains("°"))
         // Sud / Ouest.
-        val sw = MonitoringApi.formatGeometrie(JSONObject("""{"type":"Point","coordinates":[-1.4,-42.9]}"""))!!
+        val sw = MonitoringObjets.formatGeometrie(JSONObject("""{"type":"Point","coordinates":[-1.4,-42.9]}"""))!!
         assertTrue(sw.contains("S"))
         assertTrue(sw.contains("W"))
     }
 
     @Test
     fun point_coordonnees_incompletes_retombe_sur_le_type() {
-        assertEquals("Point", MonitoringApi.formatGeometrie(JSONObject("""{"type":"Point","coordinates":[1.0]}""")))
+        assertEquals("Point", MonitoringObjets.formatGeometrie(JSONObject("""{"type":"Point","coordinates":[1.0]}""")))
     }
 
     @Test
     fun polygon_compte_les_sommets() {
         val g = JSONObject("""{"type":"Polygon","coordinates":[[[0,0],[1,0],[1,1],[0,0]]]}""")
-        assertEquals("Polygone (4 sommets)", MonitoringApi.formatGeometrie(g))
+        assertEquals("Polygone (4 sommets)", MonitoringObjets.formatGeometrie(g))
     }
 
     @Test
     fun linestring_compte_les_points() {
         val g = JSONObject("""{"type":"LineString","coordinates":[[0,0],[1,1],[2,2]]}""")
-        assertEquals("Ligne (3 points)", MonitoringApi.formatGeometrie(g))
+        assertEquals("Ligne (3 points)", MonitoringObjets.formatGeometrie(g))
     }
 
     @Test
     fun multipoint_et_multipolygon() {
-        assertEquals("2 points", MonitoringApi.formatGeometrie(JSONObject("""{"type":"MultiPoint","coordinates":[[0,0],[1,1]]}""")))
-        assertEquals("MultiPolygone", MonitoringApi.formatGeometrie(JSONObject("""{"type":"MultiPolygon","coordinates":[]}""")))
+        assertEquals("2 points", MonitoringObjets.formatGeometrie(JSONObject("""{"type":"MultiPoint","coordinates":[[0,0],[1,1]]}""")))
+        assertEquals("MultiPolygone", MonitoringObjets.formatGeometrie(JSONObject("""{"type":"MultiPolygon","coordinates":[]}""")))
     }
 
     @Test
     fun type_inconnu_renvoie_le_type_brut() {
-        assertEquals("GeometryCollection", MonitoringApi.formatGeometrie(JSONObject("""{"type":"GeometryCollection"}""")))
+        assertEquals("GeometryCollection", MonitoringObjets.formatGeometrie(JSONObject("""{"type":"GeometryCollection"}""")))
     }
 }

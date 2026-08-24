@@ -19,7 +19,7 @@
 package fr.ariegenature.geomys
 
 import androidx.test.core.app.ApplicationProvider
-import fr.ariegenature.geomys.network.MonitoringApi
+import fr.ariegenature.geomys.network.MonitoringObjets
 import fr.ariegenature.geomys.store.MonitoringCache
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -47,12 +47,12 @@ class MonitoringCacheLabelTest {
             MonitoringCache.keyObjet("stom", "site", 5),
             """{"properties":{"base_site_name":"Forêt de Foix"}}""",
         )
-        assertEquals("Forêt de Foix", MonitoringApi.labelObjetEnCache("stom", "site", 5))
+        assertEquals("Forêt de Foix", MonitoringObjets.labelObjetEnCache("stom", "site", 5))
     }
 
     @Test
     fun label_objet_absent_du_cache_renvoie_null() {
-        assertNull(MonitoringApi.labelObjetEnCache("stom", "site", 999))
+        assertNull(MonitoringObjets.labelObjetEnCache("stom", "site", 999))
     }
 
     @Test
@@ -62,12 +62,12 @@ class MonitoringCacheLabelTest {
             MonitoringCache.keyObjet("stom", "site", 6),
             """{"properties":{"altitude":1200}}""",
         )
-        assertNull(MonitoringApi.labelObjetEnCache("stom", "site", 6))
+        assertNull(MonitoringObjets.labelObjetEnCache("stom", "site", 6))
     }
 
     @Test
     fun id_invalide_renvoie_null() {
-        assertNull(MonitoringApi.labelObjetEnCache("stom", "site", 0))
+        assertNull(MonitoringObjets.labelObjetEnCache("stom", "site", 0))
     }
 
     @Test
@@ -76,14 +76,14 @@ class MonitoringCacheLabelTest {
             MonitoringCache.keySchema("stom"),
             """{"site":{"label":"Site"},"visit":{"label_list":"Visites"}}""",
         )
-        assertEquals("Site", MonitoringApi.labelTypeEnCache("stom", "site"))
+        assertEquals("Site", MonitoringObjets.labelTypeEnCache("stom", "site"))
         // Repli sur label_list quand label est absent.
-        assertEquals("Visites", MonitoringApi.labelTypeEnCache("stom", "visit"))
+        assertEquals("Visites", MonitoringObjets.labelTypeEnCache("stom", "visit"))
     }
 
     @Test
     fun label_type_inconnu_ou_schema_absent_renvoie_null() {
-        assertNull(MonitoringApi.labelTypeEnCache("stom", "inconnu"))
-        assertNull(MonitoringApi.labelTypeEnCache("module_sans_schema", "site"))
+        assertNull(MonitoringObjets.labelTypeEnCache("stom", "inconnu"))
+        assertNull(MonitoringObjets.labelTypeEnCache("module_sans_schema", "site"))
     }
 }

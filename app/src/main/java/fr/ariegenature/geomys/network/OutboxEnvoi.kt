@@ -34,7 +34,7 @@ import kotlinx.coroutines.withContext
  *     être envoyée APRÈS sa visite parente, sinon on n'a pas d'id serveur à utiliser
  *     comme FK. Tri topologique simple : on émet d'abord les saisies sans
  *     `parentUuidLocal`, puis on les rajoute itérativement quand leur parent est SENT.
- *  2. Pour chaque saisie PENDING/ERROR : POST via [MonitoringApi.envoyerVisite]. Sur
+ *  2. Pour chaque saisie PENDING/ERROR : POST via [MonitoringEnvoi.envoyerVisite]. Sur
  *     succès → marque SENT + stocke l'idServeur. Sur échec → marque ERROR + stocke le
  *     message.
  *  3. Au fur et à mesure, met à jour les enfants qui pointaient vers le parent local :
@@ -294,7 +294,7 @@ object OutboxEnvoi {
     )
 
     /** Envoie une saisie isolée. Lit les valeurs depuis valeursJson, reconstitue la Map
-     *  attendue par [MonitoringApi.envoyerVisite] et POST, puis uploade les médias éventuels
+     *  attendue par [MonitoringEnvoi.envoyerVisite] et POST, puis uploade les médias éventuels
      *  vers gn_commons. Si la saisie porte déjà [SaisieEnAttente.objetCree] (tentative
      *  précédente où seuls les médias avaient échoué — ex. mode avion pendant le transfert
      *  de la photo), le POST est SAUTÉ (re-POSTer dupliquerait l'objet) : on ne renvoie que
@@ -318,7 +318,7 @@ object OutboxEnvoi {
                     s.uuidFieldName != null && s.parentObjectType != null &&
                     (s.parentIdServeur ?: 0) > 0
                 ) {
-                    MonitoringApi.chercherEnfantParUuid(
+                    MonitoringEnvoi.chercherEnfantParUuid(
                         config = config,
                         moduleCode = s.moduleCode,
                         parentObjectType = s.parentObjectType,
@@ -342,7 +342,7 @@ object OutboxEnvoi {
                 val peutVerifier = s.uuidPayload != null && s.uuidFieldName != null &&
                     s.parentObjectType != null && (s.parentIdServeur ?: 0) > 0
                 val idExistant = if (dejaTenteeAvant && peutVerifier) {
-                    MonitoringApi.chercherEnfantParUuid(
+                    MonitoringEnvoi.chercherEnfantParUuid(
                         config = config,
                         moduleCode = s.moduleCode,
                         parentObjectType = s.parentObjectType,
@@ -377,7 +377,7 @@ object OutboxEnvoi {
                         val k = it.next()
                         valeurs[k] = if (obj.isNull(k)) null else obj.opt(k)
                     }
-                    val resVisite = MonitoringApi.envoyerVisite(
+                    val resVisite = MonitoringEnvoi.envoyerVisite(
                         config = config,
                         moduleCode = s.moduleCode,
                         objectType = s.objectType,

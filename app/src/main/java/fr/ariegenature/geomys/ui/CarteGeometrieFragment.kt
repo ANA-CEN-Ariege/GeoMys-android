@@ -32,6 +32,8 @@ import androidx.navigation.fragment.findNavController
 import fr.ariegenature.geomys.R
 import fr.ariegenature.geomys.databinding.FragmentCarteGeometrieBinding
 import fr.ariegenature.geomys.network.MonitoringApi
+import fr.ariegenature.geomys.network.MonitoringModules
+import fr.ariegenature.geomys.network.MonitoringObjets
 import fr.ariegenature.geomys.network.MonitoringSync
 import fr.ariegenature.geomys.store.GeoNatureConfig
 import kotlinx.coroutines.async
@@ -272,7 +274,9 @@ class CarteGeometrieFragment : Fragment() {
             binding.tvErreur.text = "Aucune géométrie à afficher."
             binding.tvErreur.visibility = View.VISIBLE
         } else {
-            binding.map.post { recadrer(tous) }
+            // Garde _binding DANS le runnable (modèle TraceFragment) : recadrer ré-évalue
+            // `binding` à l'exécution — NPE si la vue meurt entre le post et son exécution.
+            binding.map.post { if (_binding != null) recadrer(tous) }
         }
     }
 
@@ -436,7 +440,7 @@ class CarteGeometrieFragment : Fragment() {
             actions.add("Voir la fiche" to { naviguerVersFiche(moduleCode, item, filCible) })
         }
         if (typeSaisieEnfant != null) {
-            actions.add(MonitoringApi.libelleNouveau(moduleCode, typeSaisieEnfant) to {
+            actions.add(MonitoringObjets.libelleNouveau(moduleCode, typeSaisieEnfant) to {
                 naviguerVersNouvelleSaisie(moduleCode, item, typeSaisieEnfant, filCible)
             })
         }
@@ -470,7 +474,7 @@ class CarteGeometrieFragment : Fragment() {
         }
         // Fallback (carte ouverte par une ancienne version sans propagation du fil).
         val moduleCode = arguments?.getString("moduleCode").orEmpty()
-        val labelModule = MonitoringApi.labelModuleEnCache(moduleCode) ?: moduleCode
+        val labelModule = MonitoringModules.labelModuleEnCache(moduleCode) ?: moduleCode
         val racine = filRacineSuivis(labelModule)
         return if (cestLObjetCourant) racine else racine + FilSegment(item.type, item.id, item.label)
     }

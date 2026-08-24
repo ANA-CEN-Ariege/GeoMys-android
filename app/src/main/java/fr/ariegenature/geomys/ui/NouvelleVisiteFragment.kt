@@ -37,6 +37,8 @@ import fr.ariegenature.geomys.monitoring.form.PropertyValue
 import fr.ariegenature.geomys.monitoring.form.ViewType
 import fr.ariegenature.geomys.monitoring.form.construireFormulaire
 import fr.ariegenature.geomys.network.MonitoringApi
+import fr.ariegenature.geomys.network.MonitoringEnvoi
+import fr.ariegenature.geomys.network.MonitoringObjets
 import fr.ariegenature.geomys.store.GeoNatureConfig
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -265,7 +267,7 @@ class NouvelleVisiteFragment : Fragment() {
         binding.tvTitre.text = when {
             modeEdition -> "Modifier…"
             typeACreer.isNotEmpty() && moduleCode.isNotEmpty() ->
-                MonitoringApi.libelleNouveau(moduleCode, typeACreer)
+                MonitoringObjets.libelleNouveau(moduleCode, typeACreer)
             else -> "Nouvelle entrée"
         }
         // Fil d'Ariane : reçu de l'écran appelant (drill-down) ou reconstruit depuis le cache
@@ -709,7 +711,7 @@ class NouvelleVisiteFragment : Fragment() {
     ): Int? = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
         // Fetch partagé avec MonitoringApi (datasets actifs du module, casses essayées) —
         // ici on n'extrait que l'id_taxa_list du premier dataset qui en déclare une.
-        val arr = MonitoringApi.chargerDatasetsDuModuleLive(config, moduleCode)
+        val arr = MonitoringEnvoi.chargerDatasetsDuModuleLive(config, moduleCode)
             ?: return@withContext null
         for (i in 0 until arr.length()) {
             val d = arr.optJSONObject(i) ?: continue

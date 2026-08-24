@@ -33,7 +33,7 @@ import androidx.fragment.app.activityViewModels
 import androidx.navigation.fragment.findNavController
 import fr.ariegenature.geomys.R
 import fr.ariegenature.geomys.databinding.FragmentAccueilBinding
-import fr.ariegenature.geomys.network.MonitoringApi
+import fr.ariegenature.geomys.network.MonitoringModules
 import fr.ariegenature.geomys.store.GeoNatureConfig
 import fr.ariegenature.geomys.store.OutboxMonitoring
 import fr.ariegenature.geomys.store.SaisieEnAttente
@@ -121,7 +121,7 @@ class AccueilFragment : Fragment() {
                 // si l'utilisateur n'a accès à aucun protocole (CRUVED nul, ou cache vide
                 // avant la première synchro). Cohérent avec la visibilité du bouton "Suivis".
                 menu.findItem(R.id.menu_mes_visites)?.isVisible =
-                    MonitoringApi.countModulesEnCache() > 0
+                    MonitoringModules.countModulesEnCache() > 0
                 // "Mes stations OccHab" : mêmes conditions que la tuile OccHab (module détecté ET
                 // droit de créer). La liste ne contient QUE des stations saisies localement : sans
                 // droit de création, elle serait toujours vide et renverrait vers une tuile masquée.
@@ -236,12 +236,12 @@ class AccueilFragment : Fragment() {
     }
 
     /** Affiche le bouton "Suivis" uniquement si l'utilisateur a au moins un protocole
-     *  accessible (cache filtré par CRUVED, cf [MonitoringApi.countModulesEnCache]). Quand
+     *  accessible (cache filtré par CRUVED, cf [MonitoringModules.countModulesEnCache]). Quand
      *  il est masqué, le spacer de poids 1 au-dessus de la zone boutons décale naturellement
      *  les 2 boutons de saisie vers le bas — le cluster bouton reste collé au bas de l'écran. */
     private fun updateSuivisVisibility() {
         binding.btnSuivis.visibility =
-            if (MonitoringApi.countModulesEnCache() > 0) View.VISIBLE else View.GONE
+            if (MonitoringModules.countModulesEnCache() > 0) View.VISIBLE else View.GONE
         // Tuile OccHab : module détecté à la synchro ET droit de CRÉER des stations (CRUVED C).
         // Un utilisateur en lecture seule ne voit pas la tuile (il ne pourrait rien saisir).
         binding.btnOcchab.visibility =

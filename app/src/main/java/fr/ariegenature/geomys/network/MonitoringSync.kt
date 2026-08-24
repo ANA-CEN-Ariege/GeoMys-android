@@ -182,7 +182,7 @@ object MonitoringSync {
                     chunk.map { idListe ->
                         async {
                             val arr = runCatching {
-                                MonitoringApi.chargerObservateursDeListe(config, idListe)
+                                MonitoringDatalists.chargerObservateursDeListe(config, idListe)
                             }.getOrNull()
                             if (arr != null) 1 else 0
                         }

@@ -34,6 +34,8 @@ import androidx.navigation.fragment.findNavController
 import fr.ariegenature.geomys.R
 import fr.ariegenature.geomys.databinding.FragmentFicheObjetBinding
 import fr.ariegenature.geomys.network.MonitoringApi
+import fr.ariegenature.geomys.network.MonitoringDatalists
+import fr.ariegenature.geomys.network.MonitoringObjets
 import fr.ariegenature.geomys.store.GeoNatureConfig
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
@@ -143,7 +145,7 @@ class FicheObjetFragment : Fragment() {
             }
             val schema = schemaRes.getOrNull()
             val resolver = if (schema != null) {
-                runCatching { MonitoringApi.chargerResolveurLabels(config, moduleCode, schema) }
+                runCatching { MonitoringDatalists.chargerResolveurLabels(config, moduleCode, schema) }
                     .getOrNull() ?: MonitoringApi.LabelResolver()
             } else MonitoringApi.LabelResolver()
             if (!isAdded) return@launch
@@ -160,7 +162,7 @@ class FicheObjetFragment : Fragment() {
         val schemaCe = schema?.get(objet.type)
         // Titre = valeur du nameField déclaré par le schéma, sinon heuristique.
         val nom = schemaCe?.nameField?.let { objet.proprietes[it] }?.takeIf { it.isNotEmpty() }
-            ?: MonitoringApi.extraireNomHeuristique(objet.proprietes, objet.type, objet.id)
+            ?: MonitoringObjets.extraireNomHeuristique(objet.proprietes, objet.type, objet.id)
         binding.tvTitre.text = nom
         binding.tvType.text = schemaCe?.label
             ?: schemaCe?.labelList
@@ -248,7 +250,7 @@ class FicheObjetFragment : Fragment() {
         val champsDate = props?.filterValues { it.typeWidget.equals("date", ignoreCase = true) }?.keys.orEmpty()
         // Type sans champ date (sites, groupes de sites…) : on respecte les `sorts` déclarés
         // par le schéma (parité web), à défaut le tri alphabétique par nom de trierEnfants.
-        if (champsDate.isEmpty()) return MonitoringApi.trierEnfants(items, schemaType?.sorts.orEmpty())
+        if (champsDate.isEmpty()) return MonitoringObjets.trierEnfants(items, schemaType?.sorts.orEmpty())
         val champDate = schemaType?.nameField?.takeIf { it in champsDate }
             ?: champsDate.firstOrNull { it.endsWith("_min") }
             ?: champsDate.first()
@@ -421,7 +423,7 @@ class FicheObjetFragment : Fragment() {
                     imageTintList = android.content.res.ColorStateList.valueOf(
                         androidx.core.content.ContextCompat.getColor(ctx, R.color.jaune_clair))
                     setBackgroundResource(borderless)
-                    contentDescription = fr.ariegenature.geomys.network.MonitoringApi
+                    contentDescription = fr.ariegenature.geomys.network.MonitoringObjets
                         .libelleNouveau(objet.moduleCode, typeSaisieEnfantServeur)
                     layoutParams = LinearLayout.LayoutParams((40 * density).toInt(), (40 * density).toInt())
                     setOnClickListener {
@@ -533,7 +535,7 @@ class FicheObjetFragment : Fragment() {
                 imageTintList = android.content.res.ColorStateList.valueOf(
                     androidx.core.content.ContextCompat.getColor(ctx, R.color.jaune_clair))
                 setBackgroundResource(borderlessId)
-                contentDescription = fr.ariegenature.geomys.network.MonitoringApi
+                contentDescription = fr.ariegenature.geomys.network.MonitoringObjets
                     .libelleNouveau(objet.moduleCode, type)
                 layoutParams = LinearLayout.LayoutParams(
                     (40 * density).toInt(), (40 * density).toInt(),
@@ -617,7 +619,7 @@ class FicheObjetFragment : Fragment() {
             else -> "⏳"
         }
         val fmt = java.text.SimpleDateFormat("dd/MM HH:mm", java.util.Locale.FRANCE)
-        val labelLocal = fr.ariegenature.geomys.network.MonitoringApi
+        val labelLocal = fr.ariegenature.geomys.network.MonitoringObjets
             .labelTypeEnCache(saisie.moduleCode, saisie.objectType) ?: "Donnée"
         bloc.addView(TextView(ctx).apply {
             text = "$icone $labelLocal (local)"
@@ -642,7 +644,7 @@ class FicheObjetFragment : Fragment() {
                 imageTintList = android.content.res.ColorStateList.valueOf(
                     androidx.core.content.ContextCompat.getColor(ctx, R.color.jaune_clair))
                 setBackgroundResource(borderless)
-                contentDescription = fr.ariegenature.geomys.network.MonitoringApi
+                contentDescription = fr.ariegenature.geomys.network.MonitoringObjets
                     .libelleNouveau(objet.moduleCode, typeSaisieEnfant)
                 layoutParams = LinearLayout.LayoutParams((40 * density).toInt(), (40 * density).toInt())
                 setOnClickListener {

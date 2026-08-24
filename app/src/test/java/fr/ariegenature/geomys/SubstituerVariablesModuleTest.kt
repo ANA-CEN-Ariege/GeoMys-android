@@ -18,7 +18,7 @@
 
 package fr.ariegenature.geomys
 
-import fr.ariegenature.geomys.network.MonitoringApi
+import fr.ariegenature.geomys.network.MonitoringSchemas
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -37,7 +37,7 @@ class SubstituerVariablesModuleTest {
             }
             """.trimIndent(),
         )
-        MonitoringApi.substituerVariablesModule(racine)
+        MonitoringSchemas.substituerVariablesModule(racine)
         assertEquals("Protocole STOM Ariège", racine.getJSONObject("module").getString("titre"))
     }
 
@@ -51,7 +51,7 @@ class SubstituerVariablesModuleTest {
             }
             """.trimIndent(),
         )
-        MonitoringApi.substituerVariablesModule(racine)
+        MonitoringSchemas.substituerVariablesModule(racine)
         assertEquals("préfixe valeurX", racine.getJSONArray("liste").getString(1))
     }
 
@@ -65,14 +65,14 @@ class SubstituerVariablesModuleTest {
             }
             """.trimIndent(),
         )
-        MonitoringApi.substituerVariablesModule(racine)
+        MonitoringSchemas.substituerVariablesModule(racine)
         assertEquals("1 et 2", racine.getJSONObject("n").getString("v"))
     }
 
     @Test
     fun sans_bloc_custom_aucun_changement() {
         val racine = JSONObject("""{"module":{"titre":"Inchangé __MODULE.X"}}""")
-        MonitoringApi.substituerVariablesModule(racine)
+        MonitoringSchemas.substituerVariablesModule(racine)
         // Pas de custom → on laisse la chaîne telle quelle.
         assertEquals("Inchangé __MODULE.X", racine.getJSONObject("module").getString("titre"))
     }
@@ -82,7 +82,7 @@ class SubstituerVariablesModuleTest {
         val racine = JSONObject(
             """{"custom":{"__MODULE.X":"v"},"module":{"titre":"Texte normal"}}""",
         )
-        MonitoringApi.substituerVariablesModule(racine)
+        MonitoringSchemas.substituerVariablesModule(racine)
         assertEquals("Texte normal", racine.getJSONObject("module").getString("titre"))
     }
 }

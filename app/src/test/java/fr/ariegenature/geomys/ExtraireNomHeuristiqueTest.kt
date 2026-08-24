@@ -18,7 +18,7 @@
 
 package fr.ariegenature.geomys
 
-import fr.ariegenature.geomys.network.MonitoringApi
+import fr.ariegenature.geomys.network.MonitoringObjets
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -29,34 +29,34 @@ class ExtraireNomHeuristiqueTest {
     @Test
     fun prefere_base_TYPE_name() {
         val props = mapOf("base_site_name" to "Forêt de Foix", "name" to "autre")
-        assertEquals("Forêt de Foix", MonitoringApi.extraireNomHeuristique(props, "site", 5))
+        assertEquals("Forêt de Foix", MonitoringObjets.extraireNomHeuristique(props, "site", 5))
     }
 
     @Test
     fun TYPE_name_specifique_au_type() {
         val props = mapOf("station_name" to "Point Nord")
-        assertEquals("Point Nord", MonitoringApi.extraireNomHeuristique(props, "station", 3))
+        assertEquals("Point Nord", MonitoringObjets.extraireNomHeuristique(props, "station", 3))
     }
 
     @Test
     fun retombe_sur_name_puis_label() {
-        assertEquals("Truc", MonitoringApi.extraireNomHeuristique(mapOf("name" to "Truc"), "x", 1))
-        assertEquals("Bidule", MonitoringApi.extraireNomHeuristique(mapOf("label" to "Bidule"), "x", 1))
+        assertEquals("Truc", MonitoringObjets.extraireNomHeuristique(mapOf("name" to "Truc"), "x", 1))
+        assertEquals("Bidule", MonitoringObjets.extraireNomHeuristique(mapOf("label" to "Bidule"), "x", 1))
     }
 
     @Test
     fun sans_candidat_fallback_sur_diese_id() {
-        assertEquals("#42", MonitoringApi.extraireNomHeuristique(emptyMap(), "site", 42))
+        assertEquals("#42", MonitoringObjets.extraireNomHeuristique(emptyMap(), "site", 42))
     }
 
     @Test
     fun sans_candidat_et_id_invalide_fallback_tiret() {
-        assertEquals("—", MonitoringApi.extraireNomHeuristique(emptyMap(), "site", 0))
+        assertEquals("—", MonitoringObjets.extraireNomHeuristique(emptyMap(), "site", 0))
     }
 
     @Test
     fun valeur_vide_ignoree_au_profit_du_candidat_suivant() {
         val props = mapOf("base_site_name" to "", "name" to "Replié")
-        assertEquals("Replié", MonitoringApi.extraireNomHeuristique(props, "site", 9))
+        assertEquals("Replié", MonitoringObjets.extraireNomHeuristique(props, "site", 9))
     }
 }

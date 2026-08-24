@@ -34,6 +34,7 @@ import fr.ariegenature.geomys.databinding.FragmentSuivisBinding
 import fr.ariegenature.geomys.network.MonitoringApi
 import fr.ariegenature.geomys.network.MonitoringModule
 import fr.ariegenature.geomys.store.GeoNatureConfig
+import fr.ariegenature.geomys.store.PictoCache
 import kotlinx.coroutines.launch
 
 /** Liste des protocoles (modules) du gn_module_monitoring de l'instance GeoNature. */
@@ -113,22 +114,24 @@ class SuivisFragment : Fragment() {
         modules.forEach { m ->
             val row = inflater.inflate(R.layout.item_suivi_module, binding.llModules, false)
             row.findViewById<TextView>(R.id.tv_label).text = m.moduleLabel
-            row.findViewById<TextView>(R.id.tv_code).text = m.moduleCode
+            // Code technique du module (« chronoventaire_ana ») masqué : on n'affiche que le nom
+            // du protocole + sa description.
+            row.findViewById<TextView>(R.id.tv_code).visibility = View.GONE
             row.findViewById<TextView>(R.id.tv_desc).apply {
                 m.moduleDesc?.let { text = it; visibility = View.VISIBLE }
             }
-            // Picto : si module_picto ressemble à une URL/chemin d'image → ImageView,
-            // sinon fallback emoji depuis la nomenclature FontAwesome.
+            // Picto du protocole. Comme le web du module Suivi, l'image vient de la CONVENTION
+            // media/monitorings/<module_code>/img.jpg (INDÉPENDANTE de module_picto, qui reste
+            // souvent au défaut « fa-puzzle-piece »). On tente donc cette image ; en cas d'absence
+            // (404), on retombe sur l'emoji FontAwesome. Si module_picto est un chemin/URL d'image
+            // explicite, il prime sur la convention.
             val ivPicto = row.findViewById<ImageView>(R.id.iv_picto)
             val tvPicto = row.findViewById<TextView>(R.id.tv_picto)
             val picto = m.modulePicto
-            if (picto != null && PictoMonitoring.estImagePicto(picto)) {
-                ivPicto.visibility = View.VISIBLE
-                chargerImagePicto(ivPicto, urlAbsoluePicto(picto))
-            } else {
-                val emoji = picto?.let { PictoMonitoring.faEnEmoji(it) }
-                if (emoji != null) { tvPicto.text = emoji; tvPicto.visibility = View.VISIBLE }
-            }
+            val emojiRepli = picto?.let { PictoMonitoring.faEnEmoji(it) }
+            ivPicto.visibility = View.VISIBLE
+            tvPicto.visibility = View.GONE
+            chargerImagePicto(ivPicto, m.moduleCode, picto, tvPicto, emojiRepli)
             row.findViewById<ImageButton>(R.id.btn_info).setOnClickListener {
                 findNavController().naviguerSur(
                     R.id.action_suivis_to_detail,
@@ -154,36 +157,40 @@ class SuivisFragment : Fragment() {
         }
     }
 
-    /** Construit l'URL absolue du picto à partir de la base serveur. Si la chaîne est
-     *  déjà absolue (http/https), elle est retournée telle quelle. Sinon on préfixe par
-     *  l'URL du serveur GeoNature et un éventuel `/` manquant. */
-    private fun urlAbsoluePicto(picto: String): String {
-        val p = picto.trim()
-        if (p.startsWith("http://", true) || p.startsWith("https://", true)) return p
-        val base = gnConfig.urlServeur.trim().trimEnd('/')
-        val rel = if (p.startsWith("/")) p else "/$p"
-        return "$base$rel"
-    }
-
-    /** Charge l'image en arrière-plan dans un Bitmap et la pose sur l'ImageView. Best-effort
-     *  (cache OS HttpURLConnection en place). En cas d'échec, masque l'ImageView pour ne
-     *  pas laisser un trou. */
-    private fun chargerImagePicto(target: ImageView, url: String) {
-        target.tag = url  // détecte les recyclages de View (cas peu probable ici, on n'est
-                          // pas dans un RecyclerView mais ça ne coûte rien).
+    /** Charge le picto d'un protocole : d'abord depuis le CACHE DISQUE local (offline + instantané,
+     *  cf. [PictoCache]), sinon téléchargement + enregistrement. En cas d'ABSENCE d'image (404 /
+     *  erreur / hors-ligne sans cache), retombe sur l'emoji FontAwesome ([emojiRepli]) affiché dans
+     *  [repli]. Le bitmap est sous-échantillonné à la taille d'une vignette (mémoire + reco
+     *  « bitmap » de Play). */
+    private fun chargerImagePicto(
+        target: ImageView, moduleCode: String, modulePicto: String?, repli: TextView, emojiRepli: String?,
+    ) {
+        target.tag = moduleCode  // détecte les recyclages de View.
+        val coteMaxPx = (128 * resources.displayMetrics.density).toInt()
+        val base = gnConfig.urlServeur
         viewLifecycleOwner.lifecycleScope.launch {
             val bmp = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                 runCatching {
-                    val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
-                    conn.connectTimeout = 10000
-                    conn.readTimeout = 10000
-                    if (conn.responseCode != 200) return@runCatching null
-                    conn.inputStream.use { android.graphics.BitmapFactory.decodeStream(it) }
+                    val f = PictoCache.fichierOuTelecharger(base, moduleCode, modulePicto)
+                        ?: return@runCatching null
+                    // Sous-échantillonnage vers une vignette (~128 dp).
+                    val bornes = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    android.graphics.BitmapFactory.decodeFile(f.path, bornes)
+                    var ech = 1
+                    while (maxOf(bornes.outWidth, bornes.outHeight) / (ech * 2) >= coteMaxPx) ech *= 2
+                    android.graphics.BitmapFactory.decodeFile(
+                        f.path, android.graphics.BitmapFactory.Options().apply { inSampleSize = ech })
                 }.getOrNull()
             }
-            if (target.tag == url) {
-                if (bmp != null) target.setImageBitmap(bmp)
-                else target.visibility = View.GONE
+            if (target.tag != moduleCode) return@launch
+            if (bmp != null) {
+                target.setImageBitmap(bmp)
+                target.visibility = View.VISIBLE
+                repli.visibility = View.GONE
+            } else {
+                // Aucune image pour ce protocole → repli sur l'emoji FontAwesome.
+                target.visibility = View.GONE
+                if (emojiRepli != null) { repli.text = emojiRepli; repli.visibility = View.VISIBLE }
             }
         }
     }

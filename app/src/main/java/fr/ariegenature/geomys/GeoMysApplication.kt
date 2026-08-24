@@ -49,6 +49,7 @@ class GeoMysApplication : Application() {
         fr.ariegenature.geomys.store.HabitatCache.init(this)
         fr.ariegenature.geomys.store.HabitatCacheOccHab.init(this)
         MonitoringCache.init(this)
+        fr.ariegenature.geomys.store.PictoCache.init(this)
         OutboxMonitoring.init(this)
         fr.ariegenature.geomys.store.RelevesOrphelins.init(this)
         // OsmDroid doit être initialisé AVANT toute lecture/écriture du cache de tuiles

@@ -1,11 +1,10 @@
 [versions]
 agp = "9.1.1"
-kotlin = "2.0.21"
-coreKtx = "1.10.1"
+coreKtx = "1.19.0"
 junit = "4.13.2"
 junitVersion = "1.1.5"
 espressoCore = "3.5.1"
-appcompat = "1.6.1"
+appcompat = "1.8.0"
 # NB avertissement console Play « API obsolètes bord à bord » (Window.setStatusBarColor /
 # setNavigationBarColor dans BottomSheetDialog / EdgeToEdgeUtils / SheetDialog) : ces appels
 # sont du code de COMPATIBILITÉ gardé par version (< API 35) DANS Material — indispensables
@@ -15,12 +14,16 @@ appcompat = "1.6.1"
 material = "1.12.0"
 osmdroid = "6.1.20"
 coroutines = "1.8.1"
-lifecycle = "2.8.7"
+lifecycle = "2.11.0"
 gson = "2.11.0"
+# TODO 2026-08-24 : bibliothèque DÉPRÉCIÉE (1.1.0 = dernière version), conservée UNIQUEMENT pour
+# LIRE l'ancien fichier gn_secure (EncryptedSharedPreferences) pendant la migration vers
+# gn_secure_v2 (store/MdpChiffre, chiffrement maison AES-GCM/Keystore) — cf. GeoNatureConfig.
+# À retirer quand le parc est passé en gn_secure_v2 (release suivante).
 securityCrypto = "1.1.0"
-navigation = "2.8.5"
-fragmentKtx = "1.8.6"
-activityKtx = "1.9.3"
+navigation = "2.9.8"
+fragmentKtx = "1.9.0"
+activityKtx = "1.13.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -43,4 +46,3 @@ activity-ktx = { group = "androidx.activity", name = "activity-ktx", version.ref
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
-kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }

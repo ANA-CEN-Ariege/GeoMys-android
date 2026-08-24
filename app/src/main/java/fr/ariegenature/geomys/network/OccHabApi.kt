@@ -79,6 +79,41 @@ object OccHabApi {
         detecterModules(config, setOf(MODULE_CODE))[MODULE_CODE] ?: OccHabAcces.ABSENT
 
     /**
+     * Altitudes min/max (MNT serveur) d'une géométrie via `POST /api/geo/info` — le même
+     * appel que le web quand on dessine une station (form-service.ts `patchGeoValue` →
+     * `getGeoInfo`). BEST-EFFORT : null si hors-ligne, non authentifié, erreur ou réponse
+     * sans bloc `altitude` — l'appelant laisse alors les champs vides (saisie manuelle).
+     * [geometryGeoJson] = objet GeoJSON *geometry* ({"type":"Point"/"Polygon","coordinates":…}),
+     * enveloppé ici en Feature comme le fait le client web.
+     */
+    suspend fun altitudesPourGeometrie(
+        config: GeoNatureConfig,
+        geometryGeoJson: JSONObject,
+    ): Pair<Int, Int>? = withContext(Dispatchers.IO) {
+        try {
+            val base = config.urlServeur.trim().trimEnd('/')
+            val (token, _, cookies) = GeoNatureAuth.loginAvecCookies(base, config.login, config.motDePasse)
+                ?: return@withContext null
+            val feature = JSONObject()
+                .put("type", "Feature")
+                .put("geometry", geometryGeoJson)
+                .put("properties", JSONObject())
+            val conn = HttpClient.postJson(URL("$base/api/geo/info"), token, cookies)
+            conn.outputStream.use { it.write(feature.toString().toByteArray(Charsets.UTF_8)) }
+            if (conn.responseCode != 200) return@withContext null
+            val texte = conn.inputStream.bufferedReader().use { it.readText() }
+            val alt = JSONObject(texte).optJSONObject("altitude") ?: return@withContext null
+            val min = alt.opt("altitude_min")?.toString()?.toDoubleOrNull()?.toInt()
+            val max = alt.opt("altitude_max")?.toString()?.toDoubleOrNull()?.toInt()
+            if (min == null || max == null) null else min to max
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /**
      * Détection GÉNÉRIQUE des droits par module via `GET /api/gn_commons/modules` (UN seul
      * appel pour tous les [codes]). N'inclut dans la map QUE les modules trouvés dans la
      * réponse : un module absent (pas installé / aucun droit) n'y figure pas — l'appelant

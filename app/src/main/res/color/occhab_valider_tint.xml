@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Fond du bouton « Valider l'habitat » : désactivé = EXACTEMENT le rendu Material3 par
+     défaut (colorOnSurface à 12 %), comme le bouton « Enregistrer la visite » de Nouvelle
+     visite ; activé = vert OccHab. Un backgroundTint fixe ignorait l'état disabled — le
+     bouton restait vert et paraissait actif. -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_enabled="false" android:alpha="0.12" android:color="?attr/colorOnSurface" />
+    <item android:color="@color/green_85" />
+</selector>

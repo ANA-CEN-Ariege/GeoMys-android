@@ -431,7 +431,11 @@ object GeoNatureSync {
                                 restrictions.add(TaxrefRestriction(regne, group2))
                             }
                         }
-                        valeurs.add(NomValeur(id, label, restrictions))
+                        // cd_nomenclature : identifiant STABLE inter-instances, requis par les
+                        // règles métier calquées sur le web (ex. technique de collecte OccHab
+                        // cd "10" → précision requise). Absent/vide → null (règle inactive).
+                        val cd = v.optString("cd_nomenclature", "").takeIf { it.isNotEmpty() }
+                        valeurs.add(NomValeur(id, label, restrictions, cd))
                     }
 
                     if (valeurs.isNotEmpty()) result[mnem] = valeurs

@@ -24,7 +24,16 @@ import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 
 data class TaxrefRestriction(val regne: String, val group2Inpn: String)
-data class NomValeur(val id: Int, val label: String, val taxref: List<TaxrefRestriction> = emptyList())
+/** [cd] = cd_nomenclature serveur (stable inter-instances, contrairement à l'id) — sert aux
+ *  règles métier calquées sur le web (ex. OccHab : technique de collecte cd "10" = « Autre,
+ *  préciser » → précision technique requise). null sur un cache d'avant l'ajout du champ
+ *  (résolu à la prochaine synchro) : les règles qui en dépendent se désactivent proprement. */
+data class NomValeur(
+    val id: Int,
+    val label: String,
+    val taxref: List<TaxrefRestriction> = emptyList(),
+    val cd: String? = null,
+)
 
 object NomenclatureCache {
     private const val KEY = "nom_cache_v1"

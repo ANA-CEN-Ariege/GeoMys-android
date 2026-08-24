@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Texte du bouton « Valider l'habitat » : désactivé = libellé Material3 par défaut
+     (colorOnSurface à 38 %), comme « Enregistrer la visite » de Nouvelle visite ; activé =
+     blanc sur fond vert. Un textColor blanc fixe était illisible sur le fond désactivé clair. -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_enabled="false" android:alpha="0.38" android:color="?attr/colorOnSurface" />
+    <item android:color="@android:color/white" />
+</selector>

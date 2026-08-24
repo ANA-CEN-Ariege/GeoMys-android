@@ -20,10 +20,6 @@ package fr.ariegenature.geomys.ui
 
 import android.content.res.ColorStateList
 import android.graphics.Color
-import android.hardware.Sensor
-import android.hardware.SensorEvent
-import android.hardware.SensorEventListener
-import android.hardware.SensorManager
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -32,10 +28,10 @@ import android.widget.ImageButton
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.core.content.ContextCompat
-import androidx.core.graphics.drawable.toBitmap
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.viewModelScope
 import androidx.navigation.fragment.findNavController
 import fr.ariegenature.geomys.R
 import fr.ariegenature.geomys.databinding.FragmentOcchabCarteBinding
@@ -44,13 +40,11 @@ import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.osmdroid.config.Configuration
 import org.osmdroid.events.MapEventsReceiver
-import org.osmdroid.util.BoundingBox
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.overlay.MapEventsOverlay
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Overlay
 import org.osmdroid.views.overlay.Polygon
-import org.osmdroid.views.overlay.mylocation.GpsMyLocationProvider
 import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
 
 /**
@@ -70,6 +64,12 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
     private var mode = Mode.POINT
     private var pointChoisi: GeoPoint? = null
     private val sommets = mutableListOf<GeoPoint>()
+    /** true quand la géométrie d'édition courante vient d'une STATION EXISTANTE (réédition) et
+     *  n'a pas encore été retouchée par un tap. En réédition, deux gestes distincts : le DRAG
+     *  d'un sommet/du point MODIFIE la géométrie chargée ; un TAP sur la carte en démarre une
+     *  NOUVELLE — l'ancienne est alors effacée (REMPLACEMENT, pas ajout : sans ce flag, le tap
+     *  ajoutait un sommet à l'ancien anneau — bug terrain 2026-08-24). Consommé au premier tap. */
+    private var geometrieChargee = false
     // Marker unique du point (mode Point), markers draggables des sommets (mode Polygone) et
     // overlay de forme (polygone). Séparés pour pouvoir repeindre la forme SANS recréer les
     // markers pendant un drag (cf. TraceFragment).
@@ -85,52 +85,10 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
     // empêche le premier fix GPS de recentrer ailleurs.
     private var cadrageInitialFait = false
 
-    // Boussole (repris de TraceFragment) : rotation de la carte selon l'orientation du téléphone.
-    private lateinit var sensorManager: SensorManager
-    private val gravity = FloatArray(3)
-    private val geomagnetic = FloatArray(3)
-    private var gravityReady = false
-    private var geomagneticReady = false
+    // Boussole : rotation de la carte selon l'orientation du téléphone. L'ÉTAT reste ici (persiste
+    // à travers la recréation de vue) ; le listener/capteurs sont factorisés dans MapCompassController.
     private var carteSuitBoussole = false
-
-    private val compassListener = object : SensorEventListener {
-        override fun onSensorChanged(event: SensorEvent) {
-            val azimuth: Float = when (event.sensor.type) {
-                Sensor.TYPE_ROTATION_VECTOR -> {
-                    val R = FloatArray(9)
-                    SensorManager.getRotationMatrixFromVector(R, event.values)
-                    val o = FloatArray(3)
-                    SensorManager.getOrientation(R, o)
-                    Math.toDegrees(o[0].toDouble()).toFloat()
-                }
-                Sensor.TYPE_ACCELEROMETER -> {
-                    System.arraycopy(event.values, 0, gravity, 0, 3)
-                    gravityReady = true
-                    return
-                }
-                Sensor.TYPE_MAGNETIC_FIELD -> {
-                    System.arraycopy(event.values, 0, geomagnetic, 0, 3)
-                    geomagneticReady = true
-                    if (!gravityReady) return
-                    val R = FloatArray(9)
-                    if (!SensorManager.getRotationMatrix(R, null, gravity, geomagnetic)) return
-                    val o = FloatArray(3)
-                    SensorManager.getOrientation(R, o)
-                    Math.toDegrees(o[0].toDouble()).toFloat()
-                }
-                else -> return
-            }
-            val compass = _binding?.compass ?: return
-            if (carteSuitBoussole) {
-                compass.post { compass.setAzimuth(-azimuth) }
-                val map = _binding?.map ?: return
-                map.post { map.setMapOrientation(-azimuth); map.invalidate() }
-            } else {
-                compass.post { compass.setAzimuth(0f) }
-            }
-        }
-        override fun onAccuracyChanged(sensor: Sensor, accuracy: Int) {}
-    }
+    private var boussole: MapCompassController? = null
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         Configuration.getInstance().userAgentValue = requireContext().packageName
@@ -175,7 +133,8 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
             else Toast.makeText(requireContext(), "Acquisition GPS en cours…", Toast.LENGTH_SHORT).show()
         }
 
-        // Boussole (toggle rotation carte), comme Occtax.
+        // Boussole (toggle rotation carte), comme Occtax. Capteurs/listener factorisés.
+        boussole = MapCompassController(requireContext(), binding.map, binding.compass) { carteSuitBoussole }
         binding.compass.setActif(carteSuitBoussole)
         binding.compass.setOnClickListener {
             carteSuitBoussole = !carteSuitBoussole
@@ -190,15 +149,7 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
         // Overlay de captation des taps (placer point / ajouter sommet), en tout premier.
         binding.map.overlays.add(0, MapEventsOverlay(this))
 
-        locationOverlay = MyLocationNewOverlay(GpsMyLocationProvider(requireContext()), binding.map).apply {
-            // Même point bleu que la Saisie multi-taxons (TraceFragment) : icône ET flèche de
-            // direction = ic_gps_blue_dot, hotspot centré.
-            setPersonIcon(ContextCompat.getDrawable(requireContext(), R.drawable.ic_gps_blue_dot)?.toBitmap())
-            setPersonHotspot(10f, 10f)
-            setDirectionArrow(
-                ContextCompat.getDrawable(requireContext(), R.drawable.ic_gps_blue_dot)?.toBitmap(),
-                ContextCompat.getDrawable(requireContext(), R.drawable.ic_gps_blue_dot)?.toBitmap(),
-            )
+        locationOverlay = creerLocationOverlayBleu(binding.map, requireContext()).apply {
             enableMyLocation()
             runOnFirstFix {
                 val loc = myLocation ?: return@runOnFirstFix
@@ -244,6 +195,13 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
      *  d'édition et renvoie ses sommets (liste vide si station vierge). Ne recadre pas : le cadrage
      *  est décidé par l'appelant sur l'union « géométrie courante + stations de session ». */
     private fun preremplirDepuisViewModel(): List<GeoPoint> {
+        // REPART DE ZÉRO : sommets/pointChoisi sont des champs d'instance qui SURVIVENT à
+        // onDestroyView. Sans ce nettoyage, chaque retour sur la carte (Valider → habitat →
+        // Annuler/back) RE-ajoutait les sommets par-dessus les précédents → anneau doublé
+        // invisible à l'écran (markers superposés) mais sérialisé en polygone auto-croisé à
+        // l'envoi (audit 2026-08-23). Même discipline qu'editerStationExistante.
+        pointChoisi = null
+        sommets.clear()
         val s = occhabViewModel.station
         val pts = mutableListOf<GeoPoint>()
         when {
@@ -264,6 +222,9 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
                 pts.add(pointChoisi!!)
             }
         }
+        // Géométrie issue d'une station déjà définie → le prochain tap sur la carte signifie
+        // « redessiner » (remplacement), pas « ajouter un sommet » (cf. [geometrieChargee]).
+        geometrieChargee = pts.isNotEmpty()
         if (pts.isNotEmpty()) redessiner()
         return pts
     }
@@ -361,7 +322,9 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
         mettreEnEvidenceBoutonMode()
         majBoutons()
         cadrerSur(ptsCourant + ptsSession)
-        Toast.makeText(requireContext(), "Station chargée — modifiez puis validez", Toast.LENGTH_SHORT).show()
+        Toast.makeText(requireContext(),
+            "Station chargée — déplacez les sommets, ou touchez la carte pour redessiner",
+            Toast.LENGTH_LONG).show()
     }
 
     /** Aimante [p] sur le sommet de session le plus proche s'il est à moins de ~28 dp à l'écran
@@ -389,25 +352,20 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
     private fun cadrerSur(points: List<GeoPoint>) {
         if (points.isEmpty()) return
         cadrageInitialFait = true
-        binding.map.post {
-            val box = if (points.size == 1) {
-                val pt = points[0]; val o = 0.004
-                BoundingBox(pt.latitude + o, pt.longitude + o, pt.latitude - o, pt.longitude - o)
-            } else BoundingBox.fromGeoPoints(points)
-            val degenere = (box.latNorth - box.latSouth) < 0.0001 && (box.lonEast - box.lonWest) < 0.0001
-            try {
-                if (degenere) {
-                    val pt = points[0]; val o = 0.004
-                    binding.map.zoomToBoundingBox(
-                        BoundingBox(pt.latitude + o, pt.longitude + o, pt.latitude - o, pt.longitude - o), false)
-                } else {
-                    binding.map.zoomToBoundingBox(box.increaseByScale(1.8f), false)
-                }
-            } catch (_: Exception) {}
-        }
+        binding.map.post { binding.map.zoomerSur(points, offset = 0.004, scale = 1.8f) }
     }
 
     override fun singleTapConfirmedHelper(p: GeoPoint): Boolean {
+        // RÉÉDITION : le premier tap démarre une NOUVELLE géométrie — l'ancienne (point ou
+        // anneau chargé de la station) est effacée. REMPLACEMENT, pas ajout : sans ça, le tap
+        // ajoutait un sommet à la suite de l'ancien anneau (bug terrain 2026-08-24). La
+        // modification fine de la géométrie chargée passe, elle, par le DRAG des sommets.
+        // Vaut aussi après un changement de mode (ex. station-polygone redessinée en point).
+        if (geometrieChargee) {
+            pointChoisi = null
+            sommets.clear()
+            geometrieChargee = false
+        }
         // Aimantage : si le tap tombe près d'un sommet d'une station déjà posée, on réutilise
         // exactement ce sommet (pour raccorder proprement deux stations voisines).
         val cible = snapVersSommet(p) ?: p
@@ -574,12 +532,72 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
                 "Polygon", sLat / sommets.size, sLon / sommets.size, coords.toString(),
             )
         }
+        // Surface AUTO de la station (parité web : patchGeoValue → getAreaSize, arrondie au m²)
+        // — calcul LOCAL géodésique (hors-ligne), recalculée/écrasée à chaque validation de la
+        // géométrie comme sur le web (une correction manuelle tient jusqu'au prochain redessin).
+        // Point → pas de surface.
+        occhabViewModel.definirSurface(
+            if (mode == Mode.POLYGONE) Math.round(airePolygoneM2(sommets)) else null
+        )
+        // Altitudes MNT (parité web : patchGeoValue → getGeoInfo) : best-effort s'il y a du
+        // réseau, silencieux sinon (champs saisissables à la main dans « Détails »).
+        lancerRemplissageAltitudes()
+        // RÉÉDITION d'une station déjà enregistrée : persistance de la géométrie modifiée dès
+        // « Valider » (bug terrain 2026-08-24 : déplacer un sommet puis revenir à « Mes
+        // stations » sans repasser par « Terminer » perdait la modification — valider
+        // n'écrivait que dans le ViewModel). Une NOUVELLE station n'est PAS écrite ici :
+        // règle métier, une station n'existe qu'avec AU MOINS UN habitat — elle sera créée
+        // à la validation de son premier habitat (OccHabHabitatFragment.valider).
+        val store = fr.ariegenature.geomys.store.OccHabStore(requireContext())
+        val dejaPersistee = store.stationsDeSaisie(occhabViewModel.saisieId)
+            .any { it.id == occhabViewModel.station.id }
+        if (dejaPersistee &&
+            !store.upsertStation(occhabViewModel.saisieId, occhabViewModel.stationAEnregistrer())
+        ) {
+            alerterEchecEcritureStore(requireContext(),
+                "Libérez de l'espace (photos, cache de cartes) puis revalidez la géométrie.")
+            return
+        }
         // Nouvelle station (aucun habitat) → écran de création directement ; station rééditée
         // (habitats déjà présents) → liste des habitats.
         if (occhabViewModel.station.habitats.isEmpty())
             findNavController().naviguerSur(R.id.action_occhab_carte_to_habitat)
         else
             findNavController().naviguerSur(R.id.action_occhab_carte_to_liste)
+    }
+
+    /** Remplit les altitudes min/max de la station courante via le MNT du serveur
+     *  (`POST /geo/info` — le même appel que le web au dessin d'une géométrie). BEST-EFFORT :
+     *  hors-ligne ou en erreur, il ne se passe rien (les champs restent saisissables à la main).
+     *  Lancé dans le scope du VIEWMODEL (partagé au niveau Activity) : la réponse arrive
+     *  généralement APRÈS la navigation vers l'écran habitat — le scope de la vue serait annulé.
+     *  À l'arrivée, ne touche le ViewModel que si la station courante est TOUJOURS celle du
+     *  lancement, et reporte dans le store si la station y est déjà persistée. */
+    private fun lancerRemplissageAltitudes() {
+        val stationId = occhabViewModel.station.id
+        val saisieId = occhabViewModel.saisieId
+        val s = occhabViewModel.station
+        val geometry = fr.ariegenature.geomys.network.GeoNatureUpload.construireGeometrie(
+            s.geometryType, s.geometryCoordsJson, s.latitude, s.longitude)
+        val appContext = requireContext().applicationContext
+        occhabViewModel.viewModelScope.launch {
+            val config = fr.ariegenature.geomys.store.GeoNatureConfig(appContext)
+            val alts = fr.ariegenature.geomys.network.OccHabApi
+                .altitudesPourGeometrie(config, geometry) ?: return@launch
+            if (occhabViewModel.station.id == stationId) {
+                occhabViewModel.definirAltitudes(alts.first, alts.second)
+            }
+            // Station déjà dans le store (réédition persistée à « Valider », ou 1er habitat
+            // validé entre-temps) → reporter, sinon les altitudes partiront avec la prochaine
+            // persistance de la station (habitat / Terminer / Détails).
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                val store = fr.ariegenature.geomys.store.OccHabStore(appContext)
+                store.stationsDeSaisie(saisieId).firstOrNull { it.id == stationId }?.let {
+                    store.upsertStation(saisieId,
+                        it.copy(altitudeMin = alts.first, altitudeMax = alts.second))
+                }
+            }
+        }
     }
 
     /** Coche verte (haut-droite) — même rôle qu'en Occtax : TERMINER la saisie OccHab en cours.
@@ -664,28 +682,15 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
         super.onResume()
         binding.map.onResume()
         locationOverlay?.enableMyLocation()
-        sensorManager = requireContext().getSystemService(SensorManager::class.java)
-        val rotVec = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
-        if (rotVec != null) {
-            sensorManager.registerListener(compassListener, rotVec, SensorManager.SENSOR_DELAY_UI)
-        } else {
-            sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)?.let {
-                sensorManager.registerListener(compassListener, it, SensorManager.SENSOR_DELAY_UI)
-            }
-            sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD)?.let {
-                sensorManager.registerListener(compassListener, it, SensorManager.SENSOR_DELAY_UI)
-            }
-        }
+        boussole?.demarrer()
     }
 
     override fun onPause() {
         super.onPause()
         binding.map.onPause()
         locationOverlay?.disableMyLocation()
-        if (::sensorManager.isInitialized) sensorManager.unregisterListener(compassListener)
-        gravityReady = false
-        geomagneticReady = false
+        boussole?.arreter()
     }
 
-    override fun onDestroyView() { super.onDestroyView(); _binding = null }
+    override fun onDestroyView() { super.onDestroyView(); boussole = null; _binding = null }
 }

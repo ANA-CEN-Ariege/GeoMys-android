@@ -25,9 +25,11 @@ import fr.ariegenature.geomys.store.GeoNatureConfig
 
 /**
  * Détails de STATION communs à toute une session OccHab (jeu de données, observateurs, dates,
- * altitudes, surface + méthode, nature objet géo, commentaire). Conservés d'une station à l'autre
- * tant qu'on reste dans OccHab ; édités via le bouton « Détails ». Réinitialisés aux défauts
- * serveur au démarrage d'une nouvelle session (tuile OccHab de l'accueil).
+ * méthode de calcul de surface, nature objet géo, commentaire). Conservés d'une station à
+ * l'autre tant qu'on reste dans OccHab ; édités via le bouton « Détails ». Réinitialisés aux
+ * défauts serveur au démarrage d'une nouvelle session (tuile OccHab de l'accueil).
+ * NB : altitudes et surface ne sont PAS ici — ce sont des propriétés PAR STATION (dérivées de
+ * sa géométrie : surface auto-calculée, altitudes MNT), portées par [OccHabStation] directement.
  */
 data class OccHabDetailsSession(
     var idDataset: Int? = null,
@@ -37,25 +39,28 @@ data class OccHabDetailsSession(
     var observateursTxt: String? = null,
     var dateMin: Long? = null,
     var dateMax: Long? = null,
-    var altitudeMin: Int? = null,
-    var altitudeMax: Int? = null,
-    var surface: Long? = null,
     var idNomCalculSurface: Int? = null,
     var idNomObjetGeographique: Int? = null,
     var comment: String? = null,
 )
 
-/** Détails de session par défaut (défauts serveur) : observateur par défaut, date = maintenant,
- *  nomenclatures par défaut OccHab. Le JDD reste null (saisi au formulaire de la 1ʳᵉ station). */
+/** Détails de session par défaut (défauts serveur) : observateur par défaut, dates début ET fin
+ *  = date du JOUR (sans heure — le serveur OccHab attend des dates yyyy-MM-dd), nomenclatures
+ *  par défaut OccHab. Le JDD reste null (saisi au formulaire de la 1ʳᵉ station). */
 fun detailsSessionParDefaut(config: GeoNatureConfig): OccHabDetailsSession {
     val obsId = config.observateurDefautId.trim().toIntOrNull()?.takeIf { it > 0 }
         ?: config.idRoleUtilisateur.takeIf { it > 0 }
     val obsNom = config.observateurDefautNom.ifBlank { config.nomUtilisateur }
+    val aujourdhui = java.util.Calendar.getInstance().apply {
+        set(java.util.Calendar.HOUR_OF_DAY, 0); set(java.util.Calendar.MINUTE, 0)
+        set(java.util.Calendar.SECOND, 0); set(java.util.Calendar.MILLISECOND, 0)
+    }.timeInMillis
     return OccHabDetailsSession(
         idDataset = null,
         observateursIds = listOfNotNull(obsId),
         observateursNoms = if (obsId != null && obsNom.isNotBlank()) listOf(obsNom) else emptyList(),
-        dateMin = System.currentTimeMillis(),
+        dateMin = aujourdhui,
+        dateMax = aujourdhui,
         idNomCalculSurface = config.occhabDefautNomenclature("METHOD_CALCUL_SURFACE"),
         idNomObjetGeographique = config.occhabDefautNomenclature("NAT_OBJ_GEO"),
     )
@@ -102,6 +107,16 @@ class OccHabViewModel : ViewModel() {
         )
     }
 
+    /** Surface (m²) de la STATION courante — auto-calculée à la validation de la géométrie
+     *  (parité web : patchGeoValue → area arrondie), écrasée à chaque re-validation. */
+    fun definirSurface(m2: Long?) { station = station.copy(surface = m2) }
+
+    /** Altitudes min/max (MNT serveur, /geo/info) de la STATION courante — remplies en
+     *  best-effort quand il y a du réseau (parité web : patchGeoValue → getGeoInfo). */
+    fun definirAltitudes(min: Int?, max: Int?) {
+        station = station.copy(altitudeMin = min, altitudeMax = max)
+    }
+
     fun ajouterOuMajHabitat(h: OccHabHabitat) {
         val liste = station.habitats.toMutableList()
         val idx = liste.indexOfFirst { it.id == h.id }
@@ -140,9 +155,7 @@ class OccHabViewModel : ViewModel() {
             observateursTxt = premiere.observateursTxt,
             dateMin = premiere.dateMin,
             dateMax = premiere.dateMax,
-            altitudeMin = premiere.altitudeMin,
-            altitudeMax = premiere.altitudeMax,
-            surface = premiere.surface,
+            // altitudes/surface : par STATION, jamais héritées en session (cf. stationAEnregistrer).
             idNomCalculSurface = premiere.idNomCalculSurface,
             idNomObjetGeographique = premiere.idNomObjetGeographique,
             comment = premiere.comment,
@@ -168,9 +181,10 @@ class OccHabViewModel : ViewModel() {
         observateursTxt = details.observateursTxt,
         dateMin = details.dateMin,
         dateMax = details.dateMax,
-        altitudeMin = details.altitudeMin,
-        altitudeMax = details.altitudeMax,
-        surface = details.surface,
+        // altitudes/surface : PAS de fusion session — propriétés PAR STATION (dérivées de la
+        // géométrie : surface auto-calculée à la validation de la carte, altitudes MNT serveur),
+        // déjà portées par [station]. Les fusionner écrasait la valeur d'une station par celle
+        // de la dernière éditée.
         idNomCalculSurface = details.idNomCalculSurface,
         idNomObjetGeographique = details.idNomObjetGeographique,
         comment = details.comment,

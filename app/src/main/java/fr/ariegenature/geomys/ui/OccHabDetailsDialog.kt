@@ -19,7 +19,6 @@
 package fr.ariegenature.geomys.ui
 
 import android.app.DatePickerDialog
-import android.app.TimePickerDialog
 import android.content.Context
 import android.text.InputType
 import android.view.LayoutInflater
@@ -55,13 +54,16 @@ fun ouvrirDialogDetailsOccHab(
     /** true à la 1ʳᵉ station : le jeu de données est obligatoire (« Valider » bloqué sans lui,
      *  dialogue non annulable, bouton « Retour » → [onAnnule]). */
     jddObligatoire: Boolean = false,
-    /** true = dialogue « Jeu de données » SEUL (démarrage de session) ; false = tous les champs. */
+    /** true = formulaire de DÉMARRAGE de session : uniquement les champs OBLIGATOIRES de la
+     *  station (JDD, observateurs, dates, nature objet géo — pré-remplis par les défauts) ;
+     *  false = dialogue « Détails » complet (+ altitudes/surface/méthode/commentaire). */
     jddSeul: Boolean = false,
     onAnnule: () -> Unit = {},
     onValide: () -> Unit,
 ) {
     val density = context.resources.displayMetrics.density
-    val dateFmt = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.FRANCE)
+    // Dates SANS heure : le serveur OccHab attend des dates yyyy-MM-dd (parité web NgbDate).
+    val dateFmt = SimpleDateFormat("dd/MM/yyyy", Locale.FRANCE)
     val d = vm.details
     val racine = LinearLayout(context).apply {
         orientation = LinearLayout.VERTICAL
@@ -107,13 +109,15 @@ fun ouvrirDialogDetailsOccHab(
         return lecteur
     }
 
-    fun choisirDateHeure(cal: Calendar, onSet: () -> Unit) {
+    // Sélecteur de DATE seule (pas d'heure) : les dates de station OccHab sont des jours
+    // (yyyy-MM-dd côté serveur, NgbDate côté web). L'heure est mise à zéro pour que deux
+    // sélections du même jour donnent la même valeur.
+    fun choisirDate(cal: Calendar, onSet: () -> Unit) {
         DatePickerDialog(context, { _, y, m, day ->
             cal.set(Calendar.YEAR, y); cal.set(Calendar.MONTH, m); cal.set(Calendar.DAY_OF_MONTH, day)
-            TimePickerDialog(context, { _, h, min ->
-                cal.set(Calendar.HOUR_OF_DAY, h); cal.set(Calendar.MINUTE, min)
-                onSet()
-            }, cal.get(Calendar.HOUR_OF_DAY), cal.get(Calendar.MINUTE), true).show()
+            cal.set(Calendar.HOUR_OF_DAY, 0); cal.set(Calendar.MINUTE, 0)
+            cal.set(Calendar.SECOND, 0); cal.set(Calendar.MILLISECOND, 0)
+            onSet()
         }, cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH)).show()
     }
 
@@ -185,46 +189,62 @@ fun ouvrirDialogDetailsOccHab(
     // masqué plutôt que de l'effacer.
     var methodeVisible = false
     var natureVisible = false
+    // ── Groupe des champs REQUIS (Validators.required du web) : affiché AUSSI dans le
+    //    formulaire intercalé du démarrage de session ([jddSeul]) — on capture d'un coup
+    //    TOUT l'obligatoire de la station (JDD, observateurs, dates, nature objet géo),
+    //    pré-rempli par les défauts (observateur connecté, date du jour, défaut serveur). ──
+    // Visibilité pilotée serveur (parité web occhab-form) — défaut « visible » si la clé est
+    // absente (occhabChampVisible). Clés = celles du formulaire web du module OccHab.
+    val vDateMin = config.occhabChampVisible("date_min")
+    val vDateMax = config.occhabChampVisible("date_max")
+    // Observateurs : toujours proposés (visibilité serveur via OBSERVER_AS_TXT, pas formConfig).
+    // « * » : requis côté web (form-service.ts `observers: Validators.required` en mode liste).
+    racine.addView(label("Observateurs *"))
+    lireObservateurs = construireSelecteurMultiObservateurs(
+        context, racine, observateursPourDetailsReleve(config),
+        d.observateursIds, d.observateursNoms,
+    )
+
+    // Dates début / fin — DATE seule, sans heure (yyyy-MM-dd côté serveur) ; défaut de session
+    // = date du jour pour les DEUX. « * » : requises côté web (form-service.ts).
+    val calDebut = Calendar.getInstance().apply { timeInMillis = pendingDateMin ?: System.currentTimeMillis() }
+    val calFin = Calendar.getInstance().apply { timeInMillis = pendingDateMax ?: calDebut.timeInMillis }
+    // La date affichée fait foi : figée dans pending si rien n'était encore choisi, pour que
+    // la valeur montrée soit réellement celle enregistrée.
+    if (vDateMin && pendingDateMin == null) pendingDateMin = calDebut.timeInMillis
+    if (vDateMax && pendingDateMax == null) pendingDateMax = calFin.timeInMillis
+    if (vDateMin) champClic("Date de début *", dateFmt.format(calDebut.time)) { tv ->
+        choisirDate(calDebut) {
+            pendingDateMin = calDebut.timeInMillis
+            tv.text = dateFmt.format(calDebut.time)
+        }
+    }
+    if (vDateMax) champClic("Date de fin *", pendingDateMax?.let { dateFmt.format(Date(it)) } ?: "—") { tv ->
+        choisirDate(calFin) {
+            pendingDateMax = calFin.timeInMillis
+            tv.text = dateFmt.format(calFin.time)
+        }
+    }
+    if (config.occhabChampVisible("geographic_object")) {
+        // « * » : requis côté web (form-service.ts `id_nomenclature_geographic_object`).
+        lireNature = spinner("Nature de l'objet géographique *", "NAT_OBJ_GEO", d.idNomObjetGeographique)
+        natureVisible = true
+    }
+
+    // ── Groupe FACULTATIF : seulement dans le dialogue « Détails » complet. Altitudes et
+    //    surface sont PAR STATION (auto-remplies : surface géodésique locale à la validation
+    //    de la carte, altitudes MNT serveur si réseau) — lues/écrites sur vm.station, PAS sur
+    //    les détails de session. ──
     if (!jddSeul) {
-        // Visibilité pilotée serveur (parité web occhab-form) — défaut « visible » si la clé est
-        // absente (occhabChampVisible). Clés = celles du formulaire web du module OccHab.
-        val vDateMin = config.occhabChampVisible("date_min")
-        val vDateMax = config.occhabChampVisible("date_max")
-        // Observateurs : toujours proposés (visibilité serveur via OBSERVER_AS_TXT, pas formConfig).
-        racine.addView(label("Observateurs"))
-        lireObservateurs = construireSelecteurMultiObservateurs(
-            context, racine, observateursPourDetailsReleve(config),
-            d.observateursIds, d.observateursNoms,
-        )
-
-        // Dates début / fin.
-        val calDebut = Calendar.getInstance().apply { timeInMillis = pendingDateMin ?: System.currentTimeMillis() }
-        val calFin = Calendar.getInstance().apply { timeInMillis = pendingDateMax ?: calDebut.timeInMillis }
-        if (vDateMin) champClic("Date de début", dateFmt.format(calDebut.time)) { tv ->
-            choisirDateHeure(calDebut) {
-                pendingDateMin = calDebut.timeInMillis
-                tv.text = dateFmt.format(calDebut.time)
-            }
-        }
-        if (vDateMax) champClic("Date de fin", pendingDateMax?.let { dateFmt.format(Date(it)) } ?: "—") { tv ->
-            choisirDateHeure(calFin) {
-                pendingDateMax = calFin.timeInMillis
-                tv.text = dateFmt.format(calFin.time)
-            }
-        }
-
-        // Altitudes / surface / nomenclatures / commentaire (créés seulement si visibles ;
-        // `area` = m² entiers côté serveur = BigInteger, donc pas de décimale). Lus à la validation.
-        if (config.occhabChampVisible("altitude_min")) etAltMin = champNombre("Altitude min (m)", d.altitudeMin?.toString())
-        if (config.occhabChampVisible("altitude_max")) etAltMax = champNombre("Altitude max (m)", d.altitudeMax?.toString())
-        if (config.occhabChampVisible("area")) etSurface = champNombre("Surface (m²)", d.surface?.toString())
+        val st = vm.station
+        if (config.occhabChampVisible("altitude_min")) etAltMin = champNombre("Altitude min (m)", st.altitudeMin?.toString())
+        if (config.occhabChampVisible("altitude_max")) etAltMax = champNombre("Altitude max (m)", st.altitudeMax?.toString())
+        // `area` = m² entiers côté serveur (BigInteger), pas de décimale. Auto-calculée à la
+        // validation de la géométrie ; éditable ici jusqu'au prochain redessin (parité web).
+        if (config.occhabChampVisible("area")) etSurface = champNombre("Surface (m²)", st.surface?.toString())
         if (config.occhabChampVisible("area_surface_calculation")) {
             lireMethode = spinner("Méthode de calcul de la surface", "METHOD_CALCUL_SURFACE", d.idNomCalculSurface)
             methodeVisible = true
-        }
-        if (config.occhabChampVisible("geographic_object")) {
-            lireNature = spinner("Nature de l'objet géographique", "NAT_OBJ_GEO", d.idNomObjetGeographique)
-            natureVisible = true
         }
         if (config.occhabChampVisible("comment")) {
             racine.addView(label("Commentaire"))
@@ -239,7 +259,7 @@ fun ouvrirDialogDetailsOccHab(
     }
 
     val dlg = AlertDialog.Builder(context)
-        .setTitle(if (jddSeul) "Jeu de données" else "Détails de la station")
+        .setTitle(if (jddSeul) "Informations obligatoires" else "Détails de la station")
         .setView(ScrollView(context).apply { addView(racine) })
         .setCancelable(!jddObligatoire)
         .setPositiveButton("Valider", null)
@@ -249,33 +269,73 @@ fun ouvrirDialogDetailsOccHab(
         .create()
     dlg.setOnShowListener {
         dlg.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-            if (jddObligatoire && pendingIdDataset == null) {
-                Toast.makeText(context, "Choisissez un jeu de données", Toast.LENGTH_SHORT).show()
+            // Champs REQUIS — alignés sur les Validators.required du client web OccHab
+            // (form-service.ts) : id_dataset, observers, date_min, date_max,
+            // id_nomenclature_geographic_object (la géométrie, requise elle aussi, est
+            // garantie par la carte). Un champ MASQUÉ par formConfig n'est pas bloquant
+            // (sa valeur est préservée) — anti-impasse, seule entorse assumée au web.
+            fun bloquer(msg: String) =
+                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+            if (pendingIdDataset == null) {
+                bloquer("Choisissez un jeu de données")
                 return@setOnClickListener
             }
+            // Groupe REQUIS : présent dans les DEUX modes (formulaire de démarrage inclus).
+            if (lireObservateurs().isEmpty()) {
+                bloquer("Choisissez au moins un observateur")
+                return@setOnClickListener
+            }
+            if (config.occhabChampVisible("date_min") && pendingDateMin == null) {
+                bloquer("Choisissez une date de début")
+                return@setOnClickListener
+            }
+            if (config.occhabChampVisible("date_max") && pendingDateMax == null) {
+                bloquer("Choisissez une date de fin")
+                return@setOnClickListener
+            }
+            if (natureVisible && lireNature() == null) {
+                bloquer("Choisissez la nature de l'objet géographique")
+                return@setOnClickListener
+            }
+            if (!jddSeul) {
+                // Parité minMaxValidator du web : altitudes incohérentes = blocage explicite.
+                val altMin = etAltMin?.text?.toString()?.trim()?.toIntOrNull()
+                val altMax = etAltMax?.text?.toString()?.trim()?.toIntOrNull()
+                if (altMin != null && altMax != null && altMin > altMax) {
+                    bloquer("Altitude min supérieure à l'altitude max")
+                    return@setOnClickListener
+                }
+            }
             // Application ATOMIQUE des sélections : rien avant, tout ici (Annuler = sans effet).
+            // Garde serveur : date_max ≥ date_min (sinon payload invalide côté GeoNature).
+            val fin = pendingDateMax?.let { f -> maxOf(f, pendingDateMin ?: f) }
+            val obs = lireObservateurs()
             vm.majDetails {
                 it.idDataset = pendingIdDataset
                 it.nomDataset = pendingNomDataset
+                it.observateursIds = obs.map { o -> o.first }
+                it.observateursNoms = obs.map { o -> o.second }
+                it.dateMin = pendingDateMin
+                it.dateMax = fin
+                // Champ MASQUÉ par formConfig (widget non créé) → on PRÉSERVE la valeur
+                // existante (jamais effacée), comme Occtax/monitoring.
+                it.idNomObjetGeographique = if (natureVisible) lireNature() else d.idNomObjetGeographique
             }
             if (!jddSeul) {
-                // Garde serveur : date_max ≥ date_min (sinon payload invalide côté GeoNature).
-                val fin = pendingDateMax?.let { f -> maxOf(f, pendingDateMin ?: f) }
-                val obs = lireObservateurs()
                 vm.majDetails {
-                    it.observateursIds = obs.map { o -> o.first }
-                    it.observateursNoms = obs.map { o -> o.second }
-                    it.dateMin = pendingDateMin
-                    it.dateMax = fin
-                    // Champ MASQUÉ par formConfig (widget non créé) → on PRÉSERVE la valeur
-                    // existante (jamais effacée), comme Occtax/monitoring.
-                    it.altitudeMin = if (etAltMin != null) etAltMin?.text?.toString()?.trim()?.toIntOrNull() else d.altitudeMin
-                    it.altitudeMax = if (etAltMax != null) etAltMax?.text?.toString()?.trim()?.toIntOrNull() else d.altitudeMax
-                    it.surface = if (etSurface != null) etSurface?.text?.toString()?.trim()?.toLongOrNull() else d.surface
                     it.idNomCalculSurface = if (methodeVisible) lireMethode() else d.idNomCalculSurface
-                    it.idNomObjetGeographique = if (natureVisible) lireNature() else d.idNomObjetGeographique
                     it.comment = if (etComment != null) etComment?.text?.toString()?.trim()?.takeIf { s -> s.isNotEmpty() } else d.comment
                 }
+                // Altitudes et surface : PAR STATION (auto-remplies depuis la géométrie ; une
+                // édition manuelle ici tient jusqu'au prochain redessin de la géométrie).
+                val st = vm.station
+                vm.definirAltitudes(
+                    if (etAltMin != null) etAltMin?.text?.toString()?.trim()?.toIntOrNull() else st.altitudeMin,
+                    if (etAltMax != null) etAltMax?.text?.toString()?.trim()?.toIntOrNull() else st.altitudeMax,
+                )
+                vm.definirSurface(
+                    if (etSurface != null) etSurface?.text?.toString()?.trim()?.toLongOrNull() else st.surface,
+                )
             }
             onValide()
             dlg.dismiss()

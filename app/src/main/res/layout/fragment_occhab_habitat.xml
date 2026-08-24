@@ -59,13 +59,16 @@
         android:paddingHorizontal="12dp"
         android:paddingVertical="10dp">
 
+        <!-- Fond ET texte en SELECTOR (pas des couleurs fixes) : l'état désactivé — champ
+             habitat obligatoire non rempli (cf. majEtatBoutonValider) — reproduit le rendu
+             Material3 par défaut, identique au bouton « Enregistrer la visite » du monitoring. -->
         <Button
             android:id="@+id/btn_valider"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:backgroundTint="@color/green_85"
+            android:backgroundTint="@color/occhab_valider_tint"
             android:text="Valider l'habitat"
             android:textAllCaps="false"
-            android:textColor="@android:color/white" />
+            android:textColor="@color/occhab_valider_texte" />
     </LinearLayout>
 </LinearLayout>

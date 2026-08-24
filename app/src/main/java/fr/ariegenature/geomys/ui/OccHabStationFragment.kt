@@ -72,8 +72,11 @@ class OccHabStationFragment : Fragment() {
         // Coche verte « terminer » (comme la saisie multi-taxons) : la station est déjà
         // enregistrée au fil de l'eau — on repart simplement sur une carte vierge.
         binding.btnTerminer.setOnClickListener {
-            // La station (avec ou SANS habitat) est persistée avant de repartir sur une carte vierge.
-            sauvegarderAuFilDeLEau()
+            // La station (≥ 1 habitat — le champ est obligatoire à la création) est persistée
+            // avant de repartir sur une carte vierge. Écriture échouée (disque plein ?) → on
+            // RESTE sur la station courante : enchaîner sur nouvelleStation() jetterait la
+            // seule copie mémoire (audit 2026-08-23).
+            if (!sauvegarderAuFilDeLEau()) return@setOnClickListener
             Toast.makeText(
                 requireContext(),
                 "Votre station est enregistrée dans « Mes stations »",
@@ -85,11 +88,16 @@ class OccHabStationFragment : Fragment() {
     }
 
     /** Enregistrement AU FIL DE L'EAU (comme les saisies Occtax) : la station courante — détails
-     *  de session fusionnés — est (ré)écrite dans le store. Les habitats sont FACULTATIFS : une
-     *  station à géométrie valide est enregistrable même sans habitat (on arrive ici après la
-     *  carte, la géométrie est donc déjà définie). */
-    private fun sauvegarderAuFilDeLEau() {
-        occHabStore.upsertStation(occhabViewModel.saisieId, occhabViewModel.stationAEnregistrer())
+     *  de session fusionnés — est (ré)écrite dans le store. On arrive ici après la validation du
+     *  1er habitat (champ OBLIGATOIRE — pas de station sans habitat), la géométrie et au moins un
+     *  habitat sont donc déjà définis.
+     *  Renvoie le succès de l'ÉCRITURE DISQUE ; sur échec, l'alerte bloquante est déjà affichée
+     *  (le retour des stores était ignoré côté OccHab — audit 2026-08-23, constat CRITIQUE). */
+    private fun sauvegarderAuFilDeLEau(): Boolean {
+        val ok = occHabStore.upsertStation(occhabViewModel.saisieId, occhabViewModel.stationAEnregistrer())
+        if (!ok) alerterEchecEcritureStore(requireContext(),
+            "Libérez de l'espace (photos, cache de cartes) puis réessayez sans quitter cet écran.")
+        return ok
     }
 
     override fun onResume() {
@@ -149,6 +157,19 @@ class OccHabStationFragment : Fragment() {
                 contentDescription = "Supprimer l'habitat"
                 setColorFilter(couleurErreur(requireContext()))
                 setOnClickListener {
+                    // Règle métier : une station enregistrée doit garder AU MOINS UN habitat
+                    // (le champ est obligatoire à la création). Supprimer le dernier laisserait
+                    // une station sans habitat dans le store.
+                    if (occhabViewModel.station.habitats.size <= 1) {
+                        Toast.makeText(
+                            requireContext(),
+                            "Une station doit avoir au moins un habitat — ajoutez-en un autre " +
+                                "avant de supprimer celui-ci (ou supprimez la saisie depuis " +
+                                "« Mes stations »).",
+                            Toast.LENGTH_LONG,
+                        ).show()
+                        return@setOnClickListener
+                    }
                     occhabViewModel.supprimerHabitat(h.id)
                     rafraichirHabitats()
                     sauvegarderAuFilDeLEau()

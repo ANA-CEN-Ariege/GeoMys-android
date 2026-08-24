@@ -61,7 +61,13 @@ class SortiesFragment : Fragment() {
                     var sortie = importerGPX(bytes)
                     if (sortie != null) {
                         sortie = sortie.copy(estImportee = true)
-                        sortieStore.ajouter(sortie)
+                        if (!sortieStore.ajouter(sortie)) {
+                            // Écriture disque échouée (stockage plein ?) : prévenir au lieu de
+                            // basculer sur l'onglet Importées comme si tout avait réussi.
+                            alerterEchecEcritureStore(requireContext(),
+                                "Libérez de l'espace puis relancez l'import du fichier GPX.")
+                            return@let
+                        }
                         ongletCourant = 2
                         binding.tabLayout.getTabAt(2)?.select()
                         refreshList()

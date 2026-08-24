@@ -43,6 +43,15 @@ class TraceViewModel(application: Application) : AndroidViewModel(application) {
     private val _observations = MutableLiveData<MutableList<Observation>>(mutableListOf())
     val observations: LiveData<MutableList<Observation>> = _observations
 
+    /** Événement : l'auto-save du brouillon ([persisterBrouillon]) a ÉCHOUÉ à écrire sur le
+     *  disque (stockage plein ?) — la saisie ne vit plus qu'en mémoire et serait perdue au kill
+     *  du process. Observé par les écrans de saisie qui affichent une alerte bloquante
+     *  ([alerterEchecEcritureStore]) puis acquittent via [acquitterEchecEcriture]. Le retour des
+     *  stores était ignoré sur tout le chemin Occtax (audit 2026-08-23, constat CRITIQUE). */
+    private val _echecEcritureBrouillon = MutableLiveData(false)
+    val echecEcritureBrouillon: LiveData<Boolean> = _echecEcritureBrouillon
+    fun acquitterEchecEcriture() { _echecEcritureBrouillon.value = false }
+
     /** Id de la sortie en cours d'édition (= reprise depuis l'onglet "À envoyer"). Quand
      *  non-null, [TraceFragment.terminerSortie] doit remplacer la sortie existante au
      *  lieu d'en créer une nouvelle. Reset par [reinitialiser]. */
@@ -213,11 +222,12 @@ class TraceViewModel(application: Application) : AndroidViewModel(application) {
             id?.let { sortieStore.supprimer(it) }
             return
         }
+        val ok: Boolean
         if (id != null) {
             val existante = sortieStore.charger().firstOrNull { it.id == id }
             if (existante?.envoyeGeoNature == true) return
             val base = existante ?: Sortie(id = id)
-            sortieStore.remplacer(id, base.copy(
+            ok = sortieStore.remplacer(id, base.copy(
                 observations = obs,
                 pointsParcours = parcours,
                 distanceTotale = distance,
@@ -228,9 +238,14 @@ class TraceViewModel(application: Application) : AndroidViewModel(application) {
                 pointsParcours = parcours,
                 distanceTotale = distance,
             )
-            sortieStore.ajouter(nouvelle)
+            ok = sortieStore.ajouter(nouvelle)
+            // Id fixé même sur échec : la prochaine tentative passera par remplacer (upsert),
+            // pas par un nouvel ajouter (qui créerait un doublon si l'écriture repart).
             sortieEnEditionId = nouvelle.id
         }
+        // Échec d'écriture → signale l'écran (alerte bloquante). Chaque persist retente tout ;
+        // un succès ultérieur ne ré-arme pas le drapeau, l'écran l'a déjà acquitté.
+        if (!ok) _echecEcritureBrouillon.value = true
     }
 
     /** Persiste IMMÉDIATEMENT la sortie en cours (observations + trace) dans le store.

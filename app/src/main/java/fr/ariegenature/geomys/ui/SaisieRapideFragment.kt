@@ -21,10 +21,6 @@ package fr.ariegenature.geomys.ui
 import android.Manifest
 import android.content.pm.PackageManager
 import android.content.res.ColorStateList
-import android.hardware.Sensor
-import android.hardware.SensorEvent
-import android.hardware.SensorEventListener
-import android.hardware.SensorManager
 import android.os.Bundle
 import android.os.VibrationEffect
 import android.os.Vibrator
@@ -51,7 +47,6 @@ import fr.ariegenature.geomys.model.Denombrement
 import fr.ariegenature.geomys.model.Observation
 import fr.ariegenature.geomys.model.Taxon
 import fr.ariegenature.geomys.model.Sortie
-import fr.ariegenature.geomys.network.GeoNatureUpload
 import fr.ariegenature.geomys.network.TaxRefStatut
 import fr.ariegenature.geomys.store.GeoNatureConfig
 import fr.ariegenature.geomys.store.SortieStore
@@ -70,13 +65,11 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
-import androidx.core.graphics.drawable.toBitmap
 import org.osmdroid.config.Configuration
 import org.osmdroid.events.MapEventsReceiver
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.overlay.MapEventsOverlay
 import org.osmdroid.views.overlay.Marker
-import org.osmdroid.views.overlay.mylocation.GpsMyLocationProvider
 import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -157,55 +150,9 @@ class SaisieRapideFragment : Fragment() {
      *  true = carte tournée par la boussole pour garder le nord en haut de l'écran. */
     private var carteSuitBoussole = false
 
-    private var sensorManager: SensorManager? = null
-    private val gravity = FloatArray(3)
-    private val geomagnetic = FloatArray(3)
-    private var gravityReady = false
-    private var geomagneticReady = false
-
-    private val compassListener = object : SensorEventListener {
-        override fun onSensorChanged(event: SensorEvent) {
-            val azimuth: Float = when (event.sensor.type) {
-                Sensor.TYPE_ROTATION_VECTOR -> {
-                    val R = FloatArray(9)
-                    SensorManager.getRotationMatrixFromVector(R, event.values)
-                    val o = FloatArray(3)
-                    SensorManager.getOrientation(R, o)
-                    Math.toDegrees(o[0].toDouble()).toFloat()
-                }
-                Sensor.TYPE_ACCELEROMETER -> {
-                    System.arraycopy(event.values, 0, gravity, 0, 3)
-                    gravityReady = true
-                    return
-                }
-                Sensor.TYPE_MAGNETIC_FIELD -> {
-                    System.arraycopy(event.values, 0, geomagnetic, 0, 3)
-                    geomagneticReady = true
-                    if (!gravityReady) return
-                    val R = FloatArray(9)
-                    if (!SensorManager.getRotationMatrix(R, null, gravity, geomagnetic)) return
-                    val o = FloatArray(3)
-                    SensorManager.getOrientation(R, o)
-                    Math.toDegrees(o[0].toDouble()).toFloat()
-                }
-                else -> return
-            }
-            val compass = _binding?.compass ?: return
-            // Voir TraceFragment : aiguille tournante uniquement en mode boussole actif,
-            // sinon figée à 0 (carte et téléphone alignés nord en haut).
-            if (carteSuitBoussole) {
-                compass.post { compass.setAzimuth(-azimuth) }
-                val map = _binding?.map ?: return
-                map.post {
-                    map.setMapOrientation(-azimuth)
-                    map.invalidate()
-                }
-            } else {
-                compass.post { compass.setAzimuth(0f) }
-            }
-        }
-        override fun onAccuracyChanged(sensor: Sensor, accuracy: Int) {}
-    }
+    // Boussole : capteurs/listener factorisés dans MapCompassController ; l'état carteSuitBoussole
+    // reste un champ du fragment.
+    private var boussole: MapCompassController? = null
     private var fondCarte: FondChoisi = FondChoisi.EnLigne(FondCarte.OSM)
 
     // Zoom/centre carte mémorisés entre deux affichages de la vue (la vue est détruite/recréée
@@ -338,13 +285,7 @@ class SaisieRapideFragment : Fragment() {
                 ?: traceViewModel.locationTracker.position.value?.let { GeoPoint(it.latitude, it.longitude) }
                 ?: GeoPoint(46.5, 2.5)
         )
-        locationOverlay = MyLocationNewOverlay(GpsMyLocationProvider(requireContext()), binding.map).apply {
-            setPersonIcon(ContextCompat.getDrawable(requireContext(), R.drawable.ic_gps_blue_dot)?.toBitmap())
-            setPersonHotspot(10f, 10f)
-            setDirectionArrow(
-                ContextCompat.getDrawable(requireContext(), R.drawable.ic_gps_blue_dot)?.toBitmap(),
-                ContextCompat.getDrawable(requireContext(), R.drawable.ic_gps_blue_dot)?.toBitmap()
-            )
+        locationOverlay = creerLocationOverlayBleu(binding.map, requireContext()).apply {
             setDrawAccuracyEnabled(true)
         }
         binding.map.overlays.add(locationOverlay)
@@ -376,6 +317,7 @@ class SaisieRapideFragment : Fragment() {
             }
         }
 
+        boussole = MapCompassController(requireContext(), binding.map, binding.compass) { carteSuitBoussole }
         binding.compass.setOnClickListener {
             carteSuitBoussole = !carteSuitBoussole
             binding.compass.setActif(carteSuitBoussole)
@@ -515,15 +457,17 @@ class SaisieRapideFragment : Fragment() {
 
     private fun refreshAutocompleteAdapter() {
         viewLifecycleOwner.lifecycleScope.launch {
-            val suggestions = withContext(Dispatchers.Default) {
-                TaxRefLocal.getSuggestionsAutocomplete(
+            val (suggestions, normalized) = withContext(Dispatchers.Default) {
+                val s = TaxRefLocal.getSuggestionsAutocomplete(
                     taxon,
                     rechercheNomSci,
                     idListeFiltre = gnConfig.taxaListeId.trim().toIntOrNull(),
                 )
+                // Normalisation (accents/casse) pré-calculée HORS thread principal.
+                s to s.map { TaxRefCache.normaliser(it) to it }
             }
             if (!isAdded || _binding == null) return@launch
-            val adapter = createSpeciesAutocompleteAdapter(requireContext(), suggestions)
+            val adapter = createSpeciesAutocompleteAdapter(requireContext(), suggestions, normalized)
             binding.etEspece.setAdapter(adapter)
             // Race possible : si l'utilisateur a tapé avant la fin du scan asynchrone,
             // AutoCompleteTextView a déclenché le filtre sur un adapter encore vide et
@@ -596,7 +540,7 @@ class SaisieRapideFragment : Fragment() {
             ouvrirDialogDetailsReleve(
                 requireContext(), emptyList(), datasets, idDsInitial, nomDsInitial,
                 observateurs, idsObsInitial, nomsObsInitial, defsReleve, additionalFieldsReleve,
-                gnConfig.settingsOcctaxJson, gnConfig.formFieldsJson, typGrpReleveSession, commentReleveSession,
+                gnConfig.formFieldsJson, typGrpReleveSession, commentReleveSession,
                 dateDebutReleveSession, dateFinReleveSession, gnConfig.heuresVisibles, gnConfig.dateFinVisible,
                 cdHabReleveSession, habitatReleveLabelSession,
                 champsReleveExtraSession,
@@ -1046,6 +990,16 @@ class SaisieRapideFragment : Fragment() {
         traceViewModel.observations.observe(viewLifecycleOwner) { obs ->
             updateMarkers(obs)
         }
+        // Échec de l'auto-save du brouillon (disque plein ?) : alerte BLOQUANTE — sans elle,
+        // la saisie affichée ne vit qu'en mémoire et disparaît au kill du process.
+        traceViewModel.echecEcritureBrouillon.observe(viewLifecycleOwner) { echec ->
+            if (echec) {
+                traceViewModel.acquitterEchecEcriture()
+                alerterEchecEcritureStore(requireContext(),
+                    "Libérez de l'espace (photos, cache de cartes) SANS quitter la saisie : " +
+                        "chaque nouvelle observation retente l'enregistrement complet.")
+            }
+        }
     }
 
     private fun updateMarkers(observations: List<Observation>) {
@@ -1147,21 +1101,7 @@ class SaisieRapideFragment : Fragment() {
         if (ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
             locationOverlay?.enableMyLocation()
         }
-        // Boussole : préférence au rotation_vector, fallback accel + magnéto. Même
-        // logique que TraceFragment.
-        val sm = requireContext().getSystemService(SensorManager::class.java)
-        sensorManager = sm
-        val rotVec = sm.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
-        if (rotVec != null) {
-            sm.registerListener(compassListener, rotVec, SensorManager.SENSOR_DELAY_UI)
-        } else {
-            sm.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)?.let {
-                sm.registerListener(compassListener, it, SensorManager.SENSOR_DELAY_UI)
-            }
-            sm.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD)?.let {
-                sm.registerListener(compassListener, it, SensorManager.SENSOR_DELAY_UI)
-            }
-        }
+        boussole?.demarrer()
     }
 
     override fun onPause() {
@@ -1172,9 +1112,7 @@ class SaisieRapideFragment : Fragment() {
         savedMapCenter = binding.map.mapCenter.let { org.osmdroid.util.GeoPoint(it.latitude, it.longitude) }
         binding.map.onPause()
         locationOverlay?.disableMyLocation()
-        sensorManager?.unregisterListener(compassListener)
-        gravityReady = false
-        geomagneticReady = false
+        boussole?.arreter()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -1201,6 +1139,7 @@ class SaisieRapideFragment : Fragment() {
         envoiJob?.cancel()
         speech.destroy()
         observationMarkers.clear()
+        boussole = null
         _binding = null
     }
 
@@ -1244,7 +1183,15 @@ class SaisieRapideFragment : Fragment() {
             observations = traceViewModel.observations.value?.toList() ?: emptyList(),
         )
         if (sortie.observations.isNotEmpty()) {
-            if (id != null) sortieStore.remplacer(id, sortie) else sortieStore.ajouter(sortie)
+            val ok = if (id != null) sortieStore.remplacer(id, sortie) else sortieStore.ajouter(sortie)
+            if (!ok) {
+                // Écriture disque échouée : ne PAS réinitialiser (seule copie en mémoire) ni
+                // envoyer (les marquages anti-doublon seraient inopérants) — audit 2026-08-23.
+                alerterEchecEcritureStore(requireContext(),
+                    "Libérez de l'espace (photos, cache de cartes) puis refaites « Terminer » — " +
+                        "la saisie est conservée à l'écran en attendant.")
+                return
+            }
         } else {
             id?.let { sortieStore.supprimer(it) }
         }

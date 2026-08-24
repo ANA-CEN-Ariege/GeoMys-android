@@ -1518,9 +1518,22 @@ object MonitoringApi {
                 .map { OptionDatalist(it.id.toString(), it.nom) }
                 .sortedBy { it.label.lowercase() }
         }
+        // Clé + relecture du cache d'options (offline). Définis AVANT le login pour servir aussi le
+        // cas « pas de réseau » (login null) : sans ça, une liste déroulante de nomenclature est
+        // vide hors-ligne et bloque la saisie d'une nouvelle visite.
+        val clesArray = (listOfNotNull(prop.dataPath) + listOf("values", "data", "items", "results")).toTypedArray()
+        val cleCache = MonitoringCache.keyOptionsDatalist(apiPath)
+        fun cacheOffline(): List<OptionDatalist>? =
+            MonitoringCache.getJson(cleCache)?.let { txt ->
+                runCatching { txt.parserTableauJson(*clesArray) }.getOrNull()
+                    ?.let { extraireOptions(it, keyValue, keyLabel, prop.filtres) }
+                    ?.takeIf { it.isNotEmpty() }
+            }
         val base = config.urlServeur.trim().trimEnd('/')
+        // Hors-ligne (login impossible) : cache datalist EXACT d'abord — le cache datasets
+        // d'Occtax n'est pas filtré CRUVED, il ne sert qu'en dernier ressort.
         val (token, _, cookies) = GeoNatureAuth.loginAvecCookies(base, config.login, config.motDePasse)
-            ?: return@withContext fallbackDatasetCache()
+            ?: return@withContext cacheOffline() ?: fallbackDatasetCache()
         val estDataset = apiPath.startsWith("meta/datasets") ||
             prop.typeWidget.equals("dataset", ignoreCase = true)
         // Pour le widget `dataset`, on doit obligatoirement POST avec body JSON : le backend
@@ -1563,14 +1576,22 @@ object MonitoringApi {
             val sansCreate = JSONObject(postBody).also { it.remove("create") }.toString()
             listOf(postBody, sansCreate)
         } else listOf(postBody)
-        val clesArray = (listOfNotNull(prop.dataPath) + listOf("values", "data", "items", "results")).toTypedArray()
         for ((index, body) in bodies.withIndex()) {
             val conn = HttpClient.get(urlFinale, token, cookies, 15000)
             if (body != null) {
                 conn.requestMethod = "POST"
                 conn.doOutput = true
                 conn.setRequestProperty("Content-Type", "application/json")
-                conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+                // IOException ici = réseau tombé APRÈS un login servi par le cache d'auth
+                // (fenêtre TTL 5 min) : non rattrapée, elle remontait par l'async
+                // d'enrichirAvecOptions jusqu'au launch de NouvelleVisiteFragment → crash à
+                // l'ouverture du formulaire (audit 2026-08-23). On dégrade vers la tentative
+                // suivante puis le repli cache, comme les autres échecs réseau de la boucle.
+                try {
+                    conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+                } catch (_: IOException) {
+                    continue
+                }
             }
             val httpCode = try { conn.responseCode } catch (_: IOException) { -1 }
             if (httpCode != 200) continue
@@ -1584,10 +1605,26 @@ object MonitoringApi {
                     "Datalist dataset vide avec filtre create — nouvelle tentative sans create")
                 continue
             }
-            if (options.isEmpty()) return@withContext fallbackDatasetCache() ?: options
+            if (options.isEmpty()) {
+                // 200 valide mais 0 option — deux cas distincts (audit 2026-08-23) :
+                // - dataset : quirk connu (filtre create/objet de permission), déjà retenté
+                //   sans create ci-dessus → repli caches, en préférant le cache datalist
+                //   EXACT (write-through, filtré CRUVED) au cache datasets d'Occtax (non
+                //   filtré — l'utilisateur y verrait des JDD où il ne peut pas créer) ;
+                // - autre datalist (nomenclatures…) : la réponse vide FAIT FOI — resservir
+                //   un cache périmé re-proposerait indéfiniment des valeurs retirées côté
+                //   serveur (options fantômes). On mémorise le vide et on le retourne.
+                if (estDataset) return@withContext cacheOffline() ?: fallbackDatasetCache() ?: options
+                MonitoringCache.setJson(cleCache, text)
+                return@withContext options
+            }
+            // Write-through : mémorise la réponse brute pour l'usage OFFLINE (nouvelle visite).
+            MonitoringCache.setJson(cleCache, text)
             return@withContext options
         }
-        fallbackDatasetCache()
+        // Échec réseau/HTTP sur toutes les tentatives : cache datalist exact d'abord,
+        // cache datasets grossier en dernier ressort (datasets seulement).
+        cacheOffline() ?: fallbackDatasetCache()
     }
 
     /** Factorise la conversion d'un JSONArray d'objets en `List<OptionDatalist>` triée par

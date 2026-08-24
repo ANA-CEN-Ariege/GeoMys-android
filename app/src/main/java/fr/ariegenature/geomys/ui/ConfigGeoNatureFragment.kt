@@ -36,7 +36,6 @@ import androidx.navigation.fragment.findNavController
 import androidx.appcompat.app.AlertDialog
 import fr.ariegenature.geomys.R
 import fr.ariegenature.geomys.databinding.FragmentConfigGeonatureBinding
-import fr.ariegenature.geomys.model.Taxon
 import fr.ariegenature.geomys.network.GeoNatureAuth
 import fr.ariegenature.geomys.network.GeoNatureDataset
 import fr.ariegenature.geomys.network.GeoNatureListe
@@ -323,6 +322,16 @@ class ConfigGeoNatureFragment : Fragment() {
         val nouveau = Triple(gnConfig.urlServeur, gnConfig.login, gnConfig.motDePasse)
         if (ancien != nouveau) {
             fr.ariegenature.geomys.network.invaliderCachesSession()
+            // Pictos de protocole : appartiennent à l'ANCIEN serveur → purge (re-préfetchés au
+            // prochain « Recharger les données », ou re-téléchargés à la demande dans Suivis).
+            fr.ariegenature.geomys.store.PictoCache.vider()
+            // Cache monitoring disque : ses clés (datalist_<apiUrl>, observateurs_<idListe>,
+            // objets/schémas) sont IDENTIQUES d'une instance à l'autre mais leurs contenus
+            // portent des ids propres à l'instance (id_nomenclature, id_role…) — sans purge,
+            // une saisie hors-ligne avant resynchro injecterait les ids de l'ancien serveur
+            // dans un payload (audit 2026-08-23). invaliderCachesSession ne couvre que les
+            // caches mémoire ; le disque se purge ici, au changement d'identité.
+            fr.ariegenature.geomys.store.MonitoringCache.vider()
             // La version affichée appartient à l'ancienne instance — re-renseignée au
             // prochain test de connexion réussi. Le flag de compatibilité repart au bénéfice
             // du doute : le nouveau serveur sera re-jugé à son premier test de connexion.
@@ -631,6 +640,7 @@ class ConfigGeoNatureFragment : Fragment() {
         fr.ariegenature.geomys.store.HabitatCache.vider()
         fr.ariegenature.geomys.store.HabitatCacheOccHab.vider()
         MonitoringCache.vider()
+        fr.ariegenature.geomys.store.PictoCache.vider()  // pictos de protocole (cache disque)
         // MonitoringCache.vider() n'efface que le DISQUE. La liste des modules est aussi
         // gardée en mémoire par MonitoringApi (dernierChargement), et countModulesEnCache()
         // la renvoie en priorité — sans cette invalidation, le compteur de protocoles reste
@@ -777,30 +787,36 @@ class ConfigGeoNatureFragment : Fragment() {
     }
 
     private fun updateCacheInfo() {
-        // Taxons UNIQUES (cd_nom distincts) — et non le nombre de clés de noms (un taxon a
-        // plusieurs clés : scientifique + vernaculaires), sinon le total affiché (ex. 230) ne
-        // correspond pas à la somme du détail par liste.
-        val nbTaxons = TaxRefCache.nbTaxonsUniques
-        val nbNomenclatures = NomenclatureCache.count
-        val nbProtocoles = MonitoringApi.countModulesEnCache()
-        // Listes de taxons et observateurs en cache (comptés depuis les caches JSON du serveur).
-        val nbListes = try {
-            val t = object : TypeToken<List<GeoNatureListe>>() {}.type
-            (gson.fromJson<List<GeoNatureListe>>(gnConfig.listesCacheJson, t) ?: emptyList()).size
-        } catch (_: Exception) { 0 }
-        val nbObservateurs = try {
-            val t = object : TypeToken<List<GeoNatureObservateur>>() {}.type
-            (gson.fromJson<List<GeoNatureObservateur>>(gnConfig.observateursCacheJson, t) ?: emptyList()).size
-        } catch (_: Exception) { 0 }
-
-        binding.tvCountProtocoles.text = nbProtocoles.toString()
-        binding.tvCountNomenclatures.text = nbNomenclatures.toString()
-        binding.tvCountTaxons.text = nbTaxons.toString()
-        binding.tvCountListes.text = nbListes.toString()
-        binding.tvCountObservateurs.text = nbObservateurs.toString()
-
-        binding.btnTaxonsParGroupe.isEnabled = nbTaxons > 0
-        binding.btnViderCache.isEnabled = nbTaxons > 0 || nbNomenclatures > 0 || nbProtocoles > 0
+        // Comptages potentiellement LOURDS (nbTaxonsUniques matérialise le cache TaxRef 15-50k
+        // entrées ; parse Gson des caches listes/observateurs) → déportés hors du thread principal,
+        // l'UI est posée au retour. Évitait un stall de plusieurs centaines de ms à l'ouverture de
+        // la config (et à chaque frappe debouncée du champ id-liste).
+        viewLifecycleOwner.lifecycleScope.launch {
+            val c = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                // Taxons UNIQUES (cd_nom distincts) — pas le nombre de clés de noms.
+                val nbListes = try {
+                    val t = object : TypeToken<List<GeoNatureListe>>() {}.type
+                    (gson.fromJson<List<GeoNatureListe>>(gnConfig.listesCacheJson, t) ?: emptyList()).size
+                } catch (_: Exception) { 0 }
+                val nbObservateurs = try {
+                    val t = object : TypeToken<List<GeoNatureObservateur>>() {}.type
+                    (gson.fromJson<List<GeoNatureObservateur>>(gnConfig.observateursCacheJson, t) ?: emptyList()).size
+                } catch (_: Exception) { 0 }
+                intArrayOf(
+                    TaxRefCache.nbTaxonsUniques, NomenclatureCache.count,
+                    MonitoringApi.countModulesEnCache(), nbListes, nbObservateurs,
+                )
+            }
+            if (_binding == null) return@launch
+            val nbTaxons = c[0]; val nbNomenclatures = c[1]; val nbProtocoles = c[2]
+            binding.tvCountProtocoles.text = nbProtocoles.toString()
+            binding.tvCountNomenclatures.text = nbNomenclatures.toString()
+            binding.tvCountTaxons.text = nbTaxons.toString()
+            binding.tvCountListes.text = c[3].toString()
+            binding.tvCountObservateurs.text = c[4].toString()
+            binding.btnTaxonsParGroupe.isEnabled = nbTaxons > 0
+            binding.btnViderCache.isEnabled = nbTaxons > 0 || nbNomenclatures > 0 || nbProtocoles > 0
+        }
     }
 
     /** Ouvre un AlertDialog listant les groupes taxonomiques avec leur effectif (filtré

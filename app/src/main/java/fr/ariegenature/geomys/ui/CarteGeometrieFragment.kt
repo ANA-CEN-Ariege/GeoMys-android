@@ -25,7 +25,6 @@ import android.view.View
 import android.view.ViewGroup
 import androidx.appcompat.app.AlertDialog
 import androidx.core.content.ContextCompat
-import androidx.core.graphics.drawable.toBitmap
 import androidx.core.os.bundleOf
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
@@ -42,12 +41,10 @@ import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
 import org.osmdroid.config.Configuration
-import org.osmdroid.util.BoundingBox
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polygon
 import org.osmdroid.views.overlay.Polyline
-import org.osmdroid.views.overlay.mylocation.GpsMyLocationProvider
 import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
 
 /** Affiche la géométrie d'un objet monitoring (Point, LineString, Polygon, MultiPolygon)
@@ -110,14 +107,7 @@ class CarteGeometrieFragment : Fragment() {
         // Position GPS du téléphone : même look bleu que les autres cartes de l'app
         // (TraceFragment, SaisieRapideFragment). N'auto-centre PAS sur la position courante
         // — on garde le centrage sur la géom de l'objet (cf. recadrer plus bas).
-        locationOverlay = MyLocationNewOverlay(GpsMyLocationProvider(requireContext()), binding.map).apply {
-            setPersonIcon(ContextCompat.getDrawable(requireContext(), R.drawable.ic_gps_blue_dot)?.toBitmap())
-            setPersonHotspot(10f, 10f)
-            setDirectionArrow(
-                ContextCompat.getDrawable(requireContext(), R.drawable.ic_gps_blue_dot)?.toBitmap(),
-                ContextCompat.getDrawable(requireContext(), R.drawable.ic_gps_blue_dot)?.toBitmap(),
-            )
-        }
+        locationOverlay = creerLocationOverlayBleu(binding.map, requireContext())
         binding.map.overlays.add(locationOverlay)
 
         binding.btnFondCarte.setOnClickListener {
@@ -521,32 +511,10 @@ class CarteGeometrieFragment : Fragment() {
     }
 
     private fun recadrer(points: List<GeoPoint>) {
-        if (points.isEmpty()) return
-        // On utilise zoomToBoundingBox dans tous les cas (même 1 point) car c'est la seule
-        // méthode qui force fiablement un layout/refresh avec le bon centre+zoom dès le
-        // 1er rendu. setCenter+setZoom directs peuvent être ignorés si la MapView n'a pas
-        // encore été mesurée au moment du post.
-        val box = if (points.size == 1) {
-            // Box artificielle autour du point unique : ~440 m de côté → zoom ~15-16.
-            val pt = points[0]
-            val offset = 0.002  // ≈ 220 m N-S, 165 m E-W aux latitudes tempérées
-            BoundingBox(
-                pt.latitude + offset, pt.longitude + offset,
-                pt.latitude - offset, pt.longitude - offset,
-            )
-        } else BoundingBox.fromGeoPoints(points)
-        val degenere = (box.latNorth - box.latSouth) < 0.0001 && (box.lonEast - box.lonWest) < 0.0001
-        if (degenere) {
-            val pt = points[0]
-            val offset = 0.002
-            val fallback = BoundingBox(
-                pt.latitude + offset, pt.longitude + offset,
-                pt.latitude - offset, pt.longitude - offset,
-            )
-            binding.map.zoomToBoundingBox(fallback, false)
-        } else {
-            binding.map.zoomToBoundingBox(box.increaseByScale(1.3f), false)
-        }
+        // zoomToBoundingBox dans tous les cas (même 1 point) : seule méthode qui force fiablement
+        // un layout/refresh au bon centre+zoom dès le 1er rendu. Box artificielle ±0.002° (~440 m)
+        // pour un point unique, garde contre boîte dégénérée. Cf. MapView.zoomerSur.
+        binding.map.zoomerSur(points, offset = 0.002, scale = 1.3f)
     }
 
     override fun onResume() {

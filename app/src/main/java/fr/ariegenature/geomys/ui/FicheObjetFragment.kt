@@ -24,7 +24,6 @@ import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.Button
 import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -226,7 +225,7 @@ class FicheObjetFragment : Fragment() {
                 // Résolution ID → label via le resolver si type_util est géré, sinon formatage.
                 val prop = schemaCe?.properties?.get(k)
                 val resolu = if (prop != null) resolver.resoudre(prop, v) else null
-                text = resolu ?: formatValeur(k, v)
+                text = resolu ?: formatValeur(v)
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
             }
             row.addView(label)
@@ -685,7 +684,7 @@ class FicheObjetFragment : Fragment() {
     }
 
     /** Format léger : booleans en oui/non, dates ISO raccourcies, sinon raw. */
-    private fun formatValeur(key: String, v: String): String {
+    private fun formatValeur(v: String): String {
         if (v == "true") return "oui"
         if (v == "false") return "non"
         // Date ISO "YYYY-MM-DD..." → "YYYY-MM-DD" simple

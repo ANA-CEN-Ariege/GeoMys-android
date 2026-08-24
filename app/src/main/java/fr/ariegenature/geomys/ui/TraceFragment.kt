@@ -21,10 +21,6 @@ package fr.ariegenature.geomys.ui
 import android.Manifest
 import android.content.pm.PackageManager
 import android.graphics.*
-import android.hardware.Sensor
-import android.hardware.SensorEvent
-import android.hardware.SensorEventListener
-import android.hardware.SensorManager
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -45,8 +41,6 @@ import fr.ariegenature.geomys.model.Sortie
 import fr.ariegenature.geomys.location.LocationForegroundService
 import fr.ariegenature.geomys.store.GeoNatureConfig
 import fr.ariegenature.geomys.store.SortieStore
-import fr.ariegenature.geomys.network.GeoNatureUpload
-import androidx.core.graphics.drawable.toBitmap
 import org.osmdroid.config.Configuration
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
@@ -54,7 +48,6 @@ import org.osmdroid.events.MapEventsReceiver
 import org.osmdroid.views.overlay.MapEventsOverlay
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polyline
-import org.osmdroid.views.overlay.mylocation.GpsMyLocationProvider
 import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
 import kotlinx.coroutines.*
 import java.text.SimpleDateFormat
@@ -104,6 +97,9 @@ class TraceFragment : Fragment() {
 
     private var locationOverlay: MyLocationNewOverlay? = null
     private var tracePolyline: Polyline? = null
+    /** Nombre de points déjà tracés dans `tracePolyline` — permet l'ajout incrémental
+     *  (on n'ajoute que les nouveaux fixes au lieu de reconstruire toute la trace). */
+    private var pointsDessines = 0
     private val observationMarkers = mutableMapOf<String, Marker>()
     // Géométries (ligne/polygone) des relevés repris en édition : forme redessinée +
     // sommets draggables (déplacement des points existants). Clé = identité stable du
@@ -124,57 +120,9 @@ class TraceFragment : Fragment() {
     private var envoiEnCours = false
     private var currentJob: Job? = null
 
-    private lateinit var sensorManager: SensorManager
-    private val gravity = FloatArray(3)
-    private val geomagnetic = FloatArray(3)
-    private var gravityReady = false
-    private var geomagneticReady = false
-    private var useRotationVector = false
-
-    private val compassListener = object : SensorEventListener {
-        override fun onSensorChanged(event: SensorEvent) {
-            val azimuth: Float = when (event.sensor.type) {
-                Sensor.TYPE_ROTATION_VECTOR -> {
-                    val R = FloatArray(9)
-                    SensorManager.getRotationMatrixFromVector(R, event.values)
-                    val o = FloatArray(3)
-                    SensorManager.getOrientation(R, o)
-                    Math.toDegrees(o[0].toDouble()).toFloat()
-                }
-                Sensor.TYPE_ACCELEROMETER -> {
-                    System.arraycopy(event.values, 0, gravity, 0, 3)
-                    gravityReady = true
-                    return
-                }
-                Sensor.TYPE_MAGNETIC_FIELD -> {
-                    System.arraycopy(event.values, 0, geomagnetic, 0, 3)
-                    geomagneticReady = true
-                    if (!gravityReady) return
-                    val R = FloatArray(9)
-                    if (!SensorManager.getRotationMatrix(R, null, gravity, geomagnetic)) return
-                    val o = FloatArray(3)
-                    SensorManager.getOrientation(R, o)
-                    Math.toDegrees(o[0].toDouble()).toFloat()
-                }
-                else -> return
-            }
-            val compass = _binding?.compass ?: return
-            // Mode boussole actif → l'aiguille tourne avec le téléphone ET la carte
-            // compense pour garder le nord en haut. Mode figé → aiguille et carte
-            // alignées sur le téléphone : nord en haut = aiguille au repos (0°).
-            if (carteSuitBoussole) {
-                compass.post { compass.setAzimuth(-azimuth) }
-                val map = _binding?.map ?: return
-                map.post {
-                    map.setMapOrientation(-azimuth)
-                    map.invalidate()
-                }
-            } else {
-                compass.post { compass.setAzimuth(0f) }
-            }
-        }
-        override fun onAccuracyChanged(sensor: Sensor, accuracy: Int) {}
-    }
+    // Boussole : capteurs/listener factorisés dans MapCompassController. L'état carteSuitBoussole
+    // reste un champ du fragment (persiste à travers la recréation de vue).
+    private var boussole: MapCompassController? = null
 
     private val permissionLauncher = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { perms ->
         if (perms[Manifest.permission.ACCESS_FINE_LOCATION] == true || perms[Manifest.permission.ACCESS_COARSE_LOCATION] == true) {
@@ -297,17 +245,11 @@ class TraceFragment : Fragment() {
         }
         // Restaure l'état du mode boussole (persisté sur l'instance fragment, mais
         // le binding est recréé). En mode figé, on remet la carte nord en haut.
+        boussole = MapCompassController(requireContext(), binding.map, binding.compass) { carteSuitBoussole }
         binding.compass.setActif(carteSuitBoussole)
         if (!carteSuitBoussole) binding.map.setMapOrientation(0f)
 
-        locationOverlay = MyLocationNewOverlay(GpsMyLocationProvider(requireContext()), binding.map).apply {
-            setPersonIcon(ContextCompat.getDrawable(requireContext(), R.drawable.ic_gps_blue_dot)?.toBitmap())
-            setPersonHotspot(10f, 10f)
-            setDirectionArrow(
-                ContextCompat.getDrawable(requireContext(), R.drawable.ic_gps_blue_dot)?.toBitmap(),
-                ContextCompat.getDrawable(requireContext(), R.drawable.ic_gps_blue_dot)?.toBitmap()
-            )
-        }
+        locationOverlay = creerLocationOverlayBleu(binding.map, requireContext())
         binding.map.overlays.add(locationOverlay)
 
         // MapEvents : capture les taps utilisateur pour poser les sommets directement
@@ -564,6 +506,17 @@ class TraceFragment : Fragment() {
             updateInfoBarre(traceViewModel.locationTracker.estEnCours.value == true)
         }
 
+        // Échec de l'auto-save du brouillon (disque plein ?) : alerte BLOQUANTE — sans elle,
+        // la saisie affichée ne vit qu'en mémoire et disparaît au kill du process.
+        traceViewModel.echecEcritureBrouillon.observe(viewLifecycleOwner) { echec ->
+            if (echec) {
+                traceViewModel.acquitterEchecEcriture()
+                alerterEchecEcritureStore(requireContext(),
+                    "Libérez de l'espace (photos, cache de cartes) SANS quitter la saisie : " +
+                        "chaque nouvelle observation retente l'enregistrement complet.")
+            }
+        }
+
         traceViewModel.locationTracker.distanceTotale.observe(viewLifecycleOwner) { dist ->
             updateInfoBarre(traceViewModel.locationTracker.estEnCours.value == true)
         }
@@ -797,15 +750,30 @@ class TraceFragment : Fragment() {
     )
 
     private fun updatePolyline(pts: List<PointTrace>) {
-        tracePolyline?.let { binding.map.overlays.remove(it) }
-        if (pts.size > 1) {
-            tracePolyline = Polyline(binding.map).apply {
-                setPoints(pts.map { GeoPoint(it.latitude, it.longitude) })
-                outlinePaint.color = 0xCC2196F3.toInt()
-                outlinePaint.strokeWidth = 6f
-                outlinePaint.strokeCap = Paint.Cap.ROUND
+        // Ajout INCRÉMENTAL : `parcours` émet la liste complète à chaque fix GPS. Reconstruire
+        // toute la polyline à chaque fois coûte O(n) par fix → O(n²) sur une longue sortie (des
+        // milliers de points). On ne matérialise donc que les nouveaux points ; reconstruction
+        // complète uniquement si la trace a rétréci/été réinitialisée (nouvelle sortie, effacement).
+        if (tracePolyline == null || pts.size < pointsDessines) {
+            tracePolyline?.let { binding.map.overlays.remove(it) }
+            tracePolyline = null
+            pointsDessines = 0
+            if (pts.size > 1) {
+                tracePolyline = Polyline(binding.map).apply {
+                    setPoints(pts.map { GeoPoint(it.latitude, it.longitude) })
+                    outlinePaint.color = 0xCC2196F3.toInt()
+                    outlinePaint.strokeWidth = 6f
+                    outlinePaint.strokeCap = Paint.Cap.ROUND
+                }
+                binding.map.overlays.add(tracePolyline)
+                pointsDessines = pts.size
             }
-            binding.map.overlays.add(tracePolyline)
+        } else if (pts.size > pointsDessines) {
+            val poly = tracePolyline!!
+            for (i in pointsDessines until pts.size) {
+                poly.addPoint(GeoPoint(pts[i].latitude, pts[i].longitude))
+            }
+            pointsDessines = pts.size
         }
         binding.map.invalidate()
     }
@@ -1135,8 +1103,17 @@ class TraceFragment : Fragment() {
             )
         }
         if (sortie.pointsParcours.isNotEmpty() || sortie.observations.isNotEmpty()) {
-            if (idReprise != null) sortieStore.remplacer(idReprise, sortie)
+            val ok = if (idReprise != null) sortieStore.remplacer(idReprise, sortie)
             else sortieStore.ajouter(sortie)
+            if (!ok) {
+                // Écriture disque échouée : on n'abandonne NI ne quitte — réinitialiser ici
+                // perdrait la seule copie (mémoire) de la saisie, et envoyer sans trace store
+                // rendrait les marquages anti-doublon inopérants (audit 2026-08-23).
+                alerterEchecEcritureStore(requireContext(),
+                    "Libérez de l'espace (photos, cache de cartes) puis refaites « Terminer » — " +
+                        "la saisie est conservée à l'écran en attendant.")
+                return
+            }
         }
         traceViewModel.reinitialiser()
 
@@ -1173,7 +1150,7 @@ class TraceFragment : Fragment() {
             datasets, idDsInitial, gnConfig.nomDataset.takeIf { it.isNotEmpty() },
             observateurs, idsObsInitial, nomsObsInitial,
             defs, communs?.additionnels ?: emptyMap(),
-            gnConfig.settingsOcctaxJson, gnConfig.formFieldsJson,
+            gnConfig.formFieldsJson,
             communs?.typGrp ?: "", communs?.comment ?: "",
             communs?.dateDebut, communs?.dateFin, gnConfig.heuresVisibles, gnConfig.dateFinVisible,
             communs?.cdHab, communs?.habitatLabel,
@@ -1225,20 +1202,7 @@ class TraceFragment : Fragment() {
     override fun onResume() {
         super.onResume()
         binding.map.onResume()
-        sensorManager = requireContext().getSystemService(SensorManager::class.java)
-        val rotVec = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
-        if (rotVec != null) {
-            useRotationVector = true
-            sensorManager.registerListener(compassListener, rotVec, SensorManager.SENSOR_DELAY_UI)
-        } else {
-            useRotationVector = false
-            sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)?.let {
-                sensorManager.registerListener(compassListener, it, SensorManager.SENSOR_DELAY_UI)
-            }
-            sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD)?.let {
-                sensorManager.registerListener(compassListener, it, SensorManager.SENSOR_DELAY_UI)
-            }
-        }
+        boussole?.demarrer()
     }
 
     override fun onPause() {
@@ -1246,9 +1210,7 @@ class TraceFragment : Fragment() {
         savedMapCenter = binding.map.mapCenter.let { GeoPoint(it.latitude, it.longitude) }
         savedMapZoom = binding.map.zoomLevelDouble
         binding.map.onPause()
-        sensorManager.unregisterListener(compassListener)
-        gravityReady = false
-        geomagneticReady = false
+        boussole?.arreter()
     }
 
     override fun onDestroyView() {
@@ -1257,6 +1219,8 @@ class TraceFragment : Fragment() {
         observationMarkers.clear()
         releveGeoms.clear()
         tracePolyline = null
+        pointsDessines = 0
+        boussole = null
         _binding = null
     }
 

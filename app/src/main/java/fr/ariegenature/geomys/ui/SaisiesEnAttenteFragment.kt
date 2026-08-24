@@ -755,33 +755,43 @@ class SaisiesEnAttenteFragment : Fragment() {
         binding.tvMessageEnvoi.text = "Préparation du groupe…"
         val config = GeoNatureConfig(requireContext())
         viewLifecycleOwner.lifecycleScope.launch {
-            val res = OutboxEnvoi.envoyerGroupe(config, uuidRacine) { envoyees, total, msg ->
-                activity?.runOnUiThread {
-                    // Le callback vient du bloc Dispatchers.IO d'OutboxEnvoi : il peut être
-                    // posté juste avant l'annulation et s'exécuter APRÈS onDestroyView
-                    // (_binding = null) si l'utilisateur quitte l'écran pendant l'envoi.
-                    val b = _binding ?: return@runOnUiThread
-                    b.tvMessageEnvoi.text = "Envoi $envoyees/$total · $msg".trim().trimEnd('·', ' ')
-                    rafraichir()
+            try {
+                val res = OutboxEnvoi.envoyerGroupe(config, uuidRacine) { envoyees, total, msg ->
+                    activity?.runOnUiThread {
+                        // Le callback vient du bloc Dispatchers.IO d'OutboxEnvoi : il peut être
+                        // posté juste avant l'annulation et s'exécuter APRÈS onDestroyView
+                        // (_binding = null) si l'utilisateur quitte l'écran pendant l'envoi.
+                        val b = _binding ?: return@runOnUiThread
+                        b.tvMessageEnvoi.text = "Envoi $envoyees/$total · $msg".trim().trimEnd('·', ' ')
+                        rafraichir()
+                    }
+                }
+                if (!isAdded || _binding == null) return@launch
+                binding.progressEnvoi.visibility = View.GONE
+                val recap = buildString {
+                    append("Envoi du groupe terminé · ${res.succes} succès, ${res.echecs} échec(s)")
+                    if (res.messages.isNotEmpty()) {
+                        append("\n\n")
+                        append(res.messages.joinToString("\n"))
+                    }
+                }
+                AlertDialog.Builder(requireContext())
+                    // « Envoi » : même titre de récap que Mes saisies / Mes stations.
+                    .setTitle("Envoi")
+                    .setMessage(recap)
+                    .setPositiveButton("OK", null)
+                    .show()
+                rafraichir()
+            } finally {
+                // finally (comme lancerEnvoiTout) : une navigation pendant l'envoi annule la
+                // coroutine — sans lui, envoiEnCours restait bloqué à true et l'écran refusait
+                // tout envoi (« déjà en cours ») jusqu'à destruction du fragment (audit 2026-08-23).
+                envoiEnCours = false
+                _binding?.let {
+                    it.progressEnvoi.visibility = View.GONE
+                    it.tvMessageEnvoi.visibility = View.GONE
                 }
             }
-            envoiEnCours = false
-            if (!isAdded || _binding == null) return@launch
-            binding.progressEnvoi.visibility = View.GONE
-            val recap = buildString {
-                append("Envoi du groupe terminé · ${res.succes} succès, ${res.echecs} échec(s)")
-                if (res.messages.isNotEmpty()) {
-                    append("\n\n")
-                    append(res.messages.joinToString("\n"))
-                }
-            }
-            AlertDialog.Builder(requireContext())
-                // « Envoi » : même titre de récap que Mes saisies / Mes stations.
-                .setTitle("Envoi")
-                .setMessage(recap)
-                .setPositiveButton("OK", null)
-                .show()
-            rafraichir()
         }
     }
 

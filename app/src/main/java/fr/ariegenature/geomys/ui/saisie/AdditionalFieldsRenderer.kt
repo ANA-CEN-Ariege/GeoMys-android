@@ -28,7 +28,6 @@ import android.widget.LinearLayout
 import android.widget.RadioButton
 import android.widget.Spinner
 import android.widget.TextView
-import androidx.core.view.setMargins
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
 import com.google.gson.Gson
@@ -316,7 +315,12 @@ object AdditionalFieldsRenderer {
                     )
                     tag = "input"
                     inputType = when (def.widget) {
-                        WidgetType.NUMBER -> InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_SIGNED
+                        // FLAG_DECIMAL : sans lui, le clavier numérique n'offre AUCUN séparateur
+                        // décimal → un champ additionnel décimal (température, surface…) était
+                        // intapable — même verrou que les widgets NUMBER monitoring, corrigés
+                        // avant (audit 2026-08-23). La valeur voyage en String : rien à typer.
+                        WidgetType.NUMBER -> InputType.TYPE_CLASS_NUMBER or
+                            InputType.TYPE_NUMBER_FLAG_SIGNED or InputType.TYPE_NUMBER_FLAG_DECIMAL
                         WidgetType.TEXTAREA -> InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
                         else -> InputType.TYPE_CLASS_TEXT
                     }

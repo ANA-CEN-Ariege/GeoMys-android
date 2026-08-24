@@ -87,6 +87,9 @@ object MonitoringSync {
         // Collecte les `id_list_observer` distincts pour fetcher chaque liste UsersHub
         // une seule fois à la fin (et pas N fois si plusieurs modules pointent dessus).
         val listesObserversAFetch = mutableSetOf<Int>()
+        // Options des datalists/nomenclatures des formulaires, dédupliquées par apiUrl → préfetchées
+        // en fin de synchro pour que la saisie d'une nouvelle visite marche HORS-LIGNE.
+        val propsDatalistAPrefetch = mutableMapOf<String, MonitoringApi.MonitoringPropertySchema>()
 
         for ((idx, module) in modules.withIndex()) {
             progression(idx + 1, modules.size, objetsCharges)
@@ -103,6 +106,13 @@ object MonitoringSync {
                 // mémoise pour le fetch groupé en fin de sync.
                 schema?.get("module")?.idListObserver?.takeIf { it > 0 }
                     ?.let { listesObserversAFetch.add(it) }
+
+                // Collecte des datalists/nomenclatures de tous les types du schéma (dédup par apiUrl).
+                schema?.values?.forEach { objet ->
+                    objet.properties.values.forEach { p ->
+                        p.apiUrl?.let { propsDatalistAPrefetch.putIfAbsent(it, p) }
+                    }
+                }
 
                 // Discriminateur structurel/saisie piloté par le SCHÉMA serveur : un objet
                 // structurel (sites_group, site, secteur, dalle…) porte une `geometry_type`,
@@ -179,6 +189,31 @@ object MonitoringSync {
                     }.awaitAll().sum().also { observateursListes += it }
                 }
             }
+        }
+
+        // Prefetch des OPTIONS des datalists/nomenclatures des formulaires → saisie d'une nouvelle
+        // visite possible HORS-LIGNE (sinon listes déroulantes vides = saisie bloquée). Dédup par
+        // apiUrl ; observateurs exclus (déjà préchargés ci-dessus, cache dédié). chargerOptionsDatalist
+        // écrit le cache en write-through. Best-effort, en parallèle borné, n'affecte pas le résultat.
+        if (propsDatalistAPrefetch.isNotEmpty()) {
+            coroutineScope {
+                propsDatalistAPrefetch.values
+                    .filterNot { it.apiUrl?.contains("users/menu/") == true }
+                    .chunked(CHUNK_SIZE)
+                    .forEach { chunk ->
+                        chunk.map { p ->
+                            async { runCatching { MonitoringApi.chargerOptionsDatalist(config, p) } }
+                        }.awaitAll()
+                    }
+            }
+        }
+
+        // Prefetch des pictogrammes de protocole → affichage instantané et HORS-LIGNE dans l'écran
+        // Suivis (sinon re-téléchargés à chaque ouverture, et absents hors réseau). Best-effort :
+        // n'affecte pas le résultat de la synchro ; re-écrit (rafraîchit) les images existantes.
+        runCatching {
+            fr.ariegenature.geomys.store.PictoCache.prefetch(
+                config.urlServeur, modules.map { it.moduleCode to it.modulePicto })
         }
 
         val msg = buildString {

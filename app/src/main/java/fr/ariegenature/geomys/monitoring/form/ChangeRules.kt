@@ -96,7 +96,7 @@ object ChangeRules {
             val idxPatch = ligne.indexOf("patchValue")
             if (idxPatch >= 0) {
                 val corps = extraireObjetEquilibre(ligne, ligne.indexOf('(', idxPatch)) ?: continue
-                val conditionInline = conditionTernaireInstruction(ligne, idxPatch)
+                val conditionInline = conditionTernaireInstruction(ligne)
                 val condition = conditionInline ?: conditionBloc
                 val patch = parserPatch(corps)
                 if (patch.isNotEmpty()) instructions.add(Regle(Patch(condition, patch)))
@@ -109,7 +109,7 @@ object ChangeRules {
     }
 
     /** Pour une ligne `(COND ? objForm.patchValue({…}) : …)`, extrait COND ; null sinon. */
-    private fun conditionTernaireInstruction(ligne: String, idxPatch: Int): String? {
+    private fun conditionTernaireInstruction(ligne: String): String? {
         var l = ligne
         // Retire les parenthèses englobantes éventuelles.
         while (l.length >= 2 && l.startsWith("(") && l.endsWith(")") && ExpressionScanner.parenthesesEquilibrees(l.substring(1, l.length - 1))) {

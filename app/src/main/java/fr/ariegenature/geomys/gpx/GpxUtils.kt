@@ -23,7 +23,6 @@ import fr.ariegenature.geomys.model.PointTrace
 import fr.ariegenature.geomys.model.Sortie
 import org.xml.sax.Attributes
 import org.xml.sax.helpers.DefaultHandler
-import java.io.StringWriter
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale

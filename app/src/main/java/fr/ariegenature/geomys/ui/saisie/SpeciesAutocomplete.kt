@@ -30,8 +30,11 @@ import fr.ariegenature.geomys.store.TaxRefCache
 fun createSpeciesAutocompleteAdapter(
     context: Context,
     suggestions: List<String>,
+    /** Paires (clé normalisée → affichage) PRÉ-CALCULÉES. À fournir depuis un thread de fond
+     *  (Dispatchers.Default) — normaliser 15-50k noms sur le thread principal figeait l'UI à
+     *  chaque changement de groupe taxon / bascule nom sci. Défaut = calcul sur place (compat). */
+    normalized: List<Pair<String, String>> = suggestions.map { TaxRefCache.normaliser(it) to it },
 ): ArrayAdapter<String> {
-    val normalized: List<Pair<String, String>> = suggestions.map { TaxRefCache.normaliser(it) to it }
     return object : ArrayAdapter<String>(
         context,
         android.R.layout.simple_dropdown_item_1line,

@@ -23,9 +23,6 @@ import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import com.google.gson.Gson
 import fr.ariegenature.geomys.store.GeoNatureConfig
-import fr.ariegenature.geomys.store.MonitoringCache
-import fr.ariegenature.geomys.store.NomenclatureCache
-import fr.ariegenature.geomys.store.TaxRefCache
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.async
 
@@ -76,11 +73,16 @@ object SyncRunner {
             val config = GeoNatureConfig(context.applicationContext)
             publier("Préparation…")
 
-            // Ardoise propre pour les caches toujours rafraîchis. TaxRef N'EST PAS vidé ici :
-            // synchroniserTaxRef décide de le conserver (version+listes inchangées) ou de le vider
-            // lui-même avant rechargement. Ça permet de sauter le re-téléchargement lourd de TaxRef.
-            NomenclatureCache.vider()
-            MonitoringCache.vider()
+            // PAS de purge des caches disque ici (audit 2026-08-23) : vider Nomenclature/
+            // MonitoringCache avant tout appel réseau détruisait le hors-ligne existant si la
+            // synchro échouait (serveur en erreur, coupure, kill) — précisément le scénario
+            // terrain où l'on a besoin des anciennes données. Le rafraîchissement se fait par
+            // REMPLACEMENT : NomenclatureCache.setAll écrase tout le cache d'un bloc en fin de
+            // téléchargement réussi, et MonitoringSync écrit clé à clé (write-through). Coût
+            // accepté : d'anciennes clés monitoring orphelines (module retiré du serveur)
+            // subsistent sur disque — plus référencées, purgées par « Vider le cache ».
+            // TaxRef suit déjà cette discipline (synchroniserTaxRef vide seulement après
+            // téléchargement validé). Seuls les caches MÉMOIRE (résolveurs) sont invalidés.
             MonitoringApi.invaliderCaches()
 
             val echecs = mutableListOf<String>()

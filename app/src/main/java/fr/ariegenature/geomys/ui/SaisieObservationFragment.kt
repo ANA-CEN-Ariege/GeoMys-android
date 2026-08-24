@@ -18,7 +18,6 @@
 
 package fr.ariegenature.geomys.ui
 
-import android.Manifest
 import android.os.Bundle
 import android.text.Editable
 import android.text.TextWatcher
@@ -473,7 +472,7 @@ class SaisieObservationFragment : Fragment() {
         ouvrirDialogDetailsReleve(
             requireContext(), infos, datasets, idDsInitial, nomDsInitial,
             observateurs, idsObsInitial, nomsObsInitial, defs, additionalFieldsReleveSession,
-            gnConfig.settingsOcctaxJson, gnConfig.formFieldsJson, typGrpReleveSession, commentReleveSession,
+            gnConfig.formFieldsJson, typGrpReleveSession, commentReleveSession,
             dateDebutReleveSession, dateFinReleveSession, gnConfig.heuresVisibles, gnConfig.dateFinVisible,
             cdHabReleveSession, habitatReleveLabelSession,
             champsReleveExtraSession,
@@ -707,15 +706,17 @@ class SaisieObservationFragment : Fragment() {
 
     private fun refreshAutocompleteAdapter() {
         viewLifecycleOwner.lifecycleScope.launch {
-            val suggestions = withContext(Dispatchers.Default) {
-                TaxRefLocal.getSuggestionsAutocomplete(
+            val (suggestions, normalized) = withContext(Dispatchers.Default) {
+                val s = TaxRefLocal.getSuggestionsAutocomplete(
                     taxonSelector.taxon,
                     rechercheNomSci,
                     idListeFiltre = gnConfig.taxaListeId.trim().toIntOrNull(),
                 )
+                // Normalisation (accents/casse) pré-calculée HORS thread principal.
+                s to s.map { TaxRefCache.normaliser(it) to it }
             }
             if (!isAdded || _binding == null) return@launch
-            val adapter = createSpeciesAutocompleteAdapter(requireContext(), suggestions)
+            val adapter = createSpeciesAutocompleteAdapter(requireContext(), suggestions, normalized)
             binding.etEspece.setAdapter(adapter)
             // Race possible : si l'utilisateur a tapé avant la fin du scan asynchrone,
             // AutoCompleteTextView a déclenché le filtre sur un adapter encore vide et

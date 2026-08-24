@@ -20,6 +20,9 @@ package fr.ariegenature.geomys.ui
 
 import android.content.Context
 import androidx.appcompat.app.AlertDialog
+import androidx.core.content.ContextCompat
+import androidx.core.graphics.drawable.toBitmap
+import fr.ariegenature.geomys.R
 import fr.ariegenature.geomys.store.MbtilesStore
 import org.osmdroid.tileprovider.MapTileProviderBasic
 import org.osmdroid.tileprovider.modules.OfflineTileProvider
@@ -27,8 +30,12 @@ import org.osmdroid.tileprovider.tilesource.OnlineTileSourceBase
 import org.osmdroid.tileprovider.tilesource.TileSourcePolicy
 import org.osmdroid.tileprovider.tilesource.XYTileSource
 import org.osmdroid.tileprovider.util.SimpleRegisterReceiver
+import org.osmdroid.util.BoundingBox
+import org.osmdroid.util.GeoPoint
 import org.osmdroid.util.MapTileIndex
 import org.osmdroid.views.MapView
+import org.osmdroid.views.overlay.mylocation.GpsMyLocationProvider
+import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
 import java.io.File
 
 enum class FondCarte { OSM, OPENTOPO, TOPO, SCAN25, ORTHO, ESRI }
@@ -212,3 +219,57 @@ fun ignTileSource(layer: String, fmt: String, prive: Boolean): OnlineTileSourceB
                 "&TILEMATRIXSET=PM&TILEMATRIX=$zoom&TILEROW=$y&TILECOL=$x"
         }
     }
+
+// ── Helpers partagés des écrans-carte (factorisation de code dupliqué) ────────────────────────
+
+/** Overlay « ma position » bleu partagé : icône ET flèche de direction = `ic_gps_blue_dot`,
+ *  hotspot centré. L'appelant enchaîne selon son écran `enableMyLocation()` / `runOnFirstFix{}` /
+ *  `setDrawAccuracyEnabled(true)`. Factorise le bloc identique dupliqué dans 5 écrans-carte
+ *  (un seul bitmap partagé au lieu de 3 décodages). */
+fun creerLocationOverlayBleu(map: MapView, context: Context): MyLocationNewOverlay =
+    MyLocationNewOverlay(GpsMyLocationProvider(context), map).apply {
+        val pt = ContextCompat.getDrawable(context, R.drawable.ic_gps_blue_dot)?.toBitmap()
+        // API non dépréciées d'osmdroid 6.1.x : icône + ancre RELATIVE (0.5 = centre exact,
+        // indépendant de la densité — remplace l'ancien hotspot en pixels 10f/10f).
+        setPersonIcon(pt)
+        setDirectionIcon(pt)
+        setPersonAnchor(0.5f, 0.5f)
+        setDirectionAnchor(0.5f, 0.5f)
+    }
+
+/** Aire GÉODÉSIQUE (m²) du polygone défini par [sommets] (anneau non fermé accepté), par la
+ *  formule de l'excès sphérique (sphère de rayon terrestre moyen R = 6 371 008,8 m — même
+ *  approximation que computeArea de Google Maps Utils). Précision largement suffisante à
+ *  l'échelle d'une station naturaliste (écart < 0,1 % sur quelques hectares). Sert au calcul
+ *  AUTOMATIQUE ET LOCAL de la surface d'une station OccHab (le web délègue au serveur
+ *  /geo/area_size — impossible hors-ligne). Renvoie 0.0 si moins de 3 sommets. */
+fun airePolygoneM2(sommets: List<GeoPoint>): Double {
+    if (sommets.size < 3) return 0.0
+    val r = 6371008.8
+    var somme = 0.0
+    var prec = sommets.last()
+    for (p in sommets) {
+        // Formule des trapèzes sphériques : Σ (λ2-λ1)·(2 + sin φ1 + sin φ2), aire = |Σ|·R²/2.
+        somme += (Math.toRadians(p.longitude) - Math.toRadians(prec.longitude)) *
+            (2.0 + Math.sin(Math.toRadians(prec.latitude)) + Math.sin(Math.toRadians(p.latitude)))
+        prec = p
+    }
+    return Math.abs(somme * r * r / 2.0)
+}
+
+/** Zoome la carte pour englober [points] : boîte artificielle (± [offset] en degrés) autour d'un
+ *  point unique, garde contre une boîte quasi-nulle (dégénérée), marge [scale] sinon. À appeler
+ *  DANS un `map.post{}` (zoomToBoundingBox exige une carte déjà mesurée). No-op si [points] vide.
+ *  Factorise la logique subtile point-unique/dégénérée dupliquée dans 3 écrans (offset/scale
+ *  paramétrés car ils diffèrent : ex. 0.004/1.8 OccHab, 0.002/1.3 CarteGeometrie). */
+fun MapView.zoomerSur(points: List<GeoPoint>, offset: Double, scale: Float) {
+    if (points.isEmpty()) return
+    fun boitePoint(p: GeoPoint) =
+        BoundingBox(p.latitude + offset, p.longitude + offset, p.latitude - offset, p.longitude - offset)
+    val box = if (points.size == 1) boitePoint(points[0]) else BoundingBox.fromGeoPoints(points)
+    val degenere = (box.latNorth - box.latSouth) < 0.0001 && (box.lonEast - box.lonWest) < 0.0001
+    try {
+        if (degenere) zoomToBoundingBox(boitePoint(points[0]), false)
+        else zoomToBoundingBox(box.increaseByScale(scale), false)
+    } catch (_: Exception) {}
+}

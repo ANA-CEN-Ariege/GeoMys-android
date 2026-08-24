@@ -243,7 +243,6 @@ fun ouvrirDialogDetailsReleve(
     nomsObservateursInitial: List<String>,
     defs: List<AdditionalFieldDef>,
     valeursInitiales: Map<String, String>,
-    settingsJson: String,
     formFieldsJson: String,
     typGrpInitial: String,
     commentInitial: String,

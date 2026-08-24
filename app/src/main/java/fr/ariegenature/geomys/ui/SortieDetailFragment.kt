@@ -33,9 +33,7 @@ import androidx.core.content.ContextCompat
 import fr.ariegenature.geomys.R
 import fr.ariegenature.geomys.databinding.FragmentSortieDetailBinding
 import fr.ariegenature.geomys.gpx.genererGPX
-import fr.ariegenature.geomys.model.Observation
 import fr.ariegenature.geomys.model.Sortie
-import fr.ariegenature.geomys.network.GeoNatureUpload
 import fr.ariegenature.geomys.store.GeoNatureConfig
 import fr.ariegenature.geomys.store.SortieStore
 import kotlinx.coroutines.launch

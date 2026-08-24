@@ -198,8 +198,14 @@ class FormulaireRenderer(
         val vue = vuesParCode[code] ?: return
         val field = fieldsParCode[code] ?: return
         when (field.viewType) {
-            ViewType.TEXT, ViewType.TEXTAREA, ViewType.NUMBER ->
-                (vue as EditText).setText(valeur?.toString() ?: "")
+            ViewType.TEXT, ViewType.TEXTAREA, ViewType.NUMBER -> {
+                // setText seulement si la valeur change réellement : les TextWatchers Android
+                // se déclenchent même à texte identique — un patch idempotent relancerait le
+                // cycle listener→recalcul (et réinitialiserait le curseur de l'utilisateur).
+                val et = vue as EditText
+                val nouvelle = valeur?.toString() ?: ""
+                if (et.text.toString() != nouvelle) et.setText(nouvelle)
+            }
             ViewType.CHECKBOX -> (vue as android.widget.CheckBox).isChecked = when (valeur) {
                 is Boolean -> valeur
                 is Number -> valeur.toInt() != 0
@@ -271,6 +277,40 @@ class FormulaireRenderer(
         if (!appliquantChange) appliquerChangeRules()
         appliquerValidations()
         onChangement?.invoke()
+    }
+
+    /** Version DEBOUNCÉE de [notifierChangement] pour les champs TEXTE : recalculer
+     *  visibilité + obligatoires + change-rules + validations à CHAQUE frappe = plusieurs
+     *  balayages complets des champs par caractère → lag de saisie sur les gros formulaires. On
+     *  regroupe les frappes rapprochées. Sur [scope] (lifecycle-aware) → le job en attente est
+     *  annulé à la destruction de la vue (aucun recalcul sur des vues détruites). La valeur brute
+     *  reste lue en direct au submit ([lireValeurs]), donc rien n'est perdu. */
+    private var debounceJob: kotlinx.coroutines.Job? = null
+    private fun notifierChangementDebounce() {
+        // GARDE CRITIQUE : sans elle, le debounce défait la protection anti-récursion des
+        // règles change. Un patch du moteur (appliquerValeur → setText) déclenche le
+        // TextWatcher PENDANT appliquantChange=true ; en différé de 220 ms le drapeau est
+        // retombé et appliquerChangeRules ré-applique le patch → re-setText → nouveau job =
+        // boucle de recalcul perpétuelle (audit 2026-08-23). La version synchrone est
+        // protégée par le test dans notifierChangement ; ici on doit tester AVANT de planifier.
+        if (appliquantChange) return
+        debounceJob?.cancel()
+        debounceJob = scope.launch {
+            kotlinx.coroutines.delay(220)
+            notifierChangement()
+        }
+    }
+
+    /** Applique IMMÉDIATEMENT tout recalcul en attente du debounce. À appeler avant de lire
+     *  l'état du formulaire pour une décision (submit, sortie d'écran) : sans ce flush, un
+     *  clic « Enregistrer » dans les 220 ms suivant la dernière frappe validerait un état
+     *  périmé (champ requis tout juste vidé encore compté rempli, règle change non appliquée). */
+    fun flushChangementsEnAttente() {
+        if (debounceJob?.isActive == true) {
+            debounceJob?.cancel()
+            debounceJob = null
+            notifierChangement()
+        }
     }
 
     /** Retourne les codes des champs marqués `obligatoire=true` dont la valeur est vide
@@ -356,7 +396,7 @@ class FormulaireRenderer(
                     override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
                     override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
                     override fun afterTextChanged(s: android.text.Editable?) {
-                        notifierChangement()
+                        notifierChangementDebounce()
                     }
                 })
                 // DATE / TIME / DATETIME / SELECT_MULTIPLE : TextView cliquables dont la valeur
@@ -772,7 +812,7 @@ class FormulaireRenderer(
         val idListeRestreinte = field.idListeTaxonomieRestreinte
         val hintInitial = ac.hint
         scope.launch {
-            val (noms, listeVide, diagDetails) = withContext(Dispatchers.Default) {
+            val (nomsEtNorm, listeVide, diagDetails) = withContext(Dispatchers.Default) {
                 // Index memoizé côté TaxRefCache : pas de re-matérialisation des 15-50k
                 // entrées à chaque rendu d'un champ TAXON (cf. audit B5).
                 val restreint = fr.ariegenature.geomys.store.TaxRefCache.nomsSuggestion(idListeRestreinte)
@@ -791,15 +831,21 @@ class FormulaireRenderer(
                     idListeRestreinte != null -> "liste=$idListeRestreinte, ${effectifs.size} suggestions"
                     else -> "liste=null (toutes), ${effectifs.size} suggestions"
                 }
-                Triple(effectifs, listeVide, diag)
+                // Normalisation (accents/casse) pré-calculée ICI, hors thread principal :
+                // normaliser 15-50k noms sur le thread UI figeait le rendu du champ TAXON.
+                val normalises = effectifs.map {
+                    fr.ariegenature.geomys.store.TaxRefCache.normaliser(it) to it
+                }
+                Triple(effectifs to normalises, listeVide, diag)
             }
+            val (noms, nomsNormalises) = nomsEtNorm
             android.util.Log.i("FormulaireRenderer",
                 "Champ TAXON '${field.code}' → $diagDetails")
             // Adapter posé inconditionnellement : le scope (lifecycle du Fragment) annule déjà
             // la coroutine si la vue est détruite. L'ancien garde `isAttachedToWindow` sautait
             // silencieusement la pose quand le rendu aboutissait AVANT l'attachement de la vue
             // (cache rapide) → champ définitivement sans suggestions, de façon intermittente.
-            val adapter = fr.ariegenature.geomys.ui.saisie.createSpeciesAutocompleteAdapter(ctx, noms)
+            val adapter = fr.ariegenature.geomys.ui.saisie.createSpeciesAutocompleteAdapter(ctx, noms, nomsNormalises)
             ac.setAdapter(adapter)
             ac.hint = if (listeVide)
                 "Liste du protocole non synchronisée — toutes les espèces proposées" else hintInitial

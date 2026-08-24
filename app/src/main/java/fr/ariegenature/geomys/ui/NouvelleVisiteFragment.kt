@@ -293,6 +293,10 @@ class NouvelleVisiteFragment : Fragment() {
             viewLifecycleOwner,
             object : androidx.activity.OnBackPressedCallback(true) {
                 override fun handleOnBackPressed() {
+                    // Applique un recalcul debouncé en attente AVANT de lire btnSubmit.isEnabled
+                    // (l. dialog) : sinon un retour dans les 220 ms après la dernière frappe
+                    // proposerait « Enregistrer » sur un état de validation périmé.
+                    if (::renderer.isInitialized) renderer.flushChangementsEnAttente()
                     val modifie = valeursApresRendu != null && ::renderer.isInitialized &&
                         renderer.lireValeurs() != valeursApresRendu
                     if (!modifie || enCoursEnvoi) {
@@ -366,6 +370,10 @@ class NouvelleVisiteFragment : Fragment() {
      *  - modifié et valide → on ENREGISTRE la saisie puis on sort ;
      *  - modifié mais incomplet → confirmation explicite avant d'abandonner. */
     private fun terminerChaine() {
+        // Même flush que le retour système : la décision « valide → enregistrer » (branche
+        // btnSubmit.isEnabled) doit se prendre sur l'état recalculé, pas celui d'avant la
+        // dernière frappe si le debounce n'a pas encore tiré.
+        renderer.flushChangementsEnAttente()
         val modifie = valeursApresRendu != null && renderer.lireValeurs() != valeursApresRendu
         when {
             !modifie -> findNavController().navigateUp()
@@ -728,6 +736,12 @@ class NouvelleVisiteFragment : Fragment() {
         // GeoNature. Le flag existait mais n'était jamais armé ; il est réarmé sur les
         // chemins où le formulaire reste affiché (reset de chaîne, échec d'écriture).
         if (enCoursEnvoi) return
+        // Flush du debounce avant lecture : applique les règles change en attente et recale
+        // la validation. Si le recalcul invalide le formulaire (champ requis vidé dans la
+        // fenêtre des 220 ms), majEtatBoutonSubmit vient de désactiver le bouton — on s'arrête
+        // là au lieu d'enregistrer une saisie invalide (rejet différé en ERROR dans l'outbox).
+        renderer.flushChangementsEnAttente()
+        if (!binding.btnSubmit.isEnabled) return
         enCoursEnvoi = true
         binding.btnSubmit.isEnabled = false
         val moduleCode = arguments?.getString("moduleCode")

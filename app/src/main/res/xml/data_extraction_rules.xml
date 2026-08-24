@@ -1,13 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Règles d'extraction (Android API 31+). On EXCLUT les identifiants chiffrés (gn_secure) de la
-     sauvegarde cloud ET du transfert d'appareil : la clé maître reste dans l'Android Keystore,
-     donc le blob chiffré serait inutilisable ailleurs (et planterait EncryptedSharedPreferences).
+<!-- Règles d'extraction (Android API 31+). On EXCLUT les identifiants chiffrés (gn_secure —
+     ancien format — et gn_secure_v2, MdpChiffre) de la sauvegarde cloud ET du transfert
+     d'appareil : la clé de chiffrement reste dans l'Android Keystore, donc le blob chiffré serait
+     inutilisable ailleurs — et c'est un secret, il ne doit jamais quitter l'appareil.
      URL/login (gn_config) restent inclus pour la commodité ; le mot de passe est re-saisi. -->
 <data-extraction-rules>
     <cloud-backup>
         <exclude domain="sharedpref" path="gn_secure.xml" />
+        <exclude domain="sharedpref" path="gn_secure_v2.xml" />
     </cloud-backup>
     <device-transfer>
         <exclude domain="sharedpref" path="gn_secure.xml" />
+        <exclude domain="sharedpref" path="gn_secure_v2.xml" />
     </device-transfer>
 </data-extraction-rules>

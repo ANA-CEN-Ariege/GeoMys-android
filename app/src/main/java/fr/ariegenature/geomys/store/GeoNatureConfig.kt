@@ -19,10 +19,11 @@
 package fr.ariegenature.geomys.store
 
 import android.content.Context
-import android.content.SharedPreferences
 import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import java.io.File
+import java.security.KeyStore
 
 /** Le champ de formulaire serveur [key] (clé de `OCCTAX.form_fields`, ex. `group_type`) est-il
  *  visible d'après [formFieldsJson] ? **true par défaut** si la clé est absente ou la config non
@@ -34,19 +35,16 @@ fun champFormVisible(formFieldsJson: String, key: String): Boolean = try {
 } catch (_: Exception) { true }
 
 class GeoNatureConfig(context: Context) {
+    private val appContext = context.applicationContext
     private val prefs = context.getSharedPreferences("gn_config", Context.MODE_PRIVATE)
 
-    // Prefs chiffrées pour le mot de passe (clé maître dans l'Android Keystore). null si le
-    // Keystore est indisponible → on NE persiste PAS le mot de passe en clair (cf. [motDePasse]).
-    // Mises en cache au niveau process : la création (MasterKey + EncryptedSharedPreferences,
-    // opération Keystore de plusieurs dizaines de ms) ne se fait qu'UNE fois, alors que
-    // GeoNatureConfig est instancié très fréquemment (souvent sur le thread UI).
-    private val securePrefs: SharedPreferences? = securePrefs(context.applicationContext)
-
     init {
+        // Migration UNE FOIS de l'ancien stockage EncryptedSharedPreferences (gn_secure,
+        // bibliothèque dépréciée) vers le chiffrement maison [MdpChiffre] (gn_secure_v2).
+        migrerAncienMotDePasse(appContext)
         // Hygiène : si le chiffrement est (re)disponible, on purge un éventuel mot de passe en
         // clair laissé dans gn_config par une ancienne version en fallback.
-        if (securePrefs != null && prefs.contains("gn_mdp")) {
+        if (prefs.contains("gn_mdp") && MdpChiffre.disponible()) {
             prefs.edit().remove("gn_mdp").apply()
         }
     }
@@ -59,15 +57,19 @@ class GeoNatureConfig(context: Context) {
         get() = prefs.getString("gn_login", "") ?: ""
         set(v) = prefs.edit().putString("gn_login", v).apply()
 
-    /** Mot de passe. Chiffré sur disque si le Keystore est dispo ; sinon gardé EN MÉMOIRE
-     *  seulement (jamais en clair sur disque) — perdu au redémarrage du process, l'utilisateur
-     *  le re-saisit. [motDePasseMemoire] est process-wide car [GeoNatureConfig] est ré-instancié. */
+    /** Mot de passe. Chiffré sur disque via [MdpChiffre] (clé AES dans l'Android Keystore) si
+     *  possible ; sinon gardé EN MÉMOIRE seulement (jamais en clair sur disque) — perdu au
+     *  redémarrage du process, l'utilisateur le re-saisit. [motDePasseMemoire] est process-wide
+     *  car [GeoNatureConfig] est ré-instancié. */
     var motDePasse: String
-        get() = securePrefs?.getString("gn_mdp", "")?.takeIf { it.isNotEmpty() }
+        get() = MdpChiffre.lire(appContext)?.takeIf { it.isNotEmpty() }
             ?: motDePasseMemoire ?: ""
         set(v) {
-            if (securePrefs != null) securePrefs.edit().putString("gn_mdp", v).apply()
-            else motDePasseMemoire = v.takeIf { it.isNotEmpty() }
+            when {
+                v.isEmpty() -> { MdpChiffre.effacer(appContext); motDePasseMemoire = null }
+                MdpChiffre.ecrire(appContext, v) -> motDePasseMemoire = null
+                else -> motDePasseMemoire = v // Keystore KO → mémoire seule, jamais de clair.
+            }
         }
 
     var idDataset: String
@@ -381,30 +383,56 @@ class GeoNatureConfig(context: Context) {
         // est ré-instancié à chaque usage ; perdu au redémarrage du process (re-saisie).
         @Volatile private var motDePasseMemoire: String? = null
 
-        @Volatile private var securePrefsCache: SharedPreferences? = null
-        @Volatile private var secureInitTente = false
+        // Migration gn_secure → gn_secure_v2 tentée au plus UNE fois par process : l'ouverture de
+        // l'ancien format (MasterKey + EncryptedSharedPreferences, opérations Keystore coûteuses)
+        // ne doit pas se rejouer alors que GeoNatureConfig est instancié très fréquemment.
+        @Volatile private var migrationTentee = false
 
-        /** EncryptedSharedPreferences partagé (créé une seule fois au niveau process). Renvoie null
-         *  si le Keystore est indisponible — sans retenter à chaque appel. Évite de refaire la
-         *  création coûteuse (MasterKey + Keystore AES) à chaque `GeoNatureConfig(context)`. */
-        private fun securePrefs(appContext: Context): SharedPreferences? {
-            securePrefsCache?.let { return it }
+        /** Migration UNE FOIS de l'ancien mot de passe chiffré (fichier `gn_secure`,
+         *  EncryptedSharedPreferences — bibliothèque DÉPRÉCIÉE) vers [MdpChiffre] (`gn_secure_v2`).
+         *  Best-effort et silencieuse :
+         *  - rien à faire si l'ancien fichier n'existe pas sur disque (installation récente ou
+         *    migration déjà effectuée) — le cas ultra-majoritaire, testé par un simple stat ;
+         *  - si le nouveau format est vide et l'ancien lisible, le mot de passe est recopié ;
+         *  - l'ancien fichier n'est SUPPRIMÉ (avec, best-effort, la clé maître security-crypto
+         *    devenue inutile) QUE si la recopie a abouti ou qu'il n'y avait rien à recopier —
+         *    sinon on le laisse pour retenter au prochain démarrage du process ;
+         *  - toute erreur (Keystore KO…) laisse l'état en place, l'utilisateur re-saisira. */
+        private fun migrerAncienMotDePasse(appContext: Context) {
+            if (migrationTentee) return
             synchronized(this) {
-                securePrefsCache?.let { return it }
-                if (secureInitTente) return null
-                secureInitTente = true
-                return try {
-                    val masterKey = MasterKey.Builder(appContext)
-                        .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-                        .build()
-                    EncryptedSharedPreferences.create(
-                        appContext, "gn_secure", masterKey,
-                        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-                        EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
-                    ).also { securePrefsCache = it }
+                if (migrationTentee) return
+                migrationTentee = true
+                try {
+                    if (!File(appContext.dataDir, "shared_prefs/gn_secure.xml").exists()) return
+                    if (MdpChiffre.lire(appContext) == null) {
+                        val masterKey = MasterKey.Builder(appContext)
+                            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                            .build()
+                        val ancien = EncryptedSharedPreferences.create(
+                            appContext, "gn_secure", masterKey,
+                            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
+                        )
+                        val mdp = ancien.getString("gn_mdp", "") ?: ""
+                        if (mdp.isNotEmpty() && !MdpChiffre.ecrire(appContext, mdp)) {
+                            // Nouveau format inutilisable : au moins pour cette session, le mot
+                            // de passe lu reste disponible en mémoire ; on retentera plus tard.
+                            motDePasseMemoire = mdp
+                            return
+                        }
+                    }
+                    // Recopie faite (ou rien à recopier) → suppression de l'ancien fichier…
+                    appContext.deleteSharedPreferences("gn_secure")
+                    // …et, best-effort, de la clé maître de security-crypto (plus aucun usage).
+                    try {
+                        KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+                            .deleteEntry(MasterKey.DEFAULT_MASTER_KEY_ALIAS)
+                    } catch (_: Exception) {
+                        // Clé orpheline inoffensive : on la laisse.
+                    }
                 } catch (e: Exception) {
-                    Log.w("GeoNatureConfig", "EncryptedSharedPreferences indisponible — mot de passe gardé en mémoire seulement", e)
-                    null
+                    Log.w("GeoNatureConfig", "Migration du mot de passe vers gn_secure_v2 impossible — on retentera", e)
                 }
             }
         }

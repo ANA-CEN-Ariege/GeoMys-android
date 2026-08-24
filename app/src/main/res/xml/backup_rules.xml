@@ -1,8 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Règles de sauvegarde (Android < API 31, via fullBackupContent).
-     On EXCLUT les identifiants chiffrés (gn_secure) : la clé maître est dans l'Android Keystore
-     et ne quitte jamais l'appareil, donc le blob chiffré serait inutilisable après restauration
-     (et ferait planter EncryptedSharedPreferences). URL/login (gn_config) restent sauvegardés. -->
+     On EXCLUT les identifiants chiffrés (gn_secure — ancien format — et gn_secure_v2, MdpChiffre) :
+     la clé de chiffrement est dans l'Android Keystore et ne quitte jamais l'appareil, donc le blob
+     chiffré serait inutilisable après restauration — et c'est un secret, il ne doit jamais partir
+     en sauvegarde. URL/login (gn_config) restent sauvegardés. -->
 <full-backup-content>
     <exclude domain="sharedpref" path="gn_secure.xml" />
+    <exclude domain="sharedpref" path="gn_secure_v2.xml" />
 </full-backup-content>

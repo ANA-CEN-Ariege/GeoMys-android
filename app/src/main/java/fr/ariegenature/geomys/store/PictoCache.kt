@@ -71,6 +71,11 @@ object PictoCache {
             val octets = conn.inputStream.use { it.readBytes() }
             conn.disconnect()
             if (octets.isEmpty() || !estImageValide(octets)) null else {
+                // Recrée le dossier si besoin : MonitoringCache.vider() (changement d'identité
+                // serveur, « Vider le cache ») supprimait le sous-dossier pictos/ quand il était
+                // VIDE (1ʳᵉ configuration) → toutes les écritures échouaient ensuite en silence,
+                // plus aucun picto ne s'affichait (bug terrain 2026-08-24).
+                dossier.mkdirs()
                 val cible = fichier(moduleCode)
                 val tmp = File(dossier, cible.name + ".tmp")
                 tmp.writeBytes(octets)

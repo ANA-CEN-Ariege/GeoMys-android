@@ -16,7 +16,9 @@ val signatureDisponible = keystoreProperties.getProperty("storeFile") != null
 
 android {
     namespace = "fr.ariegenature.geomys"
-    compileSdk = 36
+    // 37 exigé par les androidx 2026 (core-ktx 1.19, activity 1.13…) — compile-time seulement,
+    // targetSdk reste 36 (aucun changement de comportement à l'exécution).
+    compileSdk = 37
 
     defaultConfig {
         // applicationId volontairement absent ici : il est défini par flavor (cf. productFlavors)
@@ -24,8 +26,8 @@ android {
         minSdk = 24
         targetSdk = 36
         // versionCode croissant partagé github/play (un code déposé sur Play est consommé à jamais).
-        versionCode = 174
-        versionName = "1.3.9"
+        versionCode = 175
+        versionName = "1.3.10"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -63,11 +65,13 @@ android {
 
     buildTypes {
         release {
-            // Minification volontairement désactivée pour la première génération signée :
-            // R8 + reflexion Gson (stores JSON) demanderaient des règles proguard à valider
-            // sur le terrain — à activer dans un second temps, séparément de la bascule de
-            // signature (un changement de comportement à la fois).
-            isMinifyEnabled = false
+            // R8 ACTIVÉ (2026-08-24, release dédiée) après sécurisation en deux temps :
+            // règles keep exhaustives pour la réflexion Gson (proguard-rules.pro — model/**
+            // en entier + toutes les cibles TypeToken recensées, classes IMBRIQUÉES incluses)
+            // et contrat de round-trip verrouillé par GsonRoundTripTest. Les stacktraces
+            // restent lisibles (SourceFile,LineNumberTable conservés) ; mapping.txt produit
+            // sous app/build/outputs/mapping/ — à archiver avec chaque release.
+            isMinifyEnabled = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

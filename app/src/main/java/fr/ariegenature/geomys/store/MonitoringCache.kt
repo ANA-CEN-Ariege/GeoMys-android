@@ -103,8 +103,13 @@ object MonitoringCache {
             // Fichiers d'abord, mémoire ensuite : un getJson concurrent ne peut au pire que
             // resservir brièvement une entrée mémoire sur le point d'être purgée — jamais
             // re-mémoïser un fichier en cours de suppression (generation++ l'en empêche).
+            // FICHIERS SEULEMENT : le sous-dossier pictos/ (PictoCache) vit sous ce même
+            // répertoire et a sa PROPRE purge — il ne survivait ici que parce que delete()
+            // échoue sur un dossier non vide ; un dossier pictos VIDE (1ʳᵉ configuration)
+            // était réellement supprimé → plus aucun picto téléchargeable (audit m-N5 +
+            // bug terrain 2026-08-24).
             generation++
-            if (::dir.isInitialized) dir.listFiles()?.forEach { it.delete() }
+            if (::dir.isInitialized) dir.listFiles()?.forEach { if (it.isFile) it.delete() }
             memoire.clear()
         } catch (_: Exception) {}
     }

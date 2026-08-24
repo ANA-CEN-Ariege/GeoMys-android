@@ -157,19 +157,8 @@ class OccHabStationFragment : Fragment() {
                 contentDescription = "Supprimer l'habitat"
                 setColorFilter(couleurErreur(requireContext()))
                 setOnClickListener {
-                    // Règle métier : une station enregistrée doit garder AU MOINS UN habitat
-                    // (le champ est obligatoire à la création). Supprimer le dernier laisserait
-                    // une station sans habitat dans le store.
-                    if (occhabViewModel.station.habitats.size <= 1) {
-                        Toast.makeText(
-                            requireContext(),
-                            "Une station doit avoir au moins un habitat — ajoutez-en un autre " +
-                                "avant de supprimer celui-ci (ou supprimez la saisie depuis " +
-                                "« Mes stations »).",
-                            Toast.LENGTH_LONG,
-                        ).show()
-                        return@setOnClickListener
-                    }
+                    // Une station SANS habitat reste valide et envoyable (décision terrain
+                    // 2026-08-24) : la suppression du dernier habitat est autorisée.
                     occhabViewModel.supprimerHabitat(h.id)
                     rafraichirHabitats()
                     sauvegarderAuFilDeLEau()

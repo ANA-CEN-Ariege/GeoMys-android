@@ -550,18 +550,14 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
         // Altitudes MNT (parité web : patchGeoValue → getGeoInfo) : best-effort s'il y a du
         // réseau, silencieux sinon (champs saisissables à la main dans « Détails »).
         lancerRemplissageAltitudes()
-        // RÉÉDITION d'une station déjà enregistrée : persistance de la géométrie modifiée dès
-        // « Valider » (bug terrain 2026-08-24 : déplacer un sommet puis revenir à « Mes
-        // stations » sans repasser par « Terminer » perdait la modification — valider
-        // n'écrivait que dans le ViewModel). Une NOUVELLE station n'est PAS écrite ici :
-        // règle métier, une station n'existe qu'avec AU MOINS UN habitat — elle sera créée
-        // à la validation de son premier habitat (OccHabHabitatFragment.valider).
+        // Persistance AU FIL DE L'EAU dès « Valider » — nouvelle station COMME réédition
+        // (décision terrain 2026-08-24, revenant sur la règle « pas de station sans
+        // habitat ») : la géométrie validée est enregistrée telle quelle, ENVOYABLE au
+        // serveur même sans habitat (l'upload accepte une liste d'habitats vide depuis
+        // v1.3.7). Corrige aussi la perte du drag d'un sommet quand on revenait à « Mes
+        // stations » sans repasser par « Terminer ».
         val store = fr.ariegenature.geomys.store.OccHabStore(requireContext())
-        val dejaPersistee = store.stationsDeSaisie(occhabViewModel.saisieId)
-            .any { it.id == occhabViewModel.station.id }
-        if (dejaPersistee &&
-            !store.upsertStation(occhabViewModel.saisieId, occhabViewModel.stationAEnregistrer())
-        ) {
+        if (!store.upsertStation(occhabViewModel.saisieId, occhabViewModel.stationAEnregistrer())) {
             alerterEchecEcritureStore(requireContext(),
                 "Libérez de l'espace (photos, cache de cartes) puis revalidez la géométrie.")
             return

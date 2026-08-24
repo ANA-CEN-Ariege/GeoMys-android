@@ -215,9 +215,16 @@ class OccHabHabitatFragment : Fragment() {
             valExistante ?: if (estNouveau) gnConfig.occhabDefautNomenclature(mnem) else null
         fun visible(champC: String) = gnConfig.occhabChampVisible(champC)
 
-        // « * » = obligatoire (même convention que les formulaires monitoring/Occtax) : une
-        // station n'existe qu'avec au moins un habitat — le bouton Valider reste grisé sans lui.
+        // « * » = requis pour valider UN HABITAT (le bouton reste grisé sans lui). La STATION,
+        // elle, est déjà enregistrée à la validation de la carte — un retour arrière la garde
+        // SANS habitat (valide et envoyable telle quelle, décision terrain 2026-08-24).
         racine.addView(label("Habitat (HABREF) *")); racine.addView(champ)
+        racine.addView(TextView(ctx).apply {
+            text = "La station est déjà enregistrée — l'habitat est facultatif : " +
+                "revenez en arrière pour la laisser sans habitat."
+            textSize = 12f
+            setPadding(0, (4 * density).toInt(), 0, 0)
+        })
 
         lireInteret = if (visible("community_interest")) {
             val (sp, lire) = construireSpinner("HAB_INTERET_COM", idInit(ex?.idNomInteretCommunautaire, "HAB_INTERET_COM"))

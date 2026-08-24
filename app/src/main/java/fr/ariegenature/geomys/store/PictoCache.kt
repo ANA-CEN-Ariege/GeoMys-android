@@ -40,6 +40,13 @@ object PictoCache {
         dossier = File(context.filesDir, "monitoring/pictos").apply { mkdirs() }
     }
 
+    /** Init pour les tests JVM (pas de Context) : pointe le cache sur un dossier arbitraire.
+     *  Même contrat que [init] (le dossier est créé). */
+    @androidx.annotation.VisibleForTesting
+    fun initPourTests(dossierTest: File) {
+        dossier = dossierTest.apply { mkdirs() }
+    }
+
     private fun fichier(moduleCode: String): File =
         File(dossier, moduleCode.replace('/', '_') + ".jpg")
 

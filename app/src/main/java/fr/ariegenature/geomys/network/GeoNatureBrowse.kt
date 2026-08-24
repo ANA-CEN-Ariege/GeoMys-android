@@ -106,8 +106,15 @@ object GeoNatureBrowse {
 
             // Lecture en STREAMING (JsonReader) : on ne matérialise pas toute la réponse en une
             // String géante + JSONArray (crucial sur 2500+ jeux × fields=modules → réponse lourde).
-            val result = java.io.BufferedReader(java.io.InputStreamReader(conn.inputStream, Charsets.UTF_8)).use { br ->
-                JsonReader(br).use { lireDatasetsStream(it) }
+            val result = try {
+                java.io.BufferedReader(java.io.InputStreamReader(conn.inputStream, Charsets.UTF_8)).use { br ->
+                    JsonReader(br).use { lireDatasetsStream(it) }
+                }
+            } catch (_: com.google.gson.stream.MalformedJsonException) {
+                // Corps 200 non-JSON (portail captif, proxy, page d'erreur HTML…) : Gson lève une
+                // MalformedJsonException brute → traduite en GNErreur lisible par l'appelant,
+                // comme le fait déjà chargerListesTaxons.
+                throw GNErreur.EnvoiEchoue(0, "Datasets : format JSON inattendu")
             }
             // Tri alphabétique insensible à la casse + diacritiques pour un classement
             // intuitif quel que soit l'ordre serveur.

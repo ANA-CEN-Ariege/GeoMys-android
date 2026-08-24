@@ -117,7 +117,10 @@ object TaxRefService {
     private suspend fun rechercherViaGeoNature(nom: String, taxon: Taxon?, config: GeoNatureConfig): TaxRefStatut? =
         withContext(Dispatchers.IO) {
             try {
-                val encoded = nom.trim().replace(" ", "%20")
+                // Encodage COMPLET du paramètre de query (pas seulement les espaces) : un nom
+                // avec &, ', accents… cassait l'URL. URLEncoder encode l'espace en « + »,
+                // décodé en espace par Flask/werkzeug dans une query string — accepté.
+                val encoded = java.net.URLEncoder.encode(nom.trim(), "UTF-8")
                 
                 val regneParam = when(taxon) {
                     Taxon.FONGE -> "&regne=Fungi"

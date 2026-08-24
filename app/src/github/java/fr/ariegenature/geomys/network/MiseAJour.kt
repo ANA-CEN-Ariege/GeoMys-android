@@ -78,10 +78,18 @@ object MiseAJour {
         }
     }
 
-    /** Télécharge l'APK dans le cache et renvoie le fichier. [onProgress] reçoit un pourcentage
-     *  0–100, ou -1 quand la taille totale est inconnue (progression indéterminée). */
-    suspend fun telecharger(context: Context, url: String, onProgress: (Int) -> Unit): File =
+    /** Télécharge l'APK dans le cache et renvoie le fichier, ou `null` si l'URL est refusée.
+     *  [onProgress] reçoit un pourcentage 0–100, ou -1 quand la taille totale est inconnue
+     *  (progression indéterminée). */
+    suspend fun telecharger(context: Context, url: String, onProgress: (Int) -> Unit): File? =
         withContext(Dispatchers.IO) {
+            // Garde-fou : on ne télécharge jamais un APK en clair. L'URL vient de l'API GitHub
+            // (toujours https), mais on refuse toute valeur inattendue plutôt que d'installer
+            // un binaire récupéré sur un canal non chiffré.
+            if (!url.startsWith("https://")) {
+                android.util.Log.w("MiseAJour", "URL d'APK refusée (non https)")
+                return@withContext null
+            }
             val conn = (URL(url).openConnection() as HttpURLConnection).apply {
                 connectTimeout = 20000
                 readTimeout = 30000

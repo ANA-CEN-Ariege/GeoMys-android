@@ -197,50 +197,70 @@ object GeoNatureAuth {
      *  modifie ses identifiants ou l'URL serveur). */
     fun invaliderCache() { cache = null }
 
+    /** Session déjà en cache (fraîche) pour ([base], [login]), SANS jamais déclencher de login
+     *  réseau. Null si aucun login récent — l'appelant se débrouille alors sans auth (usage :
+     *  auth opportuniste des téléchargements de pictos, cf. PictoCache). Même forme de retour
+     *  que [loginAvecCookies] : (token, idRole, cookies). */
+    internal fun sessionEnCache(base: String, login: String): Triple<String?, Int?, String>? {
+        val c = cache ?: return null
+        return if (c.base == base && c.login == login && c.expireAt > System.currentTimeMillis())
+            Triple(c.token, c.idRole, c.cookies)
+        else null
+    }
+
+    /** Verrou de sérialisation des logins réseau : au miss de cache, N appels parallèles (rafale
+     *  chargerObjet pour une carte) déclenchaient N POST /auth/login simultanés. Verrou GLOBAL
+     *  simple ASSUMÉ bien que la fonction fasse du réseau : l'appel est court (un POST unique,
+     *  timeout 15 s), un seul serveur est configuré à la fois (un verrou par (base, login)
+     *  serait sur-machiné), et le double-check du cache sous verrou garantit que seul le 1ᵉʳ
+     *  appel touche le réseau — les suivants ressortent sur le cache tout juste rempli. */
+    private val verrouLogin = Any()
+
     // Retourne (token, idRole, cookies) — cookies à renvoyer avec les appels suivants
     internal fun loginAvecCookies(base: String, login: String, password: String): Triple<String?, Int?, String>? {
-        val now = System.currentTimeMillis()
-        cache?.let { c ->
-            if (c.base == base && c.login == login && c.expireAt > now) {
-                return Triple(c.token, c.idRole, c.cookies)
-            }
+        // Fast-path SANS verrou : cache frais → zéro contention (cas ultra-majoritaire).
+        sessionEnCache(base, login)?.let { return it }
+        synchronized(verrouLogin) {
+            // Double-check : un appel concurrent a pu remplir le cache pendant l'attente du verrou.
+            sessionEnCache(base, login)?.let { return it }
+            val now = System.currentTimeMillis()
+            return try {
+                val url = URL("$base/api/auth/login")
+                val conn = url.openConnection() as java.net.HttpURLConnection
+                conn.instanceFollowRedirects = false
+                conn.requestMethod = "POST"
+                conn.doOutput = true
+                conn.connectTimeout = 15000
+                conn.readTimeout = 15000
+                conn.setRequestProperty("Content-Type", "application/json")
+                val body = JSONObject().put("login", login).put("password", password).toString()
+                OutputStreamWriter(conn.outputStream).use { it.write(body) }
+                if (conn.responseCode != 200) return null
+                val ct = conn.getHeaderField("Content-Type") ?: ""
+                if (!ct.contains("json")) return null
+
+                val cookies = conn.headerFields["Set-Cookie"]
+                    ?.joinToString("; ") { it.substringBefore(";").trim() }
+                    ?: ""
+                val jsonText = conn.inputStream.bufferedReader().readText()
+                val json = JSONObject(jsonText)
+                val token = extractToken(json)
+
+                // Sur GeoNature, id_role est souvent dans l'objet "user"
+                val userJson = json.optJSONObject("user")
+                val idRole = userJson?.optInt("id_role", -1)?.takeIf { it > 0 }
+                    ?: json.optInt("id_role", -1).takeIf { it > 0 }
+
+                // ÉCHEC SOFT Flask-JWT : HTTP 200 avec un body `msg` SANS token ni user (mauvais
+                // identifiants sur certaines instances — le même motif que gère testerConnexion).
+                // Le traiter en succès mettait en cache 5 min un Triple non authentifié : tous les
+                // appels partaient sans Authorization → 401/403 opaques en aval (audit N3).
+                if (token == null && idRole == null) return null
+
+                cache = CacheAuth(base, login, token, idRole, cookies, now + CACHE_TTL_MS)
+                Triple(token, idRole, cookies)
+            } catch (e: Exception) { null }
         }
-        return try {
-            val url = URL("$base/api/auth/login")
-            val conn = url.openConnection() as java.net.HttpURLConnection
-            conn.instanceFollowRedirects = false
-            conn.requestMethod = "POST"
-            conn.doOutput = true
-            conn.connectTimeout = 15000
-            conn.readTimeout = 15000
-            conn.setRequestProperty("Content-Type", "application/json")
-            val body = JSONObject().put("login", login).put("password", password).toString()
-            OutputStreamWriter(conn.outputStream).use { it.write(body) }
-            if (conn.responseCode != 200) return null
-            val ct = conn.getHeaderField("Content-Type") ?: ""
-            if (!ct.contains("json")) return null
-
-            val cookies = conn.headerFields["Set-Cookie"]
-                ?.joinToString("; ") { it.substringBefore(";").trim() }
-                ?: ""
-            val jsonText = conn.inputStream.bufferedReader().readText()
-            val json = JSONObject(jsonText)
-            val token = extractToken(json)
-
-            // Sur GeoNature, id_role est souvent dans l'objet "user"
-            val userJson = json.optJSONObject("user")
-            val idRole = userJson?.optInt("id_role", -1)?.takeIf { it > 0 }
-                ?: json.optInt("id_role", -1).takeIf { it > 0 }
-
-            // ÉCHEC SOFT Flask-JWT : HTTP 200 avec un body `msg` SANS token ni user (mauvais
-            // identifiants sur certaines instances — le même motif que gère testerConnexion).
-            // Le traiter en succès mettait en cache 5 min un Triple non authentifié : tous les
-            // appels partaient sans Authorization → 401/403 opaques en aval (audit N3).
-            if (token == null && idRole == null) return null
-
-            cache = CacheAuth(base, login, token, idRole, cookies, now + CACHE_TTL_MS)
-            Triple(token, idRole, cookies)
-        } catch (e: Exception) { null }
     }
 
     internal fun login(base: String, login: String, password: String): Pair<String?, Int?>? =

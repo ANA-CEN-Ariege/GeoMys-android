@@ -179,6 +179,23 @@ class GeoNatureBrowseTest {
     }
 
     @Test
+    fun `datasets — 200 mais HTML (JSON malforme) leve EnvoiEchoue`() {
+        // Un portail captif/proxy qui répond 200 en HTML levait une MalformedJsonException Gson
+        // brute : l'appelant doit voir une GNErreur lisible (« format JSON inattendu »),
+        // comme pour chargerListesTaxons.
+        router("/api/meta/datasets" to {
+            MockResponse().setResponseCode(200).setHeader("Content-Type", "text/html")
+                .setBody("<html>portail captif</html>")
+        })
+        try {
+            runBlocking { GeoNatureBrowse.chargerDatasets(config) }
+            fail("EnvoiEchoue attendue")
+        } catch (e: GNErreur.EnvoiEchoue) {
+            assertTrue(e.msg.contains("format JSON inattendu"))
+        }
+    }
+
+    @Test
     fun `datasets — login refuse leve AuthEchouee`() {
         reponseLogin = { MockResponse().setResponseCode(401) }
         router("/api/meta/datasets" to { json("[]") })

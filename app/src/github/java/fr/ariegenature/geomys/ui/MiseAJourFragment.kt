@@ -41,6 +41,16 @@ class MiseAJourFragment : Fragment() {
      *  l'installation au retour des réglages d'autorisation (cf. [demandeAutorisation]). */
     private var apkTelecharge: java.io.File? = null
 
+    /** Nettoyage de l'APK téléchargé : une fois l'installation système lancée puis rendue
+     *  la main (réussie sans redémarrage, refusée ou annulée), le fichier ne sert plus —
+     *  on le supprime du cache en best-effort. Armement en DEUX temps (lancement puis
+     *  onPause) pour ne pas supprimer le fichier pendant que l'installateur le lit encore
+     *  (cas du retour des réglages : le callback relance l'installation juste avant
+     *  onResume). Install réussie = process tué : le fichier restant sera écrasé au
+     *  prochain téléchargement. */
+    private var installLancee = false
+    private var supprimerApkAuRetour = false
+
     /** Retour de l'écran « Installer des applis inconnues » : le détour par les réglages
      *  ANNULE l'intent d'installation d'origine — sans cette reprise, l'écran restait figé
      *  sur « Lancement de l'installation… » au premier usage (autorisation pas encore
@@ -54,6 +64,7 @@ class MiseAJourFragment : Fragment() {
             peutInstaller() -> {
                 binding.tvResultat.text = "Lancement de l'installation…"
                 MiseAJour.installer(requireContext(), apk)
+                installLancee = true
             }
             else -> binding.tvResultat.text =
                 "Autorisation non accordée — accordez « Installer des applis inconnues » " +
@@ -128,6 +139,10 @@ class MiseAJourFragment : Fragment() {
                 if (_binding == null) return@launch
                 binding.progress.visibility = View.GONE
                 binding.btnInstaller.isEnabled = true
+                if (apk == null) {
+                    binding.tvResultat.text = "Échec du téléchargement : adresse d'APK invalide."
+                    return@launch
+                }
                 apkTelecharge = apk
                 if (!peutInstaller()) {
                     // Premier usage : demande l'autorisation d'abord, l'installation
@@ -146,12 +161,30 @@ class MiseAJourFragment : Fragment() {
                 binding.tvResultat.text = "Lancement de l'installation…\n" +
                     "(si rien ne se passe, réappuyez sur « Installer »)"
                 MiseAJour.installer(requireContext(), apk)
+                installLancee = true
             } catch (e: Exception) {
                 if (_binding == null) return@launch
                 binding.progress.visibility = View.GONE
                 binding.btnInstaller.isEnabled = true
                 binding.tvResultat.text = "Échec du téléchargement : ${e.message}"
             }
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        // L'installateur système est passé au premier plan : au retour, l'APK sera supprimable.
+        if (installLancee) supprimerApkAuRetour = true
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (supprimerApkAuRetour) {
+            installLancee = false
+            supprimerApkAuRetour = false
+            // Best-effort : un échec de suppression est sans gravité (cache purgé par Android).
+            runCatching { apkTelecharge?.delete() }
+            apkTelecharge = null
         }
     }
 

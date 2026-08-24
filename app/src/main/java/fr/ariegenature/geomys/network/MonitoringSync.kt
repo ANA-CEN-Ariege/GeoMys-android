@@ -212,8 +212,14 @@ object MonitoringSync {
         // Suivis (sinon re-téléchargés à chaque ouverture, et absents hors réseau). Best-effort :
         // n'affecte pas le résultat de la synchro ; re-écrit (rafraîchit) les images existantes.
         runCatching {
+            // Auth opportuniste : la session mise en cache par les appels du sync (login déjà
+            // fait pendant la BFS) est réutilisée si encore fraîche — AUCUN login supplémentaire
+            // n'est déclenché ici. Sans session, prefetch sans auth (OK serveur ANA).
+            val session = GeoNatureAuth.sessionEnCache(
+                config.urlServeur.trim().trimEnd('/'), config.login)
             fr.ariegenature.geomys.store.PictoCache.prefetch(
-                config.urlServeur, modules.map { it.moduleCode to it.modulePicto })
+                config.urlServeur, modules.map { it.moduleCode to it.modulePicto },
+                session?.first, session?.third)
         }
 
         val msg = buildString {

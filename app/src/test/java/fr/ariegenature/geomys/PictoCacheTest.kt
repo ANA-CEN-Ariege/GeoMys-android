@@ -137,10 +137,40 @@ class PictoCacheTest {
     // ------------------------------------------------------------------ telecharger
 
     @Test
-    fun `telecharger — 404 renvoie null et n'ecrit rien`() {
+    fun `telecharger — 404 renvoie null et ecrit le marqueur negatif (pas d'image)`() {
         server.enqueue(MockResponse().setResponseCode(404))
         assertNull(PictoCache.telecharger("STOM", server.url("/api/media/monitorings/STOM/img.jpg").toString()))
-        assertEquals("aucun fichier ne doit être écrit", 0, dossier.listFiles().orEmpty().size)
+        // Cache NÉGATIF : le 404 est mémorisé par un marqueur vide `STOM.absent` — et rien d'autre.
+        val marqueur = File(dossier, "STOM.absent")
+        assertTrue("le marqueur négatif doit exister", marqueur.isFile)
+        assertEquals("le marqueur doit être vide", 0L, marqueur.length())
+        assertEquals("aucun autre fichier ne doit être écrit", listOf(marqueur), dossier.listFiles().orEmpty().toList())
+    }
+
+    @Test
+    fun `telecharger — echec non-404 (5xx) renvoie null SANS marqueur negatif`() {
+        // Un échec transitoire (serveur en carafe) ne doit pas être mémorisé 24 h.
+        server.enqueue(MockResponse().setResponseCode(500))
+        assertNull(PictoCache.telecharger("STOM", server.url("/img.jpg").toString()))
+        assertEquals(0, dossier.listFiles().orEmpty().size)
+    }
+
+    @Test
+    fun `telecharger — sans token ni cookies, pas d'en-tetes d'auth`() {
+        server.enqueue(MockResponse().setResponseCode(404))
+        PictoCache.telecharger("STOM", server.url("/img.jpg").toString())
+        val req = server.takeRequest()
+        assertNull(req.getHeader("Authorization"))
+        assertNull(req.getHeader("Cookie"))
+    }
+
+    @Test
+    fun `telecharger — token et cookies fournis poses en Authorization Bearer et Cookie`() {
+        server.enqueue(MockResponse().setResponseCode(404))
+        PictoCache.telecharger("STOM", server.url("/img.jpg").toString(), token = "tok123", cookies = "session=abc")
+        val req = server.takeRequest()
+        assertEquals("Bearer tok123", req.getHeader("Authorization"))
+        assertEquals("session=abc", req.getHeader("Cookie"))
     }
 
     @Test
@@ -172,12 +202,50 @@ class PictoCacheTest {
         assertEquals(0, dossier.listFiles().orEmpty().size)
     }
 
+    // ------------------------------------------------------------------ fichierOuTelecharger (cache négatif)
+    //
+    // NB : la suppression du marqueur au téléchargement RÉUSSI n'est pas testable ici (même
+    // limite assumée que le cas nominal : estImageValide rejette tout en JVM pur).
+
+    @Test
+    fun `fichierOuTelecharger — marqueur negatif frais court-circuite le reseau`() {
+        File(dossier, "STOM.absent").writeBytes(ByteArray(0)) // lastModified = maintenant
+        assertNull(PictoCache.fichierOuTelecharger(server.url("/gn").toString(), "STOM", null))
+        assertEquals("aucune requête réseau ne doit partir", 0, server.requestCount)
+    }
+
+    @Test
+    fun `fichierOuTelecharger — marqueur negatif perime retente le reseau et rafraichit le marqueur`() {
+        val marqueur = File(dossier, "STOM.absent")
+        marqueur.writeBytes(ByteArray(0))
+        val perime = System.currentTimeMillis() - 25L * 60 * 60 * 1000 // 25 h > TTL 24 h
+        assertTrue(marqueur.setLastModified(perime))
+        server.enqueue(MockResponse().setResponseCode(404))
+        assertNull(PictoCache.fichierOuTelecharger(server.url("/gn").toString(), "STOM", null))
+        assertEquals("le réseau doit être retenté", 1, server.requestCount)
+        assertTrue("le 404 doit rafraîchir le marqueur", marqueur.lastModified() > perime)
+    }
+
+    @Test
+    fun `fichierOuTelecharger — image en cache prime sur le marqueur negatif`() {
+        // État incohérent possible (image posée par prefetch après un vieux 404) : le fichier
+        // local gagne, sans requête réseau.
+        File(dossier, "STOM.jpg").writeBytes(byteArrayOf(1, 2, 3))
+        File(dossier, "STOM.absent").writeBytes(ByteArray(0))
+        assertEquals(
+            File(dossier, "STOM.jpg"),
+            PictoCache.fichierOuTelecharger(server.url("/gn").toString(), "STOM", null),
+        )
+        assertEquals(0, server.requestCount)
+    }
+
     // ------------------------------------------------------------------ vider
 
     @Test
-    fun `vider — supprime tous les pictos en cache`() {
+    fun `vider — supprime tous les pictos en cache et les marqueurs negatifs`() {
         File(dossier, "STOM.jpg").writeBytes(byteArrayOf(1, 2))
         File(dossier, "STERF.jpg").writeBytes(byteArrayOf(3))
+        File(dossier, "STERF.absent").writeBytes(ByteArray(0))
         PictoCache.vider()
         assertEquals(0, dossier.listFiles().orEmpty().size)
         assertNull(PictoCache.fichierLocal("STOM"))

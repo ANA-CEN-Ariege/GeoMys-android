@@ -19,7 +19,6 @@
 package fr.ariegenature.geomys.ui
 
 import android.app.AlertDialog
-import android.app.ProgressDialog
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.result.contract.ActivityResultContracts
@@ -278,14 +277,9 @@ class CacheManagerFragment : Fragment() {
     }
 
     private fun importerMbtiles(uri: Uri) {
-        @Suppress("DEPRECATION")
-        val progress = ProgressDialog(requireContext()).apply {
-            setTitle("Import de la carte")
-            setMessage("Copie du fichier…")
-            isIndeterminate = true
-            setCancelable(false)
-            show()
-        }
+        val progress = DialogueProgression(
+            requireContext(), "Import de la carte", "Copie du fichier…", indetermine = true,
+        ).apply { show() }
         val appCtx = requireContext().applicationContext
         viewLifecycleOwner.lifecycleScope.launch {
             val fichier = withContext(Dispatchers.IO) { MbtilesStore.importer(appCtx, uri) }
@@ -330,15 +324,9 @@ class CacheManagerFragment : Fragment() {
         val zoomMax = ZOOM_MAX_DEFAUT
         val cacheManager = CacheManager(binding.map)
 
-        @Suppress("DEPRECATION")
-        val progress = ProgressDialog(requireContext()).apply {
-            setTitle("Téléchargement des tuiles")
-            setMessage("Préparation…")
-            setProgressStyle(ProgressDialog.STYLE_HORIZONTAL)
-            isIndeterminate = false
-            setCancelable(false)
-            show()
-        }
+        val progress = DialogueProgression(
+            requireContext(), "Téléchargement des tuiles", "Préparation…", indetermine = false,
+        ).apply { show() }
 
         cacheManager.downloadAreaAsync(
             requireContext(), bbox, zoomMin, zoomMax,
@@ -432,14 +420,9 @@ class CacheManagerFragment : Fragment() {
      *  fetches). Les sites sans géométrie sont ignorés. */
     private fun cadrerSurProtocole(moduleCode: String) {
         val config = GeoNatureConfig(requireContext())
-        @Suppress("DEPRECATION")
-        val progress = ProgressDialog(requireContext()).apply {
-            setTitle("Recherche des sites…")
-            setMessage("Module : $moduleCode")
-            isIndeterminate = true
-            setCancelable(false)
-            show()
-        }
+        val progress = DialogueProgression(
+            requireContext(), "Recherche des sites…", "Module : $moduleCode", indetermine = true,
+        ).apply { show() }
         viewLifecycleOwner.lifecycleScope.launch {
             val resultat = withContext(Dispatchers.IO) { chargerSitesProtocole(config, moduleCode) }
             if (!isAdded) return@launch
@@ -711,6 +694,56 @@ class CacheManagerFragment : Fragment() {
     override fun onDestroyView() {
         super.onDestroyView()
         _binding = null
+    }
+
+    /** Remplaçant maison de ProgressDialog (déprécié) : AlertDialog NON annulable contenant un
+     *  [LinearProgressIndicator][com.google.android.material.progressindicator.LinearProgressIndicator]
+     *  Material + un TextView de message, construit en Kotlin (pas de layout XML dédié). Même
+     *  surface d'usage que l'ancien ProgressDialog : message, max/progress, show/dismiss. */
+    private class DialogueProgression(
+        context: android.content.Context,
+        titre: String,
+        message: String,
+        indetermine: Boolean,
+    ) {
+        private fun dp(v: Int, c: android.content.Context) =
+            (v * c.resources.displayMetrics.density).toInt()
+
+        private val tvMessage = android.widget.TextView(context).apply {
+            text = message
+            textSize = 15f
+        }
+        private val barre =
+            com.google.android.material.progressindicator.LinearProgressIndicator(context).apply {
+                isIndeterminate = indetermine
+            }
+        private val dialog: AlertDialog = AlertDialog.Builder(context)
+            .setTitle(titre)
+            .setView(android.widget.LinearLayout(context).apply {
+                orientation = android.widget.LinearLayout.VERTICAL
+                val cote = dp(20, context)
+                setPadding(cote, dp(12, context), cote, 0)
+                addView(tvMessage)
+                addView(
+                    barre,
+                    android.widget.LinearLayout.LayoutParams(
+                        android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                        android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
+                    ).apply { topMargin = dp(12, context) },
+                )
+            })
+            .setCancelable(false)
+            .create()
+
+        fun show() { dialog.show() }
+        fun dismiss() { dialog.dismiss() }
+        fun setMessage(msg: String) { tvMessage.text = msg }
+        var max: Int
+            get() = barre.max
+            set(v) { barre.max = v }
+        var progress: Int
+            get() = barre.progress
+            set(v) { barre.progress = v }
     }
 
     companion object {

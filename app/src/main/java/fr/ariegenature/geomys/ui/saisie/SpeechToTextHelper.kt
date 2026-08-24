@@ -88,8 +88,11 @@ class SpeechToTextHelper(
                         ?.filter { it.isNotBlank() }
                         ?.takeIf { it.isNotEmpty() } ?: return
                     // Trace des hypothèses réelles (calibrage des seuils de matching en terrain) :
-                    // `adb logcat -s GeoMysASR`.
-                    android.util.Log.i("GeoMysASR", "hypothèses=${candidats.joinToString(" | ")}")
+                    // `adb logcat -s GeoMysASR`. Debug uniquement : le calibrage initial est
+                    // terminé, pas de dictée utilisateur dans les logs de prod.
+                    if (fr.ariegenature.geomys.BuildConfig.DEBUG) {
+                        android.util.Log.i("GeoMysASR", "hypothèses=${candidats.joinToString(" | ")}")
+                    }
                     // Affichage immédiat du 1ᵉʳ candidat (retour instantané) ; le caller essaiera
                     // ensuite TOUTES les hypothèses contre TaxRef et réinjectera la gagnante.
                     val premier = candidats.first()

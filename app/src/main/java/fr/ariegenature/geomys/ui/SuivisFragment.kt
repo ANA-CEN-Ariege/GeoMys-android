@@ -171,7 +171,13 @@ class SuivisFragment : Fragment() {
         viewLifecycleOwner.lifecycleScope.launch {
             val bmp = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                 runCatching {
-                    val f = PictoCache.fichierOuTelecharger(base, moduleCode, modulePicto)
+                    // Auth opportuniste : la session mise en cache par chargerModules (même écran,
+                    // juste avant) est réutilisée si encore fraîche — AUCUN login supplémentaire
+                    // n'est déclenché ici. Sans session, on télécharge sans auth (OK serveur ANA).
+                    val session = fr.ariegenature.geomys.network.GeoNatureAuth
+                        .sessionEnCache(base.trim().trimEnd('/'), gnConfig.login)
+                    val f = PictoCache.fichierOuTelecharger(
+                        base, moduleCode, modulePicto, session?.first, session?.third)
                         ?: return@runCatching null
                     // Sous-échantillonnage vers une vignette (~128 dp).
                     val bornes = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }

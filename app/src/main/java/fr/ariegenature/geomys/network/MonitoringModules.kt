@@ -240,8 +240,10 @@ object MonitoringModules {
             if (filtres.size < total) {
                 android.util.Log.i(
                     "MonitoringApi",
+                    // Pas de login dans le message : les logs de prod ne doivent pas exposer
+                    // d'identifiant utilisateur.
                     "chargerModules : ${total - filtres.size} module(s) masqué(s) par CRUVED " +
-                        "(droits nuls pour ${config.login}), ${filtres.size} conservé(s)",
+                        "(droits nuls pour l'utilisateur), ${filtres.size} conservé(s)",
                 )
             }
             // Réécrit le cache disque avec uniquement les items accessibles, dans le même

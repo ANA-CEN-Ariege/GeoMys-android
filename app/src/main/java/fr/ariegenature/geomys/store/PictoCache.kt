@@ -47,8 +47,17 @@ object PictoCache {
         dossier = dossierTest.apply { mkdirs() }
     }
 
+    /** TTL du cache NÉGATIF : un 404 mémorisé n'est pas retenté au réseau pendant 24 h. */
+    private const val TTL_ABSENT_MS = 24L * 60L * 60L * 1000L
+
     private fun fichier(moduleCode: String): File =
         File(dossier, moduleCode.replace('/', '_') + ".jpg")
+
+    /** Marqueur de cache NÉGATIF `<code>.absent` (fichier vide) : mémorise « pas d'image pour
+     *  ce protocole » (404 serveur) pour éviter une requête réseau à chaque ouverture de
+     *  l'écran Suivis. Fraîcheur jugée sur lastModified (cf. [TTL_ABSENT_MS]). */
+    private fun marqueurAbsent(moduleCode: String): File =
+        File(dossier, moduleCode.replace('/', '_') + ".absent")
 
     /** Fichier local du picto s'il est en cache (présent et non vide), sinon null. */
     fun fichierLocal(moduleCode: String): File? =
@@ -67,13 +76,26 @@ object PictoCache {
     }
 
     /** Télécharge le picto depuis [url] et l'écrit sur disque (tmp + rename atomique). Renvoie le
-     *  fichier en cas de succès, null sinon (404, réseau…). BLOQUANT → appeler hors thread UI. */
-    fun telecharger(moduleCode: String, url: String): File? = try {
+     *  fichier en cas de succès, null sinon (404, réseau…). Un 404 écrit le marqueur de cache
+     *  négatif (cf. [marqueurAbsent]) ; un succès le supprime. [token]/[cookies] optionnels :
+     *  posés en Authorization Bearer / Cookie si fournis (serveurs qui protègent les médias) —
+     *  jamais de login déclenché ici. BLOQUANT → appeler hors thread UI. */
+    fun telecharger(moduleCode: String, url: String, token: String? = null, cookies: String? = null): File? = try {
         val conn = URL(url).openConnection() as HttpURLConnection
         conn.connectTimeout = 10000
         conn.readTimeout = 10000
-        if (conn.responseCode != 200) {
-            conn.disconnect(); null
+        token?.takeIf { it.isNotEmpty() }?.let { conn.setRequestProperty("Authorization", "Bearer $it") }
+        cookies?.takeIf { it.isNotEmpty() }?.let { conn.setRequestProperty("Cookie", it) }
+        val code = conn.responseCode
+        if (code != 200) {
+            conn.disconnect()
+            // Cache NÉGATIF : seul un 404 franc (« pas d'image pour ce protocole ») est
+            // mémorisé. Les autres échecs (5xx, auth, réseau) sont transitoires → retentés.
+            if (code == 404) runCatching {
+                dossier.mkdirs()
+                marqueurAbsent(moduleCode).writeBytes(ByteArray(0))
+            }
+            null
         } else {
             val octets = conn.inputStream.use { it.readBytes() }
             conn.disconnect()
@@ -90,7 +112,11 @@ object PictoCache {
                 // tronqué » (kill pendant la copie) qui serait resservie hors-ligne à jamais.
                 // Un rename qui échoue = pas de mise à jour (l'ancienne image, si présente,
                 // reste servie ; sinon repli emoji côté UI) — dégradation sûre.
-                if (!tmp.renameTo(cible)) { tmp.delete(); null } else cible
+                if (!tmp.renameTo(cible)) { tmp.delete(); null } else {
+                    // Téléchargement réussi : le marqueur négatif éventuel ne vaut plus.
+                    runCatching { marqueurAbsent(moduleCode).delete() }
+                    cible
+                }
             }
         }
     } catch (_: Exception) { null }
@@ -106,20 +132,32 @@ object PictoCache {
     }
 
     /** Fichier local s'il existe (offline + instantané), sinon téléchargement + enregistrement.
-     *  BLOQUANT → appeler hors thread UI. Renvoie null si aucune image (404) pour ce protocole. */
-    fun fichierOuTelecharger(base: String, moduleCode: String, modulePicto: String?): File? =
-        fichierLocal(moduleCode) ?: telecharger(moduleCode, urlPicto(base, moduleCode, modulePicto))
+     *  Un 404 récent (marqueur `.absent` de moins de 24 h) court-circuite le réseau : renvoie
+     *  null sans requête. [token]/[cookies] optionnels, transmis à [telecharger]. BLOQUANT →
+     *  appeler hors thread UI. Renvoie null si aucune image (404) pour ce protocole. */
+    fun fichierOuTelecharger(
+        base: String, moduleCode: String, modulePicto: String?,
+        token: String? = null, cookies: String? = null,
+    ): File? {
+        fichierLocal(moduleCode)?.let { return it }
+        val marqueur = marqueurAbsent(moduleCode)
+        if (marqueur.isFile && System.currentTimeMillis() - marqueur.lastModified() < TTL_ABSENT_MS) return null
+        return telecharger(moduleCode, urlPicto(base, moduleCode, modulePicto), token, cookies)
+    }
 
     /** Prefetch (rafraîchissement) des pictos de [modules] (`module_code` → `module_picto`) pour
      *  l'usage HORS-LIGNE. Best-effort : un échec par module n'interrompt pas les autres. Re-écrit
-     *  les images existantes (rafraîchissement au « Recharger les données »). BLOQUANT. */
-    fun prefetch(base: String, modules: List<Pair<String, String?>>) {
+     *  les images existantes (rafraîchissement au « Recharger les données ») — passe donc OUTRE le
+     *  cache négatif (un 404 le rafraîchit, un succès le supprime). [token]/[cookies] optionnels,
+     *  transmis à [telecharger]. BLOQUANT. */
+    fun prefetch(base: String, modules: List<Pair<String, String?>>, token: String? = null, cookies: String? = null) {
         modules.forEach { (code, picto) ->
-            runCatching { telecharger(code, urlPicto(base, code, picto)) }
+            runCatching { telecharger(code, urlPicto(base, code, picto), token, cookies) }
         }
     }
 
-    /** Vide tout le cache des pictos (« Vider le cache » / changement d'identité serveur). */
+    /** Vide tout le cache des pictos (« Vider le cache » / changement d'identité serveur),
+     *  marqueurs négatifs `.absent` compris (listFiles ne filtre pas par extension). */
     fun vider() {
         if (::dossier.isInitialized) runCatching { dossier.listFiles()?.forEach { it.delete() } }
     }

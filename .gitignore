@@ -23,3 +23,7 @@ __pycache__/
 
 # Outils internes — hors dépôt (non poussés sur GitHub)
 tools/
+
+# Artefacts de release archives localement (mapping R8, AAB Play) — non versionnes
+mappings/
+*.aab

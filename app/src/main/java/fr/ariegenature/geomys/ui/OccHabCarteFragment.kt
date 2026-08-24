@@ -149,14 +149,20 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
         // Overlay de captation des taps (placer point / ajouter sommet), en tout premier.
         binding.map.overlays.add(0, MapEventsOverlay(this))
 
-        locationOverlay = creerLocationOverlayBleu(binding.map, requireContext()).apply {
+        // MapView capturée en val LOCALE : runOnFirstFix s'exécute sur un thread de fond —
+        // évaluer `binding` (= _binding!!) là-bas crasherait si le 1er fix tombe dans la
+        // fenêtre fix→onDestroyView (audit 2026-08-23 m-N2). Le runnable posté re-vérifie
+        // _binding avant de toucher l'état du fragment.
+        val carte = binding.map
+        locationOverlay = creerLocationOverlayBleu(carte, requireContext()).apply {
             enableMyLocation()
             runOnFirstFix {
                 val loc = myLocation ?: return@runOnFirstFix
-                binding.map.post {
+                carte.post {
+                    if (_binding == null) return@post
                     if (!cadrageInitialFait && pointChoisi == null && sommets.isEmpty()) {
-                        binding.map.controller.setZoom(16.0)
-                        binding.map.controller.setCenter(loc)
+                        carte.controller.setZoom(16.0)
+                        carte.controller.setCenter(loc)
                     }
                 }
             }
@@ -352,7 +358,9 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
     private fun cadrerSur(points: List<GeoPoint>) {
         if (points.isEmpty()) return
         cadrageInitialFait = true
-        binding.map.post { binding.map.zoomerSur(points, offset = 0.004, scale = 1.8f) }
+        // Garde _binding DANS le runnable (modèle TraceFragment.centrerSurObservations) :
+        // il ré-évalue `binding` à l'exécution — NPE si la vue meurt entre post et run.
+        binding.map.post { if (_binding != null) binding.map.zoomerSur(points, offset = 0.004, scale = 1.8f) }
     }
 
     override fun singleTapConfirmedHelper(p: GeoPoint): Boolean {

@@ -54,14 +54,6 @@ object AdditionalFieldsRenderer {
         } catch (_: Exception) { emptyList() }
     }
 
-    /** Vrai si le serveur déclare au moins un champ additionnel niveau OCCTAX_RELEVE visible
-     *  pour le dataset courant. Sert à décider d'intercaler l'écran "Détails du relevé" avant
-     *  la saisie (multi-taxons comme mono-taxons). */
-    fun aDesChampsReleve(additionalFieldsOcctaxJson: String, idDataset: Int?): Boolean =
-        fromJson(additionalFieldsOcctaxJson)
-            .filter { it.appliqueA(fr.ariegenature.geomys.network.AdditionalFieldsObject.RELEVE) }
-            .any { it.visiblePour(idDataset, emptyList()) }
-
     /** Vrai s'il existe au moins un champ additionnel relevé visible **obligatoire ET SANS valeur
      *  par défaut** — seul cas qui justifie d'intercaler l'écran « Détails du relevé » avant la
      *  saisie. Un required AVEC défaut est déjà satisfait, et tous ces champs restent de toute

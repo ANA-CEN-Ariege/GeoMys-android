@@ -116,8 +116,10 @@ class LocationTracker(private val context: Context) {
             else -> return
         }
         positionConnue()?.let { _position.postValue(it) }
+        // runCatching : permission refusée/retirée → SecurityException non rattrapée au tap
+        // « centrer » (audit m-N6). positionConnue() est déjà protégé de la même façon.
         @Suppress("DEPRECATION")
-        locationManager.requestSingleUpdate(provider, locationListener, null)
+        runCatching { locationManager.requestSingleUpdate(provider, locationListener, null) }
     }
 
     fun arreter() {

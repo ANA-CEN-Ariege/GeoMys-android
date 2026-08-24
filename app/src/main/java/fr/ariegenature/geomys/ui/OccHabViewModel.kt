@@ -128,13 +128,6 @@ class OccHabViewModel : ViewModel() {
         station = station.copy(habitats = station.habitats.filterNot { it.id == id })
     }
 
-    /** Fixe le jeu de données (formulaire JDD de la 1ʳᵉ station). */
-    fun definirJdd(id: Int?, nom: String?) {
-        details.idDataset = id
-        details.nomDataset = nom
-        jddDefini = id != null
-    }
-
     /** Applique une modification aux détails de session (bouton « Détails »). */
     fun majDetails(bloc: (OccHabDetailsSession) -> Unit) {
         bloc(details)

@@ -18,16 +18,12 @@
 
 package fr.ariegenature.geomys.network
 
-import fr.ariegenature.geomys.model.OccHabHabitat
-import fr.ariegenature.geomys.model.OccHabStation
 import fr.ariegenature.geomys.store.GeoNatureConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URL
-import java.text.SimpleDateFormat
-import java.util.Locale
 
 /** Droits de l'utilisateur sur le module OccHab (issus du cruved de `gn_commons/modules`). */
 data class OccHabAcces(
@@ -69,14 +65,6 @@ object OccHabApi {
         "HAB_INTERET_COM",        // id_nomenclature_community_interest
     )
     val MNEMONIQUES: Set<String> = (MNEMONIQUES_STATION + MNEMONIQUES_HABITAT).toSet()
-
-    /**
-     * Détecte le module OccHab et les droits de l'utilisateur via `GET /api/gn_commons/modules`
-     * (liste des modules autorisés, chacun avec son `cruved`). Best-effort : renvoie
-     * [OccHabAcces.ABSENT] si l'appel échoue ou si le module n'est pas trouvé.
-     */
-    suspend fun detecterModule(config: GeoNatureConfig): OccHabAcces =
-        detecterModules(config, setOf(MODULE_CODE))[MODULE_CODE] ?: OccHabAcces.ABSENT
 
     /**
      * Altitudes min/max (MNT serveur) d'une géométrie via `POST /api/geo/info` — le même
@@ -179,136 +167,7 @@ object OccHabApi {
             } catch (_: Exception) { emptyMap() }
         }
 
-    /**
-     * Charge les stations existantes du serveur (consultation lecture seule).
-     * `GET /api/occhab/stations/?format=geojson&habitats=1&nomenclatures=1` → FeatureCollection.
-     * [idDataset] filtre optionnellement par jeu de données. Les stations renvoyées portent
-     * `origineServeur = true` (non éditables/renvoyables au MVP).
-     */
-    suspend fun chargerStations(config: GeoNatureConfig, idDataset: Int? = null): List<OccHabStation> =
-        withContext(Dispatchers.IO) {
-            val base = config.urlServeur.trim().trimEnd('/')
-            val (token, _, cookies) = GeoNatureAuth.loginAvecCookies(base, config.login, config.motDePasse)
-                ?: throw GNErreur.AuthEchouee(401)
-            val url = buildString {
-                append("$base/api/occhab/stations/?format=geojson&habitats=1&nomenclatures=1")
-                if (idDataset != null && idDataset > 0) append("&id_dataset=$idDataset")
-            }
-            val conn = HttpClient.get(URL(url), token, cookies, 30000)
-            val code = conn.responseCode
-            if (code !in 200..299) {
-                val body = try {
-                    (conn.errorStream ?: conn.inputStream)?.bufferedReader()?.readText()
-                } catch (_: Exception) { null }
-                conn.disconnect()
-                throw GNErreur.EnvoiEchoue(code, body?.take(200) ?: "HTTP $code")
-            }
-            val text = conn.inputStream.bufferedReader().readText()
-            conn.disconnect()
-            parserFeatureCollection(text)
-        }
-
-    private val dateParsers = listOf(
-        SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US),
-        SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US),
-        SimpleDateFormat("yyyy-MM-dd", Locale.US),
-    )
-
-    private fun parserDate(s: String?): Long? {
-        if (s.isNullOrBlank()) return null
-        for (fmt in dateParsers) {
-            try { return fmt.parse(s)?.time } catch (_: Exception) {}
-        }
-        return null
-    }
-
-    internal fun parserFeatureCollection(text: String): List<OccHabStation> {
-        val root = try { JSONObject(text) } catch (_: Exception) { return emptyList() }
-        val features = root.optJSONArray("features") ?: return emptyList()
-        val stations = mutableListOf<OccHabStation>()
-        for (i in 0 until features.length()) {
-            val f = features.optJSONObject(i) ?: continue
-            val props = f.optJSONObject("properties") ?: JSONObject()
-            val (type, lat, lon, coordsJson) = parserGeometrie(f.optJSONObject("geometry"))
-            val dateMin = parserDate(props.optString("date_min").takeIf { it.isNotBlank() })
-            val habitats = mutableListOf<OccHabHabitat>()
-            val habArr = props.optJSONArray("habitats")
-            if (habArr != null) {
-                for (j in 0 until habArr.length()) {
-                    val h = habArr.optJSONObject(j) ?: continue
-                    val cdHab = h.optInt("cd_hab", 0)
-                    val label = h.optJSONObject("habref")?.optString("lb_hab_fr", "")
-                        ?.ifBlank { h.optString("nom_cite", "") } ?: h.optString("nom_cite", "")
-                    habitats.add(OccHabHabitat(
-                        cdHab = cdHab,
-                        habitatLabel = label,
-                        nomCite = h.optString("nom_cite", ""),
-                        recouvrement = h.optDouble("recovery_percentage").takeIf { !it.isNaN() },
-                    ))
-                }
-            }
-            stations.add(OccHabStation(
-                idStationServeur = props.optInt("id_station", -1).takeIf { it > 0 },
-                date = dateMin ?: System.currentTimeMillis(),
-                geometryType = type,
-                latitude = lat,
-                longitude = lon,
-                geometryCoordsJson = coordsJson,
-                idDataset = props.optInt("id_dataset", -1).takeIf { it > 0 },
-                stationName = props.optString("station_name").takeIf { it.isNotBlank() },
-                comment = props.optString("comment").takeIf { it.isNotBlank() },
-                dateMin = dateMin,
-                habitats = habitats,
-                envoyeGeoNature = true,
-                origineServeur = true,
-            ))
-        }
-        return stations
-    }
-
-    /** Résultat du parsing d'une géométrie GeoJSON : type app, point représentatif, et
-     *  sommets JSON `[[lon,lat], …]` (polygone/ligne) pour le tracé. */
-    private data class GeomParse(
-        val type: String, val lat: Double, val lon: Double, val coordsJson: String?,
-    )
-
-    private fun parserGeometrie(geom: JSONObject?): GeomParse {
-        if (geom == null) return GeomParse("Point", 0.0, 0.0, null)
-        val type = geom.optString("type", "Point")
-        val coords = geom.optJSONArray("coordinates") ?: return GeomParse("Point", 0.0, 0.0, null)
-        return try {
-            when (type) {
-                "Point" -> GeomParse("Point", coords.getDouble(1), coords.getDouble(0), null)
-                "Polygon" -> {
-                    // coordinates = [ anneau extérieur [ [lon,lat], … ] ]
-                    val ring = coords.getJSONArray(0)
-                    val sommets = JSONArray()
-                    var sLat = 0.0; var sLon = 0.0; var n = 0
-                    for (k in 0 until ring.length()) {
-                        val pt = ring.getJSONArray(k)
-                        val lon = pt.getDouble(0); val lat = pt.getDouble(1)
-                        sommets.put(JSONArray().put(lon).put(lat))
-                        sLat += lat; sLon += lon; n++
-                    }
-                    val cLat = if (n > 0) sLat / n else 0.0
-                    val cLon = if (n > 0) sLon / n else 0.0
-                    GeomParse("Polygon", cLat, cLon, sommets.toString())
-                }
-                "LineString" -> {
-                    val sommets = JSONArray()
-                    var sLat = 0.0; var sLon = 0.0; var n = 0
-                    for (k in 0 until coords.length()) {
-                        val pt = coords.getJSONArray(k)
-                        val lon = pt.getDouble(0); val lat = pt.getDouble(1)
-                        sommets.put(JSONArray().put(lon).put(lat))
-                        sLat += lat; sLon += lon; n++
-                    }
-                    GeomParse("LineString", if (n > 0) sLat / n else 0.0, if (n > 0) sLon / n else 0.0, sommets.toString())
-                }
-                else -> GeomParse("Point", 0.0, 0.0, null)
-            }
-        } catch (_: Exception) {
-            GeomParse("Point", 0.0, 0.0, null)
-        }
-    }
+    // NB : la consultation des stations SERVEUR (chargerStations + parsing FeatureCollection),
+    // prevue au MVP OccHab mais jamais branchee dans l'UI, a ete supprimee (code mort,
+    // audit 2026-08-23) — l'historique git la conserve si le besoin revient.
 }

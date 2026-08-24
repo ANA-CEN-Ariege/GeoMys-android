@@ -122,16 +122,20 @@ class CacheManagerFragment : Fragment() {
 
         // Position GPS du téléphone — pour que l'utilisateur sache où il se trouve par
         // rapport à la zone qu'il s'apprête à mettre en cache.
-        locationOverlay = creerLocationOverlayBleu(binding.map, requireContext()).apply {
+        // MapView capturée en val LOCALE : runOnFirstFix s'exécute sur un thread de fond —
+        // le garde _binding protégeait l'intérieur du runnable, mais `binding.map.post`
+        // lui-même évaluait _binding!! hors main thread (audit 2026-08-23 m-N2).
+        val carte = binding.map
+        locationOverlay = creerLocationOverlayBleu(carte, requireContext()).apply {
             // Dès le premier fix, recentrer la carte sur la position du téléphone à un zoom
             // adapté au repérage. runOnFirstFix s'exécute hors thread UI → on repasse sur
             // le main thread et on ne le fait qu'une fois (la vue peut avoir disparu).
             runOnFirstFix {
                 val pos = myLocation ?: return@runOnFirstFix
-                binding.map.post {
+                carte.post {
                     if (_binding == null) return@post
-                    binding.map.controller.setZoom(15.0)
-                    binding.map.controller.animateTo(pos)
+                    carte.controller.setZoom(15.0)
+                    carte.controller.animateTo(pos)
                     majInfos()
                 }
             }

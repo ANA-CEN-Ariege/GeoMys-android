@@ -1139,6 +1139,11 @@ class SaisieRapideFragment : Fragment() {
         envoiJob?.cancel()
         speech.destroy()
         observationMarkers.clear()
+        // Point manuel : remis à zéro avec la vue. Sans ça, il survivait à la recréation
+        // (navigation aller-retour) en restant ACTIF (« Enregistrer ici » l'utilisait) mais
+        // INVISIBLE — son marker restait rattaché à l'ancienne MapView détruite (audit m-N4).
+        pointManuel = null
+        markerPointManuel = null
         boussole = null
         _binding = null
     }

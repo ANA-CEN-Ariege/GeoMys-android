@@ -184,8 +184,12 @@ class TraceFragment : Fragment() {
         if (reprendreDerniereEmprise) {
             suivrePosition = false
             modePositionnement = true
-            updateModePositionnement()
         }
+        // Resynchronise TOUJOURS l'UI avec l'état persistant : modePositionnement est un champ
+        // d'instance qui survit à onDestroyView — quitter l'écran en plein positionnement
+        // (ex. tap marker → Éditer) puis revenir affichait l'UI par défaut du XML alors que
+        // les taps ajoutaient des sommets, sans bandeau ni bouton de validation (audit m-N5).
+        updateModePositionnement()
 
         // On masque LE WRAPPER (case poids 1) et non le bouton seul : sinon la case vide
         // continue de prendre sa part de largeur et les 2 boutons restants ne se

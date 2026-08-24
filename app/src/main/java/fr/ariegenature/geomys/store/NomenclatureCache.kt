@@ -118,15 +118,6 @@ object NomenclatureCache {
         }
     }
 
-    fun resume(): String {
-        val data = charger()
-        if (data.isEmpty()) return ""
-        return data.entries.joinToString(" | ") { (type, vals) ->
-            val nbTaxref = vals.count { it.taxref.isNotEmpty() }
-            "$type:${vals.size}val/${nbTaxref}taxref"
-        }
-    }
-
     val count: Int get() = charger().values.sumOf { it.size }
 
     /** Stocke la map des défauts par mnémonique pour un module donné (résultat de

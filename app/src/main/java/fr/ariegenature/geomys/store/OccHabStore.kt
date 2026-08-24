@@ -80,14 +80,6 @@ class OccHabStore(context: Context) : JsonCollectionStore<OccHabSaisie>() {
         fun reinitialiserCacheMemoire() { mem = null }
     }
 
-    fun ajouterSaisie(saisie: OccHabSaisie): Boolean = muter { it.add(0, saisie) }
-
-    /** Remplace la saisie [id] en préservant sa position ; ajoute en tête si absente. */
-    fun remplacerSaisie(id: String, saisieMaj: OccHabSaisie): Boolean = muter { liste ->
-        val idx = liste.indexOfFirst { it.id == id }
-        if (idx >= 0) liste[idx] = saisieMaj else liste.add(0, saisieMaj)
-    }
-
     /** Supprime toute la saisie [id] (cascade sur ses stations). */
     fun supprimer(id: String) { muter { liste -> liste.removeAll { it.id == id } } }
 

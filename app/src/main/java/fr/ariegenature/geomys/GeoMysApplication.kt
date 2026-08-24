@@ -72,6 +72,10 @@ class GeoMysApplication : Application() {
                 TaxRefCache.tousLesGroupes1()
                 TaxRefCache.tousLesRegnes()
             }
+            // Balayage des médias orphelins (filesDir/medias/ grossissait sans borne — audit
+            // 2026-08-23 M-N2) : fichiers non référencés par les stores ET vieux de +48 h.
+            // Après la pré-chauffe (charge les mêmes stores) ; best-effort à chaque démarrage.
+            runCatching { fr.ariegenature.geomys.store.MediasOrphelins.purger(this@GeoMysApplication) }
         }
     }
 }

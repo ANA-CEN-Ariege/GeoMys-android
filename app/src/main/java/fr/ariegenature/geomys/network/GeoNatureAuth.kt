@@ -232,6 +232,12 @@ object GeoNatureAuth {
             val idRole = userJson?.optInt("id_role", -1)?.takeIf { it > 0 }
                 ?: json.optInt("id_role", -1).takeIf { it > 0 }
 
+            // ÉCHEC SOFT Flask-JWT : HTTP 200 avec un body `msg` SANS token ni user (mauvais
+            // identifiants sur certaines instances — le même motif que gère testerConnexion).
+            // Le traiter en succès mettait en cache 5 min un Triple non authentifié : tous les
+            // appels partaient sans Authorization → 401/403 opaques en aval (audit N3).
+            if (token == null && idRole == null) return null
+
             cache = CacheAuth(base, login, token, idRole, cookies, now + CACHE_TTL_MS)
             Triple(token, idRole, cookies)
         } catch (e: Exception) { null }

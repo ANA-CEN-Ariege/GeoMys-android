@@ -237,6 +237,9 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
             if (mode == Mode.POLYGONE && sommets.isNotEmpty()) {
                 sommets.removeAt(sommets.size - 1)
                 redessiner(); majBoutons()
+                // Station sélectionnée : le retrait est persisté comme les autres modifications
+                // (la garde interne < 3 sommets évite d'écrire un anneau invalide).
+                if (geometrieChargee) persisterSelectionApresDrag()
             }
         }
         binding.btnValider.setOnClickListener { valider() }
@@ -418,16 +421,6 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
     }
 
     override fun singleTapConfirmedHelper(p: GeoPoint): Boolean {
-        // STATION SÉLECTIONNÉE : un tap hors de sa géométrie la DÉSÉLECTIONNE et démarre une
-        // NOUVELLE station (demande terrain 2026-08-26 — la sélection ne permet que modifier
-        // par drag, persisté au relâcher, ou supprimer via la poubelle ; plus de redessin).
-        if (geometrieChargee) {
-            occhabViewModel.nouvelleStation() // la station sélectionnée reste telle quelle dans le store
-            pointChoisi = null
-            sommets.clear()
-            geometrieChargee = false
-            afficherStationsSession() // l'ex-sélection redevient rouge et cliquable
-        }
         // Aimantage : si le tap tombe près d'un sommet d'une station déjà posée, on réutilise
         // exactement ce sommet (pour raccorder proprement deux stations voisines).
         val cible = snapVersSommet(p) ?: p
@@ -437,7 +430,12 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
         }
         redessiner()
         majBoutons()
-        majTexteInstructionsMode() // 1er tap = début de saisie → fin du texte « sélection »
+        // STATION SÉLECTIONNÉE : le tap MODIFIE sa géométrie (ajoute un sommet au polygone /
+        // déplace le point) et la modification est PERSISTÉE immédiatement — « Valider » est
+        // désactivé pendant la sélection. Pour saisir une NOUVELLE station : désélectionner
+        // d'abord (re-tap sur la géométrie) — demande terrain 2026-08-26.
+        if (geometrieChargee) persisterSelectionApresDrag()
+        majTexteInstructionsMode() // 1er tap hors sélection = début de saisie → fin du texte « sélection »
         return true
     }
 
@@ -451,9 +449,7 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
             // Polygone SÉLECTIONNÉ (anneau chargé d'une station) : les gestes diffèrent de la
             // saisie — tap = repartir sur un nouveau tracé, drag d'un sommet = modifier.
             mode == Mode.POLYGONE && geometrieChargee ->
-                "Touchez pour saisir un nouveau polygone · appui long sur un sommet pour le modifier"
-            mode == Mode.POINT && geometrieChargee ->
-                "Touchez pour saisir une nouvelle station · appui long sur le point pour le déplacer"
+                "Saisissez un point pour ajouter un sommet · appui long sur un sommet pour le modifier"
             mode == Mode.POINT ->
                 "Touchez pour placer le point · appui long pour le déplacer"
             else ->
@@ -655,21 +651,17 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
     }
 
     private fun majBoutons() {
-        // « Valider » DÉSACTIVÉ tant qu'une station est SÉLECTIONNÉE (geometrieChargee) : la
-        // sélection ne permet que modifier (drag, persisté au relâcher) ou supprimer (poubelle).
-        // Il se réactive dès qu'on saisit une NOUVELLE géométrie.
-        val geomOk = !geometrieChargee && ((mode == Mode.POINT && pointChoisi != null) ||
-            (mode == Mode.POLYGONE && sommets.size >= 3))
+        // « Valider » et « Annuler » actifs dès que la géométrie le permet — Y COMPRIS pendant
+        // la MODIFICATION d'une station sélectionnée (demande terrain 2026-08-26) : Valider
+        // enchaîne alors sur les habitats de la station, Annuler retire le dernier sommet.
+        val geomOk = (mode == Mode.POINT && pointChoisi != null) ||
+            (mode == Mode.POLYGONE && sommets.size >= 3)
         binding.btnValider.isEnabled = geomOk
         binding.btnValider.alpha = if (geomOk) 1f else 0.5f
         // Poubelle de la station sélectionnée : visible seulement pendant la sélection.
         binding.btnSupprimerStation.visibility =
             if (geometrieChargee) View.VISIBLE else View.GONE
-        // « Annuler » (retirer le dernier sommet) : actif SEULEMENT pendant la saisie d'une
-        // NOUVELLE géométrie — pas sur l'anneau chargé d'une station sélectionnée
-        // (geometrieChargee), où les gestes sont drag = modifier / tap = redessiner.
-        binding.btnAnnulerPoint.isEnabled =
-            mode == Mode.POLYGONE && sommets.isNotEmpty() && !geometrieChargee
+        binding.btnAnnulerPoint.isEnabled = mode == Mode.POLYGONE && sommets.isNotEmpty()
     }
 
     private fun valider() {

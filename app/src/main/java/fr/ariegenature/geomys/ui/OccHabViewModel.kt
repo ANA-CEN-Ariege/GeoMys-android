@@ -55,6 +55,16 @@ fun detailsSessionParDefaut(config: GeoNatureConfig): OccHabDetailsSession {
         set(java.util.Calendar.HOUR_OF_DAY, 0); set(java.util.Calendar.MINUTE, 0)
         set(java.util.Calendar.SECOND, 0); set(java.util.Calendar.MILLISECOND, 0)
     }.timeInMillis
+    // RELEVÉ PRÉCÉDENT : le formulaire des informations obligatoires repart des valeurs
+    // validées la dernière fois (JDD, observateurs, nomenclatures — demande terrain
+    // 2026-08-26) ; seules les DATES repartent systématiquement du jour.
+    config.occhabDetailsPrecedentsJson.takeIf { it.isNotEmpty() }?.let { json ->
+        runCatching {
+            com.google.gson.Gson().fromJson(json, OccHabDetailsSession::class.java)
+        }.getOrNull()
+    }?.let { precedent ->
+        return precedent.copy(dateMin = aujourdhui, dateMax = aujourdhui)
+    }
     return OccHabDetailsSession(
         idDataset = null,
         observateursIds = listOfNotNull(obsId),

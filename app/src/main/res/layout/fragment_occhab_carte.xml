@@ -51,6 +51,23 @@
         android:textColor="@android:color/white"
         android:textSize="14sp" />
 
+    <!-- Poubelle de la STATION SÉLECTIONNÉE : n'apparaît que lorsqu'une station est
+         sélectionnée sur la carte (haut-droite, SOUS le bandeau d'instructions). -->
+    <ImageButton
+        android:id="@+id/btn_supprimer_station"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_gravity="top|end"
+        android:layout_marginTop="118dp"
+        android:layout_marginEnd="12dp"
+        android:padding="10dp"
+        android:background="@drawable/btn_circle_white"
+        android:contentDescription="Supprimer la station sélectionnée"
+        android:scaleType="fitCenter"
+        android:src="@drawable/ic_delete"
+        android:visibility="gone"
+        app:tint="@android:color/holo_red_dark" />
+
     <!-- Sélecteur de mode géométrique (point / polygone), centré verticalement à gauche —
          même emplacement/habillage que le sélecteur d'Occtax. -->
     <LinearLayout
@@ -116,6 +133,18 @@
         android:layout_marginEnd="12dp"
         android:layout_marginBottom="100dp"
         android:orientation="vertical">
+
+        <!-- Bouton « i » : réaffiche le formulaire des informations OBLIGATOIRES de la station
+             (JDD, observateurs, dates, nature objet géo) — même style/position que le « i »
+             des détails communs de la saisie multi-taxons. -->
+        <ImageButton
+            android:id="@+id/btn_infos_obligatoires"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:layout_marginBottom="12dp"
+            android:background="@drawable/btn_circle_white"
+            android:contentDescription="Informations obligatoires de la station"
+            android:src="@drawable/ic_info" />
 
         <ImageButton
             android:id="@+id/btn_centrer"

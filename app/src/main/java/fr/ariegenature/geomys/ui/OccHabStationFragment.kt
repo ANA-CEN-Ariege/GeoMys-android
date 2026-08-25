@@ -151,11 +151,23 @@ class OccHabStationFragment : Fragment() {
                 text = h.habitatLabel.ifBlank { h.nomCite }.ifBlank { "Habitat ${h.cdHab}" }
                 textSize = 14f
             }
+            // Même style que la poubelle de la liste des relevés multi-taxons
+            // (item_pending_obs.btn_delete : 36 dp, padding 6 dp, ripple sans bord,
+            // teinte holo_red_dark).
             val suppr = ImageButton(requireContext()).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    (36 * density).toInt(), (36 * density).toInt())
+                val pad = (6 * density).toInt()
+                setPadding(pad, pad, pad, pad)
+                scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
                 setImageResource(R.drawable.ic_delete)
-                background = null
+                val bg = android.util.TypedValue()
+                requireContext().theme.resolveAttribute(
+                    android.R.attr.selectableItemBackgroundBorderless, bg, true)
+                setBackgroundResource(bg.resourceId)
                 contentDescription = "Supprimer l'habitat"
-                setColorFilter(couleurErreur(requireContext()))
+                setColorFilter(androidx.core.content.ContextCompat.getColor(
+                    requireContext(), android.R.color.holo_red_dark))
                 setOnClickListener {
                     // Une station SANS habitat reste valide et envoyable (décision terrain
                     // 2026-08-24) : la suppression du dernier habitat est autorisée.

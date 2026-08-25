@@ -109,17 +109,9 @@ class OccHabHabitatFragment : Fragment() {
         // Nouvelle visite (monitoring) : bouton grisé tant que l'obligatoire n'est pas rempli.
         majEtatBoutonValider()
 
-        // Démarrage de session (1ʳᵉ station) : formulaire des champs OBLIGATOIRES de la station
-        // (JDD, observateurs, dates, nature objet géo — pré-remplis par les défauts, seul le JDD
-        // demande un vrai choix). Les champs facultatifs s'éditent via « Détails » (écran liste).
-        // « Retour » ramène à la carte.
-        if (!occhabViewModel.jddDefini) binding.root.post {
-            if (isAdded) ouvrirDialogDetailsOccHab(
-                requireContext(), occhabViewModel, gnConfig,
-                jddObligatoire = true, jddSeul = true,
-                onAnnule = { findNavController().navigateUp() },
-            ) {}
-        }
+        // NB : le formulaire des informations OBLIGATOIRES du relevé (JDD, observateurs,
+        // dates, nature objet géo) s'affiche désormais DÈS LA CARTE au démarrage de la
+        // session (OccHabCarteFragment) — plus rien à intercaler ici.
     }
 
     private val density get() = resources.displayMetrics.density

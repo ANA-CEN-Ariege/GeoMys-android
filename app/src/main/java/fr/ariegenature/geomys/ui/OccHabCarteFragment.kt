@@ -127,6 +127,53 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
         }
 
         // Bouton centrer sur la position GPS.
+        // Bouton « i » : rouvre le formulaire COMPLET des détails de la station (obligatoires
+        // + altitudes/surface/méthode/commentaire), pré-rempli — même rôle que le « i » des
+        // détails communs de la saisie multi-taxons. « Annuler » referme simplement.
+        binding.btnInfosObligatoires.setOnClickListener {
+            ouvrirDialogDetailsOccHab(
+                requireContext(), occhabViewModel,
+                fr.ariegenature.geomys.store.GeoNatureConfig(requireContext()),
+                jddObligatoire = false, jddSeul = false,
+            ) {}
+        }
+
+        // DÉMARRAGE d'un relevé (session neuve, infos obligatoires jamais validées) : le
+        // formulaire s'affiche DÈS LA CARTE (demande terrain 2026-08-26 — avant, il
+        // n'apparaissait qu'au 1er écran habitat). Pré-rempli avec les valeurs du relevé
+        // précédent ; « Annuler » ramène à l'accueil ; validé → on saisit la station puis
+        // ses habitats.
+        if (!occhabViewModel.jddDefini) binding.root.post {
+            if (isAdded && !occhabViewModel.jddDefini) ouvrirDialogDetailsOccHab(
+                requireContext(), occhabViewModel,
+                fr.ariegenature.geomys.store.GeoNatureConfig(requireContext()),
+                jddObligatoire = true, jddSeul = true,
+                onAnnule = { allerAccueil() },
+            ) {}
+        }
+
+        // Poubelle de la STATION SÉLECTIONNÉE (haut-droite, sous le bandeau) : suppression
+        // avec confirmation, puis retour à l'état « aucune sélection ».
+        binding.btnSupprimerStation.applyStatusBarMargin()
+        binding.btnSupprimerStation.setOnClickListener {
+            val st = occhabViewModel.station
+            val nbHab = st.habitats.size
+            AlertDialog.Builder(requireContext())
+                .setTitle("Supprimer la station ?")
+                .setMessage(
+                    "Supprimer la station sélectionnée" +
+                        (if (nbHab > 0) " et ses $nbHab habitat(s)" else "") +
+                        " ? Cette action est définitive.")
+                .setPositiveButton("Supprimer") { _, _ ->
+                    fr.ariegenature.geomys.store.OccHabStore(requireContext())
+                        .supprimerStation(occhabViewModel.saisieId, st.id)
+                    deselectionnerStation()
+                    Toast.makeText(requireContext(), "Station supprimée", Toast.LENGTH_SHORT).show()
+                }
+                .setNegativeButton("Annuler", null)
+                .show()
+        }
+
         binding.btnCentrer.setOnClickListener {
             val loc = locationOverlay?.myLocation
             if (loc != null) binding.map.controller.animateTo(loc)
@@ -371,15 +418,15 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
     }
 
     override fun singleTapConfirmedHelper(p: GeoPoint): Boolean {
-        // RÉÉDITION : le premier tap démarre une NOUVELLE géométrie — l'ancienne (point ou
-        // anneau chargé de la station) est effacée. REMPLACEMENT, pas ajout : sans ça, le tap
-        // ajoutait un sommet à la suite de l'ancien anneau (bug terrain 2026-08-24). La
-        // modification fine de la géométrie chargée passe, elle, par le DRAG des sommets.
-        // Vaut aussi après un changement de mode (ex. station-polygone redessinée en point).
+        // STATION SÉLECTIONNÉE : un tap hors de sa géométrie la DÉSÉLECTIONNE et démarre une
+        // NOUVELLE station (demande terrain 2026-08-26 — la sélection ne permet que modifier
+        // par drag, persisté au relâcher, ou supprimer via la poubelle ; plus de redessin).
         if (geometrieChargee) {
+            occhabViewModel.nouvelleStation() // la station sélectionnée reste telle quelle dans le store
             pointChoisi = null
             sommets.clear()
             geometrieChargee = false
+            afficherStationsSession() // l'ex-sélection redevient rouge et cliquable
         }
         // Aimantage : si le tap tombe près d'un sommet d'une station déjà posée, on réutilise
         // exactement ce sommet (pour raccorder proprement deux stations voisines).
@@ -405,6 +452,8 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
             // saisie — tap = repartir sur un nouveau tracé, drag d'un sommet = modifier.
             mode == Mode.POLYGONE && geometrieChargee ->
                 "Touchez pour saisir un nouveau polygone · appui long sur un sommet pour le modifier"
+            mode == Mode.POINT && geometrieChargee ->
+                "Touchez pour saisir une nouvelle station · appui long sur le point pour le déplacer"
             mode == Mode.POINT ->
                 "Touchez pour placer le point · appui long pour le déplacer"
             else ->
@@ -468,6 +517,7 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
                             pointChoisi = cible
                             m.position = cible
                             majBoutons()
+                            persisterSelectionApresDrag()
                             binding.map.invalidate()
                         }
                         override fun onMarkerDragStart(m: Marker) {}
@@ -501,6 +551,7 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
                                 redessinerForme()
                             }
                             majBoutons()
+                            persisterSelectionApresDrag()
                         }
                         override fun onMarkerDragStart(m: Marker) {}
                     })
@@ -514,6 +565,35 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
 
     /** (Re)dessine UNIQUEMENT la forme (polygone), sans toucher aux markers — appelé pendant le
      *  drag d'un sommet pour ne pas interrompre l'événement de drag. */
+    /** Persiste IMMÉDIATEMENT la géométrie de la station SÉLECTIONNÉE après un drag :
+     *  « Valider » est désactivé pendant la sélection — la modification s'enregistre donc au
+     *  relâcher du sommet/point (surface recalculée, altitudes MNT best-effort). */
+    private fun persisterSelectionApresDrag() {
+        if (!geometrieChargee) return
+        if (mode == Mode.POINT) {
+            val pt = pointChoisi ?: return
+            occhabViewModel.definirGeometrie("Point", pt.latitude, pt.longitude, null)
+            occhabViewModel.definirSurface(null)
+        } else {
+            if (sommets.size < 3) return
+            val coords = JSONArray()
+            var sLat = 0.0; var sLon = 0.0
+            sommets.forEach { pt ->
+                coords.put(JSONArray().put(pt.longitude).put(pt.latitude))
+                sLat += pt.latitude; sLon += pt.longitude
+            }
+            occhabViewModel.definirGeometrie(
+                "Polygon", sLat / sommets.size, sLon / sommets.size, coords.toString())
+            occhabViewModel.definirSurface(Math.round(airePolygoneM2(sommets)))
+        }
+        lancerRemplissageAltitudes()
+        val store = fr.ariegenature.geomys.store.OccHabStore(requireContext())
+        if (!store.upsertStation(occhabViewModel.saisieId, occhabViewModel.stationAEnregistrer())) {
+            alerterEchecEcritureStore(requireContext(),
+                "Libérez de l'espace (photos, cache de cartes) puis re-déplacez le sommet.")
+        }
+    }
+
     /** DÉSÉLECTIONNE la station en cours d'édition (re-tap sur sa géométrie — demande terrain
      *  2026-08-25) : la station retourne à l'affichage session (rouge), l'édition repart d'une
      *  station vierge de la même saisie, le bandeau repropose sélection ou nouvelle saisie. */
@@ -575,10 +655,16 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
     }
 
     private fun majBoutons() {
-        val geomOk = (mode == Mode.POINT && pointChoisi != null) ||
-            (mode == Mode.POLYGONE && sommets.size >= 3)
+        // « Valider » DÉSACTIVÉ tant qu'une station est SÉLECTIONNÉE (geometrieChargee) : la
+        // sélection ne permet que modifier (drag, persisté au relâcher) ou supprimer (poubelle).
+        // Il se réactive dès qu'on saisit une NOUVELLE géométrie.
+        val geomOk = !geometrieChargee && ((mode == Mode.POINT && pointChoisi != null) ||
+            (mode == Mode.POLYGONE && sommets.size >= 3))
         binding.btnValider.isEnabled = geomOk
         binding.btnValider.alpha = if (geomOk) 1f else 0.5f
+        // Poubelle de la station sélectionnée : visible seulement pendant la sélection.
+        binding.btnSupprimerStation.visibility =
+            if (geometrieChargee) View.VISIBLE else View.GONE
         // « Annuler » (retirer le dernier sommet) : actif SEULEMENT pendant la saisie d'une
         // NOUVELLE géométrie — pas sur l'anneau chargé d'une station sélectionnée
         // (geometrieChargee), où les gestes sont drag = modifier / tap = redessiner.

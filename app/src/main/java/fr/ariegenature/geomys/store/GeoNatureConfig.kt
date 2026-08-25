@@ -143,6 +143,13 @@ class GeoNatureConfig(context: Context) {
         get() = prefs.getInt("gn_occhab_id_list_habitat", -1)
         set(v) = prefs.edit().putInt("gn_occhab_id_list_habitat", v).apply()
 
+    /** Dernières « informations obligatoires » OccHab validées (JSON OccHabDetailsSession) :
+     *  pré-remplit le formulaire du RELEVÉ SUIVANT (JDD, observateurs, nomenclatures — les
+     *  dates repartent du jour). Écrit à chaque validation du formulaire. */
+    var occhabDetailsPrecedentsJson: String
+        get() = prefs.getString("gn_occhab_details_prec", "") ?: ""
+        set(v) = prefs.edit().putString("gn_occhab_details_prec", v).apply()
+
     /** `OCCHAB.formConfig` (map champ→booléen de visibilité) sérialisé, lu à la synchro. Pilote
      *  quels champs afficher dans le formulaire OccHab, exactement comme le web. */
     var occhabFormConfigJson: String

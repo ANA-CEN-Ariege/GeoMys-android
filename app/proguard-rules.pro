@@ -58,3 +58,5 @@
 -keep class fr.ariegenature.geomys.store.TaxrefRestriction { *; }
 # Table locale des codes de nidification (classe privée Fichier parsée par Gson).
 -keep class fr.ariegenature.geomys.store.NidificationOiseaux$* { *; }
+# Infos obligatoires OccHab du relevé précédent (occhabDetailsPrecedentsJson, Gson).
+-keep class fr.ariegenature.geomys.ui.OccHabDetailsSession { *; }

@@ -263,7 +263,9 @@ fun ouvrirDialogDetailsOccHab(
         .setView(ScrollView(context).apply { addView(racine) })
         .setCancelable(!jddObligatoire)
         .setPositiveButton("Valider", null)
-        .setNegativeButton(if (jddObligatoire) "Retour" else "Annuler") { _, _ ->
+        // « Annuler » dans les deux modes (ex-« Retour ») : au démarrage obligatoire du relevé,
+        // il déclenche [onAnnule] (retour à l'accueil — demande terrain 2026-08-26).
+        .setNegativeButton("Annuler") { _, _ ->
             if (jddObligatoire) onAnnule()
         }
         .create()
@@ -336,6 +338,12 @@ fun ouvrirDialogDetailsOccHab(
                 vm.definirSurface(
                     if (etSurface != null) etSurface?.text?.toString()?.trim()?.toLongOrNull() else st.surface,
                 )
+            }
+            // Mémorise les infos obligatoires validées : le formulaire du RELEVÉ SUIVANT
+            // repartira de ces valeurs (dates exclues au rechargement — cf.
+            // detailsSessionParDefaut).
+            runCatching {
+                config.occhabDetailsPrecedentsJson = com.google.gson.Gson().toJson(vm.details)
             }
             onValide()
             dlg.dismiss()

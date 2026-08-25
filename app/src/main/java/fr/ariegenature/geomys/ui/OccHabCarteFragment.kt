@@ -446,6 +446,12 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
         if (mode == Mode.POINT) {
             pointChoisi?.let { pt ->
                 markerPoint = markerDraggable(pt).apply {
+                    // Tap sur le pin d'une station-point SÉLECTIONNÉE → désélection (le drag
+                    // reste le geste de modification). Hors sélection : tap consommé sans effet.
+                    setOnMarkerClickListener { _, _ ->
+                        if (geometrieChargee) deselectionnerStation()
+                        true
+                    }
                     setOnMarkerDragListener(object : Marker.OnMarkerDragListener {
                         override fun onMarkerDrag(m: Marker) { pointChoisi = m.position }
                         override fun onMarkerDragEnd(m: Marker) {
@@ -501,6 +507,21 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
 
     /** (Re)dessine UNIQUEMENT la forme (polygone), sans toucher aux markers — appelé pendant le
      *  drag d'un sommet pour ne pas interrompre l'événement de drag. */
+    /** DÉSÉLECTIONNE la station en cours d'édition (re-tap sur sa géométrie — demande terrain
+     *  2026-08-25) : la station retourne à l'affichage session (rouge), l'édition repart d'une
+     *  station vierge de la même saisie, le bandeau repropose sélection ou nouvelle saisie. */
+    private fun deselectionnerStation() {
+        occhabViewModel.nouvelleStation() // station vierge, même saisieId — l'ex-sélection n'est plus exclue de l'affichage
+        pointChoisi = null
+        sommets.clear()
+        geometrieChargee = false
+        redessiner()               // purge les overlays d'édition (pin bleu / anneau / sommets)
+        afficherStationsSession()  // la station redevient rouge et cliquable
+        majBoutons()
+        afficherInstructionSelection()
+        binding.map.invalidate()
+    }
+
     private fun redessinerForme() {
         overlayForme?.let { binding.map.overlays.remove(it) }
         overlayForme = null
@@ -510,6 +531,14 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
                 fillPaint.color = 0x552196F3
                 outlinePaint.color = 0xFF1976D2.toInt()
                 outlinePaint.strokeWidth = 4f
+                // Pas de bulle : le constructeur Polygon(map) attache une BasicInfoWindow par
+                // défaut → re-taper la géométrie affichait un POPUP VIDE. Tap sur le corps du
+                // polygone : géométrie CHARGÉE (station sélectionnée) → DÉSÉLECTION ; saisie en
+                // cours d'un nouveau polygone → le tap traverse (ajout de sommet).
+                infoWindow = null
+                setOnClickListener { _, _, _ ->
+                    if (geometrieChargee) { deselectionnerStation(); true } else false
+                }
             }
             binding.map.overlays.add(poly)
             overlayForme = poly
@@ -543,7 +572,11 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
             (mode == Mode.POLYGONE && sommets.size >= 3)
         binding.btnValider.isEnabled = geomOk
         binding.btnValider.alpha = if (geomOk) 1f else 0.5f
-        binding.btnAnnulerPoint.isEnabled = mode == Mode.POLYGONE && sommets.isNotEmpty()
+        // « Annuler » (retirer le dernier sommet) : actif SEULEMENT pendant la saisie d'une
+        // NOUVELLE géométrie — pas sur l'anneau chargé d'une station sélectionnée
+        // (geometrieChargee), où les gestes sont drag = modifier / tap = redessiner.
+        binding.btnAnnulerPoint.isEnabled =
+            mode == Mode.POLYGONE && sommets.isNotEmpty() && !geometrieChargee
     }
 
     private fun valider() {

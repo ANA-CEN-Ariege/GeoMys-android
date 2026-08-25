@@ -400,9 +400,16 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
      *  clic sur les boutons Point/Polygone, à la sélection d'une station à modifier, et au 1er
      *  tap de saisie — cf. [afficherInstructionSelection] pour l'état initial avec stations. */
     private fun majTexteInstructionsMode() {
-        binding.tvInstructions.text = if (mode == Mode.POINT)
-            "Touchez pour placer le point · appui long pour le déplacer" else
-            "Touchez pour ajouter des sommets (≥ 3) · appui long pour déplacer"
+        binding.tvInstructions.text = when {
+            // Polygone SÉLECTIONNÉ (anneau chargé d'une station) : les gestes diffèrent de la
+            // saisie — tap = repartir sur un nouveau tracé, drag d'un sommet = modifier.
+            mode == Mode.POLYGONE && geometrieChargee ->
+                "Touchez pour saisir un nouveau polygone · appui long sur un sommet pour le modifier"
+            mode == Mode.POINT ->
+                "Touchez pour placer le point · appui long pour le déplacer"
+            else ->
+                "Touchez pour ajouter des sommets (≥ 3) · appui long pour déplacer"
+        }
     }
 
     /** À l'arrivée sur la carte, si la session porte DÉJÀ des stations (rouges) et qu'aucune

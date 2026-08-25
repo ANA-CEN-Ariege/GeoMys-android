@@ -195,6 +195,12 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
         binding.btnValider.setOnClickListener { valider() }
 
         changerMode(mode)
+        // Des stations existent déjà dans la session et aucune géométrie n'est en cours :
+        // le bandeau propose sélection OU nouvelle saisie (le texte de mode revient au 1er
+        // geste — tap, bouton de mode, ou sélection d'une station).
+        if (ptsSession.isNotEmpty() && pointChoisi == null && sommets.isEmpty()) {
+            afficherInstructionSelection()
+        }
     }
 
     /** Précharge la géométrie de la station COURANTE (édition / retour arrière) dans les overlays
@@ -326,6 +332,7 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
         val ptsCourant = preremplirDepuisViewModel() // charge la géométrie de st (mode + redessine)
         val ptsSession = afficherStationsSession()   // redessine les autres (st exclue désormais)
         mettreEnEvidenceBoutonMode()
+        majTexteInstructionsMode() // le bandeau repasse du texte « sélection » au texte du mode
         majBoutons()
         cadrerSur(ptsCourant + ptsSession)
         Toast.makeText(requireContext(),
@@ -383,18 +390,33 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
         }
         redessiner()
         majBoutons()
+        majTexteInstructionsMode() // 1er tap = début de saisie → fin du texte « sélection »
         return true
     }
 
     override fun longPressHelper(p: GeoPoint): Boolean = false
 
+    /** Texte d'instructions du MODE courant (même texte que la Saisie multi-taxons). Affiché au
+     *  clic sur les boutons Point/Polygone, à la sélection d'une station à modifier, et au 1er
+     *  tap de saisie — cf. [afficherInstructionSelection] pour l'état initial avec stations. */
+    private fun majTexteInstructionsMode() {
+        binding.tvInstructions.text = if (mode == Mode.POINT)
+            "Touchez pour placer le point · appui long pour le déplacer" else
+            "Touchez pour ajouter des sommets (≥ 3) · appui long pour déplacer"
+    }
+
+    /** À l'arrivée sur la carte, si la session porte DÉJÀ des stations (rouges) et qu'aucune
+     *  géométrie n'est en cours, le bandeau propose les deux gestes possibles au lieu du texte
+     *  de mode — demande terrain 2026-08-25. */
+    private fun afficherInstructionSelection() {
+        binding.tvInstructions.text =
+            "Sélectionnez une station pour la modifier, ou saisissez une nouvelle station"
+    }
+
     private fun changerMode(m: Mode) {
         mode = m
         mettreEnEvidenceBoutonMode()
-        // Même texte que la Saisie multi-taxons (TraceFragment).
-        binding.tvInstructions.text = if (m == Mode.POINT)
-            "Touchez pour placer le point · appui long pour le déplacer" else
-            "Touchez pour ajouter des sommets (≥ 3) · appui long pour déplacer"
+        majTexteInstructionsMode()
         redessiner()
         majBoutons()
     }

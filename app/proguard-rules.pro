@@ -58,12 +58,3 @@
 -keep class fr.ariegenature.geomys.store.TaxrefRestriction { *; }
 # Table locale des codes de nidification (classe privée Fichier parsée par Gson).
 -keep class fr.ariegenature.geomys.store.NidificationOiseaux$* { *; }
-
-# ---------------------------------------------------------------------------
-# Tink (embarqué par androidx.security:security-crypto) référence des annotations
-# javax.annotation COMPILE-ONLY (JSR-305), absentes du classpath Android. Ce sont
-# des métadonnées sans effet à l'exécution : on supprime juste l'avertissement
-# (règles générées par R8 dans missing_rules.txt à la première activation).
-# ---------------------------------------------------------------------------
--dontwarn javax.annotation.Nullable
--dontwarn javax.annotation.concurrent.GuardedBy

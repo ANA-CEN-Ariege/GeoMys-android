@@ -20,8 +20,6 @@ package fr.ariegenature.geomys.store
 
 import android.content.Context
 import android.util.Log
-import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKey
 import java.io.File
 import java.security.KeyStore
 
@@ -388,16 +386,9 @@ class GeoNatureConfig(context: Context) {
         // ne doit pas se rejouer alors que GeoNatureConfig est instancié très fréquemment.
         @Volatile private var migrationTentee = false
 
-        /** Migration UNE FOIS de l'ancien mot de passe chiffré (fichier `gn_secure`,
-         *  EncryptedSharedPreferences — bibliothèque DÉPRÉCIÉE) vers [MdpChiffre] (`gn_secure_v2`).
-         *  Best-effort et silencieuse :
-         *  - rien à faire si l'ancien fichier n'existe pas sur disque (installation récente ou
-         *    migration déjà effectuée) — le cas ultra-majoritaire, testé par un simple stat ;
-         *  - si le nouveau format est vide et l'ancien lisible, le mot de passe est recopié ;
-         *  - l'ancien fichier n'est SUPPRIMÉ (avec, best-effort, la clé maître security-crypto
-         *    devenue inutile) QUE si la recopie a abouti ou qu'il n'y avait rien à recopier —
-         *    sinon on le laisse pour retenter au prochain démarrage du process ;
-         *  - toute erreur (Keystore KO…) laisse l'état en place, l'utilisateur re-saisira. */
+        /** NETTOYAGE de l'ancien coffre `gn_secure` (EncryptedSharedPreferences, bibliothèque
+         *  retirée le 2026-08-25 après deux releases de migration — v1.3.11/1.3.12 recopiaient
+         *  le mot de passe vers [MdpChiffre]/`gn_secure_v2`). Best-effort et silencieux. */
         private fun migrerAncienMotDePasse(appContext: Context) {
             if (migrationTentee) return
             synchronized(this) {
@@ -405,34 +396,20 @@ class GeoNatureConfig(context: Context) {
                 migrationTentee = true
                 try {
                     if (!File(appContext.dataDir, "shared_prefs/gn_secure.xml").exists()) return
-                    if (MdpChiffre.lire(appContext) == null) {
-                        val masterKey = MasterKey.Builder(appContext)
-                            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-                            .build()
-                        val ancien = EncryptedSharedPreferences.create(
-                            appContext, "gn_secure", masterKey,
-                            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-                            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
-                        )
-                        val mdp = ancien.getString("gn_mdp", "") ?: ""
-                        if (mdp.isNotEmpty() && !MdpChiffre.ecrire(appContext, mdp)) {
-                            // Nouveau format inutilisable : au moins pour cette session, le mot
-                            // de passe lu reste disponible en mémoire ; on retentera plus tard.
-                            motDePasseMemoire = mdp
-                            return
-                        }
-                    }
-                    // Recopie faite (ou rien à recopier) → suppression de l'ancien fichier…
+                    // La bibliothèque security-crypto (dépréciée) a été RETIRÉE (2026-08-25) :
+                    // l'ancien coffre gn_secure n'est plus LISIBLE. Les parcs passés par les
+                    // v1.3.11/1.3.12 ont déjà migré vers gn_secure_v2 ; un saut direct depuis
+                    // ≤ v1.3.10 retombe ici → on NETTOIE l'ancien fichier et sa clé maître,
+                    // l'utilisateur re-saisit son mot de passe une fois (saisies intactes).
                     appContext.deleteSharedPreferences("gn_secure")
-                    // …et, best-effort, de la clé maître de security-crypto (plus aucun usage).
                     try {
                         KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-                            .deleteEntry(MasterKey.DEFAULT_MASTER_KEY_ALIAS)
+                            .deleteEntry("_androidx_security_master_key_")
                     } catch (_: Exception) {
                         // Clé orpheline inoffensive : on la laisse.
                     }
                 } catch (e: Exception) {
-                    Log.w("GeoNatureConfig", "Migration du mot de passe vers gn_secure_v2 impossible — on retentera", e)
+                    Log.w("GeoNatureConfig", "Nettoyage de l'ancien coffre gn_secure impossible", e)
                 }
             }
         }

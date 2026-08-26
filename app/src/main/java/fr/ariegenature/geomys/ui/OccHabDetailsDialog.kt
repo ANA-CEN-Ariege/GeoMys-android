@@ -231,6 +231,18 @@ fun ouvrirDialogDetailsOccHab(
         natureVisible = true
     }
 
+    // Switch « stations du serveur » : UNIQUEMENT au formulaire de démarrage du relevé.
+    var lireChargerServeur: () -> Boolean = { d.chargerStationsServeur }
+    if (jddSeul) {
+        val sw = androidx.appcompat.widget.SwitchCompat(context).apply {
+            text = "Afficher mes stations déjà sur GeoNature"
+            isChecked = d.chargerStationsServeur
+            setPadding(0, (12 * density).toInt(), 0, 0)
+        }
+        racine.addView(sw)
+        lireChargerServeur = { sw.isChecked }
+    }
+
     // ── Groupe FACULTATIF : seulement dans le dialogue « Détails » complet. Altitudes et
     //    surface sont PAR STATION (auto-remplies : surface géodésique locale à la validation
     //    de la carte, altitudes MNT serveur si réseau) — lues/écrites sur vm.station, PAS sur
@@ -322,6 +334,7 @@ fun ouvrirDialogDetailsOccHab(
                 // Champ MASQUÉ par formConfig (widget non créé) → on PRÉSERVE la valeur
                 // existante (jamais effacée), comme Occtax/monitoring.
                 it.idNomObjetGeographique = if (natureVisible) lireNature() else d.idNomObjetGeographique
+                it.chargerStationsServeur = lireChargerServeur()
             }
             if (!jddSeul) {
                 vm.majDetails {

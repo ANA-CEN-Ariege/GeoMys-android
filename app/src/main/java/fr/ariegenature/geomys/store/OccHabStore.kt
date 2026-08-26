@@ -239,6 +239,8 @@ private fun normaliserHabitat(h: OccHabHabitat): OccHabHabitat? {
     if (h.id == null) return null
     return OccHabHabitat(
         id = h.id,
+        idHabitatServeur = h.idHabitatServeur,
+        uuidHabitat = h.uuidHabitat,
         cdHab = h.cdHab,
         habitatLabel = h.habitatLabel ?: "",
         nomCite = h.nomCite ?: "",

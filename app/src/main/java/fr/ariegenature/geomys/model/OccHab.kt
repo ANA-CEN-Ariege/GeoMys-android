@@ -33,6 +33,14 @@ import java.util.UUID
  */
 data class OccHabHabitat(
     val id: String = UUID.randomUUID().toString(),
+    /** id_habitat attribué par le SERVEUR (habitat lu depuis GeoNature). En MISE À JOUR d'une
+     *  station (POST /stations/<id>/), le renvoyer fait mettre à jour l'habitat existant au lieu
+     *  d'en créer un doublon — un habitat sans id est créé, un habitat omis est supprimé côté
+     *  serveur. Null pour un habitat créé localement (jamais envoyé en création). */
+    var idHabitatServeur: Int? = null,
+    /** Identifiant SINP de l'habitat (`unique_id_sinp_hab`) tel que lu sur le serveur — renvoyé
+     *  tel quel à la mise à jour pour que le serveur ne le régénère pas. Null en local. */
+    var uuidHabitat: String? = null,
     /** Code HABREF (obligatoire côté serveur). 0 = non renseigné (bloque l'envoi). */
     var cdHab: Int = 0,
     /** Libellé HABREF (affichage) aligné sur [cdHab]. */
@@ -69,7 +77,8 @@ data class OccHabStation(
      *  d'abord le serveur sur cet UUID pour ne pas recréer la station. Cf. [envoiIncertain]. */
     var uuidStation: String = UUID.randomUUID().toString(),
     /** id_station attribué par le serveur après un envoi réussi (ou pour une station lue
-     *  depuis le serveur en consultation). null = jamais envoyée / créée localement. */
+     *  depuis le serveur en consultation). null = jamais envoyée / créée localement. Quand il
+     *  est connu, un (ré)envoi part en MISE À JOUR (POST /stations/<id>/), jamais en création. */
     var idStationServeur: Int? = null,
     /** Date de création locale (epoch millis) — sert au tri de « Mes stations ». */
     val date: Long = System.currentTimeMillis(),
@@ -126,8 +135,9 @@ data class OccHabStation(
     var habitats: List<OccHabHabitat> = emptyList(),
     // ── État d'envoi (mêmes sémantiques que Sortie) ──
     var envoyeGeoNature: Boolean = false,
-    /** true dès qu'une station provient du serveur (consultation lecture seule) et non d'une
-     *  saisie locale — elle n'est ni rééditable ni renvoyable dans le MVP. */
+    /** true dès qu'une station provient du serveur et non d'une saisie locale : affichée en
+     *  consultation (gris) sur la carte, elle peut être IMPORTÉE dans la saisie courante pour
+     *  modification — elle repartira alors en mise à jour grâce à [idStationServeur]. */
     var origineServeur: Boolean = false,
     /** Message du dernier échec d'envoi (humanisé). Null si jamais échoué / envoi réussi. */
     var derniereErreurEnvoi: String? = null,

@@ -22,6 +22,9 @@ import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import fr.ariegenature.geomys.model.Denombrement
 import fr.ariegenature.geomys.model.Observation
+import fr.ariegenature.geomys.model.OccHabHabitat
+import fr.ariegenature.geomys.model.OccHabSaisie
+import fr.ariegenature.geomys.model.OccHabStation
 import fr.ariegenature.geomys.model.PointTrace
 import fr.ariegenature.geomys.model.Sortie
 import fr.ariegenature.geomys.model.Taxon
@@ -110,6 +113,76 @@ class GsonRoundTripTest {
         val relue = gson.fromJson<MutableList<Sortie?>>(json, type).filterNotNull().single()
 
         assertEquals(sortie, relue)
+    }
+
+    /** Modèles OccHab (OccHabStore) : couvre notamment les champs d'ÉDITION des stations serveur
+     *  (idStationServeur/uuidStation, idHabitatServeur/uuidHabitat) — les perdre à la relecture
+     *  ferait repartir un envoi en CRÉATION (doublon serveur) au lieu d'une mise à jour. */
+    @Test
+    fun saisie_occhab_integralement_peuplee_survit_au_round_trip() {
+        val habitat = OccHabHabitat(
+            id = "hab-1",
+            idHabitatServeur = 91,
+            uuidHabitat = "aaaaaaaa-1111-2222-3333-444444444444",
+            cdHab = 629,
+            habitatLabel = "Prairies de fauche de basse altitude",
+            nomCite = "Prairie de fauche",
+            determiner = "DUPONT jean",
+            recouvrement = 80.5,
+            precisionTechnique = "relevé de terrain",
+            idNomTypeDetermination = 11,
+            idNomTechniqueCollecte = 12,
+            idNomAbondance = 13,
+            idNomSensibilite = 14,
+            idNomInteretCommunautaire = 15,
+        )
+        val station = OccHabStation(
+            id = "st-1",
+            uuidStation = "bbbbbbbb-1111-2222-3333-444444444444",
+            idStationServeur = 42,
+            date = 1_750_000_000_000L,
+            geometryType = "Polygon",
+            latitude = 42.93,
+            longitude = 1.40,
+            geometryCoordsJson = "[[1.4,42.9],[1.5,42.9],[1.5,43.0]]",
+            idDataset = 12,
+            observateursIds = listOf(7, 8),
+            observateursNoms = listOf("DUPONT jean", "MARTIN paul"),
+            observateursTxt = "DUPONT jean",
+            stationName = "Tourbière du col",
+            comment = "station de test",
+            dateMin = 1_749_990_000_000L,
+            dateMax = 1_750_000_000_000L,
+            altitudeMin = 400,
+            altitudeMax = 420,
+            profondeurMin = 0,
+            profondeurMax = 2,
+            surface = 1234L,
+            precision = 10,
+            idNomExposition = 21,
+            idNomCalculSurface = 22,
+            idNomObjetGeographique = 23,
+            idNomTypeSol = 24,
+            idNomTypeMosaique = 25,
+            habitats = listOf(habitat),
+            envoyeGeoNature = false,
+            origineServeur = true,
+            derniereErreurEnvoi = "Réseau interrompu",
+            envoiIncertain = true,
+        )
+        val saisie = OccHabSaisie(
+            id = "saisie-1",
+            date = 1_750_000_000_000L,
+            stations = listOf(station),
+            envoyeGeoNature = false,
+            derniereErreurEnvoi = "Envoi partiel : 0/1",
+        )
+
+        val json = gson.toJson(listOf(saisie))
+        val type = object : TypeToken<MutableList<OccHabSaisie?>>() {}.type
+        val relue = gson.fromJson<MutableList<OccHabSaisie?>>(json, type).filterNotNull().single()
+
+        assertEquals(saisie, relue)
     }
 
     @Test

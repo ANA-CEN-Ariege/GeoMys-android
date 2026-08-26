@@ -49,6 +49,12 @@ data class OccHabEnvoiResult(
  * POST : le corps est un Feature GeoJSON dont les `properties` portent les champs de la station,
  * les `observers` (tableau d'`{id_role}`) et les `habitats` imbriqués. Les nomenclatures sont
  * envoyées en `id_nomenclature_*` (le modèle les stocke déjà ainsi). Pas de médias au MVP.
+ *
+ * MISE À JOUR : quand la station porte un `idStationServeur` (importée du serveur, ou déjà
+ * envoyée puis rééditée), le POST vise `/stations/<id>/` avec le MÊME payload — le serveur
+ * (blueprint `create_or_update_station`) recharge l'instance et Marshmallow la met à jour :
+ * un habitat portant son `id_habitat` est mis à jour, un habitat sans id est créé, un habitat
+ * omis est SUPPRIMÉ. Permission CRUVED U vérifiée par instance côté serveur.
  */
 object OccHabUpload {
 
@@ -72,12 +78,19 @@ object OccHabUpload {
             // tableau `habitats` peut donc être vide.
             val habitatsValides = station.habitats.filter { it.cdHab > 0 }
 
-            // Anti-doublon : une tentative précédente s'est soldée par un statut INCERTAIN (réseau
-            // coupé après l'émission) → la station a peut-être déjà été créée. Le serveur OccHab
-            // n'imposant aucune contrainte d'unicité, on interroge par notre UUID stable AVANT de
-            // re-POSTer. Trouvée → on renvoie son id sans rien recréer. Absente / serveur muet →
-            // on procède au POST (si le serveur est injoignable, rien n'a pu être créé).
-            if (station.envoiIncertain && (station.idStationServeur ?: 0) <= 0) {
+            // MISE À JOUR vs CRÉATION : un id_station serveur connu route l'envoi sur
+            // /stations/<id>/ (update) au lieu de /stations/ (création).
+            val estMiseAJour = (station.idStationServeur ?: 0) > 0
+
+            // Anti-doublon (CRÉATION seulement) : une tentative précédente s'est soldée par un
+            // statut INCERTAIN (réseau coupé après l'émission) → la station a peut-être déjà été
+            // créée. Le serveur OccHab n'imposant aucune contrainte d'unicité, on interroge par
+            // notre UUID stable AVANT de re-POSTer. Trouvée → on renvoie son id sans rien recréer.
+            // Absente / serveur muet → on procède au POST (si le serveur est injoignable, rien n'a
+            // pu être créé). En MISE À JOUR, cette vérification est INUTILE : re-POSTer
+            // /stations/<id>/ est idempotent (le serveur recharge la même instance) — après un
+            // update incertain, le ré-envoi re-POSTe donc directement.
+            if (station.envoiIncertain && !estMiseAJour) {
                 verifierStationExistante(base, token, cookies, station.uuidStation)?.let { idExistant ->
                     return@withContext OccHabEnvoiResult(
                         idStationServeur = idExistant,
@@ -110,6 +123,15 @@ object OccHabUpload {
             val habitatsArr = JSONArray()
             habitatsValides.forEach { h ->
                 habitatsArr.put(JSONObject().apply {
+                    // MISE À JOUR : id_habitat + unique_id_sinp_hab renvoyés quand connus, pour
+                    // que le serveur METTE À JOUR l'habitat existant au lieu d'un couple
+                    // suppression/re-création (ids et UUID SINP préservés). Jamais en CRÉATION :
+                    // le serveur rejetterait un id_habitat appartenant à une autre station
+                    // (validate_habitats), et un habitat neuf n'en porte pas.
+                    if (estMiseAJour) {
+                        h.idHabitatServeur?.takeIf { it > 0 }?.let { put("id_habitat", it) }
+                        h.uuidHabitat?.takeIf { it.isNotBlank() }?.let { put("unique_id_sinp_hab", it) }
+                    }
                     put("cd_hab", h.cdHab)
                     // nom_cite obligatoire : repli sur le libellé HABREF si l'utilisateur ne l'a pas édité.
                     put("nom_cite", h.nomCite.ifBlank { h.habitatLabel }.ifBlank { "Habitat ${h.cdHab}" })
@@ -158,11 +180,9 @@ object OccHabUpload {
                 .put("properties", properties)
                 .toString()
 
-            // Édition d'une station déjà envoyée : POST sur /stations/<id>/ (Phase 3+). Au MVP,
-            // idStationServeur est null pour une saisie locale → création sur /stations/.
-            val urlStr = station.idStationServeur?.takeIf { it > 0 }
-                ?.let { "$base/api/occhab/stations/$it/" }
-                ?: "$base/api/occhab/stations/"
+            // MISE À JOUR (id serveur connu) → POST /stations/<id>/ ; sinon CRÉATION → /stations/.
+            val urlStr = if (estMiseAJour) "$base/api/occhab/stations/${station.idStationServeur}/"
+                else "$base/api/occhab/stations/"
             val conn = HttpClient.postJson(URL(urlStr), token, cookies, 30000)
             val code = try {
                 OutputStreamWriter(conn.outputStream).use { it.write(body) }

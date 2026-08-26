@@ -113,6 +113,33 @@ class OccHabStore(context: Context) : JsonCollectionStore<OccHabSaisie>() {
     fun stationsDeSaisie(saisieId: String): List<OccHabStation> =
         charger().firstOrNull { it.id == saisieId }?.stations ?: emptyList()
 
+    /**
+     * INVARIANT (2026-08-26) : une station du serveur n'a jamais plus d'UNE copie locale non
+     * envoyée. Sans cela, deux imports de la même station (deux téléchargements, ou deux saisies)
+     * donnaient deux copies « à envoyer », chacune renvoyée en MISE À JOUR sur le même
+     * `id_station` — la dernière envoyée écrasant silencieusement les modifications de l'autre.
+     *
+     * Renvoie la copie locale NON ENVOYÉE de la station serveur [idStationServeur] (avec sa
+     * saisie), toutes saisies confondues, ou null si aucune n'est en attente (jamais importée,
+     * ou copie déjà envoyée). Une copie en envoi INCERTAIN compte comme en attente.
+     */
+    fun copieLocaleNonEnvoyee(idStationServeur: Int): Pair<OccHabSaisie, OccHabStation>? =
+        copiesLocalesNonEnvoyees()[idStationServeur]
+
+    /** Toutes les copies locales non envoyées de stations serveur, indexées par `idStationServeur`
+     *  (cf. [copieLocaleNonEnvoyee]). En cas de doublon hérité d'avant l'invariant, la 1ʳᵉ
+     *  rencontrée (saisie la plus récente) fait foi. */
+    fun copiesLocalesNonEnvoyees(): Map<Int, Pair<OccHabSaisie, OccHabStation>> {
+        val index = LinkedHashMap<Int, Pair<OccHabSaisie, OccHabStation>>()
+        charger().forEach { saisie ->
+            saisie.stations.forEach { st ->
+                val id = st.idStationServeur ?: return@forEach
+                if (id > 0 && !st.envoyeGeoNature && !index.containsKey(id)) index[id] = saisie to st
+            }
+        }
+        return index
+    }
+
     /** Marque une station envoyée + recalcule l'état de la saisie (envoyée = toutes envoyées). */
     fun marquerStationEnvoyee(saisieId: String, stationId: String, idStationServeur: Int?) =
         majStation(saisieId, stationId) {

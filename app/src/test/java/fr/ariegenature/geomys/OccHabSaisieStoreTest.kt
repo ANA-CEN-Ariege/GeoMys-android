@@ -87,6 +87,36 @@ class OccHabSaisieStoreTest {
         assertEquals(100, store.stationsDeSaisie("sa").first { it.id == "A" }.idStationServeur)
     }
 
+    // Invariant 2026-08-26 : une station serveur n'a jamais plus d'UNE copie locale à envoyer —
+    // la carte consulte cet index avant tout import / remise en édition.
+    @Test
+    fun copie_locale_non_envoyee_indexee_par_id_serveur_toutes_saisies() {
+        store.upsertStation("sa", station("A").copy(idStationServeur = 42))
+        store.upsertStation("sb", station("B").copy(idStationServeur = 43, envoyeGeoNature = true))
+        store.upsertStation("sb", station("C")) // locale pure (sans id serveur) : hors index
+        store.upsertStation("sb", station("D").copy(idStationServeur = 44, envoiIncertain = true))
+        val copie = store.copieLocaleNonEnvoyee(42)
+        assertEquals("sa", copie?.first?.id)
+        assertEquals("A", copie?.second?.id)
+        assertNull("copie déjà envoyée → plus en attente", store.copieLocaleNonEnvoyee(43))
+        assertEquals("envoi incertain = toujours en attente", "D", store.copieLocaleNonEnvoyee(44)?.second?.id)
+        assertNull(store.copieLocaleNonEnvoyee(99))
+        assertEquals(setOf(42, 44), store.copiesLocalesNonEnvoyees().keys)
+    }
+
+    @Test
+    fun copie_locale_disparait_une_fois_envoyee_et_revient_a_la_remise_en_edition() {
+        store.upsertStation("sa", station("A").copy(idStationServeur = 42))
+        store.marquerStationEnvoyee("sa", "A", 42)
+        assertNull(store.copieLocaleNonEnvoyee(42))
+        // Remise « à envoyer » (Modifier une station déjà envoyée) : redevient LA copie en attente.
+        store.upsertStation("sa", store.stationsDeSaisie("sa").single().copy(envoyeGeoNature = false))
+        assertEquals("A", store.copieLocaleNonEnvoyee(42)?.second?.id)
+        // Doublon hérité d'avant l'invariant : la saisie la plus récente (en tête) fait foi.
+        store.upsertStation("sb", station("A2").copy(idStationServeur = 42))
+        assertEquals("sb", store.copieLocaleNonEnvoyee(42)?.first?.id)
+    }
+
     @Test
     fun erreur_station_remonte_au_niveau_saisie() {
         store.upsertStation("sa", station("A"))

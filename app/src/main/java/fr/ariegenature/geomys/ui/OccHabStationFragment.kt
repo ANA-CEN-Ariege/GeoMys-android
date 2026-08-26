@@ -138,49 +138,62 @@ class OccHabStationFragment : Fragment() {
         val habitats = occhabViewModel.station.habitats
         binding.tvAucunHabitat.visibility = if (habitats.isEmpty()) View.VISIBLE else View.GONE
         habitats.forEach { h ->
+            // La ligne n'est PAS cliquable : l'édition passe par le crayon (comme les
+            // listes « Mes saisies » / « Mes stations »), la suppression par la poubelle.
             val row = LinearLayout(requireContext()).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
                 setPadding(0, (8 * density).toInt(), 0, (8 * density).toInt())
-                val bg = android.util.TypedValue()
-                requireContext().theme.resolveAttribute(android.R.attr.selectableItemBackground, bg, true)
-                setBackgroundResource(bg.resourceId)
             }
             val txt = TextView(requireContext()).apply {
                 layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
                 text = h.habitatLabel.ifBlank { h.nomCite }.ifBlank { "Habitat ${h.cdHab}" }
                 textSize = 14f
             }
-            // Même style que la poubelle de la liste des relevés multi-taxons
-            // (item_pending_obs.btn_delete : 36 dp, padding 6 dp, ripple sans bord,
-            // teinte holo_red_dark).
-            val suppr = ImageButton(requireContext()).apply {
-                layoutParams = LinearLayout.LayoutParams(
-                    (36 * density).toInt(), (36 * density).toInt())
-                val pad = (6 * density).toInt()
-                setPadding(pad, pad, pad, pad)
-                scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
-                setImageResource(R.drawable.ic_delete)
-                val bg = android.util.TypedValue()
-                requireContext().theme.resolveAttribute(
-                    android.R.attr.selectableItemBackgroundBorderless, bg, true)
-                setBackgroundResource(bg.resourceId)
-                contentDescription = "Supprimer l'habitat"
-                setColorFilter(androidx.core.content.ContextCompat.getColor(
-                    requireContext(), android.R.color.holo_red_dark))
-                setOnClickListener {
-                    // Une station SANS habitat reste valide et envoyable (décision terrain
-                    // 2026-08-24) : la suppression du dernier habitat est autorisée.
-                    occhabViewModel.supprimerHabitat(h.id)
-                    rafraichirHabitats()
-                    sauvegarderAuFilDeLEau()
-                }
+            // Crayon teinté colorPrimary comme celui de « Mes stations » (item_occhab_station).
+            val editer = creerBoutonLigne(
+                R.drawable.ic_edit, "Modifier l'habitat",
+                com.google.android.material.color.MaterialColors.getColor(
+                    row, com.google.android.material.R.attr.colorPrimary),
+            ) { ouvrirEcranHabitat(h.id) }
+            val suppr = creerBoutonLigne(
+                R.drawable.ic_delete, "Supprimer l'habitat",
+                androidx.core.content.ContextCompat.getColor(
+                    requireContext(), android.R.color.holo_red_dark),
+            ) {
+                // Une station SANS habitat reste valide et envoyable (décision terrain
+                // 2026-08-24) : la suppression du dernier habitat est autorisée.
+                occhabViewModel.supprimerHabitat(h.id)
+                rafraichirHabitats()
+                sauvegarderAuFilDeLEau()
             }
-            row.setOnClickListener { ouvrirEcranHabitat(h.id) }
             row.addView(txt)
+            row.addView(editer)
             row.addView(suppr)
             container.addView(row)
         }
+    }
+
+    /**
+     * Bouton d'action d'une ligne d'habitat — même style que la poubelle de la liste des
+     * relevés multi-taxons (item_pending_obs.btn_delete : 36 dp, padding 6 dp, ripple
+     * sans bord). [couleur] = couleur ARGB déjà résolue.
+     */
+    private fun creerBoutonLigne(
+        icone: Int, description: String, couleur: Int, action: () -> Unit,
+    ): ImageButton = ImageButton(requireContext()).apply {
+        layoutParams = LinearLayout.LayoutParams((36 * density).toInt(), (36 * density).toInt())
+        val pad = (6 * density).toInt()
+        setPadding(pad, pad, pad, pad)
+        scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+        setImageResource(icone)
+        val bg = android.util.TypedValue()
+        requireContext().theme.resolveAttribute(
+            android.R.attr.selectableItemBackgroundBorderless, bg, true)
+        setBackgroundResource(bg.resourceId)
+        contentDescription = description
+        setColorFilter(couleur)
+        setOnClickListener { action() }
     }
 
     override fun onDestroyView() { super.onDestroyView(); _binding = null }

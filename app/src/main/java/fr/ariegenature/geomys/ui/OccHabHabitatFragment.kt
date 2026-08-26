@@ -43,6 +43,7 @@ import fr.ariegenature.geomys.network.HabitatService
 import fr.ariegenature.geomys.network.HabitatSuggestion
 import fr.ariegenature.geomys.store.GeoNatureConfig
 import fr.ariegenature.geomys.store.NomenclatureCache
+import fr.ariegenature.geomys.util.AnaEval
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -68,6 +69,11 @@ class OccHabHabitatFragment : Fragment() {
     private var lireTypeDeterm: () -> Int? = { null }
     private var lireTech: () -> Int? = { null }
     private var lireAbon: () -> Int? = { null }
+
+    /** Lecteur de la section « Évaluation ANA / Natura 2000 » (bloc ANA-EVAL du plugin QGIS) —
+     *  non null SEULEMENT quand l'habitat édité porte un bloc (habitat lu du serveur). Habitat
+     *  sans bloc : AUCUN changement d'UI. */
+    private var lireAnaEval: (() -> String?)? = null
 
     /** true si le spinner « Technique de collecte » est AFFICHÉ (formConfig) : requis côté web
      *  (form-service.ts `id_nomenclature_collection_technique: Validators.required`) — on ne
@@ -282,6 +288,14 @@ class OccHabHabitatFragment : Fragment() {
             val (sp, lire) = construireSpinner("ABONDANCE_HAB", idInit(ex?.idNomAbondance, "ABONDANCE_HAB"))
             racine.addView(label("Abondance")); racine.addView(sp); lire
         } else { { ex?.idNomAbondance } }
+
+        // ── Évaluation ANA / Natura 2000 (bloc ANA-EVAL du plugin QGIS occhab-qgis) :
+        //    UNIQUEMENT quand l'habitat édité porte un bloc (habitat lu du serveur). Clés
+        //    HABITAT selon champs.py (+ pee) ; les autres clés du bloc (recouvrement,
+        //    determination, corresp…) traversent telles quelles. ──
+        lireAnaEval = ex?.anaEvalJson?.let { ana ->
+            construireSectionAnaEval(ctx, racine, AnaEval.CHAMPS_HABITAT, avecPee = true, anaEvalJson = ana)
+        }
     }
 
     private fun valider() {
@@ -317,6 +331,9 @@ class OccHabHabitatFragment : Fragment() {
                 idNomAbondance = lireAbon(),
                 idNomTypeDetermination = lireTypeDeterm(),
                 idNomInteretCommunautaire = lireInteret(),
+                // Bloc ANA-EVAL : la SECTION fait foi quand elle est affichée (null = bloc vidé,
+                // il disparaîtra du texte à l'envoi) ; sinon le bloc existant traverse tel quel.
+                anaEvalJson = lireAnaEval.let { if (it != null) it() else existant?.anaEvalJson },
             )
             occhabViewModel.ajouterOuMajHabitat(habitat)
         } else {

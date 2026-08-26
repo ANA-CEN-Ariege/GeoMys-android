@@ -449,6 +449,9 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
             if (pts.isNotEmpty()) {
                 Toast.makeText(requireContext(),
                     "${stations.size} station(s) du serveur affichée(s)", Toast.LENGTH_SHORT).show()
+                if (!geometrieChargee && pointChoisi == null && sommets.isEmpty()) {
+                    afficherInstructionSelection()
+                }
                 cadrerSur(pts + afficherStationsSession())
             } else {
                 Toast.makeText(requireContext(),
@@ -607,12 +610,10 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
      *  tap de saisie — cf. [afficherInstructionSelection] pour l'état initial avec stations. */
     private fun majTexteInstructionsMode() {
         binding.tvInstructions.text = when {
-            // Polygone SÉLECTIONNÉ (anneau chargé d'une station) : les gestes diffèrent de la
-            // saisie — tap = repartir sur un nouveau tracé, drag d'un sommet = modifier.
             mode == Mode.POLYGONE && geometrieChargee ->
-                "Touchez pour saisir un nouveau polygone · appui long sur un sommet pour le modifier"
+                "Poignée + : ajouter un sommet · appui long sur un sommet : déplacer · re-touchez la station : désélectionner"
             mode == Mode.POINT && geometrieChargee ->
-                "Touchez pour saisir une nouvelle station · appui long sur le point pour le déplacer"
+                "Touchez : déplacer le point · re-touchez le point : désélectionner"
             mode == Mode.POINT ->
                 "Touchez pour placer le point · appui long pour le déplacer"
             else ->
@@ -620,13 +621,17 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
         }
     }
 
+
     /** À l'arrivée sur la carte, si la session porte DÉJÀ des stations (rouges) et qu'aucune
      *  géométrie n'est en cours, le bandeau propose les deux gestes possibles au lieu du texte
      *  de mode — demande terrain 2026-08-25. */
     private fun afficherInstructionSelection() {
-        binding.tvInstructions.text =
+        binding.tvInstructions.text = if (stationsServeur.isNotEmpty())
+            "Touchez une station pour la modifier (grise = déjà sur GeoNature), ou saisissez une nouvelle station"
+        else
             "Sélectionnez une station pour la modifier, ou saisissez une nouvelle station"
     }
+
 
     private fun changerMode(m: Mode) {
         mode = m

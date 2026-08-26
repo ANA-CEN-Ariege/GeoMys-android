@@ -51,8 +51,16 @@ data class OccHabHabitat(
     var determiner: String? = null,
     /** Pourcentage de recouvrement (`recovery_percentage`). */
     var recouvrement: Double? = null,
-    /** Précision technique (`technical_precision`). */
+    /** Précision technique (`technical_precision`) — part HUMAINE seule : le bloc balisé
+     *  « [ANA-EVAL] {json} [/ANA-EVAL] » du plugin QGIS ANA (occhab-qgis) en est EXTRAIT au
+     *  parsing serveur (cf. [anaEvalJson]). */
     var precisionTechnique: String? = null,
+    /** Contenu JSON NORMALISÉ du bloc ANA-EVAL porté par `technical_precision` côté serveur
+     *  (champs métier ANA / Natura 2000, cf. [fr.ariegenature.geomys.util.AnaEval]). Extrait à
+     *  l'import ([fr.ariegenature.geomys.network.OccHabApi.parserFeatureCollection]) et
+     *  RE-FUSIONNÉ dans le payload à l'envoi (OccHabUpload) — le bloc survit ainsi aux
+     *  rééditions. Null = pas de bloc (habitat local ou serveur sans bloc) : standard inchangé. */
+    var anaEvalJson: String? = null,
     // ── Nomenclatures habitat (id_nomenclature ; null = non renseigné) ──
     /** Type de détermination (`id_nomenclature_determination_type`). */
     var idNomTypeDetermination: Int? = null,
@@ -104,8 +112,15 @@ data class OccHabStation(
     var observateursTxt: String? = null,
     /** Nom de la station (`station_name`). */
     var stationName: String? = null,
-    /** Commentaire (`comment`). */
+    /** Commentaire (`comment`) — part HUMAINE seule : le bloc « [ANA-EVAL] {json} [/ANA-EVAL] »
+     *  du plugin QGIS ANA (occhab-qgis) en est EXTRAIT au parsing serveur (cf. [anaEvalJson]). */
     var comment: String? = null,
+    /** Contenu JSON NORMALISÉ du bloc ANA-EVAL porté par `comment` côté serveur (champs métier
+     *  ANA / Natura 2000, cf. [fr.ariegenature.geomys.util.AnaEval]). Extrait à l'import et
+     *  RE-FUSIONNÉ dans le payload à l'envoi (OccHabUpload) — il survit ainsi au flux des
+     *  détails de session, qui réécrit `comment` à chaque sauvegarde. Null = pas de bloc
+     *  (station locale ou serveur sans bloc) : comportement standard strictement inchangé. */
+    var anaEvalJson: String? = null,
     /** Date+heure de début du relevé (→ `date_min`). null = [date]. */
     var dateMin: Long? = null,
     /** Date+heure de fin du relevé (→ `date_max`). null = même que le début. */

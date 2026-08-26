@@ -20,6 +20,7 @@ package fr.ariegenature.geomys.network
 
 import fr.ariegenature.geomys.model.OccHabStation
 import fr.ariegenature.geomys.store.GeoNatureConfig
+import fr.ariegenature.geomys.util.AnaEval
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -137,7 +138,14 @@ object OccHabUpload {
                     put("nom_cite", h.nomCite.ifBlank { h.habitatLabel }.ifBlank { "Habitat ${h.cdHab}" })
                     h.determiner?.takeIf { it.isNotBlank() }?.let { put("determiner", it) }
                     h.recouvrement?.let { put("recovery_percentage", it) }
-                    h.precisionTechnique?.takeIf { it.isNotBlank() }?.let { put("technical_precision", it) }
+                    // technical_precision : part humaine RE-FUSIONNÉE avec le bloc ANA-EVAL du
+                    // plugin QGIS (anaEvalJson, extrait au parsing serveur) ; la clé
+                    // `recouvrement` du bloc (champ DOUBLE) est réalignée sur la valeur native
+                    // éditée. anaEvalJson null → comportement standard STRICTEMENT inchangé.
+                    AnaEval.avecBloc(
+                        h.precisionTechnique,
+                        AnaEval.avecRecouvrementNatif(h.anaEvalJson, h.recouvrement),
+                    )?.let { put("technical_precision", it) }
                     h.idNomTypeDetermination?.let { put("id_nomenclature_determination_type", it) }
                     // collection_technique : obligatoire côté serveur mais a un défaut serveur —
                     // on l'omet si non renseigné pour laisser le serveur appliquer son défaut.
@@ -157,7 +165,10 @@ object OccHabUpload {
                 put("date_min", dateFmt.format(dateMin))
                 put("date_max", dateFmt.format(dateMax))
                 station.stationName?.takeIf { it.isNotBlank() }?.let { put("station_name", it) }
-                station.comment?.takeIf { it.isNotBlank() }?.let { put("comment", it) }
+                // comment : part humaine RE-FUSIONNÉE avec le bloc ANA-EVAL de la station
+                // (anaEvalJson) — le bloc survit ainsi au flux des détails de session.
+                // anaEvalJson null → comportement standard STRICTEMENT inchangé.
+                AnaEval.avecBloc(station.comment, station.anaEvalJson)?.let { put("comment", it) }
                 station.altitudeMin?.let { put("altitude_min", it) }
                 station.altitudeMax?.let { put("altitude_max", it) }
                 station.profondeurMin?.let { put("depth_min", it) }

@@ -26,8 +26,8 @@ android {
         minSdk = 24
         targetSdk = 36
         // versionCode croissant partagé github/play (un code déposé sur Play est consommé à jamais).
-        versionCode = 179
-        versionName = "1.3.14"
+        versionCode = 180
+        versionName = "1.3.15"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

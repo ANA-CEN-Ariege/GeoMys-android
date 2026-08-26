@@ -121,6 +121,8 @@ class OccHabParserTest {
         assertEquals("DUPONT jean", st.observateursTxt)
         assertEquals("Tourbière du col", st.stationName)
         assertEquals("station de test", st.comment)
+        // Sans bloc ANA-EVAL : anaEvalJson null, textes STRICTEMENT inchangés (standard).
+        assertNull(st.anaEvalJson)
         assertEquals(400, st.altitudeMin)
         assertEquals(420, st.altitudeMax)
         assertEquals(0, st.profondeurMin)
@@ -142,6 +144,7 @@ class OccHabParserTest {
         assertEquals("DUPONT jean", h.determiner)
         assertEquals(80.5, h.recouvrement!!, 1e-9)
         assertEquals("relevé de terrain", h.precisionTechnique)
+        assertNull(h.anaEvalJson)
         assertEquals(11, h.idNomTypeDetermination)
         assertEquals(12, h.idNomTechniqueCollecte)
         assertEquals(13, h.idNomAbondance)
@@ -224,6 +227,91 @@ class OccHabParserTest {
         assertNull(h.determiner)
         assertNull(h.precisionTechnique)
         assertNull(h.idNomAbondance)
+    }
+
+    /** Stations du plugin QGIS occhab-qgis : le bloc « [ANA-EVAL] {json} [/ANA-EVAL] » est
+     *  EXTRAIT de comment/technical_precision (textes stockés purement humains, JSON normalisé
+     *  dans anaEvalJson — il sera re-fusionné à l'envoi). Le recouvrement est un champ DOUBLE :
+     *  la clé du bloc fait foi sur la colonne `recovery_percentage` à la relecture. */
+    @Test
+    fun bloc_ana_eval_extrait_de_comment_et_technical_precision() {
+        val texte = """
+        {"type":"FeatureCollection","features":[{"type":"Feature",
+          "geometry":{"type":"Point","coordinates":[1.4,42.9]},
+          "properties":{
+            "id_station": 7,
+            "comment": "Note de terrain.\n\n[ANA-EVAL] {\"enjeu\": \"fort\", \"zone_humide\": \"oui\", \"echelle\": 5000} [/ANA-EVAL]",
+            "habitats": [{
+              "cd_hab": 629, "nom_cite": "Prairie",
+              "recovery_percentage": 45.0,
+              "technical_precision": "relevé de terrain\n\n[ANA-EVAL] {\"typicite\": \"bonne\", \"recouvrement\": 60, \"corresp\": {\"EUNIS\": {\"cd_hab\": 5678, \"src\": \"manuel\"}}} [/ANA-EVAL]"
+            }]
+          }}]}
+        """.trimIndent()
+        val st = OccHabApi.parserFeatureCollection(texte).single()
+
+        // Station : comment = part humaine seule, bloc normalisé à part.
+        assertEquals("Note de terrain.", st.comment)
+        val anaStation = fr.ariegenature.geomys.util.AnaEval.depuisJson(st.anaEvalJson)
+        assertEquals("fort", anaStation["enjeu"])
+        assertEquals("oui", anaStation["zone_humide"])
+        assertEquals(5000, anaStation["echelle"])
+
+        // Habitat : même extraction ; le bloc (60) PRIME sur la colonne (45) pour le
+        // recouvrement, et la clé structurée `corresp` est préservée telle quelle.
+        val h = st.habitats.single()
+        assertEquals("relevé de terrain", h.precisionTechnique)
+        assertEquals(60.0, h.recouvrement!!, 1e-9)
+        val anaHabitat = fr.ariegenature.geomys.util.AnaEval.depuisJson(h.anaEvalJson)
+        assertEquals("bonne", anaHabitat["typicite"])
+        assertEquals(mapOf("EUNIS" to mapOf("cd_hab" to 5678, "src" to "manuel")), anaHabitat["corresp"])
+    }
+
+    /** Ancien format `clé=valeur` du bloc : encore lu (stations synchronisées avant la 0.10),
+     *  converti en JSON normalisé dans anaEvalJson — alias hérités compris. */
+    @Test
+    fun bloc_ana_eval_ancien_format_converti() {
+        val texte = """
+        {"type":"FeatureCollection","features":[{"type":"Feature",
+          "geometry":{"type":"Point","coordinates":[1.4,42.9]},
+          "properties":{
+            "id_station": 7,
+            "comment": "Relevé.\n\n[ANA-EVAL] enjeu=majeur | zone_humide=true [/ANA-EVAL]",
+            "habitats": []
+          }}]}
+        """.trimIndent()
+        val st = OccHabApi.parserFeatureCollection(texte).single()
+        assertEquals("Relevé.", st.comment)
+        assertEquals(
+            mapOf("enjeu" to "tres_fort", "zone_humide" to "oui"),
+            fr.ariegenature.geomys.util.AnaEval.depuisJson(st.anaEvalJson),
+        )
+    }
+
+    /** Un commentaire qui ne PORTE que le bloc (pas de texte humain) : comment devient null,
+     *  le bloc seul repartira à l'envoi. Et un bloc inexploitable laisse tout inchangé. */
+    @Test
+    fun bloc_ana_eval_sans_texte_humain_et_bloc_inexploitable() {
+        val texte = """
+        {"type":"FeatureCollection","features":[
+          {"type":"Feature","geometry":{"type":"Point","coordinates":[1.4,42.9]},
+           "properties":{"id_station": 1,
+             "comment": "[ANA-EVAL] {\"enjeu\": \"faible\"} [/ANA-EVAL]", "habitats": []}},
+          {"type":"Feature","geometry":{"type":"Point","coordinates":[1.5,42.8]},
+           "properties":{"id_station": 2,
+             "comment": "Note. [ANA-EVAL] nimporte quoi [/ANA-EVAL]", "habitats": []}}
+        ]}
+        """.trimIndent()
+        val stations = OccHabApi.parserFeatureCollection(texte)
+        val avecBloc = stations.first { it.idStationServeur == 1 }
+        assertNull(avecBloc.comment)
+        assertEquals("faible",
+            fr.ariegenature.geomys.util.AnaEval.depuisJson(avecBloc.anaEvalJson)["enjeu"])
+        // Bloc illisible → RIEN n'est extrait ni modifié : le texte complet reste tel quel
+        // (non destructif, il repartira verbatim au serveur).
+        val sansBloc = stations.first { it.idStationServeur == 2 }
+        assertNull(sansBloc.anaEvalJson)
+        assertEquals("Note. [ANA-EVAL] nimporte quoi [/ANA-EVAL]", sansBloc.comment)
     }
 
     /** Le filtre propriétaire (numérisateur OU observateur) survit à l'enrichissement du parser :

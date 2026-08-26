@@ -21,6 +21,7 @@ package fr.ariegenature.geomys.network
 import fr.ariegenature.geomys.model.OccHabHabitat
 import fr.ariegenature.geomys.model.OccHabStation
 import fr.ariegenature.geomys.store.GeoNatureConfig
+import fr.ariegenature.geomys.util.AnaEval
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -268,6 +269,10 @@ object OccHabApi {
                 if (!estNumerisateur && !estObservateur) continue
             }
             val (type, lat, lon, coordsJson) = parserGeometrie(f.optJSONObject("geometry"))
+            // Bloc ANA-EVAL de la station (porté par `comment`) : même extraction que côté
+            // habitat — sans bloc exploitable, le commentaire reste strictement inchangé.
+            val commentBrut = texteOuNull(props, "comment")
+            val anaEvalStation = AnaEval.extraireBlocJson(commentBrut)
             val dateMin = parserDate(props.optString("date_min").takeIf { it.isNotBlank() })
             val dateMax = parserDate(props.optString("date_max").takeIf { it.isNotBlank() })
             // Observateurs : ids + noms complets (UserSchema : nom_complet, sinon NOM prénom) —
@@ -294,6 +299,12 @@ object OccHabApi {
                     val cdHab = h.optInt("cd_hab", 0)
                     val label = h.optJSONObject("habref")?.optString("lb_hab_fr", "")
                         ?.ifBlank { h.optString("nom_cite", "") } ?: h.optString("nom_cite", "")
+                    // Bloc ANA-EVAL du plugin QGIS occhab-qgis : EXTRAIT de technical_precision
+                    // (le texte stocké redevient purement humain, le JSON part dans anaEvalJson,
+                    // re-fusionné à l'envoi). Pas de bloc exploitable → null, champ INCHANGÉ.
+                    val precisionBrute = texteOuNull(h, "technical_precision")
+                    val anaEvalHabitat = AnaEval.extraireBlocJson(precisionBrute)
+                    val recouvrementColonne = h.optDouble("recovery_percentage").takeIf { !it.isNaN() }
                     habitats.add(OccHabHabitat(
                         // id serveur + UUID SINP : renvoyés à l'update pour que le serveur METTE À
                         // JOUR cet habitat (sinon il le supprimerait et en recréerait un autre).
@@ -303,8 +314,12 @@ object OccHabApi {
                         habitatLabel = label,
                         nomCite = h.optString("nom_cite", ""),
                         determiner = texteOuNull(h, "determiner"),
-                        recouvrement = h.optDouble("recovery_percentage").takeIf { !it.isNaN() },
-                        precisionTechnique = texteOuNull(h, "technical_precision"),
+                        // Recouvrement : champ DOUBLE du plugin (bloc + colonne native) — à la
+                        // relecture le BLOC fait foi, repli sur recovery_percentage sans bloc.
+                        recouvrement = AnaEval.recouvrementDuBloc(anaEvalHabitat) ?: recouvrementColonne,
+                        precisionTechnique = if (anaEvalHabitat == null) precisionBrute
+                            else AnaEval.texteHumain(precisionBrute).takeIf { it.isNotBlank() },
+                        anaEvalJson = anaEvalHabitat,
                         idNomTypeDetermination = idNomenclature(
                             h, "id_nomenclature_determination_type", "nomenclature_determination_type"),
                         idNomTechniqueCollecte = idNomenclature(
@@ -334,7 +349,9 @@ object OccHabApi {
                 observateursNoms = obsNoms,
                 observateursTxt = texteOuNull(props, "observers_txt"),
                 stationName = texteOuNull(props, "station_name"),
-                comment = texteOuNull(props, "comment"),
+                comment = if (anaEvalStation == null) commentBrut
+                    else AnaEval.texteHumain(commentBrut).takeIf { it.isNotBlank() },
+                anaEvalJson = anaEvalStation,
                 dateMin = dateMin,
                 dateMax = dateMax,
                 altitudeMin = entierOuNull(props, "altitude_min"),

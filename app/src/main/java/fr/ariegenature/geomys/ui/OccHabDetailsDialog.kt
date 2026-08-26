@@ -35,6 +35,7 @@ import com.google.android.material.textfield.TextInputLayout
 import fr.ariegenature.geomys.R
 import fr.ariegenature.geomys.store.GeoNatureConfig
 import fr.ariegenature.geomys.store.NomenclatureCache
+import fr.ariegenature.geomys.util.AnaEval
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -247,6 +248,9 @@ fun ouvrirDialogDetailsOccHab(
     //    surface sont PAR STATION (auto-remplies : surface géodésique locale à la validation
     //    de la carte, altitudes MNT serveur si réseau) — lues/écrites sur vm.station, PAS sur
     //    les détails de session. ──
+    // Lecteur de la section « Évaluation ANA / Natura 2000 » (bloc ANA-EVAL du plugin QGIS) —
+    // null tant que la section n'est pas construite (station sans bloc = AUCUN changement d'UI).
+    var lireAnaEval: (() -> String?)? = null
     if (!jddSeul) {
         val st = vm.station
         if (config.occhabChampVisible("altitude_min")) etAltMin = champNombre("Altitude min (m)", st.altitudeMin?.toString())
@@ -267,6 +271,14 @@ fun ouvrirDialogDetailsOccHab(
                 setText(d.comment.orEmpty())
             }
             racine.addView(etComment)
+        }
+        // ── Évaluation ANA / Natura 2000 (bloc ANA-EVAL du plugin QGIS occhab-qgis), sous le
+        //    commentaire : UNIQUEMENT quand la STATION courante (lue du serveur) porte un bloc.
+        //    Clés STATION selon champs.py ; lue/écrite sur vm.station.anaEvalJson (via AnaEval),
+        //    les autres clés du bloc (statut, etc.) traversent telles quelles. ──
+        st.anaEvalJson?.let { ana ->
+            lireAnaEval = construireSectionAnaEval(
+                context, racine, AnaEval.CHAMPS_STATION, avecPee = false, anaEvalJson = ana)
         }
     }
 
@@ -351,6 +363,10 @@ fun ouvrirDialogDetailsOccHab(
                 vm.definirSurface(
                     if (etSurface != null) etSurface?.text?.toString()?.trim()?.toLongOrNull() else st.surface,
                 )
+                // Bloc ANA-EVAL : réécrit sur la STATION courante (champ par station, comme les
+                // altitudes) — il repartira fusionné dans `comment` à l'envoi. Section absente
+                // (station sans bloc) → rien n'est touché.
+                lireAnaEval?.let { vm.station.anaEvalJson = it() }
             }
             // Mémorise les infos obligatoires validées : le formulaire du RELEVÉ SUIVANT
             // repartira de ces valeurs (dates exclues au rechargement — cf.
@@ -388,5 +404,149 @@ internal fun construireSpinnerNomenclature(
     return spinner to {
         val pos = spinner.selectedItemPosition
         if (pos <= 0) null else valeurs.getOrNull(pos - 1)?.id
+    }
+}
+
+/**
+ * Section « Évaluation ANA / Natura 2000 » — édition du bloc ANA-EVAL du plugin QGIS
+ * `occhab-qgis`, affichée UNIQUEMENT quand l'objet édité porte un bloc (anaEvalJson non null :
+ * stations/habitats lus du serveur). Partagée par le dialogue Détails de la station
+ * ([ouvrirDialogDetailsOccHab], clés STATION) et l'écran habitat ([OccHabHabitatFragment],
+ * clés HABITAT + pee) — répartition des clés = champs.py du plugin ([AnaEval.CHAMPS_STATION] /
+ * [AnaEval.CHAMPS_HABITAT]).
+ *
+ * Les clés hors périmètre du niveau (statut, recouvrement, clés de l'autre niveau…) sont
+ * PRÉSERVÉES telles quelles ; `determination` et `corresp` (arbitrages botaniste) sont montrées
+ * en LECTURE SEULE compacte, jamais éditées ici.
+ *
+ * Renvoie un LECTEUR du bloc mis à jour : JSON canonique validé par [AnaEval], ou null quand
+ * plus rien n'est renseigné (le bloc disparaîtra du texte à l'envoi).
+ */
+internal fun construireSectionAnaEval(
+    context: Context,
+    racine: LinearLayout,
+    champs: List<AnaEval.ChampAnaEval>,
+    avecPee: Boolean,
+    anaEvalJson: String,
+): () -> String? {
+    val density = context.resources.displayMetrics.density
+    val valeurs = AnaEval.depuisJson(anaEvalJson)
+
+    fun label(t: String) = TextView(context).apply {
+        text = t
+        setPadding(0, (12 * density).toInt(), 0, (2 * density).toInt())
+        setTypeface(typeface, android.graphics.Typeface.BOLD)
+    }
+
+    // Titre de section — même famille visuelle que les libellés, en plus marqué.
+    racine.addView(TextView(context).apply {
+        text = "Évaluation ANA / Natura 2000"
+        textSize = 16f
+        setTypeface(typeface, android.graphics.Typeface.BOLD)
+        setPadding(0, (20 * density).toInt(), 0, (2 * density).toInt())
+    })
+
+    // Widgets d'édition : (clé → lecteur de la valeur saisie, null = clé effacée).
+    val lecteurs = mutableListOf<Pair<String, () -> Any?>>()
+    for (champ in champs) {
+        racine.addView(label(champ.libelle))
+        val ref = champ.referentiel
+        if (ref != null) {
+            // Code fermé → spinner « — Non renseigné — » + libellés du référentiel (le CODE est
+            // stocké, le libellé affiché — même patron que fill_eval_combo du plugin).
+            val labels = mutableListOf("— Non renseigné —").apply { ref.forEach { add(it.second) } }
+            val spinner = Spinner(context)
+            val adapter = ArrayAdapter(context, android.R.layout.simple_spinner_item, labels)
+            adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+            spinner.adapter = adapter
+            val idx = ref.indexOfFirst { it.first == valeurs[champ.cle] }
+            if (idx >= 0) spinner.setSelection(idx + 1)
+            racine.addView(spinner)
+            lecteurs.add(champ.cle to {
+                val pos = spinner.selectedItemPosition
+                if (pos <= 0) null else ref.getOrNull(pos - 1)?.first
+            })
+        } else {
+            val et = EditText(context).apply {
+                if (champ.entier) {
+                    inputType = InputType.TYPE_CLASS_NUMBER
+                } else {
+                    inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or
+                        InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+                }
+                setText(valeurs[champ.cle]?.toString().orEmpty())
+            }
+            racine.addView(et)
+            lecteurs.add(champ.cle to {
+                val t = et.text?.toString()?.trim().orEmpty()
+                when {
+                    t.isEmpty() -> null
+                    champ.entier -> t.toIntOrNull()
+                    else -> t
+                }
+            })
+        }
+    }
+
+    // PEE (plantes exotiques envahissantes) : 3 taxons au plus — clé HABITAT (champs.py).
+    val champsPee = mutableListOf<EditText>()
+    if (avecPee) {
+        racine.addView(label("PEE — plantes exotiques envahissantes (3 taxons max)"))
+        val peeActuel = (valeurs["pee"] as? List<*>).orEmpty()
+        repeat(3) { i ->
+            val et = EditText(context).apply {
+                isSingleLine = true
+                inputType = InputType.TYPE_CLASS_TEXT
+                hint = "Taxon ${i + 1}"
+                setText(peeActuel.getOrNull(i)?.toString().orEmpty())
+            }
+            racine.addView(et)
+            champsPee.add(et)
+        }
+    }
+
+    // determination / corresp : arbitrages du botaniste — AFFICHÉS mais jamais éditables
+    // (préservés tels quels dans le bloc).
+    fun texteLectureSeule(t: String) = TextView(context).apply {
+        text = t
+        textSize = 13f
+        setPadding((4 * density).toInt(), (4 * density).toInt(), 0, (4 * density).toInt())
+    }
+    (valeurs["determination"] as? Map<*, *>)?.let { det ->
+        val ancre = (det["ancre"] as? String)?.let { cle ->
+            AnaEval.TYPOLOGIES_CORRESPONDANCE.firstOrNull { it.first == cle }?.second ?: cle
+        }
+        racine.addView(label("Détermination hors HABREF (non modifiable)"))
+        racine.addView(texteLectureSeule(
+            det["nom"].toString() + (ancre?.let { " — ancre $it" } ?: "")))
+    }
+    (valeurs["corresp"] as? Map<*, *>)?.let { corr ->
+        val lignes = corr.entries.mapNotNull { (typologie, detail) ->
+            val d = detail as? Map<*, *> ?: return@mapNotNull null
+            val libelle = AnaEval.TYPOLOGIES_CORRESPONDANCE
+                .firstOrNull { it.first == typologie }?.second ?: typologie.toString()
+            val code = d["code"]?.toString() ?: "cd_hab ${d["cd_hab"]}"
+            val src = (d["src"] as? String)?.let { " ($it)" } ?: ""
+            "$libelle : $code$src"
+        }
+        if (lignes.isNotEmpty()) {
+            racine.addView(label("Correspondances arbitrées (non modifiables)"))
+            racine.addView(texteLectureSeule(lignes.joinToString("\n")))
+        }
+    }
+
+    return {
+        // Fusion NON destructive : on repart des valeurs du bloc (clés préservées comprises) et
+        // on n'y remplace que les clés éditées ici — valeur vidée = clé retirée.
+        val maj = valeurs.toMutableMap()
+        for ((cle, lire) in lecteurs) {
+            val v = lire()
+            if (v == null) maj.remove(cle) else maj[cle] = v
+        }
+        if (avecPee) {
+            val pee = champsPee.mapNotNull { it.text?.toString()?.trim()?.takeIf { s -> s.isNotEmpty() } }
+            if (pee.isEmpty()) maj.remove("pee") else maj["pee"] = pee
+        }
+        AnaEval.versJson(maj)
     }
 }

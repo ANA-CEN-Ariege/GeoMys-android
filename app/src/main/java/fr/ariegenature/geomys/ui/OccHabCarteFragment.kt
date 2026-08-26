@@ -468,7 +468,7 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
         overlaysServeur.forEach { binding.map.overlays.remove(it) }
         overlaysServeur.clear()
         sommetsServeur.clear()
-        val gris = 0xFF616161.toInt()
+        val violet = 0xFF8E24AA.toInt() // contour COLORÉ : le gris se perdait sur certains fonds
         val pts = mutableListOf<GeoPoint>()
         stationsServeur.forEach { st ->
             if (st.geometryType == "Polygon" && !st.geometryCoordsJson.isNullOrEmpty()) {
@@ -483,9 +483,9 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
                     if (ring.size >= 2) {
                         val poly = Polygon(binding.map).apply {
                             points = ring
-                            fillPaint.color = 0x26616161
-                            outlinePaint.color = gris
-                            outlinePaint.strokeWidth = 3f
+                            fillPaint.color = 0x268E24AA
+                            outlinePaint.color = violet
+                            outlinePaint.strokeWidth = 4f
                             infoWindow = null
                             setOnClickListener { _, _, _ -> proposerImportStationServeur(st); true }
                         }
@@ -499,7 +499,7 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
                 pts.add(gp)
                 val m = Marker(binding.map).apply {
                     position = gp
-                    icon = cercleSommet(gris)
+                    icon = cercleSommet(violet)
                     setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
                     isDraggable = false
                     setInfoWindow(null)
@@ -627,7 +627,7 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
      *  de mode — demande terrain 2026-08-25. */
     private fun afficherInstructionSelection() {
         binding.tvInstructions.text = if (stationsServeur.isNotEmpty())
-            "Touchez une station pour la modifier (grise = déjà sur GeoNature), ou saisissez une nouvelle station"
+            "Touchez une station pour la modifier (violette = déjà sur GeoNature), ou saisissez une nouvelle station"
         else
             "Sélectionnez une station pour la modifier, ou saisissez une nouvelle station"
     }

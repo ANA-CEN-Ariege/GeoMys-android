@@ -75,12 +75,23 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
     // markers pendant un drag (cf. TraceFragment).
     private var markerPoint: Marker? = null
     private val markersSommets = mutableListOf<Marker>()
+    /** Poignées « + » au MILIEU de chaque arête du polygone SÉLECTIONNÉ (fermeture incluse) :
+     *  taper une poignée INSÈRE un sommet sur cette arête — mécanisme des candidats de QField
+     *  (QfVertexModel.createCandidates) : l'insertion se fait toujours sur l'arête visée,
+     *  jamais en fin d'anneau → aucun polygone auto-croisé possible. */
+    private val markersPoignees = mutableListOf<Marker>()
     private var overlayForme: Overlay? = null
     // Overlays en LECTURE SEULE des autres stations déjà posées dans la session (pins/polygones
     // rouges). Redessinés séparément des overlays d'édition ; jamais draggables.
     private val overlaysSession = mutableListOf<Overlay>()
     // Sommets des stations de session : cibles d'AIMANTAGE (snapping) d'un nouveau point/sommet.
     private val sommetsSession = mutableListOf<GeoPoint>()
+    // Stations DU SERVEUR (switch du formulaire de démarrage) : overlays gris + sommets ajoutés
+    // aux cibles d'aimantage. CLIQUABLES : un tap propose d'IMPORTER la station dans la saisie
+    // courante pour la modifier (renvoi en mise à jour) — cf. [proposerImportStationServeur].
+    private val stationsServeur = mutableListOf<fr.ariegenature.geomys.model.OccHabStation>()
+    private val overlaysServeur = mutableListOf<Overlay>()
+    private val sommetsServeur = mutableListOf<GeoPoint>()
     // true dès qu'un cadrage initial a été imposé (géométrie courante ou stations de session) :
     // empêche le premier fix GPS de recentrer ailleurs.
     private var cadrageInitialFait = false
@@ -149,7 +160,9 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
                 fr.ariegenature.geomys.store.GeoNatureConfig(requireContext()),
                 jddObligatoire = true, jddSeul = true,
                 onAnnule = { allerAccueil() },
-            ) {}
+            ) {
+                if (occhabViewModel.details.chargerStationsServeur) chargerStationsServeur()
+            }
         }
 
         // Poubelle de la STATION SÉLECTIONNÉE (haut-droite, sous le bandeau) : suppression
@@ -365,10 +378,31 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
      *  géométrie devient l'objet en cours (draggable), les autres stations restent en lecture
      *  seule. « Valider » enchaînera sur la liste des habitats (la station en porte). */
     private fun editerStationExistante(st: fr.ariegenature.geomys.model.OccHabStation) {
-        // Une station déjà envoyée n'est pas rééditable : ses modifications ne repartiraient jamais
-        // (elle reste marquée envoyée), et sans id serveur fiable un ré-envoi la dupliquerait.
+        // Station déjà envoyée : rééditable SEULEMENT si son id serveur est connu — elle repasse
+        // alors « à envoyer » et repartira en MISE À JOUR (POST /stations/<id>/, pas de doublon).
+        // Sans id serveur (envoi ancien), un update est impossible et un re-POST dupliquerait :
+        // on garde le refus.
         if (st.envoyeGeoNature) {
-            Toast.makeText(requireContext(), "Station déjà envoyée — non modifiable.", Toast.LENGTH_SHORT).show()
+            if ((st.idStationServeur ?: 0) > 0) {
+                AlertDialog.Builder(requireContext())
+                    .setTitle("Modifier cette station déjà envoyée ?")
+                    .setMessage("Elle sera renvoyée à GeoNature en MISE À JOUR au prochain envoi " +
+                        "(pas de doublon).")
+                    .setPositiveButton("Modifier") { _, _ ->
+                        val modifiable = st.copy(envoyeGeoNature = false, envoiIncertain = false)
+                        val store = fr.ariegenature.geomys.store.OccHabStore(requireContext())
+                        if (!store.upsertStation(occhabViewModel.saisieId, modifiable)) {
+                            alerterEchecEcritureStore(requireContext(),
+                                "Libérez de l'espace (photos, cache de cartes) puis retouchez la station.")
+                            return@setPositiveButton
+                        }
+                        editerStationExistante(modifiable)
+                    }
+                    .setNegativeButton("Annuler", null)
+                    .show()
+            } else {
+                Toast.makeText(requireContext(), "Station déjà envoyée — non modifiable.", Toast.LENGTH_SHORT).show()
+            }
             return
         }
         occhabViewModel.reprendreStation(st)
@@ -377,6 +411,7 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
         sommets.clear()
         markerPoint?.let { binding.map.overlays.remove(it) }; markerPoint = null
         markersSommets.forEach { binding.map.overlays.remove(it) }; markersSommets.clear()
+        markersPoignees.forEach { binding.map.overlays.remove(it) }; markersPoignees.clear()
         overlayForme?.let { binding.map.overlays.remove(it) }; overlayForme = null
         cadrageInitialFait = false
         val ptsCourant = preremplirDepuisViewModel() // charge la géométrie de st (mode + redessine)
@@ -390,17 +425,138 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
             Toast.LENGTH_LONG).show()
     }
 
+    /** Charge les stations de l'utilisateur DÉJÀ sur le serveur GeoNature (switch du
+     *  formulaire de démarrage) et les affiche en GRIS — leurs sommets deviennent des cibles
+     *  d'aimantage — puis cadre la carte sur leur emprise (+ celles de la session). Un tap sur
+     *  une station grise propose de l'IMPORTER pour la modifier (renvoi en mise à jour).
+     *  Best-effort : hors-ligne/erreur → toast humanisé, la saisie continue. */
+    private fun chargerStationsServeur() {
+        val appContext = requireContext().applicationContext
+        Toast.makeText(requireContext(), "Chargement de vos stations GeoNature…", Toast.LENGTH_SHORT).show()
+        viewLifecycleOwner.lifecycleScope.launch {
+            val stations = try {
+                fr.ariegenature.geomys.network.OccHabApi.chargerStations(
+                    fr.ariegenature.geomys.store.GeoNatureConfig(appContext))
+            } catch (e: Exception) {
+                if (isAdded) Toast.makeText(requireContext(),
+                    fr.ariegenature.geomys.network.humaniserErreurReseau(e), Toast.LENGTH_LONG).show()
+                return@launch
+            }
+            if (!isAdded || _binding == null) return@launch
+            stationsServeur.clear()
+            stationsServeur.addAll(stations)
+            val pts = afficherStationsServeur()
+            if (pts.isNotEmpty()) {
+                Toast.makeText(requireContext(),
+                    "${stations.size} station(s) du serveur affichée(s)", Toast.LENGTH_SHORT).show()
+                cadrerSur(pts + afficherStationsSession())
+            } else {
+                Toast.makeText(requireContext(),
+                    "Aucune station sur le serveur pour ce compte", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    /** (Re)dessine les stations SERVEUR ([stationsServeur]) en gris et alimente les cibles
+     *  d'aimantage. Un tap (polygone ou point) propose l'IMPORT pour modification — même geste
+     *  que la sélection d'une station de session, avec confirmation en plus. Renvoie tous les
+     *  points dessinés (pour le cadrage). */
+    private fun afficherStationsServeur(): List<GeoPoint> {
+        overlaysServeur.forEach { binding.map.overlays.remove(it) }
+        overlaysServeur.clear()
+        sommetsServeur.clear()
+        val gris = 0xFF616161.toInt()
+        val pts = mutableListOf<GeoPoint>()
+        stationsServeur.forEach { st ->
+            if (st.geometryType == "Polygon" && !st.geometryCoordsJson.isNullOrEmpty()) {
+                try {
+                    val arr = JSONArray(st.geometryCoordsJson)
+                    val ring = mutableListOf<GeoPoint>()
+                    for (i in 0 until arr.length()) {
+                        val c = arr.getJSONArray(i)
+                        val gp = GeoPoint(c.getDouble(1), c.getDouble(0))
+                        ring.add(gp); pts.add(gp)
+                    }
+                    if (ring.size >= 2) {
+                        val poly = Polygon(binding.map).apply {
+                            points = ring
+                            fillPaint.color = 0x26616161
+                            outlinePaint.color = gris
+                            outlinePaint.strokeWidth = 3f
+                            infoWindow = null
+                            setOnClickListener { _, _, _ -> proposerImportStationServeur(st); true }
+                        }
+                        binding.map.overlays.add(poly)
+                        overlaysServeur.add(poly)
+                        sommetsServeur.addAll(ring)
+                    }
+                } catch (_: Exception) {}
+            } else if (st.latitude != 0.0 || st.longitude != 0.0) {
+                val gp = GeoPoint(st.latitude, st.longitude)
+                pts.add(gp)
+                val m = Marker(binding.map).apply {
+                    position = gp
+                    icon = cercleSommet(gris)
+                    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                    isDraggable = false
+                    setInfoWindow(null)
+                    setOnMarkerClickListener { _, _ -> proposerImportStationServeur(st); true }
+                }
+                binding.map.overlays.add(m)
+                overlaysServeur.add(m)
+                sommetsServeur.add(gp)
+            }
+        }
+        binding.map.invalidate()
+        return pts
+    }
+
+    /** Tap sur une station GRISE (serveur) : confirmation avant IMPORT dans la saisie courante —
+     *  la station devient éditable comme une station de session et repartira au serveur en MISE À
+     *  JOUR (POST /stations/<id>/, grâce à son idStationServeur conservé). */
+    private fun proposerImportStationServeur(st: fr.ariegenature.geomys.model.OccHabStation) {
+        val nbHab = st.habitats.size
+        AlertDialog.Builder(requireContext())
+            .setTitle("Modifier cette station du serveur ?")
+            .setMessage(
+                (st.stationName?.let { "« $it »\n\n" } ?: "") +
+                    "La station" + (if (nbHab > 0) " et ses $nbHab habitat(s)" else "") +
+                    " sera importée dans la saisie en cours, puis renvoyée à GeoNature " +
+                    "en MISE À JOUR à l'envoi (pas de doublon).")
+            .setPositiveButton("Modifier") { _, _ -> importerStationServeur(st) }
+            .setNegativeButton("Annuler", null)
+            .show()
+    }
+
+    /** IMPORTE une station serveur dans la saisie courante : persistée avec envoyeGeoNature=false
+     *  (elle redevient envoyable) en CONSERVANT idStationServeur/uuidStation/origineServeur —
+     *  c'est ce qui fait partir l'envoi en update. Puis retirée de l'affichage gris et ouverte en
+     *  édition comme n'importe quelle station de session (sélection, poignées, habitats). */
+    private fun importerStationServeur(st: fr.ariegenature.geomys.model.OccHabStation) {
+        val importee = st.copy(envoyeGeoNature = false, envoiIncertain = false)
+        val store = fr.ariegenature.geomys.store.OccHabStore(requireContext())
+        if (!store.upsertStation(occhabViewModel.saisieId, importee)) {
+            alerterEchecEcritureStore(requireContext(),
+                "Libérez de l'espace (photos, cache de cartes) puis retouchez la station.")
+            return
+        }
+        stationsServeur.removeAll { it.id == st.id }
+        afficherStationsServeur() // son tracé gris disparaît (et ses sommets des cibles serveur)
+        editerStationExistante(importee)
+    }
+
     /** Aimante [p] sur le sommet de session le plus proche s'il est à moins de ~28 dp à l'écran
      *  (seuil constant quel que soit le zoom), sinon renvoie null. Renvoie une COPIE du sommet
      *  (jamais l'instance partagée avec l'overlay de session). */
     private fun snapVersSommet(p: GeoPoint): GeoPoint? {
-        if (sommetsSession.isEmpty()) return null
+        val cibles = sommetsSession + sommetsServeur
+        if (cibles.isEmpty()) return null
         val proj = binding.map.projection ?: return null
         val pPix = proj.toPixels(p, null)
         val seuilPx = 28f * resources.displayMetrics.density
         var meilleur: GeoPoint? = null
         var meilleureDist = Double.MAX_VALUE
-        for (s in sommetsSession) {
+        for (s in cibles) {
             val sPix = proj.toPixels(s, null)
             val d = Math.hypot((sPix.x - pPix.x).toDouble(), (sPix.y - pPix.y).toDouble())
             if (d <= seuilPx && d < meilleureDist) { meilleureDist = d; meilleur = s }
@@ -421,6 +577,16 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
     }
 
     override fun singleTapConfirmedHelper(p: GeoPoint): Boolean {
+        // STATION SÉLECTIONNÉE : un tap hors de sa géométrie la DÉSÉLECTIONNE et démarre une
+        // NOUVELLE station (demande terrain 2026-08-26 — la sélection ne permet que modifier
+        // par drag, persisté au relâcher, ou supprimer via la poubelle ; plus de redessin).
+        if (geometrieChargee) {
+            occhabViewModel.nouvelleStation() // la station sélectionnée reste telle quelle dans le store
+            pointChoisi = null
+            sommets.clear()
+            geometrieChargee = false
+            afficherStationsSession() // l'ex-sélection redevient rouge et cliquable
+        }
         // Aimantage : si le tap tombe près d'un sommet d'une station déjà posée, on réutilise
         // exactement ce sommet (pour raccorder proprement deux stations voisines).
         val cible = snapVersSommet(p) ?: p
@@ -430,12 +596,7 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
         }
         redessiner()
         majBoutons()
-        // STATION SÉLECTIONNÉE : le tap MODIFIE sa géométrie (ajoute un sommet au polygone /
-        // déplace le point) et la modification est PERSISTÉE immédiatement — « Valider » est
-        // désactivé pendant la sélection. Pour saisir une NOUVELLE station : désélectionner
-        // d'abord (re-tap sur la géométrie) — demande terrain 2026-08-26.
-        if (geometrieChargee) persisterSelectionApresDrag()
-        majTexteInstructionsMode() // 1er tap hors sélection = début de saisie → fin du texte « sélection »
+        majTexteInstructionsMode() // 1er tap = début de saisie → fin du texte « sélection »
         return true
     }
 
@@ -449,7 +610,9 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
             // Polygone SÉLECTIONNÉ (anneau chargé d'une station) : les gestes diffèrent de la
             // saisie — tap = repartir sur un nouveau tracé, drag d'un sommet = modifier.
             mode == Mode.POLYGONE && geometrieChargee ->
-                "Saisissez un point pour ajouter un sommet · appui long sur un sommet pour le modifier"
+                "Touchez pour saisir un nouveau polygone · appui long sur un sommet pour le modifier"
+            mode == Mode.POINT && geometrieChargee ->
+                "Touchez pour saisir une nouvelle station · appui long sur le point pour le déplacer"
             mode == Mode.POINT ->
                 "Touchez pour placer le point · appui long pour le déplacer"
             else ->
@@ -492,6 +655,8 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
         overlayForme = null
         markersSommets.forEach { binding.map.overlays.remove(it) }
         markersSommets.clear()
+        markersPoignees.forEach { binding.map.overlays.remove(it) }
+        markersPoignees.clear()
         markerPoint?.let { binding.map.overlays.remove(it) }
         markerPoint = null
 
@@ -545,18 +710,152 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
                                 sommets[i] = cible
                                 m.position = cible
                                 redessinerForme()
+                                // Sommet PARTAGÉ avec un polygone voisin (arête commune) : le
+                                // déplacement est répercuté sur le voisin (topologie conservée).
+                                if (geometrieChargee) origine?.let { o -> propagerDeplacementSommet(o, cible) }
                             }
                             majBoutons()
                             persisterSelectionApresDrag()
+                            if (geometrieChargee) redessiner() // replace les poignées sur les arêtes déplacées
                         }
-                        override fun onMarkerDragStart(m: Marker) {}
+                        override fun onMarkerDragStart(m: Marker) {
+                            origine = GeoPoint(m.position.latitude, m.position.longitude)
+                        }
+                        private var origine: GeoPoint? = null
                     })
                 }
                 binding.map.overlays.add(marker)
                 markersSommets.add(marker)
             }
+            // Poignées « + » d'AJOUT DE SOMMET (station sélectionnée seulement) : une par
+            // arête, au milieu, fermeture incluse — mécanisme QField (candidats de segment).
+            if (geometrieChargee && sommets.size >= 3) {
+                for (i in sommets.indices) {
+                    val a = sommets[i]
+                    val b = sommets[(i + 1) % sommets.size]
+                    val milieu = GeoPoint((a.latitude + b.latitude) / 2, (a.longitude + b.longitude) / 2)
+                    val indexArete = i
+                    val poignee = Marker(binding.map).apply {
+                        position = milieu
+                        icon = poigneeAjout()
+                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                        isDraggable = false
+                        setInfoWindow(null)
+                        setOnMarkerClickListener { _, _ -> insererSommetSurArete(indexArete); true }
+                    }
+                    binding.map.overlays.add(poignee)
+                    markersPoignees.add(poignee)
+                }
+            }
         }
         binding.map.invalidate()
+    }
+
+    /** Icône d'une poignée d'ajout : petit disque bleu, liseré blanc, « + » blanc. */
+    private fun poigneeAjout(): android.graphics.drawable.Drawable {
+        val d = (20 * resources.displayMetrics.density).toInt()
+        val disque = android.graphics.drawable.GradientDrawable().apply {
+            shape = android.graphics.drawable.GradientDrawable.OVAL
+            setColor(0xFF1976D2.toInt())
+            setStroke((2 * resources.displayMetrics.density).toInt(), Color.WHITE)
+            setSize(d, d)
+        }
+        val plus = ContextCompat.getDrawable(requireContext(), R.drawable.ic_add)!!.mutate().apply {
+            setTint(Color.WHITE)
+        }
+        val marge = (4 * resources.displayMetrics.density).toInt()
+        return android.graphics.drawable.LayerDrawable(arrayOf(disque, plus)).apply {
+            setLayerInset(1, marge, marge, marge, marge)
+            setBounds(0, 0, d, d)
+        }
+    }
+
+    /** Insère un sommet au MILIEU de l'arête [indexArete] → [indexArete]+1 (fermeture incluse)
+     *  du polygone sélectionné, le persiste, et le répercute sur un éventuel polygone VOISIN
+     *  partageant cette arête (le sommet est inséré dans les DEUX anneaux). */
+    private fun insererSommetSurArete(indexArete: Int) {
+        if (indexArete !in sommets.indices) return
+        val a = sommets[indexArete]
+        val b = sommets[(indexArete + 1) % sommets.size]
+        val milieu = GeoPoint((a.latitude + b.latitude) / 2, (a.longitude + b.longitude) / 2)
+        sommets.add(indexArete + 1, milieu)
+        redessiner()
+        majBoutons()
+        persisterSelectionApresDrag()
+        propagerInsertionSommet(a, b, milieu)
+    }
+
+    private fun memePoint(p: GeoPoint, lat: Double, lon: Double): Boolean =
+        Math.abs(p.latitude - lat) < 1e-9 && Math.abs(p.longitude - lon) < 1e-9
+
+    /** Applique [transforme] à l'anneau (liste mutable de [lon,lat]) de chaque polygone VOISIN
+     *  de la saisie ; ceux qui changent sont persistés (coords + centre + surface recalculée)
+     *  et l'affichage session est rafraîchi. */
+    private fun propagerAuxVoisins(transforme: (MutableList<DoubleArray>) -> Boolean) {
+        val store = fr.ariegenature.geomys.store.OccHabStore(requireContext())
+        var modifie = false
+        store.stationsDeSaisie(occhabViewModel.saisieId)
+            .filter {
+                it.id != occhabViewModel.station.id && it.geometryType == "Polygon" &&
+                    !it.geometryCoordsJson.isNullOrEmpty()
+            }
+            .forEach { st ->
+                val ring = try {
+                    val arr = JSONArray(st.geometryCoordsJson)
+                    MutableList(arr.length()) { i ->
+                        val c = arr.getJSONArray(i)
+                        doubleArrayOf(c.getDouble(0), c.getDouble(1)) // [lon, lat]
+                    }
+                } catch (_: Exception) { return@forEach }
+                if (!transforme(ring)) return@forEach
+                val coords = JSONArray()
+                var sLat = 0.0; var sLon = 0.0
+                ring.forEach { c ->
+                    coords.put(JSONArray().put(c[0]).put(c[1]))
+                    sLon += c[0]; sLat += c[1]
+                }
+                val pts = ring.map { GeoPoint(it[1], it[0]) }
+                store.upsertStation(occhabViewModel.saisieId, st.copy(
+                    latitude = sLat / ring.size,
+                    longitude = sLon / ring.size,
+                    geometryCoordsJson = coords.toString(),
+                    surface = Math.round(airePolygoneM2(pts)),
+                ))
+                modifie = true
+            }
+        if (modifie) afficherStationsSession()
+    }
+
+    /** Arête commune {a,b} chez un voisin (dans un sens ou l'autre, fermeture incluse) →
+     *  le sommet [insere] est inséré au même endroit de son anneau. */
+    private fun propagerInsertionSommet(a: GeoPoint, b: GeoPoint, insere: GeoPoint) {
+        propagerAuxVoisins { ring ->
+            for (i in ring.indices) {
+                val j = (i + 1) % ring.size
+                val pi = ring[i]; val pj = ring[j]
+                val sensDirect = memePoint(a, pi[1], pi[0]) && memePoint(b, pj[1], pj[0])
+                val sensInverse = memePoint(b, pi[1], pi[0]) && memePoint(a, pj[1], pj[0])
+                if (sensDirect || sensInverse) {
+                    ring.add(i + 1, doubleArrayOf(insere.longitude, insere.latitude))
+                    return@propagerAuxVoisins true
+                }
+            }
+            false
+        }
+    }
+
+    /** Tout sommet voisin CONFONDU avec [avant] (sommet partagé par aimantage) suit vers [apres]. */
+    private fun propagerDeplacementSommet(avant: GeoPoint, apres: GeoPoint) {
+        propagerAuxVoisins { ring ->
+            var touche = false
+            ring.forEach { c ->
+                if (memePoint(avant, c[1], c[0])) {
+                    c[0] = apres.longitude; c[1] = apres.latitude
+                    touche = true
+                }
+            }
+            touche
+        }
     }
 
     /** (Re)dessine UNIQUEMENT la forme (polygone), sans toucher aux markers — appelé pendant le
@@ -652,8 +951,8 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
 
     private fun majBoutons() {
         // « Valider » et « Annuler » actifs dès que la géométrie le permet — Y COMPRIS pendant
-        // la MODIFICATION d'une station sélectionnée (demande terrain 2026-08-26) : Valider
-        // enchaîne alors sur les habitats de la station, Annuler retire le dernier sommet.
+        // la MODIFICATION d'une station sélectionnée/importée (demande terrain 2026-08-26) :
+        // Valider enchaîne sur les habitats, Annuler retire le dernier sommet.
         val geomOk = (mode == Mode.POINT && pointChoisi != null) ||
             (mode == Mode.POLYGONE && sommets.size >= 3)
         binding.btnValider.isEnabled = geomOk
@@ -663,6 +962,7 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
             if (geometrieChargee) View.VISIBLE else View.GONE
         binding.btnAnnulerPoint.isEnabled = mode == Mode.POLYGONE && sommets.isNotEmpty()
     }
+
 
     private fun valider() {
         if (mode == Mode.POINT) {

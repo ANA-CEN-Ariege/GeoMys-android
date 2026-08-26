@@ -42,6 +42,10 @@ data class OccHabDetailsSession(
     var idNomCalculSurface: Int? = null,
     var idNomObjetGeographique: Int? = null,
     var comment: String? = null,
+    /** Switch du formulaire de démarrage : afficher sur la carte les stations DÉJÀ présentes
+     *  sur le serveur GeoNature (consultation lecture seule + emprise adaptée). Mémorisé d'un
+     *  relevé à l'autre comme les autres champs (occhabDetailsPrecedentsJson). */
+    var chargerStationsServeur: Boolean = false,
 )
 
 /** Détails de session par défaut (défauts serveur) : observateur par défaut, dates début ET fin

@@ -142,6 +142,8 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
         // + altitudes/surface/méthode/commentaire), pré-rempli — même rôle que le « i » des
         // détails communs de la saisie multi-taxons. « Annuler » referme simplement.
         binding.btnInfosObligatoires.setOnClickListener {
+            // Sans effet si AUCUNE station n'est sélectionnée (demande terrain 2026-08-26).
+            if (!geometrieChargee) return@setOnClickListener
             ouvrirDialogDetailsOccHab(
                 requireContext(), occhabViewModel,
                 fr.ariegenature.geomys.store.GeoNatureConfig(requireContext()),
@@ -758,17 +760,17 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
 
     /** Icône d'une poignée d'ajout : petit disque bleu, liseré blanc, « + » blanc. */
     private fun poigneeAjout(): android.graphics.drawable.Drawable {
-        val d = (20 * resources.displayMetrics.density).toInt()
+        val d = (5 * resources.displayMetrics.density).toInt() // -75 % vs origine (demandes terrain)
         val disque = android.graphics.drawable.GradientDrawable().apply {
             shape = android.graphics.drawable.GradientDrawable.OVAL
             setColor(0xFF1976D2.toInt())
-            setStroke((2 * resources.displayMetrics.density).toInt(), Color.WHITE)
+            setStroke((1 * resources.displayMetrics.density).toInt(), Color.WHITE)
             setSize(d, d)
         }
         val plus = ContextCompat.getDrawable(requireContext(), R.drawable.ic_add)!!.mutate().apply {
             setTint(Color.WHITE)
         }
-        val marge = (4 * resources.displayMetrics.density).toInt()
+        val marge = (1 * resources.displayMetrics.density).toInt()
         return android.graphics.drawable.LayerDrawable(arrayOf(disque, plus)).apply {
             setLayerInset(1, marge, marge, marge, marge)
             setBounds(0, 0, d, d)

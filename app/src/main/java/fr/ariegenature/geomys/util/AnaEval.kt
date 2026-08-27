@@ -167,6 +167,11 @@ object AnaEval {
     private val LIST_FIELDS = mapOf("pee" to 3) // plantes exotiques envahissantes : 3 taxons max.
     /** Entiers bornés : clé → (mini, maxi). `echelle` = échelle de numérisation N2000. */
     private val INT_FIELDS = mapOf("echelle" to (1 to 1_000_000))
+
+    /** Bornes (mini, maxi) d'un champ entier borné, null si [cle] n'en est pas un — pour que
+     *  l'UI BLOQUE une valeur hors bornes au lieu de la laisser effacer en silence par
+     *  [nettoyer] (audit 2026-08-27). */
+    fun borneEntier(cle: String): Pair<Int, Int>? = INT_FIELDS[cle]
     private val TYPOLOGIES: Set<String> = TYPOLOGIES_CORRESPONDANCE.mapTo(mutableSetOf()) { it.first }
 
     // ── Répartition des clés ÉDITABLES par niveau (champs.py, stockage EVAL). ─────────────────

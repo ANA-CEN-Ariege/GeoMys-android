@@ -210,6 +210,15 @@ data class OccHabStation(
         }
     }
 
+    /** true si la station porte une géométrie exploitable : polygone avec sommets, ou point non
+     *  nul. Faux pour une `OccHabStation()` vierge — ex. ViewModel reconstruit après la mort du
+     *  process : les écrans habitats refusent alors de persister une station fantôme (0,0)
+     *  (audit 2026-08-27). */
+    fun geometrieDefinie(): Boolean = when (geometryType) {
+        "Polygon" -> !geometryCoordsJson.isNullOrEmpty()
+        else -> latitude != 0.0 || longitude != 0.0
+    }
+
     private fun coordsNormalisees(json: String?): String = try {
         val arr = org.json.JSONArray(json)
         buildString {

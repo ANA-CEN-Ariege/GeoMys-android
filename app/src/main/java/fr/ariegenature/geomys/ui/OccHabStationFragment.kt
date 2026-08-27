@@ -61,6 +61,17 @@ class OccHabStationFragment : Fragment() {
         occHabStore = OccHabStore(requireContext())
         gnConfig = GeoNatureConfig(requireContext())
 
+        // Mort du process pendant la saisie (ViewModel reconstruit VIERGE) : sans géométrie il
+        // n'y a rien à enregistrer — on ne crée PAS une station fantôme (0,0) envoyable
+        // (audit 2026-08-27). Les stations déjà validées sont dans « Mes stations ».
+        if (!occhabViewModel.station.geometrieDefinie()) {
+            Toast.makeText(requireContext(),
+                "Saisie interrompue (application relancée) — reprenez depuis « Mes stations »",
+                Toast.LENGTH_LONG).show()
+            findNavController().popBackStack(R.id.accueilFragment, false)
+            return
+        }
+
         binding.btnDetails.setOnClickListener {
             // Altitudes / surface sont éditables dans ce dialogue mais EXCLUES de l'empreinte de
             // contenu : on les compare avant/après pour qu'une correction manuelle compte comme

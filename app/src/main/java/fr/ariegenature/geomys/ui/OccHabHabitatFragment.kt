@@ -105,6 +105,16 @@ class OccHabHabitatFragment : Fragment() {
         appliquerBandeauNavigation(binding.bandeauSaisie.root, findNavController(), "OccHab")
         gnConfig = GeoNatureConfig(requireContext())
 
+        // Mort du process pendant la saisie (ViewModel reconstruit VIERGE) : valider un habitat
+        // créerait une station fantôme (0,0) envoyable — on renvoie à l'accueil (audit 2026-08-27).
+        if (!occhabViewModel.station.geometrieDefinie()) {
+            Toast.makeText(requireContext(),
+                "Saisie interrompue (application relancée) — reprenez depuis « Mes stations »",
+                Toast.LENGTH_LONG).show()
+            findNavController().popBackStack(R.id.accueilFragment, false)
+            return
+        }
+
         val habitatId = arguments?.getString("habitatId")
         existant = habitatId?.let { id -> occhabViewModel.station.habitats.firstOrNull { it.id == id } }
 
@@ -320,12 +330,20 @@ class OccHabHabitatFragment : Fragment() {
             val habitat = (existant ?: OccHabHabitat()).copy(
                 cdHab = cd,
                 habitatLabel = libelle,
-                nomCite = libelle,
+                // `nom_cite` : le NOM CITÉ existant (saisi sur le web / QGIS, ≠ libellé HABREF)
+                // est CONSERVÉ tant que l'habitat HABREF ne change pas — le réécrire à chaque
+                // validation envoyait une donnée fausse et faisait passer un habitat intact pour
+                // modifié (audit 2026-08-27). Nouvel habitat ou HABREF changé → libellé HABREF.
+                nomCite = existant.let { ex ->
+                    if (ex != null && ex.cdHab == cd && ex.nomCite.isNotBlank()) ex.nomCite else libelle
+                },
                 determiner = champDeterminateur?.let { it.text?.toString()?.trim()?.takeIf { s -> s.isNotEmpty() } }
                     ?: if (champDeterminateur == null) existant?.determiner else null,
                 precisionTechnique = champPrecision?.let { it.text?.toString()?.trim()?.takeIf { s -> s.isNotEmpty() } }
                     ?: if (champPrecision == null) existant?.precisionTechnique else null,
-                recouvrement = champRecouvr?.let { it.text?.toString()?.trim()?.toDoubleOrNull() }
+                // Virgule décimale (claviers français) acceptée comme le point — « 12,5 » donnait
+                // null en silence (recouvrement perdu, y compris dans le bloc ANA).
+                recouvrement = champRecouvr?.let { it.text?.toString()?.trim()?.replace(',', '.')?.toDoubleOrNull() }
                     ?: if (champRecouvr == null) existant?.recouvrement else null,
                 idNomTechniqueCollecte = lireTech(),
                 idNomAbondance = lireAbon(),

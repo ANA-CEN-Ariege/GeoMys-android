@@ -47,6 +47,13 @@ object TaxRefService {
     ): Pair<TaxRefStatut, String?> = withContext(Dispatchers.IO) {
         val liste = candidats.map { it.trim() }.filter { it.isNotEmpty() }
         if (liste.isEmpty()) return@withContext Pair(TaxRefStatut.NonTrouve, null)
+        // DEUX PASSES : un match EXACT sur n'importe quel candidat prime sur un match APPROCHÉ
+        // (Levenshtein) du 1er — sinon « Rouge-gorge » approché sur l'hypothèse n°1 gagnait sur
+        // l'hypothèse n°2 exacte (audit 2026-08-27).
+        for (cand in liste) {
+            val (statut, _) = rechercher(cand, taxon, gnConfig, avecRechercheEtendue = false)
+            if (statut is TaxRefStatut.Trouve) return@withContext Pair(statut, cand)
+        }
         for (cand in liste) {
             val (statut, _) = rechercher(cand, taxon, gnConfig, avecRechercheEtendue = true)
             if (statut is TaxRefStatut.Trouve) return@withContext Pair(statut, cand)

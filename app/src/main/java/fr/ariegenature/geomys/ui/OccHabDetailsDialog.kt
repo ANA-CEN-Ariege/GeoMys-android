@@ -251,6 +251,8 @@ fun ouvrirDialogDetailsOccHab(
     // Lecteur de la section « Évaluation ANA / Natura 2000 » (bloc ANA-EVAL du plugin QGIS) —
     // null tant que la section n'est pas construite (station sans bloc = AUCUN changement d'UI).
     var lireAnaEval: (() -> String?)? = null
+    // Contrôles bloquants de la section ANA-EVAL (entiers bornés) — message ou null.
+    val validateursAnaEval = mutableListOf<() -> String?>()
     if (!jddSeul) {
         val st = vm.station
         if (config.occhabChampVisible("altitude_min")) etAltMin = champNombre("Altitude min (m)", st.altitudeMin?.toString())
@@ -278,7 +280,8 @@ fun ouvrirDialogDetailsOccHab(
         //    les autres clés du bloc (statut, etc.) traversent telles quelles. ──
         st.anaEvalJson?.let { ana ->
             lireAnaEval = construireSectionAnaEval(
-                context, racine, AnaEval.CHAMPS_STATION, avecPee = false, anaEvalJson = ana)
+                context, racine, AnaEval.CHAMPS_STATION, avecPee = false, anaEvalJson = ana,
+                validateurs = validateursAnaEval)
         }
     }
 
@@ -331,6 +334,11 @@ fun ouvrirDialogDetailsOccHab(
                     bloquer("Altitude min supérieure à l'altitude max")
                     return@setOnClickListener
                 }
+                // ANA-EVAL : une échelle hors bornes était effacée en silence par AnaEval.nettoyer.
+                validateursAnaEval.firstNotNullOfOrNull { it() }?.let { msg ->
+                    bloquer(msg)
+                    return@setOnClickListener
+                }
             }
             // Application ATOMIQUE des sélections : rien avant, tout ici (Annuler = sans effet).
             // Garde serveur : date_max ≥ date_min (sinon payload invalide côté GeoNature).
@@ -371,8 +379,10 @@ fun ouvrirDialogDetailsOccHab(
             // Mémorise les infos obligatoires validées : le formulaire du RELEVÉ SUIVANT
             // repartira de ces valeurs (dates exclues au rechargement — cf.
             // detailsSessionParDefaut).
+            // SANS le commentaire : propre à un relevé, il était rejoué sur toutes les stations
+            // de la session suivante, invisible dans le formulaire de démarrage (audit 2026-08-27).
             runCatching {
-                config.occhabDetailsPrecedentsJson = com.google.gson.Gson().toJson(vm.details)
+                config.occhabDetailsPrecedentsJson = com.google.gson.Gson().toJson(vm.details.copy(comment = null))
             }
             onValide()
             dlg.dismiss()
@@ -428,6 +438,9 @@ internal fun construireSectionAnaEval(
     champs: List<AnaEval.ChampAnaEval>,
     avecPee: Boolean,
     anaEvalJson: String,
+    /** Reçoit un contrôle bloquant par entier borné (message d'erreur ou null) — l'appelant les
+     *  évalue AVANT de valider ; null = pas de contrôle (valeur hors bornes effacée par nettoyer). */
+    validateurs: MutableList<() -> String?>? = null,
 ): () -> String? {
     val density = context.resources.displayMetrics.density
     val valeurs = AnaEval.depuisJson(anaEvalJson)
@@ -485,6 +498,18 @@ internal fun construireSectionAnaEval(
                     else -> t
                 }
             })
+            if (champ.entier) validateurs?.add {
+                val t = et.text?.toString()?.trim().orEmpty()
+                val n = t.toIntOrNull()
+                val borne = AnaEval.borneEntier(champ.cle)
+                when {
+                    t.isEmpty() -> null
+                    n == null -> "${champ.libelle} : nombre entier attendu"
+                    borne != null && n !in borne.first..borne.second ->
+                        "${champ.libelle} : entre ${borne.first} et ${borne.second}"
+                    else -> null
+                }
+            }
         }
     }
 

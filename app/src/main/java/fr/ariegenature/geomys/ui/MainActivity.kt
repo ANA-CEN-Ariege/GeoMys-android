@@ -83,10 +83,15 @@ class MainActivity : AppCompatActivity() {
         // Paramètres empêche d'en sortir tant que ce n'est pas complet (cf. ConfigGeoNatureFragment).
         // Uniquement au lancement FRAIS : une recréation d'Activity (rotation, restauration process)
         // restaure la pile de navigation existante — on n'y touche pas.
-        if (savedInstanceState == null &&
-            !configurationComplete(fr.ariegenature.geomys.store.GeoNatureConfig(this))
-        ) {
-            navController.navigate(R.id.action_accueil_to_config)
+        if (savedInstanceState == null) {
+            // Mise à jour EXIGEANT un rechargement des données (GeoNatureConfig.VERSION_DONNEES_
+            // REQUISE en avance sur la version chargée) : on ARME le drapeau (aucune purge ici —
+            // elle se fait au début de la synchro) ⇒ configuration incomplète ⇒ Paramètres forcé
+            // et bloqué jusqu'à la synchro, par le mécanisme ci-dessous (demande terrain 2026-08-27).
+            fr.ariegenature.geomys.store.armerRechargementSiRequis(this)
+            if (!configurationComplete(fr.ariegenature.geomys.store.GeoNatureConfig(this))) {
+                navController.navigate(R.id.action_accueil_to_config)
+            }
         }
     }
 

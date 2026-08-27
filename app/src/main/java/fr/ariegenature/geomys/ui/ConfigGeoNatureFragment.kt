@@ -60,7 +60,15 @@ import kotlinx.coroutines.launch
  *  UNIQUE partagée par [MainActivity] (redirection au 1er lancement) et l'écran Paramètres (blocage
  *  de sortie tant que ce n'est pas complet). */
 fun configurationComplete(cfg: GeoNatureConfig): Boolean =
-    cfg.saisieOcctaxValide && TaxRefCache.versionSauvegardee != null
+    cfg.saisieOcctaxValide && TaxRefCache.versionSauvegardee != null &&
+        // Mise à jour exigeant un rechargement (données encore en place, purgées par la synchro) :
+        // bloqué jusqu'à la synchro, cf. store/CachesSynchronises.armerRechargementSiRequis.
+        !cfg.rechargementRequisApresMaj
+
+/** Refus de sortie de Paramètres après une mise à jour qui a purgé les caches (cf.
+ *  [fr.ariegenature.geomys.store.purgerSiRechargementRequis]). */
+private const val MESSAGE_RECHARGEMENT_REQUIS =
+    "Après cette mise à jour, rechargez les données (« Charger les données ») pour accéder à l'application."
 
 class ConfigGeoNatureFragment : Fragment() {
     private var _binding: FragmentConfigGeonatureBinding? = null
@@ -147,6 +155,10 @@ class ConfigGeoNatureFragment : Fragment() {
         // seulement parce que des données sont en cache. Révélée par le test de connexion (manuel)
         // OU par la vérification de version au démarrage si le serveur répond (cf. plus bas).
         binding.llSectionCharger.visibility = View.GONE
+        // …SAUF après une mise à jour exigeant un rechargement : le bouton « Charger les données »
+        // doit être atteignable MÊME SANS RÉSEAU (le SyncRunner explique lui-même l'échec), sinon
+        // le bandeau renvoie à un bouton invisible (audit 2026-08-27).
+        if (gnConfig.rechargementRequisApresMaj) binding.llSectionCharger.visibility = View.VISIBLE
         // Le résumé du cache et les sélecteurs restent liés à la présence de données (utilisables
         // hors-ligne), mais le résumé étant DANS la boîte 2, il ne s'affiche qu'avec elle.
         binding.llCacheResume.visibility = if (donneesPresentes) View.VISIBLE else View.GONE
@@ -233,7 +245,8 @@ class ConfigGeoNatureFragment : Fragment() {
             } else {
                 Toast.makeText(
                     requireContext(),
-                    "Configuration incomplète : renseignez la connexion, chargez les données, " +
+                    if (gnConfig.rechargementRequisApresMaj) MESSAGE_RECHARGEMENT_REQUIS
+                    else "Configuration incomplète : renseignez la connexion, chargez les données, " +
                         "puis choisissez jeu de données / liste / observateur.",
                     Toast.LENGTH_LONG,
                 ).show()
@@ -249,7 +262,8 @@ class ConfigGeoNatureFragment : Fragment() {
             } else {
                 Toast.makeText(
                     requireContext(),
-                    "Complétez la configuration (connexion, données, sélections) pour accéder à l'application.",
+                    if (gnConfig.rechargementRequisApresMaj) MESSAGE_RECHARGEMENT_REQUIS
+                    else "Complétez la configuration (connexion, données, sélections) pour accéder à l'application.",
                     Toast.LENGTH_LONG,
                 ).show()
             }
@@ -258,6 +272,9 @@ class ConfigGeoNatureFragment : Fragment() {
         // Version de l'instance GeoNature relevée au dernier test de connexion réussi —
         // rafraîchie par testerConnexion(), vidée au changement d'identité serveur.
         afficherVersionGeoNature()
+        // Bandeau « mise à jour : rechargez les données » (armé au lancement par
+        // purgerSiRechargementRequis, désarmé par SyncRunner en fin de synchro).
+        majBandeauRechargement()
 
         // Vérifier version TaxRef serveur
         if (gnConfig.connexionConfiguree) {
@@ -632,21 +649,29 @@ class ConfigGeoNatureFragment : Fragment() {
         selectionsReinitialisees = true
     }
 
-    /** Purge les trois caches locaux (TaxRef, nomenclatures, monitoring) en une opération.
-     *  Utilisé par le bouton « Vider le cache ». Le rechargement, lui, purge via [SyncRunner].
-     *  Ne touche pas aux JSON SharedPreferences (datasets / listes / observateurs). */
+    /** Bandeau « mise à jour : rechargez les données » en tête de l'écran — visible entre la purge
+     *  imposée au lancement ([fr.ariegenature.geomys.store.purgerSiRechargementRequis]) et la
+     *  synchro qui suit (SyncRunner désarme le drapeau). Cadre + texte couleur avertissement, jamais
+     *  de fond pastel (illisible en thème sombre). */
+    private fun majBandeauRechargement() {
+        val requis = gnConfig.rechargementRequisApresMaj
+        binding.tvBandeauRechargement.visibility = if (requis) View.VISIBLE else View.GONE
+        if (!requis) return
+        val couleur = couleurAvertissement(requireContext())
+        binding.tvBandeauRechargement.setTextColor(couleur)
+        binding.tvBandeauRechargement.background = cadreColore(couleur, resources.displayMetrics.density)
+        binding.tvBandeauRechargement.text =
+            "Mise à jour de l'application : les données doivent être rechargées avant de continuer.\n" +
+            "Appuyez sur « Charger les données » (réseau nécessaire). Vos saisies en attente sont " +
+            "conservées et pourront être envoyées après le rechargement."
+    }
+
+    /** Purge les caches synchronisés (TaxRef, nomenclatures, habitats, monitoring, pictos) en une
+     *  opération — bouton « Vider le cache ». Même purge qu'au lancement après une mise à jour
+     *  exigeant un rechargement (cf. store/CachesSynchronises). Ne touche pas aux JSON
+     *  SharedPreferences (datasets / listes / observateurs). */
     private fun viderTousLesCaches() {
-        TaxRefCache.vider()
-        NomenclatureCache.vider()
-        fr.ariegenature.geomys.store.HabitatCache.vider()
-        fr.ariegenature.geomys.store.HabitatCacheOccHab.vider()
-        MonitoringCache.vider()
-        fr.ariegenature.geomys.store.PictoCache.vider()  // pictos de protocole (cache disque)
-        // MonitoringCache.vider() n'efface que le DISQUE. La liste des modules est aussi
-        // gardée en mémoire par MonitoringApi (dernierChargement), et countModulesEnCache()
-        // la renvoie en priorité — sans cette invalidation, le compteur de protocoles reste
-        // figé (ex. 12) après un « Vider le cache » / « Recharger les données ».
-        MonitoringApi.invaliderCaches()
+        fr.ariegenature.geomys.store.viderCachesSynchronises()
     }
 
     /** Lance le chargement complet des données dans un **service au premier plan**
@@ -714,6 +739,7 @@ class ConfigGeoNatureFragment : Fragment() {
                         binding.llSectionDonnees.visibility = View.VISIBLE
                         binding.btnChargerDonnees.text = "Recharger les données"
                     }
+                    majBandeauRechargement() // désarmé par SyncRunner si TaxRef est en place
                     // Consomme l'état terminal pour ne pas le rejouer à chaque réouverture.
                     SyncRunner.accuserReception()
                 }

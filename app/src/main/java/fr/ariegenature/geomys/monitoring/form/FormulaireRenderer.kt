@@ -467,8 +467,10 @@ class FormulaireRenderer(
             // "12.5" passait par toIntOrNull() seul → null : valeur décimale saisie, collée
             // ou posée par une règle `change` silencieusement PERDUE à l'envoi. La virgule
             // (séparateur des claviers français) est acceptée comme le point.
+            // Widget `integer` (field.decimal = false) : jamais de Double dans le payload — une
+            // valeur décimale collée ou posée par une règle `change` est tronquée (audit 2026-08-27).
             ViewType.NUMBER -> (v as EditText).text.toString().replace(',', '.')
-                .let { it.toIntOrNull() ?: it.toDoubleOrNull() }
+                .let { it.toIntOrNull() ?: it.toDoubleOrNull()?.let { d -> if (field.decimal) d else d.toInt() } }
             ViewType.DATE -> (v as TextView).tag as? String ?: ""
             ViewType.TIME -> (v as TextView).tag as? String ?: ""
             ViewType.DATETIME -> (v as TextView).tag as? String ?: ""

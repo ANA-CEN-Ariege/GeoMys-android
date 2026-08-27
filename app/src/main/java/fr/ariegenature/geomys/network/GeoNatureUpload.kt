@@ -683,11 +683,13 @@ object GeoNatureUpload {
     internal fun jsonDepuisMap(map: Map<String, String>): JSONObject = JSONObject().apply {
         for ((k, v) in map) {
             if (v.isEmpty()) continue
+            // Virgule décimale (claviers français) : « 12,5 » partait en String (audit 2026-08-27).
+            val vNum = if (v.count { it == ',' } == 1 && !v.contains('.')) v.replace(',', '.') else v
             when {
                 v.equals("true", ignoreCase = true) -> put(k, true)
                 v.equals("false", ignoreCase = true) -> put(k, false)
                 v.toIntOrNull() != null -> put(k, v.toInt())
-                v.toDoubleOrNull() != null -> put(k, v.toDouble())
+                vNum.toDoubleOrNull() != null -> put(k, vNum.toDouble())
                 // Checkbox multi-valeurs : tableau JSON (ex. ["1","3"]) → vrai JSONArray, pas une string.
                 v.startsWith("[") && v.endsWith("]") ->
                     try { put(k, JSONArray(v)) } catch (_: Exception) { put(k, v) }

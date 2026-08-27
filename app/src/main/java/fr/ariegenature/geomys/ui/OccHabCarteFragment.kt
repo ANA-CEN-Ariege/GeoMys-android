@@ -198,35 +198,9 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
             }
         }
 
-        // Poubelle de la STATION SÉLECTIONNÉE (haut-droite, sous le bandeau) : suppression
-        // avec confirmation, puis retour à l'état « aucune sélection ».
-        binding.btnSupprimerStation.applyStatusBarMargin()
-        binding.btnSupprimerStation.setOnClickListener {
-            val st = occhabViewModel.station
-            val nbHab = st.habitats.size
-            val store = fr.ariegenature.geomys.store.OccHabStore(requireContext())
-            // Station importée du serveur ENCORE INTACTE (jamais persistée) : « supprimer » =
-            // abandonner la reprise ; elle reste telle quelle sur GeoNature et redevient violette.
-            val intacte = store.stationsDeSaisie(occhabViewModel.saisieId).none { it.id == st.id }
-            AlertDialog.Builder(requireContext())
-                .setTitle(if (intacte) "Abandonner cette station ?" else "Supprimer la station ?")
-                .setMessage(
-                    if (intacte)
-                        "Elle n'a pas été modifiée : elle reste telle quelle sur GeoNature et est " +
-                            "retirée de la saisie en cours."
-                    else
-                        "Supprimer la station sélectionnée" +
-                            (if (nbHab > 0) " et ses $nbHab habitat(s)" else "") +
-                            " ? Cette action est définitive.")
-                .setPositiveButton(if (intacte) "Abandonner" else "Supprimer") { _, _ ->
-                    if (!intacte) store.supprimerStation(occhabViewModel.saisieId, st.id)
-                    deselectionnerStation()
-                    Toast.makeText(requireContext(),
-                        if (intacte) "Reprise abandonnée" else "Station supprimée", Toast.LENGTH_SHORT).show()
-                }
-                .setNegativeButton("Annuler", null)
-                .show()
-        }
+        // Plus de poubelle sur la carte (retirée à la demande terrain 2026-08-27) : la suppression
+        // d'une station passe par « Mes stations » ; un import serveur intact s'abandonne en le
+        // désélectionnant (re-tap / tap ailleurs), il redevient violet.
 
         binding.btnCentrer.setOnClickListener {
             val loc = locationOverlay?.myLocation
@@ -732,15 +706,16 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
         afficherStationsServeur()
     }
 
-    /** Aimante [p] sur le sommet de session le plus proche s'il est à moins de ~28 dp à l'écran
-     *  (seuil constant quel que soit le zoom), sinon renvoie null. Renvoie une COPIE du sommet
-     *  (jamais l'instance partagée avec l'overlay de session). */
+    /** Aimante [p] sur le sommet de session/serveur le plus proche s'il est à moins de ~44 dp à
+     *  l'écran (seuil constant quel que soit le zoom ; 28 → 44 dp à la demande terrain
+     *  2026-08-27 pour raccorder plus facilement au sommet d'un autre polygone), sinon renvoie
+     *  null. Renvoie une COPIE du sommet (jamais l'instance partagée avec l'overlay de session). */
     private fun snapVersSommet(p: GeoPoint): GeoPoint? {
         val cibles = sommetsSession + sommetsServeur
         if (cibles.isEmpty()) return null
         val proj = binding.map.projection ?: return null
         val pPix = proj.toPixels(p, null)
-        val seuilPx = 28f * resources.displayMetrics.density
+        val seuilPx = 44f * resources.displayMetrics.density
         var meilleur: GeoPoint? = null
         var meilleureDist = Double.MAX_VALUE
         for (s in cibles) {
@@ -766,7 +741,7 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
     override fun singleTapConfirmedHelper(p: GeoPoint): Boolean {
         // STATION SÉLECTIONNÉE : un tap hors de sa géométrie la DÉSÉLECTIONNE et démarre une
         // NOUVELLE station (demande terrain 2026-08-26 — la sélection ne permet que modifier
-        // par drag, persisté au relâcher, ou supprimer via la poubelle ; plus de redessin).
+        // par drag, persisté au relâcher ; plus de redessin — suppression via « Mes stations »).
         if (geometrieChargee) {
             occhabViewModel.nouvelleStation() // la station sélectionnée reste telle quelle dans le store
             pointChoisi = null
@@ -1170,9 +1145,6 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
             (mode == Mode.POLYGONE && sommets.size >= 3)
         binding.btnValider.isEnabled = geomOk
         binding.btnValider.alpha = if (geomOk) 1f else 0.5f
-        // Poubelle de la station sélectionnée : visible seulement pendant la sélection.
-        binding.btnSupprimerStation.visibility =
-            if (geometrieChargee) View.VISIBLE else View.GONE
         binding.btnAnnulerPoint.isEnabled = mode == Mode.POLYGONE && sommets.isNotEmpty()
     }
 

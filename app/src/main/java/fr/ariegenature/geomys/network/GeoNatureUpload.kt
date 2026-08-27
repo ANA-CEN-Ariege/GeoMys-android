@@ -63,7 +63,22 @@ data class EnvoiResult(
     /** Dernière erreur rencontrée pendant l'envoi (utile quand nbCrees > 0 : l'envoi
      *  PARTIEL ne lève pas, mais l'appelant doit pouvoir dire pourquoi il manque des obs). */
     val messageDerniereErreur: String? = null,
+    /** Observations dont le POST d'occurrence a été émis SANS réponse pendant cet envoi
+     *  (coupure après émission), avec l'id du relevé visé : peut-être créées côté serveur.
+     *  Déjà persistées via [MarqueurEnvoiOcctax] ; remontées pour le récapitulatif. */
+    val obsIncertaines: List<Pair<String, Int>> = emptyList(),
 )
+
+/**
+ * Persistance AU FIL DE L'EAU pendant l'envoi Occtax, appelée DANS le bloc IO avant tout retour :
+ * l'acquis (occurrence créée, ou POST resté sans réponse) survit à une annulation de coroutine
+ * (vue détruite pendant l'envoi) et à la mort du process — sans quoi des occurrences créées côté
+ * serveur restaient non marquées et repartaient au ré-envoi (doublons, audit 2026-08-27).
+ */
+interface MarqueurEnvoiOcctax {
+    fun occurrenceCreee(obsId: String)
+    fun occurrenceIncertaine(obsId: String, idReleve: Int)
+}
 
 object GeoNatureUpload {
 
@@ -83,7 +98,13 @@ object GeoNatureUpload {
     // serveur, qui varie d'une instance à l'autre) vivent désormais dans le registre unique
     // OcctaxFieldsConfig (champ `uploadLabels`), comme les clés d'upload (`uploadKey`).
 
-    suspend fun envoyer(sortie: Sortie, config: GeoNatureConfig): EnvoiResult =
+    suspend fun envoyer(
+        sortie: Sortie,
+        config: GeoNatureConfig,
+        /** Marquage persistant au fil de l'eau (cf. [MarqueurEnvoiOcctax]) ; null = aucun
+         *  (tests) — l'appelant se contente alors du résultat. */
+        marqueur: MarqueurEnvoiOcctax? = null,
+    ): EnvoiResult =
         withContext(Dispatchers.IO) {
             val base = config.urlServeur.trim().trimEnd('/')
             val (token, idRole, cookies) = GeoNatureAuth.loginAvecCookies(base, config.login, config.motDePasse)
@@ -137,6 +158,8 @@ object GeoNatureUpload {
             // Ids des observations créées PENDANT cet envoi — persistés par l'appelant pour
             // qu'un ré-envoi partiel ne les re-poste pas.
             val obsCreesIds = mutableListOf<String>()
+            // Occurrences dont le POST est resté sans réponse (→ vérification par uuid au prochain envoi).
+            val obsIncertaines = mutableListOf<Pair<String, Int>>()
             // Compteurs média (gn_commons).
             var mediasOK = 0
             var mediasKO = 0
@@ -172,7 +195,32 @@ object GeoNatureUpload {
             // deux relevés au lieu d'un, mais aucune observation perdue ni dupliquée.
             val groupes = aEnvoyer.groupBy { it.releveId ?: it.id }
 
-            for ((_, groupe) in groupes) {
+            for ((_, groupeBrut) in groupes) {
+                // ANTI-DOUBLON (audit 2026-08-27) : une occurrence dont le POST précédent est resté
+                // INCERTAIN (coupure après émission) existe peut-être déjà dans le relevé de
+                // l'époque. On vérifie par son uuid client AVANT de créer un nouveau relevé :
+                // présente → acquise (pas de re-POST) ; absente ou relevé supprimé → repostée
+                // normalement ; vérification impossible (réseau) → on NE re-POSTe PAS, elle reste
+                // incertaine pour le prochain envoi.
+                val groupe = groupeBrut.filter { obs ->
+                    val idAncien = obs.idReleveIncertain ?: return@filter true
+                    when (occurrencePresente(base, token, cookies, idAncien, obs.uuidOccurrence)) {
+                        true -> {
+                            nbCrees++
+                            obsCreesIds.add(obs.id)
+                            marqueur?.occurrenceCreee(obs.id)
+                            false
+                        }
+                        false -> true
+                        null -> {
+                            dernierCodeErreur = 0
+                            derniereErreur = "Vérification anti-doublon impossible pour « ${obs.espece} » " +
+                                "(relevé #$idAncien) — retentée au prochain envoi"
+                            false
+                        }
+                    }
+                }
+                if (groupe.isEmpty()) continue
                 // Coordonnées du relevé : la première obs du groupe (toutes identiques pour
                 // un batch multi-taxons issu de SaisieObservationFragment).
                 val lat = groupe.first().latitude
@@ -325,7 +373,7 @@ object GeoNatureUpload {
                 val occurrencesReelles = groupe.filter { it.cdNom != null }
                 if (occurrencesReelles.isEmpty()) {
                     nbCrees++
-                    groupe.forEach { obsCreesIds.add(it.id) }
+                    groupe.forEach { obsCreesIds.add(it.id); marqueur?.occurrenceCreee(it.id) }
                     continue
                 }
 
@@ -420,12 +468,19 @@ object GeoNatureUpload {
                     } catch (e: IOException) {
                         dernierCodeErreur = 0
                         derniereErreur = "Réseau interrompu pendant l'envoi de l'occurrence (${e.message ?: e.javaClass.simpleName})"
+                        // Impossible de savoir si la requête a atteint le serveur : INCERTAIN —
+                        // persisté tout de suite, le prochain envoi vérifiera par uuid client.
+                        obsIncertaines.add(obs.id to idReleve)
+                        marqueur?.occurrenceIncertaine(obs.id, idReleve)
                         -1
                     }
                     if (code2 in 200..299) {
                         nbCrees++
                         nbReussisGroupe++
                         obsCreesIds.add(obs.id)
+                        // Acquis persisté IMMÉDIATEMENT (avant la suite du lot) : survit à une
+                        // annulation / mort du process pendant les occurrences suivantes.
+                        marqueur?.occurrenceCreee(obs.id)
                     } else if (code2 > 0) {
                         val bodyErr = try { (conn2.errorStream ?: conn2.inputStream)?.bufferedReader()?.readText() } catch (_: Exception) { null }
                         dernierCodeErreur = code2
@@ -473,8 +528,31 @@ object GeoNatureUpload {
                 obsCreesIds = obsCreesIds.toList(),
                 nbDejaEnvoyees = nbDejaEnvoyees,
                 messageDerniereErreur = derniereErreur,
+                obsIncertaines = obsIncertaines.toList(),
             )
         }
+
+    /**
+     * L'occurrence portant [uuid] (`unique_id_occurence_occtax`) existe-t-elle dans le relevé
+     * serveur [idReleve] ? `GET /api/occtax/OCCTAX/releve/<id>` (le dump du relevé inclut ses
+     * occurrences). true / false (absente, ou relevé supprimé → 404) / null = vérification
+     * impossible (réseau, 5xx) — l'appelant ne doit alors PAS re-POSTer.
+     */
+    internal fun occurrencePresente(
+        base: String, token: String?, cookies: String, idReleve: Int, uuid: String,
+    ): Boolean? {
+        if (uuid.isBlank()) return false
+        val conn = try {
+            HttpClient.get(URL("$base/api/occtax/OCCTAX/releve/$idReleve"), token, cookies, 30000)
+        } catch (_: IOException) { return null }
+        return try {
+            when (val code = conn.responseCode) {
+                in 200..299 -> conn.inputStream.bufferedReader().readText().contains(uuid, ignoreCase = true)
+                404 -> false
+                else -> { android.util.Log.w("GeoNatureUpload", "Vérification occurrence : HTTP $code"); null }
+            }
+        } catch (_: Exception) { null } finally { conn.disconnect() }
+    }
 
     /** true si l'échec média est LOCAL et définitif (fichier disparu, URI invalide — cf.
      *  messages d'uploaderMediaFile) : retenter l'envoi ne fera pas réapparaître le fichier,
@@ -519,6 +597,9 @@ object GeoNatureUpload {
         return JSONObject().apply {
             put("cd_nom", obs.cdNom!!)
             put("nom_cite", obs.espece)
+            // Identité client stable de l'occurrence (accepté par OccurrenceSchema) : permet de
+            // retrouver une occurrence créée sans réponse avant de la re-POSTer (anti-doublon).
+            put("unique_id_occurence_occtax", obs.uuidOccurrence)
             if (obs.notes.isNotEmpty()) put("comment", obs.notes)
             put("cor_counting_occtax", countings)
             // Champs de nomenclature occurrence : pilotés par le registre unique (svKey → valeur,

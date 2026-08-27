@@ -96,6 +96,8 @@ class GsonRoundTripTest {
             champsReleveExtra = mapOf("altitude_min" to "400", "place_name" to "Col de Port"),
             envoyeeServeur = true,
             releveSansEspece = false,
+            uuidOccurrence = "cccccccc-1111-2222-3333-444444444444",
+            idReleveIncertain = 77,
         )
         val sortie = Sortie(
             id = "sortie-1",

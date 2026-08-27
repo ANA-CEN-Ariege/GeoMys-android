@@ -196,7 +196,7 @@ object OutboxEnvoi {
                         }
                     }
                 }
-                OutboxMonitoring.mettreAJour(saisie.uuid) {
+                val etatPersiste = OutboxMonitoring.mettreAJour(saisie.uuid) {
                     // dejaTentee persisté AVANT le POST : si la réponse se perd, le prochain
                     // envoi saura qu'il doit vérifier l'existence côté serveur (anti-doublon).
                     // uuidPayload : les saisies créées avant la génération systématique (uuid
@@ -207,6 +207,17 @@ object OutboxEnvoi {
                         uuidPayload = it.uuidPayload
                             ?: if (it.uuidFieldName != null) java.util.UUID.randomUUID().toString() else null,
                     )
+                }
+                if (!etatPersiste) {
+                    // Impossible d'écrire « tentée » (espace disque ?) : on N'ENVOIE PAS — un POST
+                    // dont l'état ne peut pas être persisté finirait en doublon au retry
+                    // (audit 2026-08-27).
+                    echecs++
+                    envoyees++
+                    messages.add("⚠ ${saisie.objectType} : impossible d'enregistrer l'état d'envoi " +
+                        "(espace disque ?) — non envoyée, libérez de l'espace")
+                    progression(envoyees, total, "")
+                    continue
                 }
                 progression(envoyees, total, "Envoi de ${saisie.objectType}…")
 
@@ -236,12 +247,16 @@ object OutboxEnvoi {
                         }
                         if (envoi.erreurMedia == null) {
                             succes++
-                            OutboxMonitoring.mettreAJour(saisie.uuid) {
+                            val sentPersiste = OutboxMonitoring.mettreAJour(saisie.uuid) {
                                 it.copy(etat = SaisieEnAttente.Etat.SENT, idServeur = envoi.idServeur,
                                     objetCree = true, messageErreur = null)
                             }
                             messages.add(buildString {
                                 append("✅ ${saisie.objectType} #${envoi.idServeur}")
+                                if (!sentPersiste) {
+                                    append(" — ⚠ transmise mais état local non enregistré (espace " +
+                                        "disque ?) : libérez de l'espace, ne pas recréer")
+                                }
                                 if (envoi.doublonPossible) {
                                     append(" — ⚠ renvoyée sans vérification anti-doublon " +
                                         "possible : vérifier l'absence de doublon sur GeoNature")
@@ -293,6 +308,11 @@ object OutboxEnvoi {
         val doublonPossible: Boolean = false,
     )
 
+    /** Objets CRÉÉS côté serveur dont le marquage `objetCree` n'a pas pu être persisté (commit
+     *  disque refusé) — uuid local → id serveur. Filet mémoire jusqu'à la mort du process : un
+     *  retry dans cette session ne re-POSTe pas (audit 2026-08-27). */
+    private val creesNonPersistes = java.util.concurrent.ConcurrentHashMap<String, Int>()
+
     /** Envoie une saisie isolée. Lit les valeurs depuis valeursJson, reconstitue la Map
      *  attendue par [MonitoringEnvoi.envoyerVisite] et POST, puis uploade les médias éventuels
      *  vers gn_commons. Si la saisie porte déjà [SaisieEnAttente.objetCree] (tentative
@@ -301,11 +321,14 @@ object OutboxEnvoi {
      *  les médias. */
     private suspend fun envoyerUne(
         config: GeoNatureConfig,
-        s: SaisieEnAttente,
-        /** dejaTentee AVANT la tentative courante (le champ de [s] est déjà posé à true par la
+        s0: SaisieEnAttente,
+        /** dejaTentee AVANT la tentative courante (le champ de [s0] est déjà posé à true par la
          *  transition SENDING) : true = un POST précédent a pu aboutir sans confirmation. */
         dejaTenteeAvant: Boolean,
     ): Result<EnvoiUne> {
+        // Objet créé lors d'une tentative précédente DANS CE PROCESS mais dont l'état n'a pas
+        // pu être persisté : traité comme objetCree (médias seulement, jamais de re-POST).
+        val s = creesNonPersistes[s0.uuid]?.let { s0.copy(objetCree = true, idServeur = it) } ?: s0
         return try {
             val idServeur: Int
             var doublonPossible = false
@@ -411,7 +434,16 @@ object OutboxEnvoi {
                     // Marque « créé côté serveur » IMMÉDIATEMENT (avant l'upload des médias) :
                     // si l'app meurt ou si les médias échouent, on sait qu'il ne faut plus
                     // re-POSTer cet objet.
-                    OutboxMonitoring.mettreAJour(s.uuid) { it.copy(objetCree = true, idServeur = idServeur) }
+                    if (!OutboxMonitoring.mettreAJour(s.uuid) { it.copy(objetCree = true, idServeur = idServeur) }) {
+                        // Créé côté serveur mais IMPOSSIBLE à persister (espace disque ?) : filet
+                        // mémoire + échec EXPLICITE (un « succès » laisserait croire que tout est
+                        // en ordre alors qu'un retry après redémarrage dupliquerait).
+                        creesNonPersistes[s.uuid] = idServeur
+                        return Result.failure(GNErreur.EnvoiEchoue(0,
+                            "objet créé côté serveur (#$idServeur) mais enregistrement local " +
+                                "impossible (espace disque ?) — libérez de l'espace avant de " +
+                                "réessayer ; ne pas recréer la saisie"))
+                    }
                 }
             }
             // Upload des médias (multi-fichiers) après création. Un échec ne remet PAS en

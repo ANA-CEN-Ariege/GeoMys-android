@@ -92,7 +92,7 @@ object OccHabUpload {
             // /stations/<id>/ est idempotent (le serveur recharge la même instance) — après un
             // update incertain, le ré-envoi re-POSTe donc directement.
             if (station.envoiIncertain && !estMiseAJour) {
-                verifierStationExistante(base, token, cookies, station.uuidStation)?.let { idExistant ->
+                verifierStationExistante(base, token, cookies, station.uuidStation, datasetId)?.let { idExistant ->
                     return@withContext OccHabEnvoiResult(
                         idStationServeur = idExistant,
                         nbHabitats = habitatsValides.size,
@@ -230,20 +230,41 @@ object OccHabUpload {
 
     /**
      * Cherche une station déjà créée côté serveur portant [uuid] (`unique_id_sinp_station`).
-     * `GET /api/occhab/stations/?format=json`. Renvoie son id_station si trouvée, sinon null —
-     * y compris si le serveur est injoignable ou refuse la lecture (CRUVED R absent) : l'appelant
-     * procédera alors au POST, ce qui reste sûr (un serveur muet n'a rien pu créer).
+     * `GET /api/occhab/stations/?format=json&id_dataset=<jdd>` (filtre serveur : la liste
+     * complète d'une grosse instance faisait tomber la vérification en timeout). Renvoie son
+     * id_station si trouvée, null si ABSENTE (réponse lue, uuid non trouvé → le POST est sûr).
+     * Vérification IMPOSSIBLE (réseau, timeout, HTTP ≠ 2xx — ex. 403 sans CRUVED R) → lève
+     * [GNErreur.EnvoiIncertain] : le serveur était joignable lors de la tentative précédente, la
+     * station a donc peut-être été créée — re-POSTer à l'aveugle dupliquerait (audit 2026-08-27).
      */
-    private fun verifierStationExistante(base: String, token: String?, cookies: String, uuid: String): Int? {
+    private fun verifierStationExistante(
+        base: String, token: String?, cookies: String, uuid: String, idDataset: Int?,
+    ): Int? {
         if (uuid.isBlank()) return null
-        return try {
-            val conn = HttpClient.get(URL("$base/api/occhab/stations/?format=json"), token, cookies, 30000)
+        val url = buildString {
+            append("$base/api/occhab/stations/?format=json")
+            if (idDataset != null && idDataset > 0) append("&id_dataset=$idDataset")
+        }
+        val conn = try {
+            HttpClient.get(URL(url), token, cookies, 30000)
+        } catch (e: IOException) {
+            throw GNErreur.EnvoiIncertain("Vérification anti-doublon impossible (réseau) — " +
+                "la station a peut-être déjà été créée ; réessayez avec du réseau.")
+        }
+        try {
             val code = conn.responseCode
-            if (code !in 200..299) { conn.disconnect(); return null }
-            val text = try { conn.inputStream.bufferedReader().readText() } catch (_: Exception) { "" }
+            if (code !in 200..299) throw GNErreur.EnvoiIncertain(
+                "Vérification anti-doublon impossible (HTTP $code) — la station a peut-être déjà " +
+                    "été créée ; réessayez.")
+            return trouverIdParUuid(conn.inputStream.bufferedReader().readText(), uuid)
+        } catch (e: GNErreur) {
+            throw e
+        } catch (e: Exception) {
+            throw GNErreur.EnvoiIncertain("Vérification anti-doublon impossible " +
+                "(${e.message ?: e.javaClass.simpleName}) — réessayez.")
+        } finally {
             conn.disconnect()
-            trouverIdParUuid(text, uuid)
-        } catch (_: Exception) { null }
+        }
     }
 
     /** Extrait l'id_station d'une station portant [uuid] dans la réponse de la liste des stations.

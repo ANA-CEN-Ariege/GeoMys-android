@@ -17,6 +17,7 @@
  */
 
 package fr.ariegenature.geomys
+import fr.ariegenature.geomys.network.MarqueurEnvoiOcctax
 
 import androidx.test.core.app.ApplicationProvider
 import fr.ariegenature.geomys.model.Observation
@@ -182,6 +183,96 @@ class GeoNatureUploadEnvoyerTest {
         assertTrue("pas de relevé orphelin", res.relevesOrphelins.isEmpty())
         assertEquals("aucune occurrence postée", 0, nbOcc.get())
         assertEquals("aucun rollback DELETE", 0, nbDelete.get())
+    }
+
+    // ── Anti-doublon par uuid client + marquage au fil de l'eau (audit 2026-08-27) ──────────
+
+    /** Chaque occurrence part avec son `unique_id_occurence_occtax` et le marqueur est appelé
+     *  DANS le bloc IO dès le 2xx (pas seulement au retour). */
+    @Test
+    fun occurrence_postee_avec_uuid_client_et_marquee_au_fil_de_l_eau() {
+        val corps = mutableListOf<String>()
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                val path = request.path ?: ""
+                val json = MockResponse().setHeader("Content-Type", "application/json")
+                return when {
+                    path.startsWith("/api/auth/login") ->
+                        json.setResponseCode(200).setBody("""{"access_token":"t","user":{"id_role":1}}""")
+                    path.endsWith("/only/releve") -> json.setResponseCode(200).setBody("""{"id":100}""")
+                    path.contains("/occurrence") -> { corps.add(request.body.readUtf8()); json.setResponseCode(200).setBody("{}") }
+                    else -> MockResponse().setResponseCode(404)
+                }
+            }
+        }
+        val o = obs("o1").apply { uuidOccurrence = "dddddddd-1111-2222-3333-444444444444" }
+        val crees = mutableListOf<String>()
+        val marqueur = object : MarqueurEnvoiOcctax {
+            override fun occurrenceCreee(obsId: String) { crees.add(obsId) }
+            override fun occurrenceIncertaine(obsId: String, idReleve: Int) {}
+        }
+        val res = runBlocking { GeoNatureUpload.envoyer(Sortie(observations = listOf(o)), config, marqueur) }
+        assertEquals(1, res.nbCrees)
+        assertEquals(listOf("o1"), crees)
+        assertTrue("uuid client dans le payload",
+            corps.single().contains("\"unique_id_occurence_occtax\":\"dddddddd-1111-2222-3333-444444444444\""))
+    }
+
+    /** Occurrence dont le POST précédent est resté sans réponse (idReleveIncertain) : si le relevé
+     *  serveur la contient déjà (uuid retrouvé), elle est acquise SANS nouveau relevé ni re-POST. */
+    @Test
+    fun occurrence_incertaine_retrouvee_par_uuid_n_est_pas_repostee() {
+        val nbReleves = java.util.concurrent.atomic.AtomicInteger(0)
+        val nbOcc = java.util.concurrent.atomic.AtomicInteger(0)
+        val uuid = "eeeeeeee-1111-2222-3333-444444444444"
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                val path = request.path ?: ""
+                val json = MockResponse().setHeader("Content-Type", "application/json")
+                return when {
+                    path.startsWith("/api/auth/login") ->
+                        json.setResponseCode(200).setBody("""{"access_token":"t","user":{"id_role":1}}""")
+                    path.endsWith("/releve/55") && request.method == "GET" -> json.setResponseCode(200).setBody(
+                        """{"releve":{"id":55,"properties":{"t_occurrences_occtax":[{"unique_id_occurence_occtax":"$uuid"}]}}}""")
+                    path.endsWith("/only/releve") -> { nbReleves.incrementAndGet(); json.setResponseCode(200).setBody("""{"id":100}""") }
+                    path.contains("/occurrence") -> { nbOcc.incrementAndGet(); json.setResponseCode(200).setBody("{}") }
+                    else -> MockResponse().setResponseCode(404)
+                }
+            }
+        }
+        val o = obs("o1").apply { uuidOccurrence = uuid; idReleveIncertain = 55 }
+        val res = runBlocking { GeoNatureUpload.envoyer(Sortie(observations = listOf(o)), config) }
+        assertEquals("acquise", 1, res.nbCrees)
+        assertEquals(listOf("o1"), res.obsCreesIds)
+        assertEquals("aucun nouveau relevé", 0, nbReleves.get())
+        assertEquals("aucun re-POST", 0, nbOcc.get())
+    }
+
+    /** Vérification IMPOSSIBLE (relevé en 500) : pas de re-POST aveugle — l'obs reste à envoyer. */
+    @Test
+    fun occurrence_incertaine_verification_impossible_pas_de_repost() {
+        val nbOcc = java.util.concurrent.atomic.AtomicInteger(0)
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                val path = request.path ?: ""
+                val json = MockResponse().setHeader("Content-Type", "application/json")
+                return when {
+                    path.startsWith("/api/auth/login") ->
+                        json.setResponseCode(200).setBody("""{"access_token":"t","user":{"id_role":1}}""")
+                    path.endsWith("/releve/55") && request.method == "GET" -> json.setResponseCode(500).setBody("{}")
+                    path.contains("/occurrence") -> { nbOcc.incrementAndGet(); json.setResponseCode(200).setBody("{}") }
+                    else -> MockResponse().setResponseCode(404)
+                }
+            }
+        }
+        val o = obs("o1").apply { idReleveIncertain = 55 }
+        try {
+            runBlocking { GeoNatureUpload.envoyer(Sortie(observations = listOf(o)), config) }
+            throw AssertionError("attendu : EnvoiEchoue (rien créé)")
+        } catch (e: GNErreur.EnvoiEchoue) {
+            assertTrue(e.message!!.contains("anti-doublon"))
+        }
+        assertEquals("aucun re-POST aveugle", 0, nbOcc.get())
     }
 
     @Test

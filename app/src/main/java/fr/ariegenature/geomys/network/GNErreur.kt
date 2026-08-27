@@ -55,7 +55,16 @@ fun humaniserErreurReseau(e: Throwable): String {
             append("Erreur serveur (HTTP $code).")
             if (detail != null) append("\n\nDétail : $detail")
         }
-        null -> "Erreur réseau : ${e.message ?: e.javaClass.simpleName}"
+        null -> when (e) {
+            // Exceptions réseau brutes (login relevé, GET/POST) : message sans jargon.
+            is java.net.UnknownHostException ->
+                "Pas de réseau, ou serveur introuvable (${e.message ?: "hôte inconnu"}). Vérifiez la connexion."
+            is java.net.SocketTimeoutException ->
+                "Serveur injoignable ou trop lent (délai dépassé). Réessayez avec une meilleure connexion."
+            is java.net.ConnectException ->
+                "Connexion au serveur impossible (${e.message ?: "refusée"}). Vérifiez le réseau et l'URL."
+            else -> "Erreur réseau : ${e.message ?: e.javaClass.simpleName}"
+        }
         else -> "Erreur HTTP $code : ${detail ?: e.message ?: "—"}"
     }
 }

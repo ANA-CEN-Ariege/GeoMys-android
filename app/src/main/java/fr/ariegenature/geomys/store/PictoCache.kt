@@ -80,12 +80,20 @@ object PictoCache {
      *  négatif (cf. [marqueurAbsent]) ; un succès le supprime. [token]/[cookies] optionnels :
      *  posés en Authorization Bearer / Cookie si fournis (serveurs qui protègent les médias) —
      *  jamais de login déclenché ici. BLOQUANT → appeler hors thread UI. */
-    fun telecharger(moduleCode: String, url: String, token: String? = null, cookies: String? = null): File? = try {
+    fun telecharger(
+        moduleCode: String, url: String, token: String? = null, cookies: String? = null,
+        /** URL de l'instance GeoNature : jeton et cookies ne partent QUE vers son hôte et son
+         *  schéma. Un `module_picto` absolu pointant ailleurs (CDN, ancien serveur, http nu)
+         *  est téléchargé SANS session (audit sécurité 2026-08-27). Null = jamais d'auth. */
+        base: String? = null,
+    ): File? = try {
         val conn = URL(url).openConnection() as HttpURLConnection
         conn.connectTimeout = 10000
         conn.readTimeout = 10000
-        token?.takeIf { it.isNotEmpty() }?.let { conn.setRequestProperty("Authorization", "Bearer $it") }
-        cookies?.takeIf { it.isNotEmpty() }?.let { conn.setRequestProperty("Cookie", it) }
+        if (memeOrigine(url, base)) {
+            token?.takeIf { it.isNotEmpty() }?.let { conn.setRequestProperty("Authorization", "Bearer $it") }
+            cookies?.takeIf { it.isNotEmpty() }?.let { conn.setRequestProperty("Cookie", it) }
+        }
         val code = conn.responseCode
         if (code != 200) {
             conn.disconnect()
@@ -142,7 +150,17 @@ object PictoCache {
         fichierLocal(moduleCode)?.let { return it }
         val marqueur = marqueurAbsent(moduleCode)
         if (marqueur.isFile && System.currentTimeMillis() - marqueur.lastModified() < TTL_ABSENT_MS) return null
-        return telecharger(moduleCode, urlPicto(base, moduleCode, modulePicto), token, cookies)
+        return telecharger(moduleCode, urlPicto(base, moduleCode, modulePicto), token, cookies, base)
+    }
+
+    /** true si [url] a le même hôte ET le même schéma que [base] (session transmissible). */
+    internal fun memeOrigine(url: String, base: String?): Boolean {
+        if (base.isNullOrBlank()) return false
+        return try {
+            val u = URL(url)
+            val b = URL(base.trim().trimEnd('/'))
+            u.host.equals(b.host, ignoreCase = true) && u.protocol.equals(b.protocol, ignoreCase = true)
+        } catch (_: Exception) { false }
     }
 
     /** Prefetch (rafraîchissement) des pictos de [modules] (`module_code` → `module_picto`) pour
@@ -152,7 +170,7 @@ object PictoCache {
      *  transmis à [telecharger]. BLOQUANT. */
     fun prefetch(base: String, modules: List<Pair<String, String?>>, token: String? = null, cookies: String? = null) {
         modules.forEach { (code, picto) ->
-            runCatching { telecharger(code, urlPicto(base, code, picto), token, cookies) }
+            runCatching { telecharger(code, urlPicto(base, code, picto), token, cookies, base) }
         }
     }
 

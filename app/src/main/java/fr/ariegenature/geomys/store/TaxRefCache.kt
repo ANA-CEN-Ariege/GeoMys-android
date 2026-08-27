@@ -643,24 +643,29 @@ object TaxRefCache {
     }
 
     /** Remplace TOUT le cache (chemin de synchro, après [vider]) — écriture streaming directe, sans
-     *  recharger ni copier la map existante. Évite les pics mémoire sur les gros référentiels. */
-    fun remplacerTout(entries: Map<String, TaxRefEntry>) = synchronized(verrou) { sauvegarder(entries) }
+     *  recharger ni copier la map existante. Évite les pics mémoire sur les gros référentiels.
+     *  Renvoie le succès de l'ÉCRITURE DISQUE : false (espace plein…) = rien n'est en place, ni
+     *  sur disque ni en mémoire — l'appelant ne doit pas poser la version (audit 2026-08-27 : une
+     *  écriture échouée passait pour une synchro réussie, appli « configurée » sans taxons). */
+    fun remplacerTout(entries: Map<String, TaxRefEntry>): Boolean = synchronized(verrou) { sauvegarder(entries) }
 
-    private fun sauvegarder(cache: Map<String, TaxRefEntry>) = synchronized(verrou) {
-        ecrireCacheStream(cache)
+    private fun sauvegarder(cache: Map<String, TaxRefEntry>): Boolean = synchronized(verrou) {
+        if (!ecrireCacheStream(cache)) return@synchronized false
         mem = cache
         memEntreesParCdNom = null
         memVernsParCdNom = null
         memTousLesNoms = null
         memNomsParListe = null
         memIndexMots = null
+        true
     }
 
     /** Écrit FILE_CACHE en STREAMING : la String JSON complète n'est jamais construite en mémoire
      *  (`gson.toJson` sur ~400k entrées = dizaines de Mo → OOM). Même format que la sérialisation
-     *  Gson de Map<String, TaxRefEntry> (champ null omis). Écriture atomique tmp + rename. */
-    private fun ecrireCacheStream(cache: Map<String, TaxRefEntry>) {
-        try {
+     *  Gson de Map<String, TaxRefEntry> (champ null omis). Écriture atomique tmp + rename.
+     *  Renvoie false si l'écriture ou le rename échoue (le tmp est nettoyé). */
+    private fun ecrireCacheStream(cache: Map<String, TaxRefEntry>): Boolean {
+        return try {
             val cible = fichier(FILE_CACHE)
             val tmp = File(dir, "$FILE_CACHE.tmp")
             java.io.BufferedWriter(java.io.FileWriter(tmp)).use { bw ->
@@ -678,8 +683,13 @@ object TaxRefCache {
             }
             if (!tmp.renameTo(cible)) {
                 if (cible.exists()) cible.delete()
-                tmp.renameTo(cible)
+                if (!tmp.renameTo(cible)) { runCatching { tmp.delete() }; return false }
             }
-        } catch (_: Exception) {}
+            true
+        } catch (e: Exception) {
+            android.util.Log.e("TaxRefCache", "Écriture du cache TaxRef échouée : ${e.javaClass.simpleName} ${e.message}")
+            runCatching { File(dir, "$FILE_CACHE.tmp").delete() }
+            false
+        }
     }
 }

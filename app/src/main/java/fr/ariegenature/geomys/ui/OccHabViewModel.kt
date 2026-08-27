@@ -177,6 +177,49 @@ class OccHabViewModel : ViewModel() {
      *  ré-hérite les détails de session à l'enregistrement ([stationAEnregistrer]). */
     fun reprendreStation(existante: OccHabStation) {
         station = existante.copy(habitats = existante.habitats.map { it.copy() })
+        // Station D'ORIGINE SERVEUR (import, ou copie importée rééditée) : la session ADOPTE ses
+        // détails — JDD, observateurs, commentaire, nomenclatures — SAUF les dates, qui restent
+        // celles de la session (décision terrain 2026-08-27 : une reprise sur le terrain est une
+        // nouvelle observation, mais les auteurs et le commentaire de la station sont conservés).
+        // Sans cela, la fusion de [stationAEnregistrer] écrasait silencieusement observateurs et
+        // commentaire du serveur par ceux de la session à la première modification (audit).
+        if (existante.origineServeur) {
+            val memeJdd = existante.idDataset == null || existante.idDataset == details.idDataset
+            details = details.copy(
+                idDataset = existante.idDataset ?: details.idDataset,
+                nomDataset = if (memeJdd) details.nomDataset else null,
+                observateursIds = existante.observateursIds,
+                observateursNoms = existante.observateursNoms,
+                observateursTxt = existante.observateursTxt,
+                idNomCalculSurface = existante.idNomCalculSurface,
+                idNomObjetGeographique = existante.idNomObjetGeographique,
+                comment = existante.comment,
+            )
+            if (details.idDataset != null) jddDefini = true
+        }
+    }
+
+    /** Valeurs « dérivées » saisissables à la main dans le dialogue Détails (altitudes, surface),
+     *  EXCLUES de l'empreinte de contenu : à photographier avant le dialogue pour
+     *  [forcerPersistanceSiDeriveesChangees]. */
+    fun deriveesManuelles(): List<Any?> = listOf(station.altitudeMin, station.altitudeMax, station.surface)
+
+    /** Après validation du dialogue Détails : une correction MANUELLE des altitudes / de la
+     *  surface est une modification réelle même si l'empreinte ne la voit pas (audit 2026-08-27)
+     *  → on lève l'empreinte d'origine pour que la prochaine persistance écrive la station. */
+    fun forcerPersistanceSiDeriveesChangees(avant: List<Any?>) {
+        if (station.empreinteOrigine != null && avant != deriveesManuelles()) {
+            station = station.copy(empreinteOrigine = null)
+        }
+    }
+
+    /** Fige l'empreinte d'ORIGINE de la station courante = son contenu tel qu'il serait persisté
+     *  MAINTENANT (détails de session fusionnés, cf. [stationAEnregistrer]). Appelé juste après
+     *  l'import d'une station serveur ou la remise en édition d'une station envoyée : tant que
+     *  ni la géométrie, ni les habitats, ni les détails ne changent, `OccHabStore.upsertStation`
+     *  ne l'écrit pas dans « Mes stations » (demande terrain 2026-08-27). */
+    fun figerEmpreinteOrigine() {
+        station = station.copy(empreinteOrigine = stationAEnregistrer().empreinteContenu())
     }
 
     /** Station à enregistrer/envoyer = géométrie + habitats (station courante) fusionnés avec les

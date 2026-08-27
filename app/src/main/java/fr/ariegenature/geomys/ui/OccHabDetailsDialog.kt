@@ -236,7 +236,7 @@ fun ouvrirDialogDetailsOccHab(
     var lireChargerServeur: () -> Boolean = { d.chargerStationsServeur }
     if (jddSeul) {
         val sw = androidx.appcompat.widget.SwitchCompat(context).apply {
-            text = "Afficher mes stations déjà sur GeoNature"
+            text = "Afficher mes stations déjà sur GeoNature (ce jeu de données)"
             isChecked = d.chargerStationsServeur
             setPadding(0, (12 * density).toInt(), 0, 0)
         }

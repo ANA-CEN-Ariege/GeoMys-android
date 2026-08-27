@@ -25,6 +25,8 @@ import fr.ariegenature.geomys.model.OccHabStation
 import fr.ariegenature.geomys.store.OccHabStore
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -115,6 +117,79 @@ class OccHabSaisieStoreTest {
         // Doublon hérité d'avant l'invariant : la saisie la plus récente (en tête) fait foi.
         store.upsertStation("sb", station("A2").copy(idStationServeur = 42))
         assertEquals("sb", store.copieLocaleNonEnvoyee(42)?.first?.id)
+    }
+
+    // Demande terrain 2026-08-27 : une station importée du serveur (ou remise en édition) n'entre
+    // dans « Mes stations » qu'à la PREMIÈRE modification réelle — garde dans upsertStation.
+    @Test
+    fun station_importee_intacte_n_entre_pas_dans_mes_stations_avant_la_premiere_modif() {
+        val importee = station("A").copy(idStationServeur = 42, stationName = "Tourbière",
+            geometryType = "Polygon", geometryCoordsJson = "[[1.4,42.9],[1.5,42.9],[1.5,43.0]]")
+        val origine = importee.copy(empreinteOrigine = importee.empreinteContenu())
+        assertTrue("ignorée = succès", store.upsertStation("sa", origine))
+        assertTrue(store.stationsDeSaisie("sa").isEmpty())
+        // Champs DÉRIVÉS recalculés à « Valider » (surface, altitudes, centroïde) : toujours intacte.
+        assertTrue(store.upsertStation("sa", origine.copy(
+            surface = 999L, altitudeMin = 1, altitudeMax = 2, latitude = 42.95, longitude = 1.45)))
+        assertTrue(store.stationsDeSaisie("sa").isEmpty())
+        assertNull(store.copieLocaleNonEnvoyee(42))
+        // 1ʳᵉ modification réelle → persistée, à envoyer.
+        assertTrue(store.upsertStation("sa", origine.copy(stationName = "Tourbière du col")))
+        assertEquals(listOf("A"), store.stationsDeSaisie("sa").map { it.id })
+        assertFalse(store.stationsDeSaisie("sa").single().envoyeGeoNature)
+        assertNotNull(store.copieLocaleNonEnvoyee(42))
+        // Retour au contenu d'origine : déjà « à envoyer » → reste (pas de disparition silencieuse).
+        assertTrue(store.upsertStation("sa", origine))
+        assertEquals(1, store.stationsDeSaisie("sa").size)
+        assertFalse(store.stationsDeSaisie("sa").single().envoyeGeoNature)
+    }
+
+    @Test
+    fun est_intacte_non_persistee_suit_exactement_la_garde_d_upsert() {
+        val importee = station("A").copy(idStationServeur = 42)
+        val origine = importee.copy(empreinteOrigine = importee.empreinteContenu())
+        assertTrue(store.estIntacteNonPersistee("sa", origine))
+        assertFalse("modifiée", store.estIntacteNonPersistee("sa", origine.copy(comment = "x")))
+        assertFalse("locale (sans empreinte)", store.estIntacteNonPersistee("sa", importee))
+        store.upsertStation("sa", origine.copy(comment = "x")) // désormais « à envoyer »
+        assertFalse("déjà à envoyer → réécrite même identique", store.estIntacteNonPersistee("sa", origine))
+    }
+
+    @Test
+    fun station_envoyee_remise_en_edition_reste_envoyee_tant_qu_intacte() {
+        store.upsertStation("sa", station("A").copy(idStationServeur = 42))
+        store.marquerStationEnvoyee("sa", "A", 42)
+        val envoyee = store.stationsDeSaisie("sa").single()
+        assertNull("effacée à l'envoi confirmé", envoyee.empreinteOrigine)
+        val modifiable = envoyee.copy(envoyeGeoNature = false, empreinteOrigine = envoyee.empreinteContenu())
+        assertTrue(store.upsertStation("sa", modifiable))
+        assertTrue("intacte → la copie envoyée reste envoyée", store.stationsDeSaisie("sa").single().envoyeGeoNature)
+        assertNull(store.copieLocaleNonEnvoyee(42))
+        assertTrue(store.upsertStation("sa", modifiable.copy(comment = "revu sur le terrain")))
+        assertFalse(store.stationsDeSaisie("sa").single().envoyeGeoNature)
+        assertEquals("A", store.copieLocaleNonEnvoyee(42)?.second?.id)
+    }
+
+    @Test
+    fun empreinte_contenu_ignore_les_champs_derives_et_le_formatage_des_coordonnees() {
+        val poly = station("P").copy(geometryType = "Polygon",
+            geometryCoordsJson = "[[1.40,42.90],[1.5,42.9],[1.5,43.0]]", latitude = 42.9, longitude = 1.4)
+        val e = poly.empreinteContenu()
+        assertEquals(e, poly.copy(
+            geometryCoordsJson = "[[1.4,42.9],[1.5,42.9],[1.5,43]]", latitude = 0.0, longitude = 0.0,
+            surface = 5L, altitudeMin = 3, altitudeMax = 9,
+            envoyeGeoNature = true, envoiIncertain = true, derniereErreurEnvoi = "x",
+            empreinteOrigine = "autre",
+        ).empreinteContenu())
+        assertNotEquals(e, poly.copy(geometryCoordsJson = "[[1.4,42.9],[1.5,42.9],[1.5,43.1]]").empreinteContenu())
+        assertNotEquals(e, poly.copy(habitats = poly.habitats + OccHabHabitat(cdHab = 2)).empreinteContenu())
+        assertNotEquals(e, poly.copy(habitats = listOf(poly.habitats.single().copy(recouvrement = 50.0))).empreinteContenu())
+        assertNotEquals(e, poly.copy(dateMin = 1L).empreinteContenu())
+        assertNotEquals(e, poly.copy(observateursIds = listOf(3)).empreinteContenu())
+        assertNotEquals(e, poly.copy(anaEvalJson = "{\"enjeu\":\"fort\"}").empreinteContenu())
+        // Point : la position compte.
+        val pt = station("Q").copy(latitude = 42.9, longitude = 1.4)
+        assertNotEquals(pt.empreinteContenu(), pt.copy(latitude = 42.91).empreinteContenu())
     }
 
     @Test

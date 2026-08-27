@@ -161,7 +161,65 @@ data class OccHabStation(
      *  par une vérification d'existence côté serveur (anti-doublon, cf. [uuidStation]). Effacé
      *  dès qu'un envoi est confirmé, ou qu'un échec NET (rejet serveur) prouve la non-création. */
     var envoiIncertain: Boolean = false,
-)
+    /** [empreinteContenu] de la station TELLE QU'IMPORTÉE du serveur (ou telle qu'envoyée, pour
+     *  une station remise en édition), détails de session fusionnés. Non null = la station
+     *  n'entre dans « Mes stations » qu'à la PREMIÈRE modification réelle (demande terrain
+     *  2026-08-27) : [fr.ariegenature.geomys.store.OccHabStore.upsertStation] ignore une station
+     *  dont le contenu est encore identique à cette empreinte. Null pour une station créée
+     *  localement (toujours persistée) ; effacé à l'envoi confirmé. */
+    var empreinteOrigine: String? = null,
+) {
+    /**
+     * Empreinte du CONTENU métier (ce qui part au serveur), HORS état d'envoi et HORS champs
+     * DÉRIVÉS de la géométrie : surface auto et altitudes MNT sont recalculées à chaque
+     * « Valider » avec des arrondis différents de ceux du serveur, et le centroïde d'un polygone
+     * est recalculé localement — les inclure ferait passer une station intacte pour modifiée.
+     * Les coordonnées sont renormalisées (Double.toString) pour ne pas dépendre du formatage du
+     * JSON d'origine. Limite assumée : une correction MANUELLE des seules altitudes/surface n'est
+     * pas vue comme une modification. Cf. [empreinteOrigine].
+     */
+    fun empreinteContenu(): String = buildString {
+        append(geometryType).append('|')
+        if (geometryType == "Polygon" && !geometryCoordsJson.isNullOrEmpty()) {
+            append(coordsNormalisees(geometryCoordsJson))
+        } else {
+            append(latitude).append(',').append(longitude)
+        }
+        append('|').append(idDataset)
+        append('|').append(observateursIds.sorted())
+        append('|').append(observateursTxt.orEmpty().trim())
+        append('|').append(stationName.orEmpty().trim())
+        append('|').append(comment.orEmpty().trim())
+        append('|').append(anaEvalJson.orEmpty().trim())
+        append('|').append(dateMin).append('|').append(dateMax)
+        append('|').append(profondeurMin).append('|').append(profondeurMax)
+        append('|').append(precision)
+        append('|').append(idNomExposition).append('|').append(idNomCalculSurface)
+        append('|').append(idNomObjetGeographique).append('|').append(idNomTypeSol)
+        append('|').append(idNomTypeMosaique)
+        habitats.forEach { h ->
+            append("|H:").append(h.idHabitatServeur).append(',').append(h.cdHab)
+            append(',').append(h.nomCite.trim())
+            append(',').append(h.determiner.orEmpty().trim())
+            append(',').append(h.recouvrement)
+            append(',').append(h.precisionTechnique.orEmpty().trim())
+            append(',').append(h.anaEvalJson.orEmpty().trim())
+            append(',').append(h.idNomTypeDetermination).append(',').append(h.idNomTechniqueCollecte)
+            append(',').append(h.idNomAbondance).append(',').append(h.idNomSensibilite)
+            append(',').append(h.idNomInteretCommunautaire)
+        }
+    }
+
+    private fun coordsNormalisees(json: String?): String = try {
+        val arr = org.json.JSONArray(json)
+        buildString {
+            for (i in 0 until arr.length()) {
+                val c = arr.getJSONArray(i)
+                append(c.getDouble(0)).append(',').append(c.getDouble(1)).append(';')
+            }
+        }
+    } catch (_: Exception) { json.orEmpty() }
+}
 
 /**
  * SAISIE OccHab = groupe de [stations] saisies dans une même session (tuile OccHab), sur le modèle

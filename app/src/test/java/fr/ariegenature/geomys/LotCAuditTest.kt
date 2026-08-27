@@ -60,6 +60,27 @@ class LotCAuditTest {
     }
 
     @Test
+    fun champs_additionnels_texte_libre_envoyes_en_chaine_comme_le_web() {
+        val defs = """[
+          {"idField":1,"fieldName":"remarque","fieldLabel":"Remarque","widget":"TEXT"},
+          {"idField":2,"fieldName":"note","fieldLabel":"Note","widget":"TEXTAREA"},
+          {"idField":3,"fieldName":"exotique","fieldLabel":"Exotique","widget":"INCONNU"},
+          {"idField":4,"fieldName":"effectif","fieldLabel":"Effectif","widget":"NUMBER"},
+          {"idField":5,"fieldName":"vu","fieldLabel":"Vu","widget":"CHECKBOX"}
+        ]"""
+        val texte = GeoNatureUpload.champsAdditionnelsTexteLibre(defs)
+        assertEquals(setOf("remarque", "note", "exotique"), texte)
+        assertEquals("cache illisible → aucun champ texte (heuristique)", emptySet<String>(),
+            GeoNatureUpload.champsAdditionnelsTexteLibre("<html>"))
+        val json = GeoNatureUpload.jsonDepuisMap(
+            mapOf("remarque" to "42", "note" to "true", "effectif" to "42", "vu" to "true"), texte)
+        assertEquals("42", json.getString("remarque"))
+        assertEquals("true", json.getString("note"))
+        assertEquals(42, json.getInt("effectif"))
+        assertTrue(json.getBoolean("vu"))
+    }
+
+    @Test
     fun bornes_des_entiers_ana_eval_exposees() {
         assertEquals(1 to 1_000_000, AnaEval.borneEntier("echelle"))
         assertNull(AnaEval.borneEntier("enjeu"))

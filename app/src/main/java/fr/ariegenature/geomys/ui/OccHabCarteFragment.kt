@@ -699,7 +699,15 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
      *  figée et la station n'y entrera qu'à la première modification réelle (demande terrain
      *  2026-08-27, cf. OccHabStore.upsertStation). */
     private fun importerStationServeur(st: fr.ariegenature.geomys.model.OccHabStation) {
-        editerStationExistante(st.copy(envoyeGeoNature = false, envoiIncertain = false))
+        // Détails PAR STATION : la station importée garde SES observateurs, commentaire et
+        // nomenclatures ; seules ses DATES prennent celles de la session (une reprise sur le
+        // terrain est une nouvelle observation — décision terrain 2026-08-27). Corrigées ensuite
+        // via « i », elles sont conservées à la resélection (reprendreStation ne les touche plus).
+        val defauts = occhabViewModel.defautsSession
+        editerStationExistante(st.copy(
+            envoyeGeoNature = false, envoiIncertain = false,
+            dateMin = defauts.dateMin ?: st.dateMin, dateMax = defauts.dateMax ?: st.dateMax,
+        ))
         occhabViewModel.figerEmpreinteOrigine()
         // Son tracé violet disparaît : c'est la station en cours d'édition (filtre de
         // afficherStationsServeur) — la liste [stationsServeur] reste brute.

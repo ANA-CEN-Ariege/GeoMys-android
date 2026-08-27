@@ -30,9 +30,10 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * OccHabViewModel — reprise d'une station : une station D'ORIGINE SERVEUR fait adopter ses
- * détails (JDD, observateurs, commentaire, nomenclatures) à la session SAUF les dates (décision
- * terrain 2026-08-27) ; empreinte d'origine figée sur ce qui partirait ; correction manuelle des
+ * OccHabViewModel — détails PAR STATION (décision terrain 2026-08-27) : [OccHabViewModel.details]
+ * est le tampon d'édition de la station sélectionnée (chargé à la reprise, réinjecté par
+ * stationAEnregistrer), les nouvelles stations partent des DÉFAUTS de session (formulaire de
+ * démarrage) ; empreinte d'origine figée sur ce qui partirait ; correction manuelle des
  * altitudes / surface = modification réelle malgré leur exclusion de l'empreinte.
  */
 @RunWith(RobolectricTestRunner::class)
@@ -58,34 +59,47 @@ class OccHabViewModelTest {
     )
 
     @Test
-    fun station_serveur_reprise_la_session_adopte_ses_details_sauf_les_dates() {
+    fun station_reprise_le_tampon_reflete_SES_details_dates_comprises() {
         val vm = vm()
         vm.reprendreStation(stationServeur())
         val d = vm.details
         assertEquals(listOf(7, 8), d.observateursIds)
-        assertEquals(listOf("DUPONT jean", "MARTIN paul"), d.observateursNoms)
         assertEquals("DUPONT jean", d.observateursTxt)
         assertEquals("Pelouse pâturée", d.comment)
         assertEquals(22, d.idNomCalculSurface)
         assertEquals(23, d.idNomObjetGeographique)
         assertEquals("JDD 12", d.nomDataset)
-        assertEquals("dates = celles de la session", 1_000L, d.dateMin)
-        assertEquals(2_000L, d.dateMax)
-        // Ce qui partirait au serveur : détails de la station + dates de session.
+        assertEquals("ses propres dates (celles de session ne sont posées qu'à l'IMPORT, carte)", 500L, d.dateMin)
+        assertEquals(600L, d.dateMax)
+        // Ce qui partirait = la station elle-même.
         val s = vm.stationAEnregistrer()
         assertEquals(listOf(7, 8), s.observateursIds)
         assertEquals("Pelouse pâturée", s.comment)
-        assertEquals(1_000L, s.dateMin)
-        assertEquals(2_000L, s.dateMax)
+        assertEquals(500L, s.dateMin)
     }
 
     @Test
-    fun station_locale_reprise_ne_touche_pas_aux_details_de_session() {
+    fun modifier_une_station_ne_touche_ni_les_defauts_ni_les_autres_stations() {
         val vm = vm()
         vm.reprendreStation(stationServeur().copy(origineServeur = false, idStationServeur = null))
-        assertEquals(listOf(1), vm.details.observateursIds)
+        vm.majDetails { it.comment = "revu" ; it.observateursIds = listOf(9) }
+        assertEquals("revu", vm.stationAEnregistrer().comment)
+        // Nouvelle station → défauts de session intacts.
+        vm.nouvelleStation()
         assertEquals("session", vm.details.comment)
-        assertEquals(5, vm.details.idNomCalculSurface)
+        assertEquals(listOf(1), vm.details.observateursIds)
+        assertEquals(1_000L, vm.details.dateMin)
+        assertEquals("session", vm.stationAEnregistrer().comment)
+    }
+
+    @Test
+    fun formulaire_de_demarrage_redefinit_les_defauts_des_nouvelles_stations() {
+        val vm = vm()
+        vm.majDetails(demarrage = true) { it.observateursIds = listOf(3); it.idDataset = 15 }
+        assertEquals(listOf(3), vm.defautsSession.observateursIds)
+        assertEquals(15, vm.defautsSession.idDataset)
+        vm.nouvelleStation()
+        assertEquals(listOf(3), vm.details.observateursIds)
     }
 
     @Test

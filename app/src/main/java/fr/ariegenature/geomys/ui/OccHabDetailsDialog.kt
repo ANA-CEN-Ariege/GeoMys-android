@@ -344,7 +344,9 @@ fun ouvrirDialogDetailsOccHab(
             // Garde serveur : date_max ≥ date_min (sinon payload invalide côté GeoNature).
             val fin = pendingDateMax?.let { f -> maxOf(f, pendingDateMin ?: f) }
             val obs = lireObservateurs()
-            vm.majDetails {
+            // Formulaire de démarrage → défauts des nouvelles stations ; « i » / « Détails » →
+            // la station sélectionnée seulement (détails par station, décision 2026-08-27).
+            vm.majDetails(demarrage = jddSeul) {
                 it.idDataset = pendingIdDataset
                 it.nomDataset = pendingNomDataset
                 it.observateursIds = obs.map { o -> o.first }
@@ -376,12 +378,12 @@ fun ouvrirDialogDetailsOccHab(
                 // (station sans bloc) → rien n'est touché.
                 lireAnaEval?.let { vm.station.anaEvalJson = it() }
             }
-            // Mémorise les infos obligatoires validées : le formulaire du RELEVÉ SUIVANT
-            // repartira de ces valeurs (dates exclues au rechargement — cf.
-            // detailsSessionParDefaut).
-            // SANS le commentaire : propre à un relevé, il était rejoué sur toutes les stations
-            // de la session suivante, invisible dans le formulaire de démarrage (audit 2026-08-27).
-            runCatching {
+            // Mémorise les infos obligatoires validées AU DÉMARRAGE : le formulaire du RELEVÉ
+            // SUIVANT repartira de ces valeurs (dates exclues au rechargement — cf.
+            // detailsSessionParDefaut). Pas depuis le « i » d'une station (détails PAR station :
+            // les observateurs d'une station importée du serveur ne sont pas un défaut de session)
+            // ni le commentaire (propre à un relevé) — audit 2026-08-27.
+            if (jddSeul) runCatching {
                 config.occhabDetailsPrecedentsJson = com.google.gson.Gson().toJson(vm.details.copy(comment = null))
             }
             onValide()

@@ -171,6 +171,8 @@ object GeoNatureUpload {
             val nomenclatures = mutableMapOf<String, Map<String, Int>>()
             // Types à résoudre : dérivés du registre unique (+ TYPE_MEDIA), même source que la synchro.
             val typesVoulus = OcctaxFieldsConfig.mnemoniques() + "TYPE_MEDIA"
+            // Champs additionnels à widget texte libre : envoyés en chaîne, comme le web.
+            val champsTexte = champsAdditionnelsTexteLibre(config.additionalFieldsOcctaxJson)
 
             // Si le cache est vide, on tente une synchro automatique
             if (!NomenclatureCache.estDisponible) {
@@ -236,7 +238,7 @@ object GeoNatureUpload {
                 // additional_fields du relevé : on prend les valeurs portées par la 1re obs du
                 // groupe (toutes les obs d'un même releveId portent la même copie — édition côté
                 // CaracterisationFragment).
-                val additionalReleve = jsonDepuisMap(groupe.first().additionalFieldsReleve)
+                val additionalReleve = jsonDepuisMap(groupe.first().additionalFieldsReleve, champsTexte)
                 // Override par relevé (saisis via « Détails du relevé »), sinon valeurs par défaut :
                 //  - jeu de données : obs.idDatasetReleve sinon le dataset de la config ;
                 //  - observateurs : obs.observateursReleveIds (tableau, multi-observateurs) sinon
@@ -454,7 +456,7 @@ object GeoNatureUpload {
                     mediaIdsGroupe.addAll(mediaIdsObs)
 
                     // ── Étape B : construction + POST du JSON occurrence avec medias[] inclus ──
-                    val occ = buildOccurrence(obs, nomenclatures, mediasParCounting)
+                    val occ = buildOccurrence(obs, nomenclatures, mediasParCounting, champsTexte)
 
                     val urlOcc = URL("$base/api/occtax/OCCTAX/releve/$idReleve/occurrence")
                     val conn2 = HttpClient.postJson(urlOcc, token, cookies, 30000)
@@ -565,6 +567,8 @@ object GeoNatureUpload {
         obs: Observation,
         nomenclatures: Map<String, Map<String, Int>>,
         mediasParCounting: List<List<JSONObject>> = emptyList(),
+        /** Champs additionnels à widget texte libre (envoyés en chaîne, cf. jsonDepuisMap). */
+        champsTexte: Set<String> = emptySet(),
     ): JSONObject {
         // Counting #0 — issu des champs flat de Observation (saisie mono-taxon ou 1er dénombrement multi).
         val counting0 = buildCounting(
@@ -577,6 +581,7 @@ object GeoNatureUpload {
             medias = mediasParCounting.getOrNull(0) ?: emptyList(),
             additionalFields = obs.additionalFieldsCounting0,
             nomenclatures = nomenclatures,
+            champsTexte = champsTexte,
         )
         val countings = JSONArray().put(counting0)
         // Countings supplémentaires (mode multi-taxon).
@@ -591,6 +596,7 @@ object GeoNatureUpload {
                 medias = mediasParCounting.getOrNull(i + 1) ?: emptyList(),
                 additionalFields = d.additionalFields,
                 nomenclatures = nomenclatures,
+                champsTexte = champsTexte,
             ))
         }
 
@@ -630,7 +636,7 @@ object GeoNatureUpload {
             obs.champsOccExtra["digital_proof"]?.takeIf { it.isNotEmpty() }?.let { put("digital_proof", it) }
             obs.champsOccExtra["non_digital_proof"]?.takeIf { it.isNotEmpty() }?.let { put("non_digital_proof", it) }
             if (obs.additionalFieldsOccurrence.isNotEmpty()) {
-                put("additional_fields", jsonDepuisMap(obs.additionalFieldsOccurrence))
+                put("additional_fields", jsonDepuisMap(obs.additionalFieldsOccurrence, champsTexte))
             }
         }
     }
@@ -680,9 +686,25 @@ object GeoNatureUpload {
         }
     }
 
-    internal fun jsonDepuisMap(map: Map<String, String>): JSONObject = JSONObject().apply {
+    /** Noms des champs additionnels Occtax à widget TEXTE LIBRE (text / textarea / widget inconnu
+     *  rendu en texte) d'après le cache des définitions ([json] = `additionalFieldsOcctaxJson`) :
+     *  envoyés en CHAÎNE telle quelle, comme le client web — sans ça « 42 » partait en nombre et
+     *  « true » en booléen (audit 2026-08-27, décision : faire comme le web). Cache absent ou
+     *  illisible → set vide (heuristique historique pour tous les champs). */
+    internal fun champsAdditionnelsTexteLibre(json: String): Set<String> = try {
+        val type = object : com.google.gson.reflect.TypeToken<List<AdditionalFieldDef>>() {}.type
+        com.google.gson.Gson().fromJson<List<AdditionalFieldDef>>(json, type).orEmpty()
+            .filter { it.widget == WidgetType.TEXT || it.widget == WidgetType.TEXTAREA || it.widget == WidgetType.INCONNU }
+            .map { it.fieldName }.toSet()
+    } catch (_: Exception) { emptySet() }
+
+    /** Map de champs additionnels → JSON typé. [champsTexte] : champs à widget texte libre,
+     *  laissés en chaîne (cf. [champsAdditionnelsTexteLibre]) ; les autres sont typés par
+     *  heuristique (nombre, booléen, tableau JSON d'une checkbox multiple). */
+    internal fun jsonDepuisMap(map: Map<String, String>, champsTexte: Set<String> = emptySet()): JSONObject = JSONObject().apply {
         for ((k, v) in map) {
             if (v.isEmpty()) continue
+            if (k in champsTexte) { put(k, v); continue }
             // Virgule décimale (claviers français) : « 12,5 » partait en String (audit 2026-08-27).
             val vNum = if (v.count { it == ',' } == 1 && !v.contains('.')) v.replace(',', '.') else v
             when {
@@ -708,6 +730,7 @@ object GeoNatureUpload {
         medias: List<JSONObject> = emptyList(),
         additionalFields: Map<String, String> = emptyMap(),
         nomenclatures: Map<String, Map<String, Int>>,
+        champsTexte: Set<String> = emptySet(),
     ): JSONObject = JSONObject().apply {
         put("count_min", nombreMin)
         put("count_max", nombreMax.coerceAtLeast(nombreMin))
@@ -729,7 +752,7 @@ object GeoNatureUpload {
             put("medias", arr)
         }
         if (additionalFields.isNotEmpty()) {
-            put("additional_fields", jsonDepuisMap(additionalFields))
+            put("additional_fields", jsonDepuisMap(additionalFields, champsTexte))
         }
     }
 

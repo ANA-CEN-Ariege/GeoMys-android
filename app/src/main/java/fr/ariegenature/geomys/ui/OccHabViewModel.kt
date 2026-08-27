@@ -102,18 +102,30 @@ class OccHabViewModel : ViewModel() {
     var saisieId: String = java.util.UUID.randomUUID().toString()
         private set
 
+    /** DÉFAUTS de la session (formulaire de démarrage) : ce dont hérite chaque NOUVELLE station.
+     *  Décision terrain 2026-08-27 : les détails sont PAR STATION — [details] n'est que le tampon
+     *  d'édition de la station sélectionnée (chargé par [reprendreStation], écrit par le « i »),
+     *  et revient à ces défauts à chaque [nouvelleStation]. Modifier une station n'en touche
+     *  jamais une autre. */
+    var defautsSession = OccHabDetailsSession()
+        private set
+
     /** Démarre une nouvelle SESSION (tuile OccHab) = une nouvelle SAISIE : détails aux défauts
      *  serveur, JDD à saisir, station vierge. */
     fun demarrerSession(defauts: OccHabDetailsSession) {
-        details = defauts
+        defautsSession = defauts
+        details = defauts.copy()
         jddDefini = false
         station = OccHabStation()
         saisieId = java.util.UUID.randomUUID().toString()
     }
 
-    /** Nouvelle station dans la MÊME saisie : garde les [details] et [saisieId], repart d'une
-     *  géométrie et d'habitats vierges. */
-    fun nouvelleStation() { station = OccHabStation() }
+    /** Nouvelle station dans la MÊME saisie : garde [saisieId], repart d'une géométrie et
+     *  d'habitats vierges et des DÉFAUTS de session (détails par station). */
+    fun nouvelleStation() {
+        station = OccHabStation()
+        details = defautsSession.copy()
+    }
 
     fun definirGeometrie(type: String, lat: Double, lon: Double, coordsJson: String?) {
         station = station.copy(
@@ -142,9 +154,12 @@ class OccHabViewModel : ViewModel() {
         station = station.copy(habitats = station.habitats.filterNot { it.id == id })
     }
 
-    /** Applique une modification aux détails de session (bouton « Détails »). */
-    fun majDetails(bloc: (OccHabDetailsSession) -> Unit) {
+    /** Applique une modification aux détails de la STATION SÉLECTIONNÉE (bouton « i » /
+     *  « Détails »). [demarrage] = formulaire de démarrage du relevé : ses valeurs deviennent
+     *  aussi les DÉFAUTS des nouvelles stations de la session. */
+    fun majDetails(demarrage: Boolean = false, bloc: (OccHabDetailsSession) -> Unit) {
         bloc(details)
+        if (demarrage) defautsSession = details.copy()
         if (details.idDataset != null) jddDefini = true
     }
 
@@ -155,20 +170,27 @@ class OccHabViewModel : ViewModel() {
         saisieId = saisie.id
         station = OccHabStation()
         val premiere = saisie.stations.firstOrNull()
-        details = if (premiere == null) OccHabDetailsSession() else OccHabDetailsSession(
-            idDataset = premiere.idDataset,
-            observateursIds = premiere.observateursIds,
-            observateursNoms = premiere.observateursNoms,
-            observateursTxt = premiere.observateursTxt,
-            dateMin = premiere.dateMin,
-            dateMax = premiere.dateMax,
-            // altitudes/surface : par STATION, jamais héritées en session (cf. stationAEnregistrer).
-            idNomCalculSurface = premiere.idNomCalculSurface,
-            idNomObjetGeographique = premiere.idNomObjetGeographique,
-            comment = premiere.comment,
-        )
+        defautsSession = if (premiere == null) OccHabDetailsSession() else detailsDe(premiere)
+        details = defautsSession.copy()
         jddDefini = premiere?.idDataset != null
     }
+
+    /** Détails PROPRES à une station (tampon d'édition du « i »). Un JDD / des dates absents
+     *  (station ancienne) retombent sur les défauts de session. */
+    private fun detailsDe(s: OccHabStation) = OccHabDetailsSession(
+        idDataset = s.idDataset ?: defautsSession.idDataset,
+        nomDataset = if (s.idDataset == null || s.idDataset == defautsSession.idDataset) defautsSession.nomDataset else null,
+        observateursIds = s.observateursIds,
+        observateursNoms = s.observateursNoms,
+        observateursTxt = s.observateursTxt,
+        dateMin = s.dateMin ?: defautsSession.dateMin,
+        dateMax = s.dateMax ?: defautsSession.dateMax,
+        // altitudes/surface : par STATION, portées par [station] (cf. stationAEnregistrer).
+        idNomCalculSurface = s.idNomCalculSurface,
+        idNomObjetGeographique = s.idNomObjetGeographique,
+        comment = s.comment,
+        chargerStationsServeur = defautsSession.chargerStationsServeur,
+    )
 
     /** Reprend une STATION existante de la saisie courante pour l'éditer (garde la [saisieId]) :
      *  charge SEULEMENT sa géométrie et ses habitats. On NE recharge PAS [details] : le JDD /
@@ -177,26 +199,14 @@ class OccHabViewModel : ViewModel() {
      *  ré-hérite les détails de session à l'enregistrement ([stationAEnregistrer]). */
     fun reprendreStation(existante: OccHabStation) {
         station = existante.copy(habitats = existante.habitats.map { it.copy() })
-        // Station D'ORIGINE SERVEUR (import, ou copie importée rééditée) : la session ADOPTE ses
-        // détails — JDD, observateurs, commentaire, nomenclatures — SAUF les dates, qui restent
-        // celles de la session (décision terrain 2026-08-27 : une reprise sur le terrain est une
-        // nouvelle observation, mais les auteurs et le commentaire de la station sont conservés).
-        // Sans cela, la fusion de [stationAEnregistrer] écrasait silencieusement observateurs et
-        // commentaire du serveur par ceux de la session à la première modification (audit).
-        if (existante.origineServeur) {
-            val memeJdd = existante.idDataset == null || existante.idDataset == details.idDataset
-            details = details.copy(
-                idDataset = existante.idDataset ?: details.idDataset,
-                nomDataset = if (memeJdd) details.nomDataset else null,
-                observateursIds = existante.observateursIds,
-                observateursNoms = existante.observateursNoms,
-                observateursTxt = existante.observateursTxt,
-                idNomCalculSurface = existante.idNomCalculSurface,
-                idNomObjetGeographique = existante.idNomObjetGeographique,
-                comment = existante.comment,
-            )
-            if (details.idDataset != null) jddDefini = true
-        }
+        // Détails PAR STATION (décision terrain 2026-08-27) : le tampon [details] reflète la
+        // station sélectionnée — JDD, observateurs, dates, commentaire, nomenclatures. Le « i »
+        // modifie CETTE station et aucune autre ; [stationAEnregistrer] réinjecte ce tampon dans
+        // la station (le tampon ET la station décrivent la même chose). Une station importée du
+        // serveur reçoit ses dates de session À L'IMPORT (carte), pas ici : ses propres dates,
+        // éventuellement corrigées via « i », sont conservées à la resélection.
+        details = detailsDe(existante)
+        if (details.idDataset != null) jddDefini = true
     }
 
     /** Valeurs « dérivées » saisissables à la main dans le dialogue Détails (altitudes, surface),
@@ -222,8 +232,9 @@ class OccHabViewModel : ViewModel() {
         station = station.copy(empreinteOrigine = stationAEnregistrer().empreinteContenu())
     }
 
-    /** Station à enregistrer/envoyer = géométrie + habitats (station courante) fusionnés avec les
-     *  détails communs de la session. Conserve l'id de [station] (nouvelle ou rééditée). */
+    /** Station à enregistrer/envoyer = géométrie + habitats (station courante) fusionnés avec le
+     *  tampon [details] — qui est PAR STATION : chargé de la station à sa sélection, ou des
+     *  défauts de session pour une nouvelle station. Conserve l'id de [station]. */
     fun stationAEnregistrer(): OccHabStation = station.copy(
         idDataset = details.idDataset,
         observateursIds = details.observateursIds,

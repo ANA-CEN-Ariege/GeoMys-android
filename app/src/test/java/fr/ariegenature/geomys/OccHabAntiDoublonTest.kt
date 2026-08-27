@@ -17,6 +17,7 @@
  */
 
 package fr.ariegenature.geomys
+import fr.ariegenature.geomys.network.GNErreur
 
 import androidx.test.core.app.ApplicationProvider
 import fr.ariegenature.geomys.model.OccHabHabitat
@@ -200,6 +201,49 @@ class OccHabAntiDoublonTest {
         for (i in 0 until habs.length()) {
             assertFalse(habs.getJSONObject(i).has("id_habitat"))
             assertFalse(habs.getJSONObject(i).has("unique_id_sinp_hab"))
+        }
+    }
+
+    /** CRÉATION après un envoi incertain : la vérification par UUID filtre par `id_dataset` et,
+     *  si elle ÉCHOUE (HTTP 500 / réseau), l'envoi ressort INCERTAIN sans aucun POST — re-POSTer
+     *  à l'aveugle dupliquerait (audit 2026-08-27). */
+    @Test
+    fun `creation apres incertain — verification en echec = EnvoiIncertain, aucun POST`() {
+        val server = MockWebServer().apply { start() }
+        try {
+            val gets = mutableListOf<String>()
+            server.dispatcher = object : Dispatcher() {
+                override fun dispatch(request: RecordedRequest): MockResponse {
+                    val path = request.path ?: ""
+                    val json = MockResponse().setHeader("Content-Type", "application/json")
+                    return when {
+                        path.startsWith("/api/auth/login") ->
+                            json.setResponseCode(200).setBody("""{"access_token":"t","user":{"id_role":1}}""")
+                        path.startsWith("/api/occhab/stations") && request.method == "GET" -> {
+                            gets.add(path); json.setResponseCode(500).setBody("{}")
+                        }
+                        path.startsWith("/api/occhab/stations") && request.method == "POST" ->
+                            json.setResponseCode(200).setBody("""{"type":"Feature","id":43,"properties":{"id_station":43}}""")
+                        else -> MockResponse().setResponseCode(404)
+                    }
+                }
+            }
+            val config = GeoNatureConfig(ApplicationProvider.getApplicationContext()).apply {
+                urlServeur = server.url("/").toString().trimEnd('/')
+                login = "alice"; motDePasse = "pwd"; idDataset = "12"
+            }
+            val station = stationServeur().copy(idStationServeur = null, envoiIncertain = true)
+            try {
+                runBlocking { OccHabUpload.envoyer(station, config) }
+                throw AssertionError("attendu : GNErreur.EnvoiIncertain")
+            } catch (e: GNErreur.EnvoiIncertain) {
+                assertTrue(e.msg.contains("HTTP 500"))
+            }
+            assertEquals("un seul GET de vérification, filtré par jeu de données",
+                listOf("/api/occhab/stations/?format=json&id_dataset=12"), gets)
+            assertEquals("aucun POST", emptyList<String>(), requetesOcchabAvecCorps(server).map { it.second })
+        } finally {
+            server.shutdown()
         }
     }
 

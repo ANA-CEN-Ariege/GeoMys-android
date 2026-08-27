@@ -259,6 +259,13 @@ object GeoNatureAuth {
 
                 cache = CacheAuth(base, login, token, idRole, cookies, now + CACHE_TTL_MS)
                 Triple(token, idRole, cookies)
+            } catch (e: java.io.IOException) {
+                // RÉSEAU (hôte introuvable, timeout, connexion refusée) ≠ refus d'authentification :
+                // relevée telle quelle pour que l'appelant affiche « Pas de réseau » et non
+                // « Identifiants expirés (HTTP 401) » — hors-ligne, l'utilisateur ressaisissait ses
+                // identifiants, et une faute purgeait les caches (audit 2026-08-27). Null reste
+                // réservé au REFUS (HTTP ≠ 200, réponse non-JSON, 200 sans jeton).
+                throw e
             } catch (e: Exception) { null }
         }
     }

@@ -77,27 +77,39 @@ class SortieStore(context: Context) : JsonCollectionStore<Sortie>() {
 
     fun supprimer(id: String) { muter { liste -> liste.removeAll { it.id == id } } }
 
-    fun marquerEnvoyee(id: String) {
-        muter { liste ->
+    /** Renvoie le succès de la PERSISTANCE (false = commit disque échoué : la sortie est
+     *  transmise mais l'appareil ne le sait pas — l'appelant DOIT le signaler, sinon un
+     *  ré-envoi créerait des doublons ; audit 2026-08-27). */
+    fun marquerEnvoyee(id: String): Boolean = muter { liste ->
+        val idx = liste.indexOfFirst { it.id == id }
+        // Succès → on efface aussi l'éventuelle erreur d'un échec précédent.
+        if (idx >= 0) liste[idx] = liste[idx].copy(envoyeGeoNature = true, derniereErreurEnvoi = null)
+    }
+
+    /** Marque [obsIds] comme créées côté serveur ([Observation.envoyeeServeur]) — AU FIL DE
+     *  L'EAU pendant l'envoi et après un envoi PARTIEL : au prochain envoi de la sortie, elles
+     *  ne seront pas re-postées (anti-doublon), seules les obs restantes partiront. Efface
+     *  l'éventuelle incertitude ([Observation.idReleveIncertain]). À appeler AVANT tout
+     *  marquage global de la sortie. Renvoie le succès de la persistance. */
+    fun marquerObservationsEnvoyees(id: String, obsIds: Collection<String>): Boolean {
+        if (obsIds.isEmpty()) return true
+        val ids = obsIds.toSet()
+        return muter { liste ->
             val idx = liste.indexOfFirst { it.id == id }
-            // Succès → on efface aussi l'éventuelle erreur d'un échec précédent.
-            if (idx >= 0) liste[idx] = liste[idx].copy(envoyeGeoNature = true, derniereErreurEnvoi = null)
+            if (idx >= 0) liste[idx] = liste[idx].copy(observations = liste[idx].observations.map { o ->
+                if (o.id in ids) o.copy(envoyeeServeur = true, idReleveIncertain = null) else o
+            })
         }
     }
 
-    /** Marque [obsIds] comme créées côté serveur ([Observation.envoyeeServeur]) après un
-     *  envoi PARTIEL : au prochain envoi de la sortie, elles ne seront pas re-postées
-     *  (anti-doublon), seules les obs restantes partiront. À appeler AVANT tout marquage
-     *  global de la sortie pour que l'acquis survive même si la suite échoue. */
-    fun marquerObservationsEnvoyees(id: String, obsIds: Collection<String>) {
-        if (obsIds.isEmpty()) return
-        val ids = obsIds.toSet()
-        muter { liste ->
-            val idx = liste.indexOfFirst { it.id == id }
-            if (idx >= 0) liste[idx] = liste[idx].copy(observations = liste[idx].observations.map { o ->
-                if (o.id in ids) o.copy(envoyeeServeur = true) else o
-            })
-        }
+    /** POST de l'occurrence [obsId] émis sans réponse dans le relevé serveur [idReleve] : elle y
+     *  a peut-être été créée. Le prochain envoi vérifiera par son uuid client avant de
+     *  re-POSTer (cf. GeoNatureUpload). Renvoie le succès de la persistance. */
+    fun marquerObservationIncertaine(id: String, obsId: String, idReleve: Int): Boolean = muter { liste ->
+        val idx = liste.indexOfFirst { it.id == id }
+        if (idx >= 0) liste[idx] = liste[idx].copy(observations = liste[idx].observations.map { o ->
+            if (o.id == obsId && !o.envoyeeServeur) o.copy(idReleveIncertain = idReleve) else o
+        })
     }
 
     /** Mémorise l'échec du dernier envoi (message humanisé) — affiché en cadre rouge dans
@@ -185,6 +197,10 @@ private fun normaliserObservation(o: Observation): Observation? {
         champsReleveExtra = o.champsReleveExtra ?: emptyMap(),
         envoyeeServeur = o.envoyeeServeur,
         releveSansEspece = o.releveSansEspece,
+        // Observations d'avant l'uuid client (JSON ancien → null via Gson) : on en génère un
+        // maintenant ; il se fige au prochain enregistrement (stable pour l'anti-doublon).
+        uuidOccurrence = o.uuidOccurrence ?: java.util.UUID.randomUUID().toString(),
+        idReleveIncertain = o.idReleveIncertain,
     )
 }
 

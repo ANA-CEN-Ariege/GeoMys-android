@@ -330,7 +330,13 @@ object GeoNatureSync {
         TaxRefCache.vider()
         // remplacerTout (et non ajouter) : écriture streaming directe, sans recharger ni copier la
         // map — évite les pics mémoire sur les gros référentiels (200k+ taxons → OOM avant).
-        TaxRefCache.remplacerTout(entrees)
+        // Écriture ÉCHOUÉE (espace disque plein…) : on ressort en ÉCHEC sans poser la version —
+        // l'appli reste « non configurée » et le demande explicitement, au lieu de passer pour
+        // synchronisée sans aucun taxon (audit 2026-08-27).
+        if (!TaxRefCache.remplacerTout(entrees)) {
+            return@withContext Pair(0, "Écriture du cache des taxons impossible (espace de stockage " +
+                "insuffisant ?) — libérez de l'espace puis relancez « Recharger les données ».")
+        }
         // Index complet cd_nom → noms français (APRÈS remplacerTout qui réinitialise les memo).
         TaxRefCache.ajouterVerns(vernsCdNom)
         if (groupeMap.isNotEmpty()) TaxRefCache.ajouterGroupes(groupeMap)

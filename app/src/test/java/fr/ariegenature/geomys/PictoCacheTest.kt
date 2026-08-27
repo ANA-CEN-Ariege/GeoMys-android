@@ -166,11 +166,25 @@ class PictoCacheTest {
 
     @Test
     fun `telecharger — token et cookies fournis poses en Authorization Bearer et Cookie`() {
+        // Session transmise SEULEMENT vers l'origine (hôte + schéma) de l'instance GeoNature
+        // (audit sécurité 2026-08-27) : ici le picto est servi par le serveur lui-même.
         server.enqueue(MockResponse().setResponseCode(404))
-        PictoCache.telecharger("STOM", server.url("/img.jpg").toString(), token = "tok123", cookies = "session=abc")
+        PictoCache.telecharger("STOM", server.url("/img.jpg").toString(), token = "tok123", cookies = "session=abc",
+            base = server.url("/geonature").toString())
         val req = server.takeRequest()
         assertEquals("Bearer tok123", req.getHeader("Authorization"))
         assertEquals("session=abc", req.getHeader("Cookie"))
+    }
+
+    @Test
+    fun `telecharger — picto hors de l'origine du serveur = jamais de session`() {
+        // module_picto absolu vers un autre hôte (CDN, ancien serveur) : ni Bearer ni Cookie.
+        server.enqueue(MockResponse().setResponseCode(404))
+        PictoCache.telecharger("STOM", server.url("/img.jpg").toString(), token = "tok123", cookies = "session=abc",
+            base = "https://autre-serveur.example.org/geonature")
+        val req = server.takeRequest()
+        assertNull(req.getHeader("Authorization"))
+        assertNull(req.getHeader("Cookie"))
     }
 
     @Test

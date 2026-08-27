@@ -149,6 +149,16 @@ data class Observation(
      *  `t_occurrences_occtax` VIDE et n'est PAS supprimé (pas de rollback « relevé orphelin »).
      *  Les vraies observations gardent false. Ancien JSON sans le champ → false (défaut Gson). */
     var releveSansEspece: Boolean = false,
+    /** Identifiant client STABLE de l'occurrence, envoyé en `unique_id_occurence_occtax`
+     *  (accepté par OccurrenceSchema à la création). Anti-doublon après un envoi INCERTAIN : le
+     *  ré-envoi vérifie sa présence dans le relevé visé avant de re-POSTer (audit 2026-08-27).
+     *  Ancien JSON sans le champ → régénéré par la normalisation du store, stable ensuite. */
+    var uuidOccurrence: String = UUID.randomUUID().toString(),
+    /** Relevé serveur (id_releve_occtax) dans lequel le POST de cette occurrence a été émis SANS
+     *  réponse (coupure après émission) : elle y a peut-être été créée. Le prochain envoi vérifie
+     *  par [uuidOccurrence] avant de re-POSTer ; effacé dès que l'occurrence est marquée créée.
+     *  Null = aucune incertitude. */
+    var idReleveIncertain: Int? = null,
 )
 
 data class Sortie(

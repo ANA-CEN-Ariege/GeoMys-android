@@ -61,20 +61,37 @@ suspend fun envoyerSaisieOccHabVersGeoNature(
     var nbCrees = 0
     var derniereErreur: String? = null
     for (station in aEnvoyer) {
+        // CRÉATION (pas d'id serveur) : « tentée » (statut INCERTAIN) persisté AVANT le POST — si
+        // le process meurt ou si la coroutine est annulée pendant l'appel, le prochain envoi
+        // vérifiera l'existence par UUID au lieu de re-POSTer (audit 2026-08-27, modèle
+        // OutboxEnvoi.dejaTentee). Un UPDATE (/stations/<id>/) est idempotent : inutile.
+        // Impossible d'écrire cet état (espace disque ?) → on n'envoie PAS (un re-POST aveugle
+        // après crash dupliquerait).
+        val creation = (station.idStationServeur ?: 0) <= 0
+        if (creation && !store.marquerStationIncertain(saisie.id, station.id,
+                "Envoi interrompu — vérification anti-doublon au prochain envoi")
+        ) {
+            derniereErreur = "Impossible d'enregistrer l'état d'envoi (espace disque ?) — station non envoyée"
+            continue
+        }
         try {
-            val res = envoyer(station, config)
-            // L'ACQUIS d'abord : la station créée est marquée AVANT tout le reste — un ré-envoi
-            // ne la re-postera pas (recalcule aussi l'état de la saisie).
-            val persiste = store.marquerStationEnvoyee(saisie.id, station.id, res.idStationServeur)
-            if (persiste) {
-                nbCrees++
-            } else {
-                // POST réussi mais écriture disque échouée (disque plein…) : la station EST créée
-                // côté serveur mais non marquée localement → on la passe en INCERTAIN pour que le
-                // ré-envoi vérifie l'existence par UUID au lieu de re-POSTer (anti-doublon).
-                store.marquerStationIncertain(saisie.id, station.id,
-                    "Station transmise mais enregistrement local incomplet — vérification au prochain envoi.")
-                derniereErreur = "Enregistrement local incomplet"
+            // NonCancellable : POST + marquage d'un bloc — une annulation (vue détruite pendant
+            // l'envoi) ne peut plus jeter le résultat d'un POST abouti.
+            withContext(kotlinx.coroutines.NonCancellable) {
+                val res = envoyer(station, config)
+                // L'ACQUIS d'abord : la station créée est marquée AVANT tout le reste — un ré-envoi
+                // ne la re-postera pas (recalcule aussi l'état de la saisie).
+                val persiste = store.marquerStationEnvoyee(saisie.id, station.id, res.idStationServeur)
+                if (persiste) {
+                    nbCrees++
+                } else {
+                    // POST réussi mais écriture disque échouée (disque plein…) : la station EST créée
+                    // côté serveur mais non marquée localement → on la passe en INCERTAIN pour que le
+                    // ré-envoi vérifie l'existence par UUID au lieu de re-POSTer (anti-doublon).
+                    store.marquerStationIncertain(saisie.id, station.id,
+                        "Station transmise mais enregistrement local incomplet — vérification au prochain envoi.")
+                    derniereErreur = "Enregistrement local incomplet"
+                }
             }
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e

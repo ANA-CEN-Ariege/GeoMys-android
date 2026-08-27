@@ -51,22 +51,6 @@
         android:textColor="@android:color/white"
         android:textSize="14sp" />
 
-    <!-- Poubelle de la STATION SÉLECTIONNÉE : n'apparaît que lorsqu'une station est
-         sélectionnée sur la carte (haut-droite, SOUS le bandeau d'instructions). -->
-    <ImageButton
-        android:id="@+id/btn_supprimer_station"
-        android:layout_width="48dp"
-        android:layout_height="48dp"
-        android:layout_gravity="top|end"
-        android:layout_marginTop="118dp"
-        android:layout_marginEnd="12dp"
-        android:padding="10dp"
-        android:background="@drawable/btn_circle_white"
-        android:contentDescription="Supprimer la station sélectionnée"
-        android:scaleType="fitCenter"
-        android:src="@drawable/ic_delete"
-        android:visibility="gone"
-        app:tint="@android:color/holo_red_dark" />
 
     <!-- Sélecteur de mode géométrique (point / polygone), centré verticalement à gauche —
          même emplacement/habillage que le sélecteur d'Occtax. -->

@@ -171,6 +171,7 @@ class GsonRoundTripTest {
             origineServeur = true,
             derniereErreurEnvoi = "Réseau interrompu",
             envoiIncertain = true,
+            empreinteOrigine = "Polygon|1.4,42.9;1.5,42.9;1.5,43.0;|12|[7, 8]|…",
         )
         val saisie = OccHabSaisie(
             id = "saisie-1",

@@ -23,6 +23,18 @@
                 android:textSize="20sp"
                 android:textStyle="bold" />
 
+            <!-- Bandeau « mise à jour : rechargez les données » (cf. purgerSiRechargementRequis) ;
+                 texte, couleur et cadre posés par ConfigGeoNatureFragment.majBandeauRechargement. -->
+            <TextView
+                android:id="@+id/tv_bandeau_rechargement"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="16dp"
+                android:padding="12dp"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:visibility="gone" />
+
             <!-- ══════════ BOÎTE 1 : Connexion au serveur ══════════ -->
             <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"

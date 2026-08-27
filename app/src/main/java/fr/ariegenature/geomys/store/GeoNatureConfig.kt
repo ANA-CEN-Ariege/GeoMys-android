@@ -114,6 +114,21 @@ class GeoNatureConfig(context: Context) {
         get() = prefs.getString("gn_obs_defaut_id", "") ?: ""
         set(v) = prefs.edit().putString("gn_obs_defaut_id", v).apply()
 
+    /** Version des DONNÉES synchronisées présentes sur l'appareil (cf. [VERSION_DONNEES_REQUISE]).
+     *  Écrite par SyncRunner en fin de synchro (TaxRef chargé) ; 0 = jamais synchronisé depuis
+     *  l'introduction du mécanisme (v1.3.17). */
+    var versionDonneesChargees: Int
+        get() = prefs.getInt("gn_version_donnees_chargees", 0)
+        set(v) = prefs.edit().putInt("gn_version_donnees_chargees", v).apply()
+
+    /** true entre le lancement qui a détecté une mise à jour exigeant un rechargement
+     *  (`armerRechargementSiRequis`) et la synchro qui l'effectue (purge au début de SyncRunner,
+     *  puis désarmement) : rend `configurationComplete` faux et pilote le bandeau explicatif et
+     *  les messages de blocage de l'écran Paramètres. */
+    var rechargementRequisApresMaj: Boolean
+        get() = prefs.getBoolean("gn_rechargement_requis_maj", false)
+        set(v) = prefs.edit().putBoolean("gn_rechargement_requis_maj", v).apply()
+
     /** true si le module OccHab est installé sur le serveur ET accessible à l'utilisateur
      *  (au moins un droit CRUVED). Détecté à la synchro via `GET /api/gn_commons/modules`.
      *  Conditionne l'affichage de la tuile OccHab sur l'accueil (comme Monitoring). */
@@ -383,6 +398,17 @@ class GeoNatureConfig(context: Context) {
             listePresenteDansCache && observateurPresentDansCache
 
     companion object {
+        /** Version des données synchronisées EXIGÉE par cette release. À INCRÉMENTER dans toute
+         *  release qui rend « Recharger les données » OBLIGATOIRE (nouveau cache, nouveau champ lu
+         *  à la synchro, format modifié…) : au premier lancement, une installation dont
+         *  [versionDonneesChargees] est en retard arrive sur Paramètres (bloqué) avec un bandeau ;
+         *  la synchro suivante purge les caches synchronisés avant de les réécrire (cf.
+         *  `armerRechargementSiRequis` / SyncRunner). Les JSON de config (datasets, listes,
+         *  observateurs, champs add., settings) ne sont pas purgés : ils sont REMPLACÉS par la
+         *  phase A quand elle répond non vide. Historique :
+         *  1 = v1.3.17 (2026-08-27, introduction du mécanisme). */
+        const val VERSION_DONNEES_REQUISE = 1
+
         // Mot de passe conservé EN MÉMOIRE uniquement quand le chiffrement (Keystore) est
         // indisponible — jamais persisté en clair sur disque. Process-wide car GeoNatureConfig
         // est ré-instancié à chaque usage ; perdu au redémarrage du process (re-saisie).

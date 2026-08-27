@@ -393,18 +393,23 @@ object OccHabApi {
             when (type) {
                 "Point" -> GeomParse("Point", coords.getDouble(1), coords.getDouble(0), null)
                 "Polygon" -> {
-                    // coordinates = [ anneau extérieur [ [lon,lat], … ] ]
+                    // coordinates = [ anneau extérieur [ [lon,lat], … ] ]. GeoJSON FERME l'anneau
+                    // (dernier point = premier) : ce point de fermeture n'est PAS un sommet pour
+                    // l'éditeur (sinon deux markers superposés au 1er sommet et une poignée « + »
+                    // sur une arête de longueur nulle — audit 2026-08-27) ; construireGeometrie
+                    // referme l'anneau à l'envoi.
                     val ring = coords.getJSONArray(0)
-                    val sommets = JSONArray()
-                    var sLat = 0.0; var sLon = 0.0; var n = 0
+                    val points = mutableListOf<Pair<Double, Double>>() // (lon, lat)
                     for (k in 0 until ring.length()) {
                         val pt = ring.getJSONArray(k)
-                        val lon = pt.getDouble(0); val lat = pt.getDouble(1)
-                        sommets.put(JSONArray().put(lon).put(lat))
-                        sLat += lat; sLon += lon; n++
+                        points.add(pt.getDouble(0) to pt.getDouble(1))
                     }
-                    val cLat = if (n > 0) sLat / n else 0.0
-                    val cLon = if (n > 0) sLon / n else 0.0
+                    if (points.size >= 4 && points.first() == points.last()) points.removeAt(points.size - 1)
+                    val sommets = JSONArray()
+                    points.forEach { (lon, lat) -> sommets.put(JSONArray().put(lon).put(lat)) }
+                    val n = points.size
+                    val cLat = if (n > 0) points.sumOf { it.second } / n else 0.0
+                    val cLon = if (n > 0) points.sumOf { it.first } / n else 0.0
                     GeomParse("Polygon", cLat, cLon, sommets.toString())
                 }
                 "LineString" -> {

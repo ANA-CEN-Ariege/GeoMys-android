@@ -62,7 +62,12 @@ class OccHabStationFragment : Fragment() {
         gnConfig = GeoNatureConfig(requireContext())
 
         binding.btnDetails.setOnClickListener {
+            // Altitudes / surface sont éditables dans ce dialogue mais EXCLUES de l'empreinte de
+            // contenu : on les compare avant/après pour qu'une correction manuelle compte comme
+            // modification d'une station importée (audit 2026-08-27).
+            val deriveesAvant = occhabViewModel.deriveesManuelles()
             ouvrirDialogDetailsOccHab(requireContext(), occhabViewModel, gnConfig) {
+                occhabViewModel.forcerPersistanceSiDeriveesChangees(deriveesAvant)
                 majResume()
                 // Les détails modifiés s'appliquent aussi à la station courante déjà sauvée.
                 sauvegarderAuFilDeLEau()
@@ -76,10 +81,15 @@ class OccHabStationFragment : Fragment() {
             // avant de repartir sur une carte vierge. Écriture échouée (disque plein ?) → on
             // RESTE sur la station courante : enchaîner sur nouvelleStation() jetterait la
             // seule copie mémoire (audit 2026-08-23).
+            // Station importée du serveur ENCORE INTACTE : rien n'est écrit (cf. upsertStation),
+            // le message ne doit pas prétendre le contraire.
+            val intacte = occHabStore.estIntacteNonPersistee(
+                occhabViewModel.saisieId, occhabViewModel.stationAEnregistrer())
             if (!sauvegarderAuFilDeLEau()) return@setOnClickListener
             Toast.makeText(
                 requireContext(),
-                "Votre station est enregistrée dans « Mes stations »",
+                if (intacte) "Aucune modification : la station reste telle quelle sur GeoNature"
+                else "Votre station est enregistrée dans « Mes stations »",
                 Toast.LENGTH_LONG,
             ).show()
             occhabViewModel.nouvelleStation()

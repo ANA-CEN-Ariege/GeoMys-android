@@ -103,6 +103,20 @@ class OccHabParserTest {
     """.trimIndent()
 
     @Test
+    fun polygone_serveur_le_point_de_fermeture_n_est_pas_un_sommet() {
+        // GeoJSON ferme l'anneau (dernier = premier) ; l'éditeur travaille sur des sommets
+        // DISTINCTS (sinon deux markers superposés + poignée sur arête nulle — audit 2026-08-27) ;
+        // construireGeometrie referme à l'envoi.
+        val st = OccHabApi.parserFeatureCollection(fixtureComplete).single()
+        val ring = org.json.JSONArray(st.geometryCoordsJson)
+        assertEquals(3, ring.length())
+        assertEquals(1.4, ring.getJSONArray(0).getDouble(0), 1e-9)
+        assertEquals(43.0, ring.getJSONArray(2).getDouble(1), 1e-9)
+        // Centroïde sur les sommets distincts.
+        assertEquals((42.9 + 42.9 + 43.0) / 3, st.latitude, 1e-9)
+    }
+
+    @Test
     fun station_complete_tout_est_capture_pour_le_round_trip() {
         val st = OccHabApi.parserFeatureCollection(fixtureComplete).single()
 

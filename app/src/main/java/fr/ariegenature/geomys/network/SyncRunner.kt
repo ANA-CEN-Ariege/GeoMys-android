@@ -94,6 +94,7 @@ object SyncRunner {
             // Suivis en parallèle juste après.
             publier("Jeux de données, listes, observateurs…")
             var protocolListIds: Set<Int> = emptySet()
+            var serveurJoignable = false
             coroutineScope {
                 val mod = async {
                     try { MonitoringApi.chargerModules(config).mapNotNull { it.idListTaxonomy }.toSet() }
@@ -196,17 +197,41 @@ object SyncRunner {
                         } // fin if (modules.isNotEmpty())
                     } catch (_: Exception) { /* OccHab optionnel */ }
                 }
-                listOf(
+                val resultatsA = listOf(
                     "Jeux de données" to ds.await(),
                     "Listes de taxons" to li.await(),
                     "Observateurs" to obs.await(),
                     "Champs additionnels" to add.await(),
                     "Config champs OCCTAX" to set.await(),
                     "Datasets créables" to dsCre.await(),
-                ).forEach { (nom, err) -> if (err != null) echecs += "$nom ($err)" }
+                )
+                resultatsA.forEach { (nom, err) -> if (err != null) echecs += "$nom ($err)" }
                 protocolListIds = mod.await()
                 hab.await() // habitats : best-effort, pas d'ajout aux échecs
                 occhab.await() // détection module OccHab : best-effort
+                // Au moins une étape RÉSEAU a répondu (settings/créables renvoient toujours null,
+                // hors-ligne compris : on ne les compte pas) → le serveur est joignable.
+                serveurJoignable = protocolListIds.isNotEmpty() ||
+                    resultatsA.take(4).any { (_, err) -> err == null }
+            }
+
+            // RECHARGEMENT REQUIS après mise à jour (cf. store/CachesSynchronises
+            // .armerRechargementSiRequis) : la purge des caches synchronisés se fait ICI — jamais
+            // au lancement — une fois le serveur joignable (phase A a répondu) et juste avant leur
+            // réécriture : pas de purge sur le thread UI, pas de course avec une synchro en cours,
+            // rien de perdu si l'appli est lancée hors-ligne. TaxRef vidé ⇒ retéléchargé même si
+            // sa version serveur est inchangée.
+            var purgeFaite = false
+            if (config.rechargementRequisApresMaj) {
+                if (serveurJoignable) {
+                    publier("Purge des anciennes données…")
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        fr.ariegenature.geomys.store.viderCachesSynchronises()
+                    }
+                    purgeFaite = true
+                } else {
+                    echecs += "Serveur injoignable (rechargement après mise à jour non effectué)"
+                }
             }
 
             // Étapes 5-7 EN PARALLÈLE : caches indépendants (TaxRef / nomenclatures / monitoring),
@@ -267,6 +292,17 @@ object SyncRunner {
                 // avertissements éventuels (TaxRef partiel, nomenclatures absentes).
                 append(msgTaxRef)
                 if (nbTaxons > 0 && nbNom == 0) append("\n⚠ Nomenclatures : $msgNom")
+            }
+            // Données de CETTE release désormais chargées (mécanisme « rechargement requis après
+            // mise à jour », cf. store/CachesSynchronises) — dès que TaxRef est en place, même si
+            // une étape secondaire a échoué (re-purger à chaque synchro sur un serveur où une étape
+            // échoue toujours rendrait l'appli inutilisable). Drapeau armé PENDANT cette synchro
+            // (donc sans purge ici) → on le laisse : la prochaine synchro purgera puis désarmera.
+            if (fr.ariegenature.geomys.store.TaxRefCache.versionSauvegardee != null &&
+                (purgeFaite || !config.rechargementRequisApresMaj)
+            ) {
+                config.versionDonneesChargees = GeoNatureConfig.VERSION_DONNEES_REQUISE
+                config.rechargementRequisApresMaj = false
             }
             _etat.postValue(Etat(enCours = false, texte = "Terminé", termine = true, succes = echecs.isEmpty(), resume = resume))
         } catch (c: kotlinx.coroutines.CancellationException) {

@@ -93,7 +93,7 @@ object OccHabApi {
                 .put("properties", JSONObject())
             val conn = HttpClient.postJson(URL("$base/api/geo/info"), token, cookies)
             conn.outputStream.use { it.write(feature.toString().toByteArray(Charsets.UTF_8)) }
-            if (conn.responseCode != 200) return@withContext null
+            if (HttpClient.lireCode(conn) != 200) { conn.disconnect(); return@withContext null }
             val texte = conn.inputStream.bufferedReader().use { it.readText() }
             val alt = JSONObject(texte).optJSONObject("altitude") ?: return@withContext null
             val min = alt.opt("altitude_min")?.toString()?.toDoubleOrNull()?.toInt()
@@ -124,7 +124,7 @@ object OccHabApi {
         var conn: java.net.HttpURLConnection? = null
         try {
             conn = HttpClient.get(URL("$base/api/gn_commons/modules"), token, cookies, 15000)
-            if (conn.responseCode != 200) return@withContext emptyMap()
+            if (HttpClient.lireCode(conn) != 200) { conn.disconnect(); return@withContext emptyMap() }
             val text = conn.inputStream.bufferedReader().use { it.readText() }
             val arr = JSONArray(text)
             val resultat = mutableMapOf<String, OccHabAcces>()
@@ -159,7 +159,7 @@ object OccHabApi {
                 ?: return@withContext emptyMap()
             try {
                 val conn = HttpClient.get(URL("$base/api/occhab/defaultNomenclatures"), token, cookies, 15000)
-                if (conn.responseCode != 200) return@withContext emptyMap()
+                if (HttpClient.lireCode(conn) != 200) { conn.disconnect(); return@withContext emptyMap() }
                 val obj = JSONObject(conn.inputStream.bufferedReader().readText())
                 val out = HashMap<String, Int>()
                 val it = obj.keys()
@@ -176,7 +176,7 @@ object OccHabApi {
      * Charge les stations existantes du serveur.
      * `GET /api/occhab/stations/?format=geojson&habitats=1&nomenclatures=1` → FeatureCollection.
      * [idDataset] filtre optionnellement par jeu de données. Les stations renvoyées portent
-     * `origineServeur = true` : affichées en consultation (gris) sur la carte, importables dans
+     * `origineServeur = true` : affichées en consultation (violet) sur la carte, importables dans
      * la saisie courante pour être modifiées puis renvoyées en MISE À JOUR (cf. [OccHabUpload]).
      */
     suspend fun chargerStations(config: GeoNatureConfig, idDataset: Int? = null): List<OccHabStation> =
@@ -189,7 +189,7 @@ object OccHabApi {
                 if (idDataset != null && idDataset > 0) append("&id_dataset=$idDataset")
             }
             val conn = HttpClient.get(URL(url), token, cookies, 30000)
-            val code = conn.responseCode
+            val code = HttpClient.lireCode(conn)
             if (code !in 200..299) {
                 val body = try {
                     (conn.errorStream ?: conn.inputStream)?.bufferedReader()?.readText()

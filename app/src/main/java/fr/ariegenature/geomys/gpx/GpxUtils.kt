@@ -67,10 +67,37 @@ fun genererGPX(observations: List<Observation>, parcours: List<PointTrace>): Str
     return sb.toString()
 }
 
+/** Taille maximale d'un fichier GPX importé (20 Mo) : au-delà, refus avant lecture en mémoire. */
+const val TAILLE_MAX_GPX: Long = 20L * 1024 * 1024
+
+/** Lit [input] jusqu'à [max] octets ; renvoie null si le flux dépasse cette borne (fichier
+ *  énorme reçu par mail → OOM évité, audit 2026-08-27). */
+fun lireBorne(input: java.io.InputStream, max: Long = TAILLE_MAX_GPX): ByteArray? {
+    val out = java.io.ByteArrayOutputStream()
+    val buf = ByteArray(64 * 1024)
+    var total = 0L
+    while (true) {
+        val n = input.read(buf)
+        if (n < 0) break
+        total += n
+        if (total > max) return null
+        out.write(buf, 0, n)
+    }
+    return out.toByteArray()
+}
+
 fun importerGPX(data: ByteArray): Sortie? {
+    if (data.size > TAILLE_MAX_GPX) return null
     val handler = GPXHandler()
     return try {
         val factory = SAXParserFactory.newInstance()
+        // Durcissement XML (audit 2026-08-27) : pas de DOCTYPE (expansion d'entités « billion
+        // laughs ») ni d'entités externes. Chaque option est best-effort : un parseur qui ne la
+        // connaît pas ne doit pas faire échouer l'import.
+        runCatching { factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true) }
+        runCatching { factory.setFeature("http://xml.org/sax/features/external-general-entities", false) }
+        runCatching { factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false) }
+        runCatching { factory.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false) }
         val parser = factory.newSAXParser()
         parser.parse(data.inputStream(), handler)
         handler.buildSortie()

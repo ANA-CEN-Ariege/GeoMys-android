@@ -29,7 +29,6 @@ android {
         versionCode = 185
         versionName = "1.3.20"
 
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     // Deux canaux de distribution depuis le MÊME code (namespace inchangé = aucun fichier
@@ -124,6 +123,4 @@ dependencies {
     // MockWebServer : teste les flux réseau (auth, GET/POST GeoNature) sans serveur réel,
     // en pointant l'URL de base sur le serveur mock local.
     testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
-    androidTestImplementation(libs.androidx.junit)
-    androidTestImplementation(libs.androidx.espresso.core)
 }

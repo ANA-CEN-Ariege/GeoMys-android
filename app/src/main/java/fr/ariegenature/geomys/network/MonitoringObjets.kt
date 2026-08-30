@@ -53,8 +53,8 @@ object MonitoringObjets {
                     val (token, _, cookies) = auth
                     val url = URL("$base/api/monitorings/object/$moduleCode/module?depth=1")
                     val conn = HttpClient.get(url, token, cookies, 15000)
-                    val code = conn.responseCode
-                    if (code != 200) throw GNErreur.EnvoiEchoue(code, "Enfants du module $moduleCode")
+                    val code = HttpClient.lireCode(conn)
+                    if (code != 200) { conn.disconnect(); throw GNErreur.EnvoiEchoue(code, "Enfants du module $moduleCode") }
                     val brut = conn.inputStream.bufferedReader().readText()
                     // Valider AVANT de mettre en cache : un 200 non-JSON (portail captif, page
                     // d'erreur proxy) écrit tel quel empoisonnait le cache offline — resservi à
@@ -243,8 +243,8 @@ object MonitoringObjets {
                     val (token, _, cookies) = auth
                     val url = URL("$base/api/monitorings/object/$moduleCode/$objectType/$id?depth=1")
                     val conn = HttpClient.get(url, token, cookies, 15000)
-                    val code = conn.responseCode
-                    if (code != 200) throw GNErreur.EnvoiEchoue(code, "$objectType #$id")
+                    val code = HttpClient.lireCode(conn)
+                    if (code != 200) { conn.disconnect(); throw GNErreur.EnvoiEchoue(code, "$objectType #$id") }
                     val brut = conn.inputStream.bufferedReader().readText()
                     // Valider AVANT de cacher — même protection anti-portail-captif que
                     // chargerEnfants (audit N6).

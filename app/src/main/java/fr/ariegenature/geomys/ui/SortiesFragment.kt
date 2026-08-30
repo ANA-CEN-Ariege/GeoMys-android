@@ -57,7 +57,15 @@ class SortiesFragment : Fragment() {
         if (result.resultCode == Activity.RESULT_OK) {
             result.data?.data?.let { uri ->
                 try {
-                    val bytes = requireContext().contentResolver.openInputStream(uri)?.readBytes() ?: return@let
+                    // Lecture BORNÉE (20 Mo) : un fichier énorme ne doit pas faire tomber l'appli.
+                    val bytes = requireContext().contentResolver.openInputStream(uri)
+                        ?.use { fr.ariegenature.geomys.gpx.lireBorne(it) }
+                    if (bytes == null) {
+                        android.widget.Toast.makeText(requireContext(),
+                            "Fichier GPX illisible ou trop volumineux (plus de 20 Mo)",
+                            android.widget.Toast.LENGTH_LONG).show()
+                        return@let
+                    }
                     var sortie = importerGPX(bytes)
                     if (sortie != null) {
                         sortie = sortie.copy(estImportee = true)
@@ -418,7 +426,7 @@ class SortieAdapter(
             // mais le marqueur ligne rend l'état lisible aussi hors contexte (recherche visuelle).
             if (sortie.envoyeGeoNature) {
                 tvEtat.visibility = android.view.View.VISIBLE
-                tvEtat.setTextColor(couleurSucces(root.context))
+                tvEtat.setTextColor(couleurSucces())
                 tvEtat.text = "✅ Envoyée"
             } else {
                 tvEtat.visibility = android.view.View.GONE

@@ -57,7 +57,7 @@ object GeoNatureSync {
             try {
                 val url = URL("${config.urlTaxhub}/api/taxref/version")
                 val conn = HttpClient.get(url, timeoutMs = 5000)
-                if (conn.responseCode != 200) return@withContext null
+                if (HttpClient.lireCode(conn) != 200) { conn.disconnect(); return@withContext null }
                 val obj = JSONObject(conn.inputStream.bufferedReader().readText())
                 obj.opt("version")?.toString()
                     ?: obj.opt("taxref_version")?.toString()
@@ -95,7 +95,7 @@ object GeoNatureSync {
                     timeoutMs = 60000,
                 )
                 try {
-                    if (conn.responseCode != 200) break
+                    if (HttpClient.lireCode(conn) != 200) { conn.disconnect(); break }
                     val text = conn.inputStream.bufferedReader().readText()
                     val array: JSONArray = text.parserTableauJson("items", "data", "results") ?: break
                     if (array.length() == 0) { complete = true; break }
@@ -388,7 +388,7 @@ object GeoNatureSync {
                 var lastCode = 0
                 for (u in urls) {
                     val conn = HttpClient.get(URL(u), token, cookies, 15000)
-                    lastCode = conn.responseCode
+                    lastCode = HttpClient.lireCode(conn)
                     if (lastCode == 200) {
                         text = conn.inputStream.bufferedReader().readText()
                         break
@@ -500,8 +500,8 @@ object GeoNatureSync {
             val cookies = auth?.third ?: ""
             try {
                 val conn = HttpClient.get(URL("$base/api/gn_commons/t_mobile_apps"), token, cookies, 15000)
-                if (conn.responseCode != 200)
-                    return@withContext Pair(0, "t_mobile_apps HTTP ${conn.responseCode}")
+                if (HttpClient.lireCode(conn) != 200)
+                    return@withContext Pair(0, "t_mobile_apps HTTP ${HttpClient.lireCode(conn)}")
                 val text = conn.inputStream.bufferedReader().readText()
                 val arr = JSONArray(text)
                 var settings: JSONObject? = null
@@ -532,7 +532,7 @@ object GeoNatureSync {
                 // rafraîchi ; "" si indisponible ⇒ tout visible (cf. config.champFormVisible).
                 config.formFieldsJson = try {
                     val c = HttpClient.get(URL("$base/api/gn_commons/config"), token, cookies, 10000)
-                    if (c.responseCode == 200)
+                    if (HttpClient.lireCode(c) == 200)
                         JSONObject(c.inputStream.bufferedReader().readText())
                             .optJSONObject("OCCTAX")?.optJSONObject("form_fields")?.toString().orEmpty()
                     else ""
@@ -560,9 +560,10 @@ object GeoNatureSync {
             val urlStr = "$base/api/$variant/defaultNomenclatures"
             try {
                 val conn = HttpClient.get(URL(urlStr), token, cookies, 10000)
-                val code = conn.responseCode
+                val code = HttpClient.lireCode(conn)
                 if (code != 200) {
                     android.util.Log.w("GeoNatureSync", "defaultNomenclatures HTTP $code pour $urlStr")
+                    conn.disconnect()
                     continue
                 }
                 val text = conn.inputStream.bufferedReader().readText()

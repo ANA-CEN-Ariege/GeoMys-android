@@ -151,7 +151,7 @@ data class OccHabStation(
     // ── État d'envoi (mêmes sémantiques que Sortie) ──
     var envoyeGeoNature: Boolean = false,
     /** true dès qu'une station provient du serveur et non d'une saisie locale : affichée en
-     *  consultation (gris) sur la carte, elle peut être IMPORTÉE dans la saisie courante pour
+     *  consultation (violet) sur la carte, elle peut être IMPORTÉE dans la saisie courante pour
      *  modification — elle repartira alors en mise à jour grâce à [idStationServeur]. */
     var origineServeur: Boolean = false,
     /** Message du dernier échec d'envoi (humanisé). Null si jamais échoué / envoi réussi. */

@@ -104,9 +104,9 @@ object AdditionalFieldsApi {
 
             val url = URL("$base/api/gn_commons/additional_fields?module_code=$moduleCode")
             val conn = HttpClient.get(url, token, cookies, 10000)
-            val code = conn.responseCode
+            val code = HttpClient.lireCode(conn)
             if (code == 404) return@withContext emptyList() // endpoint absent — feature optionnelle
-            if (code != 200) throw GNErreur.EnvoiEchoue(code, "additional_fields : HTTP $code")
+            if (code != 200) { conn.disconnect(); throw GNErreur.EnvoiEchoue(code, "additional_fields : HTTP $code") }
 
             val text = conn.inputStream.bufferedReader().readText()
             val array: JSONArray = text.parserTableauJson("data", "items")
@@ -325,7 +325,7 @@ object AdditionalFieldsApi {
         return try {
             val url = URL("$base/api/nomenclatures/nomenclature/$code")
             val conn = HttpClient.get(url, token, cookies, 10000)
-            if (conn.responseCode != 200) return emptyList()
+            if (HttpClient.lireCode(conn) != 200) { conn.disconnect(); return emptyList() }
             val text = conn.inputStream.bufferedReader().readText()
             val arr = text.parserTableauJson("values", "data") ?: return emptyList()
             val out = mutableListOf<Pair<String, String>>()

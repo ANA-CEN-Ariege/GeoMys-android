@@ -59,16 +59,13 @@ fun couleurErreur(ctx: Context): Int = MaterialColors.getColor(
 // écrans avaient dérivé : deux verts différents pour « envoyé » selon Mes visites / Mes stations).
 
 /** Vert « envoyé / succès » (badge ✅, cadre d'état, test de connexion réussi). */
-@Suppress("UNUSED_PARAMETER")
-fun couleurSucces(ctx: Context): Int = 0xFF2E7D32.toInt()
+fun couleurSucces(): Int = 0xFF2E7D32.toInt()
 
 /** Ambre « envoi en cours » (cadre d'état pendant un envoi). */
-@Suppress("UNUSED_PARAMETER")
-fun couleurEnCours(ctx: Context): Int = 0xFFFFB300.toInt()
+fun couleurEnCours(): Int = 0xFFFFB300.toInt()
 
 /** Orange « avertissement / à configurer » (état non bloquant mais à traiter). */
-@Suppress("UNUSED_PARAMETER")
-fun couleurAvertissement(ctx: Context): Int = 0xFFE65100.toInt()
+fun couleurAvertissement(): Int = 0xFFE65100.toInt()
 
 /** Cadre coloré arrondi sur fond transparent — le marqueur d'état standard des listes
  *  (rouge = erreur/à envoyer, vert = envoyé, ambre = en cours). Remplace les fonds pastel

@@ -329,7 +329,7 @@ object GeoNatureUpload {
                 // (pas de GNErreur, pas de message humanisé).
                 val code1 = try {
                     OutputStreamWriter(conn1.outputStream).use { it.write(body1) }
-                    conn1.responseCode
+                    HttpClient.lireCode(conn1)
                 } catch (e: IOException) {
                     conn1.disconnect()
                     dernierCodeErreur = 0
@@ -466,7 +466,7 @@ object GeoNatureUpload {
                     // un relevé vide côté GeoNature, sans signalement d'orphelin.
                     val code2 = try {
                         OutputStreamWriter(conn2.outputStream).use { it.write(occ.toString()) }
-                        conn2.responseCode
+                        HttpClient.lireCode(conn2)
                     } catch (e: IOException) {
                         dernierCodeErreur = 0
                         derniereErreur = "Réseau interrompu pendant l'envoi de l'occurrence (${e.message ?: e.javaClass.simpleName})"
@@ -548,7 +548,7 @@ object GeoNatureUpload {
             HttpClient.get(URL("$base/api/occtax/OCCTAX/releve/$idReleve"), token, cookies, 30000)
         } catch (_: IOException) { return null }
         return try {
-            when (val code = conn.responseCode) {
+            when (val code = HttpClient.lireCode(conn)) {
                 in 200..299 -> conn.inputStream.bufferedReader().readText().contains(uuid, ignoreCase = true)
                 404 -> false
                 else -> { android.util.Log.w("GeoNatureUpload", "Vérification occurrence : HTTP $code"); null }
@@ -822,7 +822,7 @@ object GeoNatureUpload {
         return try {
             val url = URL("$base/api/gn_commons/get_id_table_location/pr_occtax.cor_counting_occtax")
             val conn = HttpClient.get(url, token, cookies, 10000)
-            val code = conn.responseCode
+            val code = HttpClient.lireCode(conn)
             if (code != 200) {
                 val body = try { (conn.errorStream ?: conn.inputStream)?.bufferedReader()?.readText()?.take(200) } catch (_: Exception) { null }
                 android.util.Log.e(TAG_MEDIA, "get_id_table_location HTTP $code : $body")
@@ -918,7 +918,7 @@ object GeoNatureUpload {
     ): Pair<Long?, String?> = try {
         val url = URL("$base/api/gn_commons/get_id_table_location/$schemaDotTable")
         val conn = HttpClient.get(url, token, cookies, 10000)
-        val code = conn.responseCode
+        val code = HttpClient.lireCode(conn)
         if (code != 200) {
             val body = try { (conn.errorStream ?: conn.inputStream)?.bufferedReader()?.readText()?.take(200) } catch (_: Exception) { null }
             Pair(null, "get_id_table_location/$schemaDotTable HTTP $code : ${body ?: ""}")
@@ -997,7 +997,7 @@ object GeoNatureUpload {
                 file.inputStream().use { it.copyTo(out) }
                 out.write(suffix.toByteArray(Charsets.UTF_8))
             }
-            val code = conn.responseCode
+            val code = HttpClient.lireCode(conn)
             if (code in 200..299) {
                 val body = conn.inputStream.bufferedReader().readText()
                 android.util.Log.i(TAG_MEDIA, "POST /api/gn_commons/media → $code OK (${file.length()} octets)")
@@ -1023,7 +1023,7 @@ object GeoNatureUpload {
     ): Boolean = try {
         val url = URL("$base/api/occtax/OCCTAX/releve/$idReleve")
         val conn = HttpClient.delete(url, token, cookies, 15000)
-        val code = conn.responseCode
+        val code = HttpClient.lireCode(conn)
         code in 200..299 || code == 404
     } catch (_: Exception) {
         false
@@ -1037,7 +1037,7 @@ object GeoNatureUpload {
     ): Boolean = try {
         val url = URL("$base/api/gn_commons/media/$idMedia")
         val conn = HttpClient.delete(url, token, cookies, 15000)
-        val code = conn.responseCode
+        val code = HttpClient.lireCode(conn)
         code in 200..299 || code == 404
     } catch (_: Exception) {
         false
@@ -1067,7 +1067,7 @@ object GeoNatureUpload {
 
         fun get(urlStr: String): String? = try {
             val conn = HttpClient.get(URL(urlStr), token, cookies, 10000)
-            if (conn.responseCode == 200) conn.inputStream.bufferedReader().readText() else null
+            if (HttpClient.lireCode(conn) == 200) conn.inputStream.bufferedReader().readText() else null
         } catch (e: Exception) { null }
 
         fun buildLabelMap(array: JSONArray): Map<String, Int> {

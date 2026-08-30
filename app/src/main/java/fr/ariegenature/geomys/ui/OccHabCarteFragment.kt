@@ -88,7 +88,7 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
     private val overlaysSession = mutableListOf<Overlay>()
     // Sommets des stations de session : cibles d'AIMANTAGE (snapping) d'un nouveau point/sommet.
     private val sommetsSession = mutableListOf<GeoPoint>()
-    // Stations DU SERVEUR (switch du formulaire de démarrage) : overlays gris + sommets ajoutés
+    // Stations DU SERVEUR (switch du formulaire de démarrage) : overlays violets + sommets ajoutés
     // aux cibles d'aimantage. CLIQUABLES : un tap propose d'IMPORTER la station dans la saisie
     // courante pour la modifier (renvoi en mise à jour) — cf. [proposerImportStationServeur].
     private val stationsServeur = mutableListOf<fr.ariegenature.geomys.model.OccHabStation>()
@@ -456,7 +456,7 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
     /** Charge les stations de l'utilisateur DÉJÀ sur le serveur GeoNature (switch du
      *  formulaire de démarrage) et les affiche en GRIS — leurs sommets deviennent des cibles
      *  d'aimantage — puis cadre la carte sur leur emprise (+ celles de la session). Un tap sur
-     *  une station grise propose de l'IMPORTER pour la modifier (renvoi en mise à jour).
+     *  une station violette propose de l'IMPORTER pour la modifier (renvoi en mise à jour).
      *  Best-effort : hors-ligne/erreur → toast humanisé, la saisie continue. */
     private fun chargerStationsServeur() {
         val appContext = requireContext().applicationContext
@@ -549,7 +549,7 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
             .mapNotNull { it.idStationServeur }.toSet()
         nbServeurReprisesAilleurs = 0
         val violet = 0xFF8E24AA.toInt() // contour COLORÉ : le gris se perdait sur certains fonds
-        val orange = couleurAvertissement(requireContext())
+        val orange = couleurAvertissement()
         val pts = mutableListOf<GeoPoint>()
         stationsServeur.forEach { st ->
             val copie = st.idStationServeur?.let { copiesLocalesServeur[it] }

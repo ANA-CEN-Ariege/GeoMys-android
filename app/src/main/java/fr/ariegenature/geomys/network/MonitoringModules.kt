@@ -174,7 +174,7 @@ object MonitoringModules {
                     val (token, _, cookies) = auth
                     val url = URL("$base/api/monitorings/modules")
                     val conn = HttpClient.get(url, token, cookies, 10000)
-                    val code = conn.responseCode
+                    val code = HttpClient.lireCode(conn)
                     // 404 → gn_module_monitoring non installé sur l'instance.
                     // 403 → utilisateur authentifié mais sans aucun droit CRUVED sur le
                     // monitoring (cas légitime côté terrain : c'est juste « aucun protocole
@@ -182,7 +182,7 @@ object MonitoringModules {
                     // — l'appelant (SuivisFragment, MonitoringSync, countModulesEnCache, …)
                     // gère ce zéro naturellement, plus de bandeau "étape en échec" parasite.
                     if (code == 404 || code == 403) return@withContext emptyList()
-                    if (code != 200) throw GNErreur.EnvoiEchoue(code, "Modules monitoring : HTTP $code")
+                    if (code != 200) { conn.disconnect(); throw GNErreur.EnvoiEchoue(code, "Modules monitoring : HTTP $code") }
                     depuisReseau = true
                     conn.inputStream.bufferedReader().readText()
                     // ⚠ on NE met PAS le brut en cache ici : la réponse serveur inclut tous

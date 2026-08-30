@@ -3,8 +3,17 @@
      On EXCLUT les identifiants chiffrés (gn_secure — ancien format — et gn_secure_v2, MdpChiffre) :
      la clé de chiffrement est dans l'Android Keystore et ne quitte jamais l'appareil, donc le blob
      chiffré serait inutilisable après restauration — et c'est un secret, il ne doit jamais partir
-     en sauvegarde. URL/login (gn_config) restent sauvegardés. -->
+     en sauvegarde. URL/login (gn_config) restent sauvegardés.
+     On EXCLUT aussi les caches SYNCHRONISÉS (retéléchargeables par « Recharger les données ») et
+     les médias : au-delà de 25 Mo, Android n'effectue AUCUNE sauvegarde — avec TaxRef et les
+     cartes MBTiles inclus, la sauvegarde échouait en silence et même URL/login/saisies étaient
+     perdus (audit 2026-08-27). Restent : gn_config (URL/login/sélections), stores des saisies en
+     attente (JSON). Les photos non encore envoyées ne sont PAS sauvegardées. -->
 <full-backup-content>
     <exclude domain="sharedpref" path="gn_secure.xml" />
     <exclude domain="sharedpref" path="gn_secure_v2.xml" />
+    <exclude domain="file" path="taxref" />
+    <exclude domain="file" path="monitoring" />
+    <exclude domain="file" path="mbtiles" />
+    <exclude domain="file" path="medias" />
 </full-backup-content>

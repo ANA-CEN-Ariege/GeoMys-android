@@ -197,7 +197,7 @@ object OccHabUpload {
             val conn = HttpClient.postJson(URL(urlStr), token, cookies, 30000)
             val code = try {
                 OutputStreamWriter(conn.outputStream).use { it.write(body) }
-                conn.responseCode
+                HttpClient.lireCode(conn)
             } catch (e: IOException) {
                 conn.disconnect()
                 // Coupure réseau autour du POST : impossible de savoir si le serveur a committé
@@ -252,7 +252,7 @@ object OccHabUpload {
                 "la station a peut-être déjà été créée ; réessayez avec du réseau.")
         }
         try {
-            val code = conn.responseCode
+            val code = HttpClient.lireCode(conn)
             if (code !in 200..299) throw GNErreur.EnvoiIncertain(
                 "Vérification anti-doublon impossible (HTTP $code) — la station a peut-être déjà " +
                     "été créée ; réessayez.")

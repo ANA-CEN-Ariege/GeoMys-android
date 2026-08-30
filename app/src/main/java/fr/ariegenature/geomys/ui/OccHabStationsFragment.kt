@@ -302,7 +302,7 @@ class OccHabSaisieAdapter(
                 saisie.envoyeGeoNature -> {
                     root.background = null
                     tvEtat.visibility = View.VISIBLE
-                    tvEtat.setTextColor(couleurSucces(root.context))
+                    tvEtat.setTextColor(couleurSucces())
                     tvEtat.text = "✅ Envoyée"
                 }
                 erreur != null -> {

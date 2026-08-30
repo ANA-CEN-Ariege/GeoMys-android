@@ -39,6 +39,7 @@ import fr.ariegenature.geomys.model.OccHabSaisie
 import fr.ariegenature.geomys.model.OccHabStation
 import fr.ariegenature.geomys.network.envoyerSaisieOccHabVersGeoNature
 import fr.ariegenature.geomys.util.GeoJsonCoords
+import fr.ariegenature.geomys.util.TopologiePolygone
 import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.osmdroid.config.Configuration
@@ -89,23 +90,24 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
     private val overlaysSession = mutableListOf<Overlay>()
     // Sommets des stations de session : cibles d'AIMANTAGE (snapping) d'un nouveau point/sommet.
     private val sommetsSession = mutableListOf<GeoPoint>()
-    // Stations DU SERVEUR (switch du formulaire de démarrage) : overlays violets + sommets ajoutés
-    // aux cibles d'aimantage. CLIQUABLES : un tap propose d'IMPORTER la station dans la saisie
-    // courante pour la modifier (renvoi en mise à jour) — cf. [proposerImportStationServeur].
-    private val stationsServeur = mutableListOf<fr.ariegenature.geomys.model.OccHabStation>()
-    private val overlaysServeur = mutableListOf<Overlay>()
-    private val sommetsServeur = mutableListOf<GeoPoint>()
-    // Copies LOCALES non envoyées de stations serveur (index par idStationServeur), relues à
-    // chaque rendu des stations serveur — cf. OccHabStore.copiesLocalesNonEnvoyees (invariant
-    // « une seule copie locale à envoyer par station serveur »).
-    private var copiesLocalesServeur: Map<Int, Pair<OccHabSaisie, OccHabStation>> = emptyMap()
-    // Stations serveur dessinées en ORANGE au dernier rendu (copie en attente dans une AUTRE saisie).
-    private var nbServeurReprisesAilleurs = 0
-    // id_station des stations de la SAISIE COURANTE (envoyées ou non) au dernier rendu : jamais
-    // redessinées en violet (elles sont rouges/bleues), sinon un ré-import dupliquait localement.
-    private var idsServeurSaisieCourante: Set<Int> = emptySet()
-    // JDD pour lequel [stationsServeur] a été chargée (invariant : compte ET JDD de la saisie).
-    private var jddStationsServeur: Int? = null
+    // Stations DU SERVEUR (switch du formulaire de démarrage) : chargement, rendu violet/orange,
+    // import au tap, bascule de saisie — cf. StationsServeurOverlay (extrait de ce fragment).
+    private val serveur by lazy {
+        StationsServeurOverlay(object : StationsServeurOverlay.Hote {
+            override val contexte: android.content.Context get() = requireContext()
+            override val carte: org.osmdroid.views.MapView get() = binding.map
+            override val vm: OccHabViewModel get() = occhabViewModel
+            override val portee: kotlinx.coroutines.CoroutineScope get() = viewLifecycleOwner.lifecycleScope
+            override val vueVivante: Boolean get() = isAdded && _binding != null
+            override val aucuneGeometrieEnCours: Boolean get() = !geometrieChargee && pointChoisi == null && sommets.isEmpty()
+            override val traceEnCoursNonValide: Boolean get() = !geometrieChargee && (pointChoisi != null || sommets.isNotEmpty())
+            override fun cercleSommet(couleur: Int) = this@OccHabCarteFragment.cercleSommet(couleur)
+            override fun editerStationExistante(st: OccHabStation) = this@OccHabCarteFragment.editerStationExistante(st)
+            override fun afficherStationsSession() = this@OccHabCarteFragment.afficherStationsSession()
+            override fun cadrerSur(points: List<GeoPoint>) = this@OccHabCarteFragment.cadrerSur(points)
+            override fun afficherInstructionSelection() = this@OccHabCarteFragment.afficherInstructionSelection()
+        })
+    }
     // true dès qu'un cadrage initial a été imposé (géométrie courante ou stations de session) :
     // empêche le premier fix GPS de recentrer ailleurs.
     private var cadrageInitialFait = false
@@ -179,7 +181,7 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
                         "Libérez de l'espace (photos, cache de cartes) puis revalidez les détails.")
                 }
                 // Le JDD de la saisie a pu changer : les stations serveur affichées le suivent.
-                resynchroniserStationsServeurAuJdd()
+                serveur.resynchroniserAuJdd()
             }
         }
 
@@ -195,7 +197,7 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
                 jddObligatoire = true, jddSeul = true,
                 onAnnule = { allerAccueil() },
             ) {
-                if (occhabViewModel.details.chargerStationsServeur) chargerStationsServeur()
+                if (occhabViewModel.details.chargerStationsServeur) serveur.charger()
             }
         }
 
@@ -249,7 +251,7 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
         val ptsSession = afficherStationsSession()
         // Stations serveur déjà chargées (retour de l'écran habitats, recréation de vue) : leurs
         // overlays pointaient une MapView détruite → on les redessine (audit 2026-08-27).
-        if (stationsServeur.isNotEmpty()) afficherStationsServeur()
+        if (serveur.chargees) serveur.afficher()
         val aCadrer = ptsCourant + ptsSession
         if (aCadrer.isNotEmpty()) {
             cadrerSur(aCadrer)
@@ -402,7 +404,7 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
                     .copieLocaleNonEnvoyee(st.idStationServeur!!)
                 if (copie != null) {
                     if (copie.first.id == occhabViewModel.saisieId) editerStationExistante(copie.second)
-                    else proposerOuvrirCopieLocale(copie.first, copie.second)
+                    else serveur.proposerOuvrirCopieLocale(copie.first, copie.second)
                     return
                 }
                 AlertDialog.Builder(requireContext())
@@ -435,7 +437,7 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
         val ptsCourant = preremplirDepuisViewModel() // charge la géométrie de st (mode + redessine)
         val ptsSession = afficherStationsSession()   // redessine les autres (st exclue désormais)
         // st sort du violet (en édition) ; une ex-sélection importée INTACTE y revient.
-        if (stationsServeur.isNotEmpty()) afficherStationsServeur()
+        if (serveur.chargees) serveur.afficher()
         mettreEnEvidenceBoutonMode()
         majTexteInstructionsMode() // le bandeau repasse du texte « sélection » au texte du mode
         majBoutons()
@@ -445,268 +447,12 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
             Toast.LENGTH_LONG).show()
     }
 
-    /** Charge les stations de l'utilisateur DÉJÀ sur le serveur GeoNature (switch du
-     *  formulaire de démarrage) et les affiche en GRIS — leurs sommets deviennent des cibles
-     *  d'aimantage — puis cadre la carte sur leur emprise (+ celles de la session). Un tap sur
-     *  une station violette propose de l'IMPORTER pour la modifier (renvoi en mise à jour).
-     *  Best-effort : hors-ligne/erreur → toast humanisé, la saisie continue. */
-    private fun chargerStationsServeur() {
-        val appContext = requireContext().applicationContext
-        // SEULEMENT les stations du compte (filtre client dans chargerStations) ET du JEU DE
-        // DONNÉES de la saisie (demande terrain 2026-08-27) : filtre serveur `id_dataset` +
-        // filtre client de sécurité sur la réponse.
-        val idJdd = occhabViewModel.details.idDataset
-        if (idJdd == null || idJdd <= 0) {
-            Toast.makeText(requireContext(), "Choisissez d'abord un jeu de données", Toast.LENGTH_SHORT).show()
-            return
-        }
-        Toast.makeText(requireContext(), "Chargement de vos stations GeoNature (ce jeu de données)…",
-            Toast.LENGTH_SHORT).show()
-        viewLifecycleOwner.lifecycleScope.launch {
-            val stations = try {
-                fr.ariegenature.geomys.network.OccHabApi.chargerStations(
-                    fr.ariegenature.geomys.store.GeoNatureConfig(appContext), idDataset = idJdd)
-                    .filter { it.idDataset == idJdd }
-            } catch (e: Exception) {
-                if (isAdded) Toast.makeText(requireContext(),
-                    fr.ariegenature.geomys.network.humaniserErreurReseau(e), Toast.LENGTH_LONG).show()
-                return@launch
-            }
-            if (!isAdded || _binding == null) return@launch
-            stationsServeur.clear()
-            stationsServeur.addAll(stations)
-            jddStationsServeur = idJdd
-            val pts = afficherStationsServeur()
-            if (stations.isNotEmpty()) {
-                // Les stations qui ont déjà une copie DANS CETTE SAISIE ne sont pas redessinées
-                // (elles sont déjà rouges) : le toast l'explique.
-                val nbIci = stations.count { st ->
-                    st.idStationServeur?.let { it in idsServeurSaisieCourante } == true
-                }
-                val detail = buildList {
-                    if (nbIci > 0) add("$nbIci déjà dans cette saisie")
-                    if (nbServeurReprisesAilleurs > 0) add("$nbServeurReprisesAilleurs reprise(s) dans une autre saisie")
-                }
-                Toast.makeText(requireContext(),
-                    "${stations.size} station(s) du serveur" +
-                        (if (detail.isEmpty()) " affichée(s)" else " (dont ${detail.joinToString(", ")})"),
-                    Toast.LENGTH_LONG).show()
-                if (!geometrieChargee && pointChoisi == null && sommets.isEmpty()) {
-                    afficherInstructionSelection()
-                }
-                cadrerSur(pts + afficherStationsSession())
-            } else {
-                Toast.makeText(requireContext(),
-                    "Aucune station sur le serveur pour ce compte et ce jeu de données", Toast.LENGTH_SHORT).show()
-            }
-        }
-    }
-
-    /** Le JDD de la saisie a pu changer (« i », bascule de saisie) : l'affichage des stations
-     *  serveur doit rester celui du compte ET du JDD courant (invariant — sinon une station
-     *  importée repartait en mise à jour avec un autre `id_dataset`, audit 2026-08-27). JDD
-     *  inchangé → simple re-rendu (filtres violet/orange) ; changé → on efface, et on recharge si
-     *  la saisie demande l'affichage serveur. */
-    private fun resynchroniserStationsServeurAuJdd() {
-        if (stationsServeur.isEmpty() && jddStationsServeur == null) return // jamais chargées
-        val jdd = occhabViewModel.details.idDataset
-        if (jdd == jddStationsServeur) { afficherStationsServeur(); return }
-        stationsServeur.clear()
-        jddStationsServeur = null
-        afficherStationsServeur() // efface violettes / oranges
-        if (occhabViewModel.details.chargerStationsServeur) chargerStationsServeur()
-    }
-
-    /** (Re)dessine les stations SERVEUR ([stationsServeur]) et alimente les cibles d'aimantage.
-     *  Invariant « une seule copie locale non envoyée par station serveur » (2026-08-26,
-     *  cf. [OccHabStore.copiesLocalesNonEnvoyees]) :
-     *  - station SANS copie locale en attente → VIOLET, un tap propose l'IMPORT (même geste que
-     *    la sélection d'une station de session, avec confirmation en plus) ;
-     *  - copie en attente dans la SAISIE COURANTE → PAS redessinée ici : elle est déjà rouge
-     *    (ou bleue si en cours d'édition) via [afficherStationsSession], et se modifie là ;
-     *  - copie en attente dans une AUTRE saisie → ORANGE pointillé, un tap propose d'OUVRIR
-     *    cette saisie pour y poursuivre les modifications — jamais une 2ᵉ copie.
-     *  Renvoie tous les points dessinés (pour le cadrage). */
-    private fun afficherStationsServeur(): List<GeoPoint> {
-        overlaysServeur.forEach { binding.map.overlays.remove(it) }
-        overlaysServeur.clear()
-        sommetsServeur.clear()
-        val store = fr.ariegenature.geomys.store.OccHabStore(requireContext())
-        copiesLocalesServeur = store.copiesLocalesNonEnvoyees()
-        // Stations serveur ayant DÉJÀ une copie (envoyée ou non) dans la saisie courante : elles
-        // sont rouges via afficherStationsSession — jamais redessinées en violet (un ré-import
-        // créait un doublon local dans la saisie, audit 2026-08-27) ; le tap rouge d'une copie
-        // envoyée passe par « Modifier cette station déjà envoyée ».
-        idsServeurSaisieCourante = store.stationsDeSaisie(occhabViewModel.saisieId)
-            .mapNotNull { it.idStationServeur }.toSet()
-        nbServeurReprisesAilleurs = 0
-        val violet = 0xFF8E24AA.toInt() // contour COLORÉ : le gris se perdait sur certains fonds
-        val orange = couleurAvertissement()
-        val pts = mutableListOf<GeoPoint>()
-        stationsServeur.forEach { st ->
-            val copie = st.idStationServeur?.let { copiesLocalesServeur[it] }
-            // Station EN COURS D'ÉDITION (bleue) — persistée ou pas encore (import intact).
-            val enEdition = st.idStationServeur != null &&
-                st.idStationServeur == occhabViewModel.station.idStationServeur
-            val dansSaisieCourante = st.idStationServeur?.let { it in idsServeurSaisieCourante } == true
-            when {
-                enEdition || dansSaisieCourante -> Unit
-                copie == null -> pts.addAll(
-                    dessinerStationServeur(st, violet, 0x268E24AA, pointille = false) {
-                        proposerImportStationServeur(st)
-                    })
-                copie.first.id == occhabViewModel.saisieId -> Unit // déjà rouge/bleue (session)
-                else -> {
-                    nbServeurReprisesAilleurs++
-                    pts.addAll(
-                        dessinerStationServeur(st, orange, 0x26E65100, pointille = true) {
-                            proposerOuvrirCopieLocale(copie.first, copie.second)
-                        })
-                }
-            }
-        }
-        binding.map.invalidate()
-        return pts
-    }
-
-    /** Dessine UNE station serveur (contour + remplissage pour un polygone, cercle pour un
-     *  point), non draggable, avec [onTap] au clic ; ses sommets rejoignent les cibles
-     *  d'aimantage. Renvoie ses points (vide si géométrie inexploitable). */
-    private fun dessinerStationServeur(
-        st: OccHabStation, couleur: Int, remplissage: Int, pointille: Boolean, onTap: () -> Unit,
-    ): List<GeoPoint> {
-        val pts = mutableListOf<GeoPoint>()
-        if (st.geometryType == "Polygon" && !st.geometryCoordsJson.isNullOrEmpty()) {
-            try {
-                val ring = GeoJsonCoords.parse(st.geometryCoordsJson)
-                pts.addAll(ring)
-                if (ring.size >= 2) {
-                    val poly = Polygon(binding.map).apply {
-                        points = ring
-                        fillPaint.color = remplissage
-                        outlinePaint.color = couleur
-                        outlinePaint.strokeWidth = 4f
-                        if (pointille) outlinePaint.pathEffect =
-                            android.graphics.DashPathEffect(floatArrayOf(14f, 10f), 0f)
-                        infoWindow = null
-                        setOnClickListener { _, _, _ -> onTap(); true }
-                    }
-                    binding.map.overlays.add(poly)
-                    overlaysServeur.add(poly)
-                    sommetsServeur.addAll(ring)
-                }
-            } catch (_: Exception) {}
-        } else if (st.latitude != 0.0 || st.longitude != 0.0) {
-            val gp = GeoPoint(st.latitude, st.longitude)
-            pts.add(gp)
-            val m = Marker(binding.map).apply {
-                position = gp
-                icon = cercleSommet(couleur)
-                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                isDraggable = false
-                setInfoWindow(null)
-                setOnMarkerClickListener { _, _ -> onTap(); true }
-            }
-            binding.map.overlays.add(m)
-            overlaysServeur.add(m)
-            sommetsServeur.add(gp)
-        }
-        return pts
-    }
-
-    /** Une copie locale NON ENVOYÉE de cette station serveur existe dans une AUTRE saisie de
-     *  « Mes stations » : on ne crée jamais une 2ᵉ copie (deux mises à jour concurrentes du même
-     *  id_station, la dernière envoyée écrasant l'autre) — on propose d'OUVRIR cette saisie et d'y
-     *  poursuivre les modifications. */
-    private fun proposerOuvrirCopieLocale(saisie: OccHabSaisie, copie: OccHabStation) {
-        val date = java.text.SimpleDateFormat("dd/MM/yyyy HH:mm", java.util.Locale.getDefault())
-            .format(java.util.Date(saisie.date))
-        // Un tracé en cours NON validé (pas une station sélectionnée, dont les modifs sont
-        // persistées au fil de l'eau) serait perdu à la bascule : on prévient.
-        val traceEnCours = !geometrieChargee && (pointChoisi != null || sommets.isNotEmpty())
-        AlertDialog.Builder(requireContext())
-            .setTitle("Station déjà en cours de modification")
-            .setMessage(
-                (copie.stationName?.let { "« $it »\n\n" } ?: "") +
-                    "Cette station est déjà reprise dans la saisie du $date (Mes stations), pas " +
-                    "encore envoyée. Pour ne pas créer deux versions concurrentes, poursuivez vos " +
-                    "modifications dans cette saisie." +
-                    (if (traceEnCours) "\n\nLe tracé en cours (non validé) sera abandonné." else ""))
-            .setPositiveButton("Ouvrir cette saisie") { _, _ -> basculerVersSaisie(saisie, copie) }
-            .setNegativeButton("Annuler", null)
-            .show()
-    }
-
-    /** Bascule la carte sur une AUTRE saisie de « Mes stations » et y ouvre [station] en édition —
-     *  même résultat que Mes stations → carte → tap sur la station. Les stations validées de la
-     *  saisie quittée sont persistées au fil de l'eau : rien n'est perdu, seul un tracé non validé
-     *  disparaît. */
-    private fun basculerVersSaisie(saisie: OccHabSaisie, station: OccHabStation) {
-        val store = fr.ariegenature.geomys.store.OccHabStore(requireContext())
-        // Version FRAÎCHE de la station (le store a pu bouger depuis le dessin).
-        val aOuvrir = store.stationsDeSaisie(saisie.id).firstOrNull { it.id == station.id } ?: station
-        occhabViewModel.reprendreSaisie(saisie)
-        editerStationExistante(aOuvrir) // purge l'édition en cours, redessine la session ouverte
-        // Re-filtre violet / orange pour la saisie ouverte — ou recharge/efface si son JDD diffère.
-        resynchroniserStationsServeurAuJdd()
-    }
-
-    /** Tap sur une station VIOLETTE (serveur) : confirmation avant IMPORT dans la saisie courante —
-     *  la station devient éditable comme une station de session et repartira au serveur en MISE À
-     *  JOUR (POST /stations/<id>/, grâce à son idStationServeur conservé). */
-    private fun proposerImportStationServeur(st: fr.ariegenature.geomys.model.OccHabStation) {
-        // Filet : le store a pu changer depuis le dessin. Une copie non envoyée existe déjà →
-        // on l'ouvre, jamais de 2ᵉ copie (cf. afficherStationsServeur).
-        val copie = st.idStationServeur?.let {
-            fr.ariegenature.geomys.store.OccHabStore(requireContext()).copieLocaleNonEnvoyee(it)
-        }
-        if (copie != null) {
-            if (copie.first.id == occhabViewModel.saisieId) editerStationExistante(copie.second)
-            else proposerOuvrirCopieLocale(copie.first, copie.second)
-            return
-        }
-        val nbHab = st.habitats.size
-        AlertDialog.Builder(requireContext())
-            .setTitle("Modifier cette station du serveur ?")
-            .setMessage(
-                (st.stationName?.let { "« $it »\n\n" } ?: "") +
-                    "La station" + (if (nbHab > 0) " et ses $nbHab habitat(s)" else "") +
-                    " sera ouverte dans la saisie en cours. Elle n'entrera dans Mes stations " +
-                    "qu'une fois modifiée, puis repartira à GeoNature en MISE À JOUR à l'envoi " +
-                    "(pas de doublon).")
-            .setPositiveButton("Modifier") { _, _ -> importerStationServeur(st) }
-            .setNegativeButton("Annuler", null)
-            .show()
-    }
-
-    /** IMPORTE une station serveur dans la saisie courante : ouverte en édition comme n'importe
-     *  quelle station de session (sélection, poignées, habitats) avec envoyeGeoNature=false en
-     *  CONSERVANT idStationServeur/uuidStation/origineServeur — c'est ce qui fera partir l'envoi
-     *  en update. RIEN n'est écrit dans « Mes stations » à ce stade : l'empreinte d'origine est
-     *  figée et la station n'y entrera qu'à la première modification réelle (demande terrain
-     *  2026-08-27, cf. OccHabStore.upsertStation). */
-    private fun importerStationServeur(st: fr.ariegenature.geomys.model.OccHabStation) {
-        // Détails PAR STATION : la station importée garde SES observateurs, commentaire et
-        // nomenclatures ; seules ses DATES prennent celles de la session (une reprise sur le
-        // terrain est une nouvelle observation — décision terrain 2026-08-27). Corrigées ensuite
-        // via « i », elles sont conservées à la resélection (reprendreStation ne les touche plus).
-        val defauts = occhabViewModel.defautsSession
-        editerStationExistante(st.copy(
-            envoyeGeoNature = false, envoiIncertain = false,
-            dateMin = defauts.dateMin ?: st.dateMin, dateMax = defauts.dateMax ?: st.dateMax,
-        ))
-        occhabViewModel.figerEmpreinteOrigine()
-        // Son tracé violet disparaît : c'est la station en cours d'édition (filtre de
-        // afficherStationsServeur) — la liste [stationsServeur] reste brute.
-        afficherStationsServeur()
-    }
-
     /** Aimante [p] sur le sommet de session/serveur le plus proche s'il est à moins de ~44 dp à
      *  l'écran (seuil constant quel que soit le zoom ; 28 → 44 dp à la demande terrain
      *  2026-08-27 pour raccorder plus facilement au sommet d'un autre polygone), sinon renvoie
      *  null. Renvoie une COPIE du sommet (jamais l'instance partagée avec l'overlay de session). */
     private fun snapVersSommet(p: GeoPoint): GeoPoint? {
-        val cibles = sommetsSession + sommetsServeur
+        val cibles = sommetsSession + serveur.sommets
         if (cibles.isEmpty()) return null
         val proj = binding.map.projection ?: return null
         val pPix = proj.toPixels(p, null)
@@ -744,7 +490,7 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
             geometrieChargee = false
             afficherStationsSession() // l'ex-sélection redevient rouge et cliquable
             // …ou violette si c'était une station importée INTACTE (jamais persistée).
-            if (stationsServeur.isNotEmpty()) afficherStationsServeur()
+            if (serveur.chargees) serveur.afficher()
         }
         // Aimantage : si le tap tombe près d'un sommet d'une station déjà posée, on réutilise
         // exactement ce sommet (pour raccorder proprement deux stations voisines).
@@ -783,9 +529,9 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
      *  de mode — demande terrain 2026-08-25. */
     private fun afficherInstructionSelection() {
         binding.tvInstructions.text = when {
-            nbServeurReprisesAilleurs > 0 ->
+            serveur.nbReprisesAilleurs > 0 ->
                 "Touchez une station pour la modifier (violette = sur GeoNature, orange = déjà reprise dans une autre saisie), ou saisissez une nouvelle station"
-            stationsServeur.isNotEmpty() ->
+            serveur.chargees ->
                 "Touchez une station pour la modifier (violette = déjà sur GeoNature), ou saisissez une nouvelle station"
             else ->
                 "Sélectionnez une station pour la modifier, ou saisissez une nouvelle station"
@@ -898,7 +644,7 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
                 for (i in sommets.indices) {
                     val a = sommets[i]
                     val b = sommets[(i + 1) % sommets.size]
-                    val milieu = GeoPoint((a.latitude + b.latitude) / 2, (a.longitude + b.longitude) / 2)
+                    val milieu = TopologiePolygone.milieu(a, b)
                     val indexArete = i
                     val poignee = Marker(binding.map).apply {
                         position = milieu
@@ -957,16 +703,13 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
         if (indexArete !in sommets.indices) return
         val a = sommets[indexArete]
         val b = sommets[(indexArete + 1) % sommets.size]
-        val milieu = GeoPoint((a.latitude + b.latitude) / 2, (a.longitude + b.longitude) / 2)
+        val milieu = TopologiePolygone.milieu(a, b)
         sommets.add(indexArete + 1, milieu)
         redessiner()
         majBoutons()
         persisterSelectionApresDrag()
         propagerInsertionSommet(a, b, milieu)
     }
-
-    private fun memePoint(p: GeoPoint, lat: Double, lon: Double): Boolean =
-        Math.abs(p.latitude - lat) < 1e-9 && Math.abs(p.longitude - lon) < 1e-9
 
     /** Applique [transforme] à l'anneau (liste mutable de [lon,lat]) de chaque polygone VOISIN
      *  de la saisie ; ceux qui changent sont persistés (coords + centre + surface recalculée)
@@ -998,33 +741,12 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
     /** Arête commune {a,b} chez un voisin (dans un sens ou l'autre, fermeture incluse) →
      *  le sommet [insere] est inséré au même endroit de son anneau. */
     private fun propagerInsertionSommet(a: GeoPoint, b: GeoPoint, insere: GeoPoint) {
-        propagerAuxVoisins { ring ->
-            for (i in ring.indices) {
-                val j = (i + 1) % ring.size
-                val pi = ring[i]; val pj = ring[j]
-                val sensDirect = memePoint(a, pi[1], pi[0]) && memePoint(b, pj[1], pj[0])
-                val sensInverse = memePoint(b, pi[1], pi[0]) && memePoint(a, pj[1], pj[0])
-                if (sensDirect || sensInverse) {
-                    ring.add(i + 1, doubleArrayOf(insere.longitude, insere.latitude))
-                    return@propagerAuxVoisins true
-                }
-            }
-            false
-        }
+        propagerAuxVoisins { ring -> TopologiePolygone.insererSurArete(ring, a, b, insere) }
     }
 
     /** Tout sommet voisin CONFONDU avec [avant] (sommet partagé par aimantage) suit vers [apres]. */
     private fun propagerDeplacementSommet(avant: GeoPoint, apres: GeoPoint) {
-        propagerAuxVoisins { ring ->
-            var touche = false
-            ring.forEach { c ->
-                if (memePoint(avant, c[1], c[0])) {
-                    c[0] = apres.longitude; c[1] = apres.latitude
-                    touche = true
-                }
-            }
-            touche
-        }
+        propagerAuxVoisins { ring -> TopologiePolygone.deplacerSommetsConfondus(ring, avant, apres) }
     }
 
     /** (Re)dessine UNIQUEMENT la forme (polygone), sans toucher aux markers — appelé pendant le
@@ -1065,7 +787,7 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
         afficherStationsSession()  // la station redevient rouge et cliquable
         // Une station serveur importée mais INTACTE (jamais persistée) ou dont la copie locale
         // vient d'être supprimée redevient importable (violette).
-        if (stationsServeur.isNotEmpty()) afficherStationsServeur()
+        if (serveur.chargees) serveur.afficher()
         majBoutons()
         afficherInstructionSelection()
         binding.map.invalidate()
@@ -1300,7 +1022,7 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
         boussole = null
         // Les overlays/markers référencent la MapView détruite : on les lâche. Les DONNÉES
         // (sommets, stations serveur, mode) survivent et sont redessinées par onViewCreated.
-        overlaysSession.clear(); overlaysServeur.clear()
+        overlaysSession.clear(); serveur.liberer()
         markersSommets.clear(); markersPoignees.clear()
         overlayForme = null; markerPoint = null; locationOverlay = null; poigneeDrawable = null
         _binding = null

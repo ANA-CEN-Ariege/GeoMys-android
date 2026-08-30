@@ -284,15 +284,8 @@ class SortieDetailFragment : Fragment() {
     }
 
     /** Parse un geometryCoordsJson (`[[lon,lat], …]`) en liste de GeoPoint. */
-    private fun parseCoordsGeom(json: String?): List<GeoPoint> {
-        if (json.isNullOrEmpty()) return emptyList()
-        return try {
-            val arr = org.json.JSONArray(json)
-            (0 until arr.length()).mapNotNull { i ->
-                arr.optJSONArray(i)?.let { GeoPoint(it.getDouble(1), it.getDouble(0)) }
-            }
-        } catch (_: Exception) { emptyList() }
-    }
+    private fun parseCoordsGeom(json: String?): List<GeoPoint> =
+        fr.ariegenature.geomys.util.GeoJsonCoords.parse(json)
 
     override fun onResume() { super.onResume(); binding.map.onResume() }
     override fun onPause() { super.onPause(); binding.map.onPause() }

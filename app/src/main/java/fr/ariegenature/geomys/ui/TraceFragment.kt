@@ -736,9 +736,7 @@ class TraceFragment : Fragment() {
                     return GeomFinale(null, null, 0.0, 0.0)
                 }
                 val type = if (modeGeom == ModeGeom.LINE) "LineString" else "Polygon"
-                val coordsJson = com.google.gson.Gson().toJson(sommetsCourants.map {
-                    doubleArrayOf(it.longitude, it.latitude)
-                })
+                val coordsJson = fr.ariegenature.geomys.util.GeoJsonCoords.format(sommetsCourants)
                 val lat = sommetsCourants.map { it.latitude }.average()
                 val lon = sommetsCourants.map { it.longitude }.average()
                 GeomFinale(type, coordsJson, lat, lon)
@@ -890,9 +888,7 @@ class TraceFragment : Fragment() {
                     }
                     override fun onMarkerDragEnd(marker: Marker) {
                         // Écrit la nouvelle forme + recentre le centroïde sur toutes les obs.
-                        val coordsJson = com.google.gson.Gson().toJson(
-                            g.sommets.map { doubleArrayOf(it.longitude, it.latitude) }
-                        )
+                        val coordsJson = fr.ariegenature.geomys.util.GeoJsonCoords.format(g.sommets)
                         val lat = g.sommets.map { it.latitude }.average()
                         val lon = g.sommets.map { it.longitude }.average()
                         traceViewModel.mettreAJourGeometrieReleve(g.ids, coordsJson, lat, lon)
@@ -945,15 +941,8 @@ class TraceFragment : Fragment() {
     }
 
     /** Parse un geometryCoordsJson (`[[lon,lat], …]`) en liste de GeoPoint. */
-    private fun parseCoordsGeom(json: String?): List<GeoPoint> {
-        if (json.isNullOrEmpty()) return emptyList()
-        return try {
-            val arr = org.json.JSONArray(json)
-            (0 until arr.length()).mapNotNull { i ->
-                arr.optJSONArray(i)?.let { GeoPoint(it.getDouble(1), it.getDouble(0)) }
-            }
-        } catch (_: Exception) { emptyList() }
-    }
+    private fun parseCoordsGeom(json: String?): List<GeoPoint> =
+        fr.ariegenature.geomys.util.GeoJsonCoords.parse(json)
 
     private fun createObservationMarker(obs: Observation): Marker {
         val marker = Marker(binding.map)

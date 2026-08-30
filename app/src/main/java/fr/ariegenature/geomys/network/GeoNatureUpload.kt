@@ -1043,19 +1043,6 @@ object GeoNatureUpload {
         false
     }
 
-    private fun parseErreur(code: Int, body: String?): String {
-        if (body != null) {
-            try {
-                val j = JSONObject(body)
-                return j.optString("description").takeIf { it.isNotEmpty() }
-                    ?: j.optString("msg").takeIf { it.isNotEmpty() }
-                    ?: j.optString("message").takeIf { it.isNotEmpty() }
-                    ?: "HTTP $code"
-            } catch (_: Exception) {}
-        }
-        return "Erreur HTTP $code"
-    }
-
     // Charge les nomenclatures d'un type : label_default minuscule → id_nomenclature.
     // Même logique qu'OrniTrace : les labels sont stables d'une instance GeoNature à l'autre,
     // contrairement aux cd_nomenclature qui varient.

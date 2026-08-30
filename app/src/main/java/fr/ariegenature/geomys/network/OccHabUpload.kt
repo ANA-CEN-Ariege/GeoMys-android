@@ -291,17 +291,4 @@ object OccHabUpload {
         }
         return null
     }
-
-    private fun parseErreur(code: Int, body: String?): String {
-        if (body != null) {
-            try {
-                val j = JSONObject(body)
-                return j.optString("description").takeIf { it.isNotEmpty() }
-                    ?: j.optString("msg").takeIf { it.isNotEmpty() }
-                    ?: j.optString("message").takeIf { it.isNotEmpty() }
-                    ?: "HTTP $code"
-            } catch (_: Exception) {}
-        }
-        return "Erreur HTTP $code"
-    }
 }

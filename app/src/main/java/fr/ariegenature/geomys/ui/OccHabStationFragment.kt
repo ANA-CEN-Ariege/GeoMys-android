@@ -140,7 +140,7 @@ class OccHabStationFragment : Fragment() {
         val s = occhabViewModel.station
         binding.tvGeometrie.text = when (s.geometryType) {
             "Polygon" -> {
-                val n = try { org.json.JSONArray(s.geometryCoordsJson).length() } catch (_: Exception) { 0 }
+                val n = fr.ariegenature.geomys.util.GeoJsonCoords.parse(s.geometryCoordsJson).size
                 "Géométrie : polygone ($n sommets)"
             }
             else -> "Géométrie : point (%.5f, %.5f)".format(s.latitude, s.longitude)

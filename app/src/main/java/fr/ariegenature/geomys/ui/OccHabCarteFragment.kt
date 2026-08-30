@@ -38,6 +38,7 @@ import fr.ariegenature.geomys.databinding.FragmentOcchabCarteBinding
 import fr.ariegenature.geomys.model.OccHabSaisie
 import fr.ariegenature.geomys.model.OccHabStation
 import fr.ariegenature.geomys.network.envoyerSaisieOccHabVersGeoNature
+import fr.ariegenature.geomys.util.GeoJsonCoords
 import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.osmdroid.config.Configuration
@@ -299,15 +300,11 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
         val pts = mutableListOf<GeoPoint>()
         when {
             s.geometryType == "Polygon" && !s.geometryCoordsJson.isNullOrEmpty() -> {
-                try {
-                    val arr = JSONArray(s.geometryCoordsJson)
-                    for (i in 0 until arr.length()) {
-                        val pt = arr.getJSONArray(i)
-                        val gp = GeoPoint(pt.getDouble(1), pt.getDouble(0))
-                        sommets.add(gp); pts.add(gp)
-                    }
+                val ring = GeoJsonCoords.parse(s.geometryCoordsJson)
+                if (ring.isNotEmpty()) {
+                    sommets.addAll(ring); pts.addAll(ring)
                     mode = Mode.POLYGONE
-                } catch (_: Exception) {}
+                }
             }
             s.geometryType == "Point" && (s.latitude != 0.0 || s.longitude != 0.0) -> {
                 pointChoisi = GeoPoint(s.latitude, s.longitude)
@@ -337,13 +334,8 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
         autres.forEach { st ->
             if (st.geometryType == "Polygon" && !st.geometryCoordsJson.isNullOrEmpty()) {
                 try {
-                    val arr = JSONArray(st.geometryCoordsJson)
-                    val ring = mutableListOf<GeoPoint>()
-                    for (i in 0 until arr.length()) {
-                        val c = arr.getJSONArray(i)
-                        val gp = GeoPoint(c.getDouble(1), c.getDouble(0))
-                        ring.add(gp); pts.add(gp)
-                    }
+                    val ring = GeoJsonCoords.parse(st.geometryCoordsJson)
+                    pts.addAll(ring)
                     if (ring.size >= 2) {
                         val poly = Polygon(binding.map).apply {
                             points = ring
@@ -586,13 +578,8 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
         val pts = mutableListOf<GeoPoint>()
         if (st.geometryType == "Polygon" && !st.geometryCoordsJson.isNullOrEmpty()) {
             try {
-                val arr = JSONArray(st.geometryCoordsJson)
-                val ring = mutableListOf<GeoPoint>()
-                for (i in 0 until arr.length()) {
-                    val c = arr.getJSONArray(i)
-                    val gp = GeoPoint(c.getDouble(1), c.getDouble(0))
-                    ring.add(gp); pts.add(gp)
-                }
+                val ring = GeoJsonCoords.parse(st.geometryCoordsJson)
+                pts.addAll(ring)
                 if (ring.size >= 2) {
                     val poly = Polygon(binding.map).apply {
                         points = ring
@@ -993,25 +980,14 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
                     !it.geometryCoordsJson.isNullOrEmpty()
             }
             .forEach { st ->
-                val ring = try {
-                    val arr = JSONArray(st.geometryCoordsJson)
-                    MutableList(arr.length()) { i ->
-                        val c = arr.getJSONArray(i)
-                        doubleArrayOf(c.getDouble(0), c.getDouble(1)) // [lon, lat]
-                    }
-                } catch (_: Exception) { return@forEach }
+                val ring = GeoJsonCoords.parsePaires(st.geometryCoordsJson) ?: return@forEach // [lon, lat]
                 if (!transforme(ring)) return@forEach
-                val coords = JSONArray()
-                var sLat = 0.0; var sLon = 0.0
-                ring.forEach { c ->
-                    coords.put(JSONArray().put(c[0]).put(c[1]))
-                    sLon += c[0]; sLat += c[1]
-                }
                 val pts = ring.map { GeoPoint(it[1], it[0]) }
+                val centre = GeoJsonCoords.centroide(pts) ?: return@forEach
                 store.upsertStation(occhabViewModel.saisieId, st.copy(
-                    latitude = sLat / ring.size,
-                    longitude = sLon / ring.size,
-                    geometryCoordsJson = coords.toString(),
+                    latitude = centre.latitude,
+                    longitude = centre.longitude,
+                    geometryCoordsJson = GeoJsonCoords.formatPaires(ring),
                     surface = Math.round(airePolygoneM2(pts)),
                 ))
                 modifie = true
@@ -1064,14 +1040,9 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
             occhabViewModel.definirSurface(null)
         } else {
             if (sommets.size < 3) return
-            val coords = JSONArray()
-            var sLat = 0.0; var sLon = 0.0
-            sommets.forEach { pt ->
-                coords.put(JSONArray().put(pt.longitude).put(pt.latitude))
-                sLat += pt.latitude; sLon += pt.longitude
-            }
+            val centre = GeoJsonCoords.centroide(sommets) ?: return
             occhabViewModel.definirGeometrie(
-                "Polygon", sLat / sommets.size, sLon / sommets.size, coords.toString())
+                "Polygon", centre.latitude, centre.longitude, GeoJsonCoords.format(sommets))
             occhabViewModel.definirSurface(Math.round(airePolygoneM2(sommets)))
         }
         lancerRemplissageAltitudes()
@@ -1163,14 +1134,9 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
             occhabViewModel.definirGeometrie("Point", pt.latitude, pt.longitude, null)
         } else {
             if (sommets.size < 3) return
-            val coords = JSONArray()
-            var sLat = 0.0; var sLon = 0.0
-            sommets.forEach { pt ->
-                coords.put(JSONArray().put(pt.longitude).put(pt.latitude))
-                sLat += pt.latitude; sLon += pt.longitude
-            }
+            val centre = GeoJsonCoords.centroide(sommets) ?: return
             occhabViewModel.definirGeometrie(
-                "Polygon", sLat / sommets.size, sLon / sommets.size, coords.toString(),
+                "Polygon", centre.latitude, centre.longitude, GeoJsonCoords.format(sommets),
             )
         }
         // Surface AUTO de la station (parité web : patchGeoValue → getAreaSize, arrondie au m²)

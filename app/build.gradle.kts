@@ -26,8 +26,8 @@ android {
         minSdk = 24
         targetSdk = 36
         // versionCode croissant partagé github/play (un code déposé sur Play est consommé à jamais).
-        versionCode = 185
-        versionName = "1.3.20"
+        versionCode = 186
+        versionName = "1.3.21"
 
     }
 

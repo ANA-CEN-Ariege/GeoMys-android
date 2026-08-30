@@ -168,6 +168,12 @@ data class OccHabStation(
      *  dont le contenu est encore identique à cette empreinte. Null pour une station créée
      *  localement (toujours persistée) ; effacé à l'envoi confirmé. */
     var empreinteOrigine: String? = null,
+    /** true pour une copie ENVOYÉE remise en édition (ou déplacée par la topologie partagée) :
+     *  si son contenu REVIENT à [empreinteOrigine] (bouton Annuler…), la copie redevient
+     *  « envoyée » au lieu de rester « à envoyer ». Une station IMPORTÉE (false) revenue à
+     *  l'origine QUITTE « Mes stations » — demande terrain 2026-08-30 : sans modification, rien
+     *  à envoyer. Effacé à l'envoi confirmé. */
+    var origineEnvoyee: Boolean = false,
 ) {
     /**
      * Empreinte du CONTENU métier (ce qui part au serveur), HORS état d'envoi et HORS champs

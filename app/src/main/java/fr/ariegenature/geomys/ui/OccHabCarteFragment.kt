@@ -267,15 +267,10 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
 
         binding.btnModePoint.setOnClickListener { changerMode(Mode.POINT) }
         binding.btnModePolygone.setOnClickListener { changerMode(Mode.POLYGONE) }
-        binding.btnAnnulerPoint.setOnClickListener {
-            if (mode == Mode.POLYGONE && sommets.isNotEmpty()) {
-                sommets.removeAt(sommets.size - 1)
-                redessiner(); majBoutons()
-                // Station sélectionnée : le retrait est persisté comme les autres modifications
-                // (la garde interne < 3 sommets évite d'écrire un anneau invalide).
-                if (geometrieChargee) persisterSelectionApresDrag()
-            }
-        }
+        // « Annuler » = annule la DERNIÈRE opération (tap, déplacement, insertion, propagation aux
+        // voisins comprise) — demande terrain 2026-08-30 ; en dessin, revient à « retirer le
+        // dernier sommet ».
+        binding.btnAnnulerPoint.setOnClickListener { annulerDerniereOperation() }
         binding.btnValider.setOnClickListener { valider() }
 
         changerMode(mode)
@@ -415,7 +410,10 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
                         // PAS de persistance ici : la copie reste « envoyée » dans Mes stations
                         // tant qu'aucune modification réelle n'est faite (empreinte d'origine,
                         // cf. OccHabStore.upsertStation — demande terrain 2026-08-27).
-                        editerStationExistante(st.copy(envoyeGeoNature = false, envoiIncertain = false))
+                        // origineEnvoyee : revenue à l'identique (Annuler…), elle REDEVIENT
+                        // « envoyée » (demande terrain 2026-08-30).
+                        editerStationExistante(st.copy(envoyeGeoNature = false, envoiIncertain = false,
+                            derniereErreurEnvoi = null, origineEnvoyee = true))
                         occhabViewModel.figerEmpreinteOrigine()
                     }
                     .setNegativeButton("Annuler", null)
@@ -426,6 +424,7 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
             return
         }
         occhabViewModel.reprendreStation(st)
+        pileAnnulation.clear()
         // Purge l'objet en cours d'édition précédent.
         pointChoisi = null
         sommets.clear()
@@ -491,7 +490,9 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
             afficherStationsSession() // l'ex-sélection redevient rouge et cliquable
             // …ou violette si c'était une station importée INTACTE (jamais persistée).
             if (serveur.chargees) serveur.afficher()
+            pileAnnulation.clear()
         }
+        memoriserAvantOperation()
         // Aimantage : si le tap tombe près d'un sommet d'une station déjà posée, on réutilise
         // exactement ce sommet (pour raccorder proprement deux stations voisines).
         val cible = snapVersSommet(p) ?: p
@@ -540,6 +541,7 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
 
 
     private fun changerMode(m: Mode) {
+        if (m != mode) pileAnnulation.clear()
         mode = m
         mettreEnEvidenceBoutonMode()
         majTexteInstructionsMode()
@@ -592,7 +594,7 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
                             persisterSelectionApresDrag()
                             binding.map.invalidate()
                         }
-                        override fun onMarkerDragStart(m: Marker) {}
+                        override fun onMarkerDragStart(m: Marker) { memoriserAvantOperation() }
                     })
                 }
                 binding.map.overlays.add(markerPoint)
@@ -621,15 +623,18 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
                                 sommets[i] = cible
                                 m.position = cible
                                 redessinerForme()
-                                // Sommet PARTAGÉ avec un polygone voisin (arête commune) : le
-                                // déplacement est répercuté sur le voisin (topologie conservée).
-                                if (geometrieChargee) origine?.let { o -> propagerDeplacementSommet(o, cible) }
+                                // Sommet PARTAGÉ avec un polygone voisin (aimantage) : le
+                                // déplacement est répercuté sur le voisin (topologie conservée) —
+                                // station sélectionnée OU polygone en cours de dessin (un sommet
+                                // aimanté est commun dès le dessin, demande terrain 2026-08-30).
+                                origine?.let { o -> propagerDeplacementSommet(o, cible) }
                             }
                             majBoutons()
                             persisterSelectionApresDrag()
                             if (geometrieChargee) redessiner() // replace les poignées sur les arêtes déplacées
                         }
                         override fun onMarkerDragStart(m: Marker) {
+                            memoriserAvantOperation()
                             origine = GeoPoint(m.position.latitude, m.position.longitude)
                         }
                         private var origine: GeoPoint? = null
@@ -701,6 +706,7 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
      *  partageant cette arête (le sommet est inséré dans les DEUX anneaux). */
     private fun insererSommetSurArete(indexArete: Int) {
         if (indexArete !in sommets.indices) return
+        memoriserAvantOperation()
         val a = sommets[indexArete]
         val b = sommets[(indexArete + 1) % sommets.size]
         val milieu = TopologiePolygone.milieu(a, b)
@@ -727,12 +733,19 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
                 if (!transforme(ring)) return@forEach
                 val pts = ring.map { GeoPoint(it[1], it[0]) }
                 val centre = GeoJsonCoords.centroide(pts) ?: return@forEach
-                store.upsertStation(occhabViewModel.saisieId, st.copy(
+                val deplacee = st.copy(
                     latitude = centre.latitude,
                     longitude = centre.longitude,
                     geometryCoordsJson = GeoJsonCoords.formatPaires(ring),
                     surface = Math.round(airePolygoneM2(pts)),
-                ))
+                )
+                // Voisin déjà ENVOYÉ : sa géométrie change → il repasse « à envoyer » (mise à
+                // jour par id serveur) ; s'il revient à l'identique (Annuler), il redeviendra
+                // « envoyée » grâce à origineEnvoyee + empreinte d'origine.
+                store.upsertStation(occhabViewModel.saisieId, if (st.envoyeGeoNature) deplacee.copy(
+                    envoyeGeoNature = false, envoiIncertain = false, derniereErreurEnvoi = null,
+                    empreinteOrigine = st.empreinteOrigine ?: st.empreinteContenu(), origineEnvoyee = true,
+                ) else deplacee)
                 modifie = true
             }
         if (modifie) afficherStationsSession()
@@ -779,6 +792,7 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
      *  2026-08-25) : la station retourne à l'affichage session (rouge), l'édition repart d'une
      *  station vierge de la même saisie, le bandeau repropose sélection ou nouvelle saisie. */
     private fun deselectionnerStation() {
+        pileAnnulation.clear()
         occhabViewModel.nouvelleStation() // station vierge, même saisieId — l'ex-sélection n'est plus exclue de l'affichage
         pointChoisi = null
         sommets.clear()
@@ -827,6 +841,61 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
         setInfoWindow(null)
     }
 
+    // ── Annulation de la dernière opération (demande terrain 2026-08-30) ─────────────────────
+    /** Instantané AVANT une opération de géométrie (tap, déplacement, insertion) : la géométrie
+     *  en cours + les polygones VOISINS de la saisie (une propagation topologique les a peut-être
+     *  modifiés). Le bouton « Annuler » dépile et rétablit tout. */
+    private class Instantane(
+        val mode: Mode,
+        val pointChoisi: GeoPoint?,
+        val sommets: List<GeoPoint>,
+        val voisins: List<OccHabStation>,
+    )
+    private val pileAnnulation = ArrayDeque<Instantane>()
+
+    private fun memoriserAvantOperation() {
+        val voisins = fr.ariegenature.geomys.store.OccHabStore(requireContext())
+            .stationsDeSaisie(occhabViewModel.saisieId)
+            .filter { it.id != occhabViewModel.station.id && it.geometryType == "Polygon" }
+        pileAnnulation.addLast(Instantane(
+            mode,
+            pointChoisi?.let { GeoPoint(it.latitude, it.longitude) },
+            sommets.map { GeoPoint(it.latitude, it.longitude) },
+            voisins,
+        ))
+        while (pileAnnulation.size > 30) pileAnnulation.removeFirst()
+    }
+
+    /** « Annuler » = retour à l'état d'avant la DERNIÈRE opération : géométrie en cours (sommet
+     *  ajouté, déplacé, inséré, point déplacé) ET voisins touchés par la propagation topologique.
+     *  Station sélectionnée → l'annulation est persistée comme l'opération l'était. */
+    private fun annulerDerniereOperation() {
+        val inst = pileAnnulation.removeLastOrNull() ?: return
+        mode = inst.mode
+        pointChoisi = inst.pointChoisi
+        sommets.clear(); sommets.addAll(inst.sommets)
+        val store = fr.ariegenature.geomys.store.OccHabStore(requireContext())
+        val actuels = store.stationsDeSaisie(occhabViewModel.saisieId).associateBy { it.id }
+        var voisinRetabli = false
+        inst.voisins.forEach { avant ->
+            val now = actuels[avant.id] ?: return@forEach
+            if (now.geometryCoordsJson != avant.geometryCoordsJson) {
+                // Le voisin est remis EXACTEMENT dans son état d'avant (état d'envoi compris :
+                // une copie envoyée déplacée par la topologie redevient envoyée ; une copie
+                // d'import revenue à l'origine est retirée de Mes stations par upsertStation).
+                store.upsertStation(occhabViewModel.saisieId, avant)
+                voisinRetabli = true
+            }
+        }
+        mettreEnEvidenceBoutonMode()
+        redessiner()
+        majBoutons()
+        majTexteInstructionsMode()
+        if (geometrieChargee) persisterSelectionApresDrag()
+        if (voisinRetabli) afficherStationsSession()
+        binding.map.invalidate()
+    }
+
     /** Petit disque plein (liseré blanc) pour matérialiser un sommet d'une station déjà posée. */
     private fun cercleSommet(couleur: Int): android.graphics.drawable.Drawable {
         val d = (12 * resources.displayMetrics.density).toInt()
@@ -846,7 +915,7 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
             (mode == Mode.POLYGONE && sommets.size >= 3)
         binding.btnValider.isEnabled = geomOk
         binding.btnValider.alpha = if (geomOk) 1f else 0.5f
-        binding.btnAnnulerPoint.isEnabled = mode == Mode.POLYGONE && sommets.isNotEmpty()
+        binding.btnAnnulerPoint.isEnabled = pileAnnulation.isNotEmpty()
     }
 
 
@@ -883,6 +952,7 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
                 "Libérez de l'espace (photos, cache de cartes) puis revalidez la géométrie.")
             return
         }
+        pileAnnulation.clear() // géométrie validée = acquise, plus d'annulation
         // Nouvelle station (aucun habitat) → écran de création directement ; station rééditée
         // (habitats déjà présents) → liste des habitats.
         if (occhabViewModel.station.habitats.isEmpty())

@@ -138,21 +138,56 @@ class OccHabSaisieStoreTest {
         assertEquals(listOf("A"), store.stationsDeSaisie("sa").map { it.id })
         assertFalse(store.stationsDeSaisie("sa").single().envoyeGeoNature)
         assertNotNull(store.copieLocaleNonEnvoyee(42))
-        // Retour au contenu d'origine : déjà « à envoyer » → reste (pas de disparition silencieuse).
+        // Retour au contenu d'origine (Annuler…) : plus rien à envoyer → la copie d'import QUITTE
+        // « Mes stations » (demande terrain 2026-08-30) et la station redevient importable.
         assertTrue(store.upsertStation("sa", origine))
-        assertEquals(1, store.stationsDeSaisie("sa").size)
-        assertFalse(store.stationsDeSaisie("sa").single().envoyeGeoNature)
+        assertTrue(store.stationsDeSaisie("sa").isEmpty())
+        assertNull(store.copieLocaleNonEnvoyee(42))
+        // …et une nouvelle modification la fait rentrer à nouveau.
+        assertTrue(store.upsertStation("sa", origine.copy(comment = "2e passage")))
+        assertEquals(listOf("A"), store.stationsDeSaisie("sa").map { it.id })
     }
 
     @Test
-    fun est_intacte_non_persistee_suit_exactement_la_garde_d_upsert() {
+    fun copie_envoyee_remise_en_edition_puis_revenue_a_l_origine_redevient_envoyee() {
+        store.upsertStation("sa", station("A").copy(idStationServeur = 42))
+        store.marquerStationEnvoyee("sa", "A", 42)
+        val envoyee = store.stationsDeSaisie("sa").single()
+        // Remise en édition (carte) : copie « à envoyer » dès la 1ʳᵉ modification…
+        val modifiable = envoyee.copy(envoyeGeoNature = false, origineEnvoyee = true,
+            empreinteOrigine = envoyee.empreinteContenu())
+        assertTrue(store.upsertStation("sa", modifiable.copy(comment = "x")))
+        assertFalse(store.stationsDeSaisie("sa").single().envoyeGeoNature)
+        // …revenue à l'identique : elle REDEVIENT envoyée (pas retirée, pas « à envoyer »).
+        assertTrue(store.upsertStation("sa", modifiable))
+        val apres = store.stationsDeSaisie("sa").single()
+        assertTrue(apres.envoyeGeoNature)
+        assertNull(store.copieLocaleNonEnvoyee(42))
+        assertTrue("l'origine reste connue pour la suite de l'édition", store.estIntacte("sa", modifiable))
+    }
+
+    @Test
+    fun copie_revenue_a_l_origine_apres_un_envoi_tente_reste_a_envoyer() {
         val importee = station("A").copy(idStationServeur = 42)
         val origine = importee.copy(empreinteOrigine = importee.empreinteContenu())
-        assertTrue(store.estIntacteNonPersistee("sa", origine))
-        assertFalse("modifiée", store.estIntacteNonPersistee("sa", origine.copy(comment = "x")))
-        assertFalse("locale (sans empreinte)", store.estIntacteNonPersistee("sa", importee))
+        store.upsertStation("sa", origine.copy(comment = "x"))
+        store.marquerStationIncertain("sa", "A", "réseau coupé") // le serveur a peut-être reçu « x »
+        assertFalse(store.estIntacte("sa", origine))
+        assertTrue(store.upsertStation("sa", origine))
+        val apres = store.stationsDeSaisie("sa").single()
+        assertFalse("reste à envoyer : renverra le contenu d'origine en mise à jour", apres.envoyeGeoNature)
+        assertEquals("A", store.copieLocaleNonEnvoyee(42)?.second?.id)
+    }
+
+    @Test
+    fun est_intacte_suit_exactement_la_garde_d_upsert() {
+        val importee = station("A").copy(idStationServeur = 42)
+        val origine = importee.copy(empreinteOrigine = importee.empreinteContenu())
+        assertTrue(store.estIntacte("sa", origine))
+        assertFalse("modifiée", store.estIntacte("sa", origine.copy(comment = "x")))
+        assertFalse("locale (sans empreinte)", store.estIntacte("sa", importee))
         store.upsertStation("sa", origine.copy(comment = "x")) // désormais « à envoyer »
-        assertFalse("déjà à envoyer → réécrite même identique", store.estIntacteNonPersistee("sa", origine))
+        assertTrue("revenue à l'identique sans envoi tenté → plus rien à envoyer", store.estIntacte("sa", origine))
     }
 
     @Test

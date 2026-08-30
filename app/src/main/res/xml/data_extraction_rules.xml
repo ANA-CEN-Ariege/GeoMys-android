@@ -3,14 +3,25 @@
      ancien format — et gn_secure_v2, MdpChiffre) de la sauvegarde cloud ET du transfert
      d'appareil : la clé de chiffrement reste dans l'Android Keystore, donc le blob chiffré serait
      inutilisable ailleurs — et c'est un secret, il ne doit jamais quitter l'appareil.
-     URL/login (gn_config) restent inclus pour la commodité ; le mot de passe est re-saisi. -->
+     URL/login (gn_config) restent inclus pour la commodité ; le mot de passe est re-saisi.
+     Caches synchronisés (taxref, monitoring + pictos, mbtiles) et médias exclus : volumineux, au-delà
+     de 25 Mo la sauvegarde cloud échoue ENTIÈREMENT (audit 2026-08-27) — ils se retéléchargent /
+     se réimportent. Les photos non encore envoyées ne sont pas sauvegardées. -->
 <data-extraction-rules>
     <cloud-backup>
         <exclude domain="sharedpref" path="gn_secure.xml" />
         <exclude domain="sharedpref" path="gn_secure_v2.xml" />
+        <exclude domain="file" path="taxref" />
+        <exclude domain="file" path="monitoring" />
+        <exclude domain="file" path="mbtiles" />
+        <exclude domain="file" path="medias" />
     </cloud-backup>
     <device-transfer>
         <exclude domain="sharedpref" path="gn_secure.xml" />
         <exclude domain="sharedpref" path="gn_secure_v2.xml" />
+        <exclude domain="file" path="taxref" />
+        <exclude domain="file" path="monitoring" />
+        <exclude domain="file" path="mbtiles" />
+        <exclude domain="file" path="medias" />
     </device-transfer>
 </data-extraction-rules>

@@ -396,8 +396,8 @@ class SaisiesEnAttenteFragment : Fragment() {
             // envoyée (groupe conservé tant qu'il reste des obs), ambre = envoi en cours.
             when (s.etat) {
                 SaisieEnAttente.Etat.ERROR -> background = cadreColore(couleurErreur(ctx), density)
-                SaisieEnAttente.Etat.SENT -> background = cadreColore(couleurSucces(ctx), density)
-                SaisieEnAttente.Etat.SENDING -> background = cadreColore(couleurEnCours(ctx), density)
+                SaisieEnAttente.Etat.SENT -> background = cadreColore(couleurSucces(), density)
+                SaisieEnAttente.Etat.SENDING -> background = cadreColore(couleurEnCours(), density)
                 else -> setBackgroundColor(0x00000000)
             }
             layoutParams = LinearLayout.LayoutParams(

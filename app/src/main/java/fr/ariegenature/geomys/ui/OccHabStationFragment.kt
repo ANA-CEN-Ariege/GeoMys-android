@@ -92,9 +92,10 @@ class OccHabStationFragment : Fragment() {
             // avant de repartir sur une carte vierge. Écriture échouée (disque plein ?) → on
             // RESTE sur la station courante : enchaîner sur nouvelleStation() jetterait la
             // seule copie mémoire (audit 2026-08-23).
-            // Station importée du serveur ENCORE INTACTE : rien n'est écrit (cf. upsertStation),
-            // le message ne doit pas prétendre le contraire.
-            val intacte = occHabStore.estIntacteNonPersistee(
+            // Station importée du serveur ENCORE (ou DE NOUVEAU) INTACTE : aucune copie « à
+            // envoyer » ne subsiste (cf. upsertStation), le message ne doit pas prétendre le
+            // contraire.
+            val intacte = occHabStore.estIntacte(
                 occhabViewModel.saisieId, occhabViewModel.stationAEnregistrer())
             if (!sauvegarderAuFilDeLEau()) return@setOnClickListener
             Toast.makeText(
@@ -140,7 +141,7 @@ class OccHabStationFragment : Fragment() {
         val s = occhabViewModel.station
         binding.tvGeometrie.text = when (s.geometryType) {
             "Polygon" -> {
-                val n = try { org.json.JSONArray(s.geometryCoordsJson).length() } catch (_: Exception) { 0 }
+                val n = fr.ariegenature.geomys.util.GeoJsonCoords.parse(s.geometryCoordsJson).size
                 "Géométrie : polygone ($n sommets)"
             }
             else -> "Géométrie : point (%.5f, %.5f)".format(s.latitude, s.longitude)

@@ -2,8 +2,6 @@
 agp = "9.1.1"
 coreKtx = "1.19.0"
 junit = "4.13.2"
-junitVersion = "1.1.5"
-espressoCore = "3.5.1"
 appcompat = "1.8.0"
 # NB avertissement console Play « API obsolètes bord à bord » (Window.setStatusBarColor /
 # setNavigationBarColor dans BottomSheetDialog / EdgeToEdgeUtils / SheetDialog) : ces appels
@@ -16,8 +14,6 @@ osmdroid = "6.1.20"
 coroutines = "1.8.1"
 lifecycle = "2.11.0"
 gson = "2.11.0"
-# TODO 2026-08-24 : bibliothèque DÉPRÉCIÉE (1.1.0 = dernière version), conservée UNIQUEMENT pour
-# LIRE l'ancien fichier gn_secure (EncryptedSharedPreferences) pendant la migration vers
 navigation = "2.9.8"
 fragmentKtx = "1.9.0"
 activityKtx = "1.13.0"
@@ -25,8 +21,6 @@ activityKtx = "1.13.0"
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
-androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junitVersion" }
-androidx-espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "espressoCore" }
 androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
 material = { group = "com.google.android.material", name = "material", version.ref = "material" }
 osmdroid = { group = "org.osmdroid", name = "osmdroid-android", version.ref = "osmdroid" }

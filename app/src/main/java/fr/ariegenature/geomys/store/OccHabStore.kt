@@ -86,24 +86,35 @@ class OccHabStore(context: Context) : JsonCollectionStore<OccHabSaisie>() {
     /** Sauvegarde AU FIL DE L'EAU d'une station dans la saisie [saisieId] : insère ou remplace la
      *  station (par son id), crée la saisie si elle n'existe pas encore (1ʳᵉ station de la session).
      *
-     *  Station importée du serveur / remise en édition ENCORE INTACTE ([OccHabStation
-     *  .empreinteOrigine] égale à son contenu) : elle n'entre dans « Mes stations » qu'à la
+     *  Station importée du serveur / remise en édition dont le contenu est IDENTIQUE à son
+     *  origine ([OccHabStation.empreinteOrigine]) : elle n'entre dans « Mes stations » qu'à la
      *  première modification réelle (demande terrain 2026-08-27) — l'appel est ignoré (succès).
-     *  Une copie déjà « à envoyer » (donc modifiée avant) reste mise à jour même si elle revient
-     *  à l'identique (pas de disparition silencieuse) ; une copie ENVOYÉE intacte reste envoyée. */
+     *  Et si, une fois modifiée, elle REVIENT à l'identique (bouton Annuler de la carte, valeur
+     *  rétablie…), il n'y a plus rien à envoyer (demande terrain 2026-08-30) : une copie
+     *  d'IMPORT est retirée de « Mes stations » (redevient violette sur la carte), une copie
+     *  ENVOYÉE remise en édition ([OccHabStation.origineEnvoyee]) redevient « envoyée ». Seule
+     *  exception : un envoi a déjà été TENTÉ avec le contenu modifié → la copie reste « à
+     *  envoyer » (elle renverra le contenu d'origine en mise à jour — jamais de disparition
+     *  d'une station peut-être modifiée côté serveur). */
     fun upsertStation(saisieId: String, station: OccHabStation): Boolean {
-        if (estIntacteNonPersistee(saisieId, station)) return true
-        return upsertStationBrut(saisieId, station)
+        if (!estIntacte(saisieId, station)) return upsertStationBrut(saisieId, station)
+        val existante = stationsDeSaisie(saisieId).firstOrNull { it.id == station.id }
+        return when {
+            existante == null || existante.envoyeGeoNature -> true // jamais entrée / copie envoyée intacte
+            station.origineEnvoyee -> upsertStationBrut(saisieId, station.copy(envoyeGeoNature = true))
+            else -> supprimerStation(saisieId, station.id)
+        }
     }
 
-    /** Vrai si [station] est une station importée / remise en édition ENCORE INTACTE, que
-     *  [upsertStation] ignore (cf. sa doc) — permet aux écrans d'adapter leurs messages
-     *  (« aucune modification » plutôt que « enregistrée »). */
-    fun estIntacteNonPersistee(saisieId: String, station: OccHabStation): Boolean {
+    /** Vrai si [station] (importée / remise en édition) a encore — ou de nouveau — le contenu
+     *  de son origine sans envoi tenté depuis : [upsertStation] ne laissera alors AUCUNE copie
+     *  « à envoyer » (cf. sa doc) — permet aux écrans d'adapter leurs messages (« aucune
+     *  modification » plutôt que « enregistrée »). */
+    fun estIntacte(saisieId: String, station: OccHabStation): Boolean {
         val origine = station.empreinteOrigine ?: return false
         if (station.envoyeGeoNature || station.empreinteContenu() != origine) return false
-        val existante = stationsDeSaisie(saisieId).firstOrNull { it.id == station.id }
-        return existante == null || existante.envoyeGeoNature
+        val existante = stationsDeSaisie(saisieId).firstOrNull { it.id == station.id } ?: return true
+        return existante.envoyeGeoNature || !(existante.envoiIncertain || existante.derniereErreurEnvoi != null)
     }
 
     private fun upsertStationBrut(saisieId: String, station: OccHabStation): Boolean = muter { liste ->
@@ -119,14 +130,12 @@ class OccHabStore(context: Context) : JsonCollectionStore<OccHabSaisie>() {
     }
 
     /** Retire une station de la saisie ; supprime la saisie si elle devient vide. */
-    fun supprimerStation(saisieId: String, stationId: String) {
-        muter { liste ->
-            val idx = liste.indexOfFirst { it.id == saisieId }
-            if (idx >= 0) {
-                val stations = liste[idx].stations.filterNot { it.id == stationId }
-                if (stations.isEmpty()) liste.removeAt(idx)
-                else liste[idx] = recalc(liste[idx].copy(stations = stations))
-            }
+    fun supprimerStation(saisieId: String, stationId: String): Boolean = muter { liste ->
+        val idx = liste.indexOfFirst { it.id == saisieId }
+        if (idx >= 0) {
+            val stations = liste[idx].stations.filterNot { it.id == stationId }
+            if (stations.isEmpty()) liste.removeAt(idx)
+            else liste[idx] = recalc(liste[idx].copy(stations = stations))
         }
     }
 
@@ -170,6 +179,7 @@ class OccHabStore(context: Context) : JsonCollectionStore<OccHabSaisie>() {
                 derniereErreurEnvoi = null,
                 envoiIncertain = false, // envoi confirmé.
                 empreinteOrigine = null, // une remise en édition reprendra une empreinte fraîche.
+                origineEnvoyee = false,
             )
         }
 
@@ -282,6 +292,7 @@ private fun normaliserStation(s: OccHabStation): OccHabStation? {
     derniereErreurEnvoi = s.derniereErreurEnvoi,
     envoiIncertain = s.envoiIncertain,
     empreinteOrigine = s.empreinteOrigine,
+    origineEnvoyee = s.origineEnvoyee,
     )
 }
 

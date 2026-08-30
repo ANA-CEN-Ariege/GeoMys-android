@@ -107,7 +107,7 @@ class ConfigGeoNatureFragment : Fragment() {
         // Avertissement NON bloquant si l'URL est en http:// (mot de passe transmis EN CLAIR sur
         // le réseau). On n'interdit pas (instances internes légitimes), on signale.
         binding.tilUrl.setHelperTextColor(
-            android.content.res.ColorStateList.valueOf(couleurAvertissement(requireContext())))
+            android.content.res.ColorStateList.valueOf(couleurAvertissement()))
         fun majAvertissementHttp(url: String?) {
             binding.tilUrl.helperText =
                 if (url?.trim()?.startsWith("http://", ignoreCase = true) == true)
@@ -325,7 +325,7 @@ class ConfigGeoNatureFragment : Fragment() {
         binding.tvTaxRefVersion.visibility = View.GONE
         binding.tvResultatTest.visibility = View.VISIBLE
         binding.tvResultatTest.text = "Connexion non testée — cliquez sur « Tester la connexion »."
-        binding.tvResultatTest.setTextColor(couleurAvertissement(requireContext()))
+        binding.tvResultatTest.setTextColor(couleurAvertissement())
     }
 
     private fun sauvegarderChamps() {
@@ -379,7 +379,7 @@ class ConfigGeoNatureFragment : Fragment() {
             binding.tvResultatTest.visibility = View.VISIBLE
             binding.tvResultatTest.text = msg
             binding.tvResultatTest.setTextColor(
-                if (success) couleurSucces(requireContext()) else couleurErreur(requireContext())
+                if (success) couleurSucces() else couleurErreur(requireContext())
             )
             updateStatusIndicator()
             // Connexion OK → on révèle uniquement le bouton "Charger les données".
@@ -657,7 +657,7 @@ class ConfigGeoNatureFragment : Fragment() {
         val requis = gnConfig.rechargementRequisApresMaj
         binding.tvBandeauRechargement.visibility = if (requis) View.VISIBLE else View.GONE
         if (!requis) return
-        val couleur = couleurAvertissement(requireContext())
+        val couleur = couleurAvertissement()
         binding.tvBandeauRechargement.setTextColor(couleur)
         binding.tvBandeauRechargement.background = cadreColore(couleur, resources.displayMetrics.density)
         binding.tvBandeauRechargement.text =
@@ -805,7 +805,7 @@ class ConfigGeoNatureFragment : Fragment() {
         else
             getString(R.string.configuration_incomplete)
         binding.tvStatutConfig.setTextColor(
-            if (configured) couleurSucces(requireContext()) else couleurAvertissement(requireContext())
+            if (configured) couleurSucces() else couleurAvertissement()
         )
         // Coche du bouton « Valider » : verte si config valide, orange tant qu'elle ne l'est pas.
         binding.fabValider.setImageResource(

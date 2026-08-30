@@ -73,6 +73,16 @@ internal object HttpClient {
         requestMethod = "DELETE"
     }
 
+    /** Code HTTP de la réponse. Un 401 sur un appel authentifié INVALIDE le cache de session
+     *  (jeton révoqué, mot de passe changé côté serveur) : l'appel suivant se ré-authentifie au
+     *  lieu d'échouer 5 minutes de suite sur un jeton mort (audit 2026-08-27). À utiliser à la
+     *  place de `conn.responseCode` dans tout le package network. */
+    fun lireCode(conn: HttpURLConnection): Int {
+        val code = conn.responseCode
+        if (code == 401) GeoNatureAuth.invaliderCache()
+        return code
+    }
+
     private fun configurer(
         url: URL,
         token: String?,

@@ -54,14 +54,21 @@ object MonitoringSchemas {
                     val (token, _, cookies) = auth
                     val url = URL("$base/api/monitorings/config/$moduleCode")
                     val conn = HttpClient.get(url, token, cookies, 10000)
-                    val code = conn.responseCode
+                    val code = HttpClient.lireCode(conn)
                     if (code != 200) {
                         // Fallback cache pour les erreurs serveur transitoires.
+                        conn.disconnect()
                         MonitoringCache.getJson(MonitoringCache.keySchema(moduleCode))
                     } else {
                         val brut = conn.inputStream.bufferedReader().readText()
-                        MonitoringCache.setJson(MonitoringCache.keySchema(moduleCode), brut)
-                        brut
+                        // VALIDÉ avant mise en cache : un 200 non-JSON (portail captif) servait
+                        // ensuite un formulaire vide hors-ligne (audit 2026-08-27).
+                        if (runCatching { org.json.JSONObject(brut) }.isSuccess) {
+                            MonitoringCache.setJson(MonitoringCache.keySchema(moduleCode), brut)
+                            brut
+                        } else {
+                            MonitoringCache.getJson(MonitoringCache.keySchema(moduleCode))
+                        }
                     }
                 }
             } catch (_: IOException) {

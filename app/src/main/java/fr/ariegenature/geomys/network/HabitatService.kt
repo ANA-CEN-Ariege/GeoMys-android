@@ -69,7 +69,8 @@ object HabitatService {
             try {
                 val conn = HttpClient.get(url, timeoutMs = 8000)
                 try {
-                    if (conn.responseCode != 200) {
+                    if (HttpClient.lireCode(conn) != 200) {
+                        conn.disconnect()
                         return@withContext if (cache.estDisponible) cache.rechercher(t, limite) else emptyList()
                     }
                     val arr = JSONArray(conn.inputStream.bufferedReader().readText())

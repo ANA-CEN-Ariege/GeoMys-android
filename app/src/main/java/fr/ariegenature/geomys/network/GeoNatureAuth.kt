@@ -46,7 +46,7 @@ object GeoNatureAuth {
                 val body = JSONObject().put("login", config.login).put("password", config.motDePasse).toString()
                 OutputStreamWriter(conn.outputStream).use { it.write(body) }
 
-                val code = conn.responseCode
+                val code = HttpClient.lireCode(conn)
                 // Distinction fine des réponses GeoNature observées en prod :
                 //   - HTTP 200 + body JSON avec token → succès,
                 //   - HTTP 200 + body JSON sans token / avec `msg` → auth refusée en mode "soft",
@@ -140,7 +140,7 @@ object GeoNatureAuth {
      *  absent (404 sur les vieilles versions), protégé, ou si la clé a changé. */
     internal fun versionGeoNature(base: String): String? = try {
         val conn = HttpClient.get(URL("$base/api/gn_commons/config"), timeoutMs = 5000)
-        if (conn.responseCode != 200) null
+        if (HttpClient.lireCode(conn) != 200) { conn.disconnect(); null }
         else {
             val json = JSONObject(conn.inputStream.bufferedReader().readText())
             listOf("GEONATURE_VERSION", "geonature_version", "VERSION", "version")
@@ -164,7 +164,7 @@ object GeoNatureAuth {
         urlOrigine: URL,
     ): Pair<Boolean, String> {
         val location = conn.getHeaderField("Location").orEmpty()
-        val code = conn.responseCode
+        val code = HttpClient.lireCode(conn)
         return when {
             urlOrigine.protocol == "http" && location.startsWith("https://", ignoreCase = true) ->
                 Pair(
@@ -235,7 +235,7 @@ object GeoNatureAuth {
                 conn.setRequestProperty("Content-Type", "application/json")
                 val body = JSONObject().put("login", login).put("password", password).toString()
                 OutputStreamWriter(conn.outputStream).use { it.write(body) }
-                if (conn.responseCode != 200) return null
+                if (HttpClient.lireCode(conn) != 200) { conn.disconnect(); return null }
                 val ct = conn.getHeaderField("Content-Type") ?: ""
                 if (!ct.contains("json")) return null
 

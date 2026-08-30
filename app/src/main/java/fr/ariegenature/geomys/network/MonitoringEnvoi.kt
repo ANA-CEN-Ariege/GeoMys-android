@@ -76,7 +76,7 @@ object MonitoringEnvoi {
         val url = URL("$base/api/monitorings/object/$moduleCode/$parentObjectType/$parentId?depth=1")
         val conn = HttpClient.get(url, token, cookies, 15000)
         try {
-            val code = conn.responseCode
+            val code = HttpClient.lireCode(conn)
             if (code != 200) {
                 throw GNErreur.EnvoiEchoue(code, "vérification anti-doublon ($parentObjectType #$parentId)")
             }
@@ -216,7 +216,7 @@ object MonitoringEnvoi {
             try {
                 conn.outputStream.use { it.write(bodyStr.toByteArray(Charsets.UTF_8)) }
 
-                val code = conn.responseCode
+                val code = HttpClient.lireCode(conn)
                 if (code !in 200..299) {
                     val erreur = try {
                         conn.errorStream?.bufferedReader()?.readText()
@@ -278,7 +278,7 @@ object MonitoringEnvoi {
             for (variant in listOf(moduleCode, moduleCode.lowercase()).distinct()) {
                 val url = URL("$base/api/meta/datasets?module_code=$variant&active=true&fields=modules")
                 val conn = HttpClient.get(url, token, cookies, 10000)
-                if (conn.responseCode != 200) continue
+                if (HttpClient.lireCode(conn) != 200) continue
                 val txt = conn.inputStream.bufferedReader().readText()
                 val arr = txt.parserTableauJson("data") ?: continue
                 if (arr.length() > 0) return arr

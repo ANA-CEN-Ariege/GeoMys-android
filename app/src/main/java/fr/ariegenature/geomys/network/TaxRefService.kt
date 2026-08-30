@@ -139,7 +139,7 @@ object TaxRefService {
 
                 val url = URL("${config.urlTaxhub}/api/taxref/?nom_cite=$encoded&limit=10$regneParam")
                 val conn = HttpClient.get(url, timeoutMs = 5000)
-                if (conn.responseCode != 200) return@withContext null
+                if (HttpClient.lireCode(conn) != 200) { conn.disconnect(); return@withContext null }
                 val array = JSONArray(conn.inputStream.bufferedReader().readText())
                 val nomNettoye = TaxRefCache.nettoyerSuffixeArticle(nom)
                 val nomNorm = TaxRefCache.normaliser(nomNettoye)

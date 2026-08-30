@@ -76,7 +76,7 @@ object GeoNatureBrowse {
                 // la sérialisation côté serveur dépasse largement 10s (cf. chargerDatasets).
                 val conn = HttpClient.postJson(URL("$base/api/meta/datasets?active=true"), token, timeoutMs = 15000, readTimeoutMs = 90000)
                 conn.outputStream.use { it.write("""{"create":"$moduleCode"}""".toByteArray(Charsets.UTF_8)) }
-                if (conn.responseCode != 200) return@withContext emptySet()
+                if (HttpClient.lireCode(conn) != 200) { conn.disconnect(); return@withContext emptySet() }
                 // Streaming (cf. chargerDatasets) : on n'extrait que les id_dataset.
                 java.io.BufferedReader(java.io.InputStreamReader(conn.inputStream, Charsets.UTF_8)).use { br ->
                     JsonReader(br).use { r -> lireDatasetsStream(r).mapTo(HashSet()) { it.id } }
@@ -102,7 +102,7 @@ object GeoNatureBrowse {
             // Sur un serveur à 2500+ jeux, la réponse dépasse les 10s par défaut → « blocage »/timeout.
             val conn = HttpClient.get(url, token, timeoutMs = 15000, readTimeoutMs = 90000)
 
-            if (conn.responseCode != 200) throw GNErreur.EnvoiEchoue(conn.responseCode, "Impossible de charger les jeux de données")
+            if (HttpClient.lireCode(conn) != 200) { conn.disconnect(); throw GNErreur.EnvoiEchoue(HttpClient.lireCode(conn), "Impossible de charger les jeux de données") }
 
             // Lecture en STREAMING (JsonReader) : on ne matérialise pas toute la réponse en une
             // String géante + JSONArray (crucial sur 2500+ jeux × fields=modules → réponse lourde).
@@ -223,7 +223,7 @@ object GeoNatureBrowse {
             try {
                 val conn = HttpClient.get(url, timeoutMs = 20000, readTimeoutMs = 90000)
                 try {
-                    if (conn.responseCode != 200) return@withContext emptyList()
+                    if (HttpClient.lireCode(conn) != 200) { conn.disconnect(); return@withContext emptyList() }
                     java.io.BufferedReader(java.io.InputStreamReader(conn.inputStream, Charsets.UTF_8)).use { br ->
                         JsonReader(br).use { lireHabitatsStream(it) }
                     }
@@ -271,8 +271,8 @@ object GeoNatureBrowse {
         withContext(Dispatchers.IO) {
             val url = URL("${config.urlTaxhub}/api/biblistes")
             val conn = HttpClient.get(url, timeoutMs = 10000)
-            val code = conn.responseCode
-            if (code != 200) throw GNErreur.EnvoiEchoue(code, "Listes taxons : HTTP $code")
+            val code = HttpClient.lireCode(conn)
+            if (code != 200) { conn.disconnect(); throw GNErreur.EnvoiEchoue(code, "Listes taxons : HTTP $code") }
             val text = conn.inputStream.bufferedReader().readText()
             val array: JSONArray = text.parserTableauJson("data", "items", "results")
                 ?: throw GNErreur.EnvoiEchoue(code, "Listes taxons : format JSON inattendu")
@@ -309,8 +309,8 @@ object GeoNatureBrowse {
             // Repli : tous les rôles (comportement historique).
             val url = URL("$base/api/users/roles")
             val conn = HttpClient.get(url, token, cookies, 10000)
-            val code = conn.responseCode
-            if (code != 200) throw GNErreur.EnvoiEchoue(code, "Observateurs : HTTP $code")
+            val code = HttpClient.lireCode(conn)
+            if (code != 200) { conn.disconnect(); throw GNErreur.EnvoiEchoue(code, "Observateurs : HTTP $code") }
 
             val text = conn.inputStream.bufferedReader().readText()
             val array: JSONArray = text.parserTableauJson("data", "items", "results")
@@ -335,7 +335,7 @@ object GeoNatureBrowse {
     private fun idListeObservateursOcctax(base: String, token: String?, cookies: String): Int? =
         try {
             val conn = HttpClient.get(URL("$base/api/gn_commons/config"), token, cookies, 10000)
-            if (conn.responseCode != 200) null
+            if (HttpClient.lireCode(conn) != 200) { conn.disconnect(); null }
             else JSONObject(conn.inputStream.bufferedReader().readText())
                 .optJSONObject("OCCTAX")?.optInt("id_observers_list", -1)?.takeIf { it > 0 }
         } catch (_: Exception) { null }
@@ -346,7 +346,7 @@ object GeoNatureBrowse {
     private fun idListHabitat(base: String, token: String?, cookies: String, moduleCode: String): Int? =
         try {
             val conn = HttpClient.get(URL("$base/api/gn_commons/config"), token, cookies, 10000)
-            if (conn.responseCode != 200) null
+            if (HttpClient.lireCode(conn) != 200) { conn.disconnect(); null }
             else JSONObject(conn.inputStream.bufferedReader().readText())
                 .optJSONObject(moduleCode)?.optInt("ID_LIST_HABITAT", -1)?.takeIf { it > 0 }
         } catch (_: Exception) { null }
@@ -375,7 +375,7 @@ object GeoNatureBrowse {
                     GeoNatureAuth.loginAvecCookies(base, config.login, config.motDePasse)
                         ?: return@withContext null
                 val conn = HttpClient.get(URL("$base/api/gn_commons/config"), token, cookies, 10000)
-                if (conn.responseCode != 200) null
+                if (HttpClient.lireCode(conn) != 200) { conn.disconnect(); null }
                 else JSONObject(conn.inputStream.bufferedReader().readText())
                     .optJSONObject("OCCHAB")?.optJSONObject("formConfig")?.toString()
             } catch (_: Exception) { null }
@@ -389,7 +389,7 @@ object GeoNatureBrowse {
     ): List<GeoNatureObservateur>? =
         try {
             val conn = HttpClient.get(URL("$base/api/users/menu/$idListe"), token, cookies, 10000)
-            if (conn.responseCode != 200) null
+            if (HttpClient.lireCode(conn) != 200) { conn.disconnect(); null }
             else {
                 val arr = conn.inputStream.bufferedReader().readText()
                     .parserTableauJson("data", "items", "results") ?: JSONArray()
@@ -433,7 +433,7 @@ object GeoNatureBrowse {
         val conn = HttpClient.postJson(url, token, timeoutMs = 20000)
         conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
 
-        if (conn.responseCode != 200) throw GNErreur.EnvoiEchoue(conn.responseCode, "Erreur synthèse")
+        if (HttpClient.lireCode(conn) != 200) { conn.disconnect(); throw GNErreur.EnvoiEchoue(HttpClient.lireCode(conn), "Erreur synthèse") }
 
         parseObsExplorer(conn.inputStream.bufferedReader().readText(), minLon, minLat, maxLon, maxLat)
     }

@@ -27,3 +27,7 @@ tools/
 # Artefacts de release archives localement (mapping R8, AAB Play) — non versionnes
 mappings/
 *.aab
+
+# Rapports d'audit et captures d'ecran originales (non anonymisees) — locaux, jamais publies
+AUDIT-*.md
+Images/originales/

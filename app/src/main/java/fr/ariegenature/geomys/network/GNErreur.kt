@@ -31,6 +31,22 @@ sealed class GNErreur(message: String) : Exception(message) {
     class DatasetInvalide(val id: Int) : GNErreur("Jeu de données $id introuvable sur ce serveur")
 }
 
+/** Message d'erreur d'une réponse HTTP GeoNature : `description` / `msg` / `message` du corps
+ *  JSON (Flask, Marshmallow, GeoNature), sinon « Erreur HTTP <code> ». Source unique (ex-copies
+ *  identiques dans GeoNatureUpload et OccHabUpload, audit 2026-08-27). */
+internal fun parseErreur(code: Int, body: String?): String {
+    if (body != null) {
+        try {
+            val j = org.json.JSONObject(body)
+            return j.optString("description").takeIf { it.isNotEmpty() }
+                ?: j.optString("msg").takeIf { it.isNotEmpty() }
+                ?: j.optString("message").takeIf { it.isNotEmpty() }
+                ?: "HTTP $code"
+        } catch (_: Exception) {}
+    }
+    return "Erreur HTTP $code"
+}
+
 /** Convertit une exception réseau (typiquement [GNErreur.EnvoiEchoue] ou [GNErreur.AuthEchouee])
  *  en message lisible par l'utilisateur final. Le code HTTP brut reste en parenthèses pour
  *  le support technique. */

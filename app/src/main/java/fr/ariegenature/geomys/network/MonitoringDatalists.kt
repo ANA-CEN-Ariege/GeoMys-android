@@ -88,7 +88,7 @@ object MonitoringDatalists {
         suspend fun fetchListe(path: String, keyId: String, keyLabel: String, dataPath: String?): Map<String, String> {
             val url = URL("$base/api/$path")
             val conn = HttpClient.get(url, token, cookies, 15000)
-            if (conn.responseCode != 200) return emptyMap()
+            if (HttpClient.lireCode(conn) != 200) { conn.disconnect(); return emptyMap() }
             val text = conn.inputStream.bufferedReader().readText()
             val clesArray = (listOfNotNull(dataPath) + listOf("values", "data", "items", "results")).toTypedArray()
             val array: JSONArray = text.parserTableauJson(*clesArray) ?: return emptyMap()
@@ -153,12 +153,17 @@ object MonitoringDatalists {
             val (token, _, cookies) = auth
             val res = runCatching {
                 val conn = HttpClient.get(URL("$base/api/users/menu/$idListe"), token, cookies, 15000)
-                if (conn.responseCode != 200) null
+                if (HttpClient.lireCode(conn) != 200) { conn.disconnect(); null }
                 else conn.inputStream.bufferedReader().readText()
             }.getOrNull()
             if (res != null) {
-                MonitoringCache.setJson(key, res)
-                return@withContext runCatching { JSONArray(res) }.getOrNull()
+                // VALIDÉ avant mise en cache : un 200 non-JSON (portail captif, proxy) ne doit
+                // jamais empoisonner le cache hors-ligne (audit 2026-08-27).
+                val tableau = runCatching { JSONArray(res) }.getOrNull()
+                if (tableau != null) {
+                    MonitoringCache.setJson(key, res)
+                    return@withContext tableau
+                }
             }
         }
         // Fallback cache disque pour usage offline.
@@ -296,7 +301,7 @@ object MonitoringDatalists {
                     continue
                 }
             }
-            val httpCode = try { conn.responseCode } catch (_: IOException) { -1 }
+            val httpCode = try { HttpClient.lireCode(conn) } catch (_: IOException) { -1 }
             if (httpCode != 200) continue
             val text = try { conn.inputStream.bufferedReader().readText() } catch (_: IOException) { continue }
             // Réponse soit array direct, soit objet contenant data_path → array.

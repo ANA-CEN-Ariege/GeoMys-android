@@ -56,7 +56,21 @@ class OccHabStationsFragment : Fragment() {
 
     /** true pendant un envoi : les actions concurrentes sont refusées avec un toast — la liste
      *  reste consultable, pas de modal bloquant. */
-    private var envoiEnCours = false
+    /** « Tout envoyer » + drapeau d'envoi partagé avec l'envoi unitaire (cf. EnvoiGroupeUi). */
+    private val envoiGroupe by lazy {
+        EnvoiGroupeUi<OccHabSaisie>(
+            fragment = this,
+            vues = { _binding?.let { EnvoiGroupeUi.Vues(it.btnToutEnvoyer, it.progressEnvoi, it.tvMessageEnvoi) } },
+            autorise = { GeoNatureConfig(requireContext()).occhabPeutCreer },
+            connexionConfiguree = { GeoNatureConfig(requireContext()).estConfiguree },
+            chargerToutes = { occHabStore.charger() },
+            envoyables = { saisiesEnvoyables(it) },
+            envoyerUne = { item, cfg -> envoyerSaisieOccHabVersGeoNature(item, occHabStore, cfg).let { it.succes to it.message } },
+            rafraichir = { rafraichir() },
+        )
+    }
+    private fun majBoutonToutEnvoyer(toutes: List<OccHabSaisie>) = envoiGroupe.majBouton(ongletCourant == 0, toutes)
+    private fun confirmerEnvoiTout() = envoiGroupe.confirmer()
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         _binding = FragmentOcchabStationsBinding.inflate(inflater, container, false)
@@ -126,14 +140,6 @@ class OccHabStationsFragment : Fragment() {
 
     /** Bouton « Tout envoyer » : visible seulement dans l'onglet « À envoyer », hors envoi en
      *  cours, avec droit de création (CRUVED C) et au moins une saisie envoyable. */
-    private fun majBoutonToutEnvoyer(toutes: List<OccHabSaisie>) {
-        val autorise = GeoNatureConfig(requireContext()).occhabPeutCreer
-        val nb = saisiesEnvoyables(toutes).size
-        val visible = ongletCourant == 0 && autorise && nb > 0 && !envoiEnCours
-        binding.btnToutEnvoyer.visibility = if (visible) View.VISIBLE else View.GONE
-        binding.btnToutEnvoyer.isEnabled = !envoiEnCours
-        binding.btnToutEnvoyer.text = "Tout envoyer ($nb)"
-    }
 
     private fun updateTabCounts(toutes: List<OccHabSaisie>) {
         binding.tabLayout.getTabAt(0)?.text = "À envoyer (${toutes.count { !it.envoyeGeoNature }})"
@@ -141,7 +147,7 @@ class OccHabStationsFragment : Fragment() {
     }
 
     private fun confirmerSuppression(saisie: OccHabSaisie) {
-        if (envoiEnCours) {
+        if (envoiGroupe.envoiEnCours) {
             android.widget.Toast.makeText(requireContext(), "Un envoi est en cours — réessayez ensuite.",
                 android.widget.Toast.LENGTH_SHORT).show()
             return
@@ -161,7 +167,7 @@ class OccHabStationsFragment : Fragment() {
     }
 
     private fun envoyerSaisie(saisie: OccHabSaisie) {
-        if (envoiEnCours) {
+        if (envoiGroupe.envoiEnCours) {
             android.widget.Toast.makeText(requireContext(), "Un envoi est déjà en cours…",
                 android.widget.Toast.LENGTH_SHORT).show()
             return
@@ -176,7 +182,7 @@ class OccHabStationsFragment : Fragment() {
             return
         }
         // Progression INLINE (patron « Mes visites ») : la liste reste consultable.
-        envoiEnCours = true
+        envoiGroupe.envoiEnCours = true
         binding.progressEnvoi.visibility = View.VISIBLE
         binding.tvMessageEnvoi.visibility = View.VISIBLE
         binding.tvMessageEnvoi.text = "Envoi de la saisie vers GeoNature…"
@@ -190,7 +196,7 @@ class OccHabStationsFragment : Fragment() {
                     .setMessage(res.message)
                     .setPositiveButton("OK", null).show()
             } finally {
-                envoiEnCours = false
+                envoiGroupe.envoiEnCours = false
                 _binding?.let {
                     it.progressEnvoi.visibility = View.GONE
                     it.tvMessageEnvoi.visibility = View.GONE
@@ -202,67 +208,7 @@ class OccHabStationsFragment : Fragment() {
     /** « Tout envoyer » : confirme, puis pousse séquentiellement toutes les saisies envoyables
      *  (chacune via [envoyerSaisieOccHabVersGeoNature], envoi partiel sans perte + anti-doublon
      *  par station). Récapitulatif agrégé à la fin. */
-    private fun confirmerEnvoiTout() {
-        if (envoiEnCours) {
-            android.widget.Toast.makeText(requireContext(), "Un envoi est déjà en cours…",
-                android.widget.Toast.LENGTH_SHORT).show()
-            return
-        }
-        val gnConfig = GeoNatureConfig(requireContext())
-        if (!gnConfig.estConfiguree) {
-            AlertDialog.Builder(requireContext())
-                .setTitle("Configuration requise")
-                .setMessage("La connexion GeoNature n'est pas configurée. Ouvrez la configuration (⚙️) avant d'envoyer.")
-                .setPositiveButton("OK", null)
-                .show()
-            return
-        }
-        val aEnvoyer = saisiesEnvoyables(occHabStore.charger())
-        if (aEnvoyer.isEmpty()) return
-        AlertDialog.Builder(requireContext())
-            .setTitle("Tout envoyer")
-            .setMessage("Envoyer les ${aEnvoyer.size} saisie(s) en attente vers GeoNature ?")
-            .setPositiveButton("Envoyer") { _, _ -> lancerEnvoiTout(aEnvoyer, gnConfig) }
-            .setNegativeButton(R.string.annuler, null)
-            .show()
-    }
 
-    private fun lancerEnvoiTout(saisies: List<OccHabSaisie>, gnConfig: GeoNatureConfig) {
-        envoiEnCours = true
-        binding.btnToutEnvoyer.visibility = View.GONE
-        binding.progressEnvoi.visibility = View.VISIBLE
-        binding.tvMessageEnvoi.visibility = View.VISIBLE
-        viewLifecycleOwner.lifecycleScope.launch {
-            var succes = 0
-            var echecs = 0
-            val messages = mutableListOf<String>()
-            try {
-                saisies.forEachIndexed { i, saisie ->
-                    _binding?.tvMessageEnvoi?.text = "Envoi ${i + 1}/${saisies.size} vers GeoNature…"
-                    val res = envoyerSaisieOccHabVersGeoNature(saisie, occHabStore, gnConfig)
-                    if (res.succes) succes++ else { echecs++; messages.add(res.message) }
-                    if (isAdded && _binding != null) rafraichir()
-                }
-                if (!isAdded || _binding == null) return@launch
-                val recap = buildString {
-                    append("$succes saisie(s) envoyée(s)")
-                    if (echecs > 0) append(", $echecs échec(s)")
-                    if (messages.isNotEmpty()) { append("\n\n"); append(messages.joinToString("\n")) }
-                }
-                AlertDialog.Builder(requireContext())
-                    .setTitle(if (echecs == 0) "Envoi" else "Erreur d'envoi")
-                    .setMessage(recap)
-                    .setPositiveButton("OK", null).show()
-            } finally {
-                envoiEnCours = false
-                _binding?.let {
-                    it.progressEnvoi.visibility = View.GONE
-                    it.tvMessageEnvoi.visibility = View.GONE
-                }
-                if (isAdded && _binding != null) rafraichir()
-            }
-        }
-    }
 
     override fun onDestroyView() { super.onDestroyView(); _binding = null }
 }
@@ -302,7 +248,7 @@ class OccHabSaisieAdapter(
                 saisie.envoyeGeoNature -> {
                     root.background = null
                     tvEtat.visibility = View.VISIBLE
-                    tvEtat.setTextColor(couleurSucces(root.context))
+                    tvEtat.setTextColor(couleurSucces())
                     tvEtat.text = "✅ Envoyée"
                 }
                 erreur != null -> {

@@ -151,7 +151,7 @@ data class OccHabStation(
     // ── État d'envoi (mêmes sémantiques que Sortie) ──
     var envoyeGeoNature: Boolean = false,
     /** true dès qu'une station provient du serveur et non d'une saisie locale : affichée en
-     *  consultation (gris) sur la carte, elle peut être IMPORTÉE dans la saisie courante pour
+     *  consultation (violet) sur la carte, elle peut être IMPORTÉE dans la saisie courante pour
      *  modification — elle repartira alors en mise à jour grâce à [idStationServeur]. */
     var origineServeur: Boolean = false,
     /** Message du dernier échec d'envoi (humanisé). Null si jamais échoué / envoi réussi. */
@@ -168,6 +168,12 @@ data class OccHabStation(
      *  dont le contenu est encore identique à cette empreinte. Null pour une station créée
      *  localement (toujours persistée) ; effacé à l'envoi confirmé. */
     var empreinteOrigine: String? = null,
+    /** true pour une copie ENVOYÉE remise en édition (ou déplacée par la topologie partagée) :
+     *  si son contenu REVIENT à [empreinteOrigine] (bouton Annuler…), la copie redevient
+     *  « envoyée » au lieu de rester « à envoyer ». Une station IMPORTÉE (false) revenue à
+     *  l'origine QUITTE « Mes stations » — demande terrain 2026-08-30 : sans modification, rien
+     *  à envoyer. Effacé à l'envoi confirmé. */
+    var origineEnvoyee: Boolean = false,
 ) {
     /**
      * Empreinte du CONTENU métier (ce qui part au serveur), HORS état d'envoi et HORS champs

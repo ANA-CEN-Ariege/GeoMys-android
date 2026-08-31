@@ -193,6 +193,16 @@ object SyncRunner {
                                 val defauts = OccHabApi.chargerDefautsNomenclatures(config)
                                 if (defauts.isNotEmpty()) config.occhabDefautsNomencJson = gson.toJson(defauts)
                             } catch (_: Exception) { /* formConfig/défauts OccHab optionnels */ }
+                            // Stations serveur de l'UTILISATEUR (tous JDD confondus, filtre client
+                            // numérisateur/observateur dans chargerStations) → StationsServeurCache :
+                            // la carte OccHab les affiche/aimante/importe HORS-LIGNE (repli du
+                            // chargement réseau). Best-effort ; SUCCÈS = remplacement (même vide :
+                            // l'utilisateur peut ne plus avoir de station), ÉCHEC (exception) =
+                            // cache intact — jamais d'anciennes stations écrasées par un raté.
+                            try {
+                                fr.ariegenature.geomys.store.StationsServeurCache
+                                    .remplacerTout(OccHabApi.chargerStations(config))
+                            } catch (_: Exception) { /* stations serveur best-effort */ }
                         }
                         } // fin if (modules.isNotEmpty())
                     } catch (_: Exception) { /* OccHab optionnel */ }

@@ -48,6 +48,7 @@ class GeoMysApplication : Application() {
         NomenclatureCache.init(this)
         fr.ariegenature.geomys.store.HabitatCache.init(this)
         fr.ariegenature.geomys.store.HabitatCacheOccHab.init(this)
+        fr.ariegenature.geomys.store.StationsServeurCache.init(this)
         MonitoringCache.init(this)
         fr.ariegenature.geomys.store.PictoCache.init(this)
         OutboxMonitoring.init(this)

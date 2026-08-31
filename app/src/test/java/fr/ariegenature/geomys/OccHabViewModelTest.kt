@@ -22,8 +22,10 @@ import fr.ariegenature.geomys.model.OccHabStation
 import fr.ariegenature.geomys.ui.OccHabDetailsSession
 import fr.ariegenature.geomys.ui.OccHabViewModel
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -114,5 +116,40 @@ class OccHabViewModelTest {
         vm.definirAltitudes(800, 900)
         vm.forcerPersistanceSiDeriveesChangees(avant)
         assertNull("altitude corrigée à la main = modification réelle", vm.station.empreinteOrigine)
+    }
+
+    // ── Switch « stations serveur » : coché par défaut, persistance en négatif (2026-08-31) ──
+
+    @Test
+    fun stations_serveur_affichees_par_defaut() {
+        assertTrue(OccHabDetailsSession().chargerStationsServeur)
+        // La vue positive écrit bien le champ persisté.
+        val d = OccHabDetailsSession().apply { chargerStationsServeur = false }
+        assertTrue(d.masquerStationsServeur)
+        assertFalse(d.chargerStationsServeur)
+    }
+
+    @Test
+    fun ancien_json_sans_le_champ_masquer_donne_affiche() {
+        // Relevé précédent enregistré AVANT le champ (ou avec l'ancien `chargerStationsServeur`,
+        // ignoré depuis) : le switch doit repartir COCHÉ — c'est tout l'intérêt du négatif.
+        val ancien = "{\"idDataset\":12,\"chargerStationsServeur\":false}"
+        val relu = com.google.gson.Gson().fromJson(ancien, OccHabDetailsSession::class.java)
+        assertTrue(relu.chargerStationsServeur)
+        // Décochage explicite mémorisé APRÈS la migration : respecté.
+        val decoche = com.google.gson.Gson()
+            .fromJson("{\"masquerStationsServeur\":true}", OccHabDetailsSession::class.java)
+        assertFalse(decoche.chargerStationsServeur)
+    }
+
+    @Test
+    fun reprise_de_saisie_herite_du_choix_memorise() {
+        val saisie = fr.ariegenature.geomys.model.OccHabSaisie(stations = listOf(stationServeur()))
+        val vmAffiche = OccHabViewModel().apply { reprendreSaisie(saisie) }
+        assertTrue("défaut : affichées", vmAffiche.details.chargerStationsServeur)
+        val vmMasque = OccHabViewModel().apply { reprendreSaisie(saisie, masquerStationsServeur = true) }
+        assertFalse("décochage mémorisé respecté", vmMasque.details.chargerStationsServeur)
+        assertFalse("les nouvelles stations de la session aussi",
+            vmMasque.defautsSession.chargerStationsServeur)
     }
 }

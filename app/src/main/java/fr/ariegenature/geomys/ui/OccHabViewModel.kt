@@ -42,11 +42,20 @@ data class OccHabDetailsSession(
     var idNomCalculSurface: Int? = null,
     var idNomObjetGeographique: Int? = null,
     var comment: String? = null,
-    /** Switch du formulaire de démarrage : afficher sur la carte les stations DÉJÀ présentes
-     *  sur le serveur GeoNature (consultation lecture seule + emprise adaptée). Mémorisé d'un
-     *  relevé à l'autre comme les autres champs (occhabDetailsPrecedentsJson). */
-    var chargerStationsServeur: Boolean = false,
-)
+    /** Switch du formulaire de démarrage (« Afficher mes stations déjà sur GeoNature »),
+     *  PERSISTÉ EN NÉGATIF : false/absent du JSON du relevé précédent ⇒ stations AFFICHÉES.
+     *  Coché par défaut, y compris pour les relevés mémorisés AVANT ce champ — Gson laisse un
+     *  Boolean absent à false, et l'ancien champ `chargerStationsServeur` des JSON existants
+     *  est simplement ignoré (demande terrain 2026-08-31). Décocher est mémorisé d'un relevé à
+     *  l'autre comme les autres champs (occhabDetailsPrecedentsJson). Les appelants lisent /
+     *  écrivent la vue positive [chargerStationsServeur]. */
+    var masquerStationsServeur: Boolean = false,
+) {
+    /** Vue « positive » du switch (les appelants raisonnent en « afficher »). */
+    var chargerStationsServeur: Boolean
+        get() = !masquerStationsServeur
+        set(v) { masquerStationsServeur = !v }
+}
 
 /** Détails de session par défaut (défauts serveur) : observateur par défaut, dates début ET fin
  *  = date du JOUR (sans heure — le serveur OccHab attend des dates yyyy-MM-dd), nomenclatures
@@ -166,11 +175,18 @@ class OccHabViewModel : ViewModel() {
     /** Reprend une SAISIE existante pour réédition (depuis « Mes stations ») : fixe la [saisieId]
      *  courante, hérite les détails de sa 1ʳᵉ station (pour une station AJOUTÉE), et repart d'une
      *  station vierge (la carte affichera les stations existantes, « Valider » en ajoute une). */
-    fun reprendreSaisie(saisie: fr.ariegenature.geomys.model.OccHabSaisie) {
+    fun reprendreSaisie(
+        saisie: fr.ariegenature.geomys.model.OccHabSaisie,
+        /** Préférence « stations serveur » de la session rééditée : par défaut AFFICHÉES (la
+         *  carte les charge dès l'ouverture) ; « Mes stations » passe le choix MÉMORISÉ du
+         *  relevé précédent ([detailsSessionParDefaut]) pour respecter un décochage volontaire. */
+        masquerStationsServeur: Boolean = false,
+    ) {
         saisieId = saisie.id
         station = OccHabStation()
         val premiere = saisie.stations.firstOrNull()
-        defautsSession = if (premiere == null) OccHabDetailsSession() else detailsDe(premiere)
+        defautsSession = (if (premiere == null) OccHabDetailsSession() else detailsDe(premiere))
+            .apply { this.masquerStationsServeur = masquerStationsServeur }
         details = defautsSession.copy()
         jddDefini = premiere?.idDataset != null
     }
@@ -189,7 +205,7 @@ class OccHabViewModel : ViewModel() {
         idNomCalculSurface = s.idNomCalculSurface,
         idNomObjetGeographique = s.idNomObjetGeographique,
         comment = s.comment,
-        chargerStationsServeur = defautsSession.chargerStationsServeur,
+        masquerStationsServeur = defautsSession.masquerStationsServeur,
     )
 
     /** Reprend une STATION existante de la saisie courante pour l'éditer (garde la [saisieId]) :

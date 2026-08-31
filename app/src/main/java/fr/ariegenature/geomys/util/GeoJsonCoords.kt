@@ -66,6 +66,37 @@ object GeoJsonCoords {
         paires.forEach { put(JSONArray().put(it[0]).put(it[1])) }
     }.toString()
 
+    /** `[[[lon,lat], …], …]` (LISTE d'anneaux — les TROUS d'un polygone, cf.
+     *  [fr.ariegenature.geomys.model.OccHabStation.geometryTrousJson]) → anneaux de GeoPoints.
+     *  Vide si null/illisible ; un anneau vide ou illisible est ignoré, les autres conservés. */
+    fun parseAnneaux(json: String?): List<List<GeoPoint>> {
+        if (json.isNullOrEmpty()) return emptyList()
+        return try {
+            val arr = JSONArray(json)
+            (0 until arr.length()).mapNotNull { i ->
+                arr.optJSONArray(i)?.let { anneau ->
+                    (0 until anneau.length()).mapNotNull { k ->
+                        anneau.optJSONArray(k)?.takeIf { it.length() >= 2 }?.let { c ->
+                            try { GeoPoint(c.getDouble(1), c.getDouble(0)) } catch (_: Exception) { null }
+                        }
+                    }.takeIf { it.isNotEmpty() }
+                }
+            }
+        } catch (_: Exception) { emptyList() }
+    }
+
+    /** Anneaux de GeoPoints → `[[[lon,lat], …], …]`. **Null si la liste est vide** : le champ
+     *  absent signifie « polygone plein » (pas de trou), jamais un tableau vide. */
+    fun formatAnneaux(anneaux: List<List<GeoPoint>>): String? {
+        val nonVides = anneaux.filter { it.isNotEmpty() }
+        if (nonVides.isEmpty()) return null
+        return JSONArray().apply {
+            nonVides.forEach { a ->
+                put(JSONArray().apply { a.forEach { put(JSONArray().put(it.longitude).put(it.latitude)) } })
+            }
+        }.toString()
+    }
+
     /** Centroïde = moyenne arithmétique des sommets (la convention historique de l'appli pour
      *  `latitude`/`longitude` d'un polygone : affichage carte, pas un calcul géodésique).
      *  Null si aucun sommet. */

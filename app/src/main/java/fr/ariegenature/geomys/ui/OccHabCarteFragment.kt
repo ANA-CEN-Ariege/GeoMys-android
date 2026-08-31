@@ -68,6 +68,13 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
     private var mode = Mode.POINT
     private var pointChoisi: GeoPoint? = null
     private val sommets = mutableListOf<GeoPoint>()
+    /** Anneaux INTÉRIEURS (trous) de la géométrie en cours, ÉDITABLES sommet par sommet
+     *  (demande terrain 2026-08-31) : mêmes gestes que l'anneau extérieur — drag d'un sommet,
+     *  poignée « + » pour en insérer un — MÊMES COULEURS que l'anneau extérieur (demande
+     *  terrain 2026-08-31 : un code couleur distinct n'apportait rien). Les trous viennent du
+     *  serveur (stations dessinées sous QGIS) : l'appli n'en CRÉE pas, et un tracé REDESSINÉ
+     *  repart plein (liste vidée en même temps que [sommets]). */
+    private val trous = mutableListOf<MutableList<GeoPoint>>()
     /** true quand la géométrie d'édition courante vient d'une STATION EXISTANTE (réédition) et
      *  n'a pas encore été retouchée par un tap. En réédition, deux gestes distincts : le DRAG
      *  d'un sommet/du point MODIFIE la géométrie chargée ; un TAP sur la carte en démarre une
@@ -79,6 +86,10 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
     // markers pendant un drag (cf. TraceFragment).
     private var markerPoint: Marker? = null
     private val markersSommets = mutableListOf<Marker>()
+    /** Markers draggables des sommets de TROUS, à plat ; [reperesTrous] donne, au même index,
+     *  le couple (n° d'anneau dans [trous], n° de sommet dans cet anneau). */
+    private val markersTrous = mutableListOf<Marker>()
+    private val reperesTrous = mutableListOf<Pair<Int, Int>>()
     /** Poignées « + » au MILIEU de chaque arête du polygone SÉLECTIONNÉ (fermeture incluse) :
      *  taper une poignée INSÈRE un sommet sur cette arête — mécanisme des candidats de QField
      *  (QfVertexModel.createCandidates) : l'insertion se fait toujours sur l'arête visée,
@@ -198,6 +209,10 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
                 onAnnule = { allerAccueil() },
             ) {
                 if (occhabViewModel.details.chargerStationsServeur) serveur.charger()
+                // Sans les stations serveur, rien à cadrer : on centre sur la POSITION GPS
+                // (demande terrain 2026-08-31). Fix déjà acquis → centrage immédiat ; sinon le
+                // runOnFirstFix (plus bas) recentrera à l'acquisition, comme avant.
+                else centrerSurPosition()
             }
         }
 
@@ -299,6 +314,7 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
         // l'envoi (audit 2026-08-23). Même discipline qu'editerStationExistante.
         pointChoisi = null
         sommets.clear()
+        trous.clear()
         val s = occhabViewModel.station
         val pts = mutableListOf<GeoPoint>()
         when {
@@ -306,6 +322,11 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
                 val ring = GeoJsonCoords.parse(s.geometryCoordsJson)
                 if (ring.isNotEmpty()) {
                     sommets.addAll(ring); pts.addAll(ring)
+                    // Trous de la station (dessinés sous QGIS) : chargés ÉDITABLES. Leurs sommets
+                    // n'entrent pas dans [pts] : le cadrage suit l'anneau extérieur, qui les
+                    // contient déjà.
+                    GeoJsonCoords.parseAnneaux(s.geometryTrousJson)
+                        .forEach { trous.add(it.toMutableList()) }
                     mode = Mode.POLYGONE
                 }
             }
@@ -342,6 +363,9 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
                     if (ring.size >= 2) {
                         val poly = Polygon(binding.map).apply {
                             points = ring
+                            // Trous (polygone dessiné sous QGIS) : dessinés en creux.
+                            GeoJsonCoords.parseAnneaux(st.geometryTrousJson)
+                                .takeIf { it.isNotEmpty() }?.let { holes = it }
                             fillPaint.color = 0x33D32F2F
                             outlinePaint.color = rouge
                             outlinePaint.strokeWidth = 4f
@@ -434,8 +458,10 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
         // Purge l'objet en cours d'édition précédent.
         pointChoisi = null
         sommets.clear()
+        trous.clear() // rechargés depuis la station reprise par preremplirDepuisViewModel()
         markerPoint?.let { binding.map.overlays.remove(it) }; markerPoint = null
         markersSommets.forEach { binding.map.overlays.remove(it) }; markersSommets.clear()
+        markersTrous.forEach { binding.map.overlays.remove(it) }; markersTrous.clear(); reperesTrous.clear()
         markersPoignees.forEach { binding.map.overlays.remove(it) }; markersPoignees.clear()
         overlayForme?.let { binding.map.overlays.remove(it) }; overlayForme = null
         cadrageInitialFait = false
@@ -484,6 +510,17 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
         binding.map.post { if (_binding != null) binding.map.zoomerSur(points, offset = 0.004, scale = 1.8f) }
     }
 
+    /** Centre la carte sur la position GPS si un fix est DÉJÀ acquis (même zoom que le 1er fix).
+     *  Sans fix : ne fait rien — le runOnFirstFix de l'overlay recentrera à l'acquisition
+     *  (aucune géométrie en cours, `cadrageInitialFait` reste faux). Formulaire de démarrage
+     *  validé SANS affichage des stations serveur (demande terrain 2026-08-31). */
+    private fun centrerSurPosition() {
+        val loc = locationOverlay?.myLocation ?: return
+        cadrageInitialFait = true
+        binding.map.controller.setZoom(16.0)
+        binding.map.controller.animateTo(loc)
+    }
+
     override fun singleTapConfirmedHelper(p: GeoPoint): Boolean {
         // STATION SÉLECTIONNÉE : un tap hors de sa géométrie la DÉSÉLECTIONNE et démarre une
         // NOUVELLE station (demande terrain 2026-08-26 — la sélection ne permet que modifier
@@ -492,6 +529,7 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
             occhabViewModel.nouvelleStation() // la station sélectionnée reste telle quelle dans le store
             pointChoisi = null
             sommets.clear()
+            trous.clear() // nouveau tracé = polygone PLEIN (les trous de l'ancien ne suivent pas)
             geometrieChargee = false
             afficherStationsSession() // l'ex-sélection redevient rouge et cliquable
             // …ou violette si c'était une station importée INTACTE (jamais persistée).
@@ -574,6 +612,9 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
         overlayForme = null
         markersSommets.forEach { binding.map.overlays.remove(it) }
         markersSommets.clear()
+        markersTrous.forEach { binding.map.overlays.remove(it) }
+        markersTrous.clear()
+        reperesTrous.clear()
         markersPoignees.forEach { binding.map.overlays.remove(it) }
         markersPoignees.clear()
         markerPoint?.let { binding.map.overlays.remove(it) }
@@ -669,8 +710,101 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
                     markersPoignees.add(poignee)
                 }
             }
+            // SOMMETS DES TROUS (anneaux intérieurs) — mêmes gestes ET mêmes couleurs que l'extérieur.
+            dessinerSommetsTrous()
         }
         binding.map.invalidate()
+    }
+
+    /**
+     * Sommets des TROUS (anneaux intérieurs) : un marker draggable par sommet et, sur une
+     * station sélectionnée, une poignée « + » au milieu de chaque arête — mêmes icônes et
+     * mêmes couleurs que l'anneau extérieur. Mêmes gestes que l'extérieur (demande terrain
+     * 2026-08-31) ; deux différences ASSUMÉES : un sommet de trou ne s'AIMANTE pas aux stations
+     * voisines et ne PROPAGE rien (la topologie partagée concerne les contours extérieurs), et
+     * on AVERTIT s'il sort du polygone (géométrie que PostGIS refuserait).
+     */
+    private fun dessinerSommetsTrous() {
+        trous.forEachIndexed { r, anneau ->
+            anneau.forEachIndexed { i, pt ->
+                val marker = markerDraggable(pt).apply {
+                    title = "Trou ${r + 1} · sommet ${i + 1}"
+                    setOnMarkerDragListener(object : Marker.OnMarkerDragListener {
+                        override fun onMarkerDragStart(m: Marker) { memoriserAvantOperation() }
+                        override fun onMarkerDrag(m: Marker) {
+                            // Live update : l'anneau suit le doigt, la forme est repeinte sans
+                            // recréer les markers (sinon le drag en cours saute).
+                            repereDeTrou(m)?.let { (ra, ia) ->
+                                trous[ra][ia] = m.position; redessinerForme()
+                            }
+                        }
+                        override fun onMarkerDragEnd(m: Marker) {
+                            repereDeTrou(m)?.let { (ra, ia) ->
+                                trous[ra][ia] = m.position
+                                redessinerForme()
+                                avertirSiSommetTrouHorsPolygone(m.position)
+                            }
+                            majBoutons()
+                            persisterSelectionApresDrag()
+                            if (geometrieChargee) redessiner() // replace les poignées
+                        }
+                    })
+                }
+                binding.map.overlays.add(marker)
+                markersTrous.add(marker)
+                reperesTrous.add(r to i)
+            }
+        }
+        if (!geometrieChargee) return
+        trous.forEachIndexed { r, anneau ->
+            if (anneau.size < 3) return@forEachIndexed
+            for (i in anneau.indices) {
+                val indexAnneau = r
+                val indexArete = i
+                val milieu = TopologiePolygone.milieu(anneau[i], anneau[(i + 1) % anneau.size])
+                val poignee = Marker(binding.map).apply {
+                    position = milieu
+                    icon = poigneeAjout()
+                    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                    isDraggable = false
+                    setInfoWindow(null)
+                    setOnMarkerClickListener { _, _ -> insererSommetTrou(indexAnneau, indexArete); true }
+                }
+                binding.map.overlays.add(poignee)
+                markersPoignees.add(poignee)
+            }
+        }
+    }
+
+    /** (n° d'anneau, n° de sommet) du sommet de trou porté par [m] — null si le marker n'est
+     *  plus référencé (vue recréée, anneau modifié entre-temps). */
+    private fun repereDeTrou(m: Marker): Pair<Int, Int>? {
+        val k = markersTrous.indexOf(m)
+        if (k !in reperesTrous.indices) return null
+        val (r, i) = reperesTrous[k]
+        return if (r in trous.indices && i in trous[r].indices) r to i else null
+    }
+
+    /** Insère un sommet au milieu d'une arête d'un TROU (poignée « + »). Aucune
+     *  propagation topologique : les trous ne sont pas partagés entre stations. */
+    private fun insererSommetTrou(anneau: Int, indexArete: Int) {
+        if (anneau !in trous.indices) return
+        val ring = trous[anneau]
+        if (indexArete !in ring.indices) return
+        memoriserAvantOperation()
+        ring.add(indexArete + 1, TopologiePolygone.milieu(ring[indexArete], ring[(indexArete + 1) % ring.size]))
+        redessiner()
+        majBoutons()
+        persisterSelectionApresDrag()
+    }
+
+    /** Avertit (sans bloquer) quand un sommet de trou sort de l'anneau extérieur : la géométrie
+     *  devient invalide au sens PostGIS et le serveur peut refuser la mise à jour. */
+    private fun avertirSiSommetTrouHorsPolygone(p: GeoPoint) {
+        if (sommets.size < 3 || TopologiePolygone.pointDansAnneau(p, sommets)) return
+        Toast.makeText(requireContext(),
+            "Ce sommet du trou est sorti du polygone — GeoNature peut refuser cette géométrie.",
+            Toast.LENGTH_LONG).show()
     }
 
     /** Icône d'une poignée d'ajout : petit disque bleu, liseré blanc, « + » blanc. */
@@ -743,7 +877,10 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
                     latitude = centre.latitude,
                     longitude = centre.longitude,
                     geometryCoordsJson = GeoJsonCoords.formatPaires(ring),
-                    surface = Math.round(airePolygoneM2(pts)),
+                    // Trous du voisin inchangés (topologie = anneau extérieur) mais DÉDUITS de
+                    // la surface recalculée, comme au dessin.
+                    surface = Math.round(
+                        airePolygoneM2(pts, GeoJsonCoords.parseAnneaux(st.geometryTrousJson))),
                 )
                 // Voisin déjà ENVOYÉ : sa géométrie change → il repasse « à envoyer » (mise à
                 // jour par id serveur) ; s'il revient à l'identique (Annuler), il redeviendra
@@ -773,6 +910,12 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
     /** Persiste IMMÉDIATEMENT la géométrie de la station SÉLECTIONNÉE après un drag :
      *  « Valider » est désactivé pendant la sélection — la modification s'enregistre donc au
      *  relâcher du sommet/point (surface recalculée, altitudes MNT best-effort). */
+    /** Anneaux intérieurs de la géométrie en cours, tels qu'ÉDITÉS ([trous]) → JSON à persister.
+     *  Null quand il n'y en a pas : un tracé REDESSINÉ repart plein (la liste est vidée en même
+     *  temps que [sommets]), les trous de l'ancienne géométrie ne lui survivent pas. */
+    private fun trousDeLaStationEditee(): String? =
+        GeoJsonCoords.formatAnneaux(trous.filter { it.size >= 3 })
+
     private fun persisterSelectionApresDrag() {
         if (!geometrieChargee) return
         if (mode == Mode.POINT) {
@@ -782,9 +925,11 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
         } else {
             if (sommets.size < 3) return
             val centre = GeoJsonCoords.centroide(sommets) ?: return
+            // Trous conservés/édités avec l'anneau extérieur ; surface NETTE (trous déduits).
             occhabViewModel.definirGeometrie(
-                "Polygon", centre.latitude, centre.longitude, GeoJsonCoords.format(sommets))
-            occhabViewModel.definirSurface(Math.round(airePolygoneM2(sommets)))
+                "Polygon", centre.latitude, centre.longitude, GeoJsonCoords.format(sommets),
+                trousDeLaStationEditee())
+            occhabViewModel.definirSurface(Math.round(airePolygoneM2(sommets, trous)))
         }
         lancerRemplissageAltitudes()
         val store = fr.ariegenature.geomys.store.OccHabStore(requireContext())
@@ -802,6 +947,7 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
         occhabViewModel.nouvelleStation() // station vierge, même saisieId — l'ex-sélection n'est plus exclue de l'affichage
         pointChoisi = null
         sommets.clear()
+        trous.clear()
         geometrieChargee = false
         redessiner()               // purge les overlays d'édition (pin bleu / anneau / sommets)
         afficherStationsSession()  // la station redevient rouge et cliquable
@@ -819,6 +965,9 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
         if (mode == Mode.POLYGONE && sommets.size >= 2) {
             val poly = Polygon(binding.map).apply {
                 points = sommets.toList()
+                // Trous en creux, dessinés depuis l'état d'ÉDITION (ils suivent le doigt).
+                trous.filter { it.size >= 3 }.takeIf { it.isNotEmpty() }
+                    ?.let { holes = it.map { anneau -> anneau.toList() } }
                 fillPaint.color = 0x552196F3
                 outlinePaint.color = 0xFF1976D2.toInt()
                 outlinePaint.strokeWidth = 4f
@@ -855,6 +1004,9 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
         val mode: Mode,
         val pointChoisi: GeoPoint?,
         val sommets: List<GeoPoint>,
+        /** Anneaux intérieurs (copie PROFONDE) : un sommet de trou déplacé/inséré s'annule
+         *  comme un sommet extérieur (demande terrain 2026-08-31). */
+        val trous: List<List<GeoPoint>>,
         val voisins: List<OccHabStation>,
     )
     private val pileAnnulation = ArrayDeque<Instantane>()
@@ -867,6 +1019,7 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
             mode,
             pointChoisi?.let { GeoPoint(it.latitude, it.longitude) },
             sommets.map { GeoPoint(it.latitude, it.longitude) },
+            trous.map { anneau -> anneau.map { GeoPoint(it.latitude, it.longitude) } },
             voisins,
         ))
         while (pileAnnulation.size > 30) pileAnnulation.removeFirst()
@@ -880,6 +1033,7 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
         mode = inst.mode
         pointChoisi = inst.pointChoisi
         sommets.clear(); sommets.addAll(inst.sommets)
+        trous.clear(); inst.trous.forEach { trous.add(it.toMutableList()) }
         val store = fr.ariegenature.geomys.store.OccHabStore(requireContext())
         val actuels = store.stationsDeSaisie(occhabViewModel.saisieId).associateBy { it.id }
         var voisinRetabli = false
@@ -932,16 +1086,19 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
         } else {
             if (sommets.size < 3) return
             val centre = GeoJsonCoords.centroide(sommets) ?: return
+            // Trous CONSERVÉS si l'on valide la station sélectionnée (déplacement de sommets) ;
+            // null si la géométrie a été REDESSINÉE (nouveau polygone = polygone plein).
             occhabViewModel.definirGeometrie(
                 "Polygon", centre.latitude, centre.longitude, GeoJsonCoords.format(sommets),
+                trousDeLaStationEditee(),
             )
         }
         // Surface AUTO de la station (parité web : patchGeoValue → getAreaSize, arrondie au m²)
         // — calcul LOCAL géodésique (hors-ligne), recalculée/écrasée à chaque validation de la
         // géométrie comme sur le web (une correction manuelle tient jusqu'au prochain redessin).
-        // Point → pas de surface.
+        // Aire NETTE : les trous sont déduits (comme ST_Area côté serveur). Point → pas de surface.
         occhabViewModel.definirSurface(
-            if (mode == Mode.POLYGONE) Math.round(airePolygoneM2(sommets)) else null
+            if (mode == Mode.POLYGONE) Math.round(airePolygoneM2(sommets, trous)) else null
         )
         // Altitudes MNT (parité web : patchGeoValue → getGeoInfo) : best-effort s'il y a du
         // réseau, silencieux sinon (champs saisissables à la main dans « Détails »).
@@ -979,7 +1136,7 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
         val saisieId = occhabViewModel.saisieId
         val s = occhabViewModel.station
         val geometry = fr.ariegenature.geomys.network.GeoNatureUpload.construireGeometrie(
-            s.geometryType, s.geometryCoordsJson, s.latitude, s.longitude)
+            s.geometryType, s.geometryCoordsJson, s.latitude, s.longitude, s.geometryTrousJson)
         val appContext = requireContext().applicationContext
         occhabViewModel.viewModelScope.launch {
             val config = fr.ariegenature.geomys.store.GeoNatureConfig(appContext)

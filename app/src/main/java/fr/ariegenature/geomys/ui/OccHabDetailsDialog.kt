@@ -155,12 +155,11 @@ fun ouvrirDialogDetailsOccHab(
         // au-dessus du clavier.
         val hauteurDropdown = (minOf(datasets.size, 5) * 48 * density).toInt()
         champ.dropDownHeight = hauteurDropdown
-        if (jddSeul) {
-            // Dialogue JDD seul (petit, centré) : le clavier masque le bas → dropdown AU-DESSUS.
-            champ.post { champ.dropDownVerticalOffset = -(champ.height + hauteurDropdown) }
-        }
-        // Détails (champ en haut du formulaire) : ancrage par défaut = liste juste sous le bas
-        // du champ (un offset supplémentaire la faisait descendre trop bas).
+        // Liste JUSTE SOUS LE CHAMP dans les DEUX dialogues (demande terrain 2026-08-31) =
+        // ancrage par défaut du style ExposedDropdownMenu, aucun offset. Le formulaire de
+        // démarrage l'ouvrait AU-DESSUS (offset négatif, pour dégager le clavier) : la liste
+        // RECOUVRAIT le champ — on ne voyait plus ce qu'on tapait. La hauteur bornée (5 items,
+        // défilable) garde la liste utilisable même clavier ouvert.
         var nomChoisi: String? = pendingNomDataset ?: datasets.firstOrNull { it.first == pendingIdDataset }?.second
         nomChoisi?.let { champ.setText(it, false) }
         champ.setOnClickListener { champ.setText("", false); champ.showDropDown() }

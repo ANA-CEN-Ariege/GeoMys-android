@@ -232,6 +232,10 @@ class StationsServeurOverlay(private val hote: Hote) {
             if (ring.size >= 2) {
                 val poly = Polygon(carte).apply {
                     points = ring
+                    // Anneaux INTÉRIEURS (station à trou dessinée sous QGIS) : dessinés en creux
+                    // — sinon le trou apparaissait plein sur la carte (bug 2026-08-31).
+                    GeoJsonCoords.parseAnneaux(st.geometryTrousJson)
+                        .takeIf { it.isNotEmpty() }?.let { holes = it }
                     fillPaint.color = remplissage
                     outlinePaint.color = couleur
                     outlinePaint.strokeWidth = 4f
@@ -294,6 +298,21 @@ class StationsServeurOverlay(private val hote: Hote) {
     /** Tap sur une station VIOLETTE : confirmation avant IMPORT dans la saisie courante — la
      *  station devient éditable comme une station de session et repartira en MISE À JOUR. */
     private fun proposerImport(st: OccHabStation) {
+        // GÉOMÉTRIE MULTI-PARTIES (MultiPolygon) : l'appli n'en modélise que la 1ʳᵉ partie —
+        // l'importer puis la renvoyer SUPPRIMERAIT les autres côté serveur. On refuse l'import
+        // (la station reste affichée et sert de repère / d'aimantage).
+        if (st.geometryPartielle) {
+            AlertDialog.Builder(hote.contexte)
+                .setTitle("Station non modifiable dans l'appli")
+                .setMessage(
+                    (st.stationName?.let { "« $it »\n\n" } ?: "") +
+                        "Sa géométrie est composée de plusieurs parties : l'appli n'en affiche " +
+                        "que la première. La modifier ici supprimerait les autres parties sur " +
+                        "GeoNature — utilisez QGIS pour cette station.")
+                .setPositiveButton("Fermer", null)
+                .show()
+            return
+        }
         // Filet : le store a pu changer depuis le dessin. Une copie non envoyée existe déjà →
         // on l'ouvre, jamais de 2ᵉ copie.
         val copie = st.idStationServeur?.let { OccHabStore(hote.contexte).copieLocaleNonEnvoyee(it) }

@@ -105,12 +105,15 @@ object OccHabUpload {
             val dateMin = Date(station.dateMin ?: station.date)
             val dateMax = Date(station.dateMax ?: station.dateMin ?: station.date)
 
-            // Géométrie : mutualisée avec Occtax (Point / Polygon, [lon,lat], fermeture d'anneau).
+            // Géométrie : mutualisée avec Occtax (Point / Polygon, [lon,lat], fermeture d'anneau)
+            // + TROUS du polygone (anneaux intérieurs lus sur le serveur, renvoyés tels quels :
+            // sans eux la mise à jour les supprimait — bug 2026-08-31).
             val geometry = GeoNatureUpload.construireGeometrie(
                 type = station.geometryType,
                 coordsJson = station.geometryCoordsJson,
                 lat = station.latitude,
                 lon = station.longitude,
+                trousJson = station.geometryTrousJson,
             )
 
             // Observateurs : tableau d'{id_role}. Vide → utilisateur connecté (id_digitiser reste

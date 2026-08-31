@@ -832,6 +832,7 @@ class ConfigGeoNatureFragment : Fragment() {
                 intArrayOf(
                     TaxRefCache.nbTaxonsUniques, NomenclatureCache.count,
                     MonitoringModules.countModulesEnCache(), nbListes, nbObservateurs,
+                    fr.ariegenature.geomys.store.StationsServeurCache.count,
                 )
             }
             if (_binding == null) return@launch
@@ -841,8 +842,13 @@ class ConfigGeoNatureFragment : Fragment() {
             binding.tvCountTaxons.text = nbTaxons.toString()
             binding.tvCountListes.text = c[3].toString()
             binding.tvCountObservateurs.text = c[4].toString()
+            // Stations OccHab de l'utilisateur en cache hors-ligne : ligne visible seulement si
+            // le module est disponible sur le serveur (sinon elle n'aurait aucun sens).
+            binding.ligneCountStationsOcchab.visibility =
+                if (gnConfig.occhabDisponible) android.view.View.VISIBLE else android.view.View.GONE
+            binding.tvCountStationsOcchab.text = c[5].toString()
             binding.btnTaxonsParGroupe.isEnabled = nbTaxons > 0
-            binding.btnViderCache.isEnabled = nbTaxons > 0 || nbNomenclatures > 0 || nbProtocoles > 0
+            binding.btnViderCache.isEnabled = nbTaxons > 0 || nbNomenclatures > 0 || nbProtocoles > 0 || c[5] > 0
         }
     }
 

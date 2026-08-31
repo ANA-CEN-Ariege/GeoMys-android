@@ -60,6 +60,10 @@
 -keep class fr.ariegenature.geomys.store.NidificationOiseaux$* { *; }
 # Infos obligatoires OccHab du relevé précédent (occhabDetailsPrecedentsJson, Gson).
 -keep class fr.ariegenature.geomys.ui.OccHabDetailsSession { *; }
+# Enveloppe du cache hors-ligne des stations serveur OccHab (classe IMBRIQUÉE privée Contenu,
+# Gson — même piège que Observation/PointTrace : garder le conteneur ne protège pas ses
+# imbriquées ; les OccHabStation qu'elle contient sont couvertes par model.**).
+-keep class fr.ariegenature.geomys.store.StationsServeurCache$* { *; }
 # Enums (dé)sérialisés par Gson via leur NOM de constante (WidgetType des champs additionnels,
 # SaisieEnAttente.Etat…) : les constantes ne doivent jamais être renommées (audit 2026-08-27).
 -keepclassmembers enum fr.ariegenature.geomys.** { *; }

@@ -37,4 +37,8 @@ fun invaliderCachesSession() {
     // occurrences → FK invalide → 500 opaque. Purge volontairement large (aussi sur simple
     // changement de login/mdp) : un cache vide se resynchronise tout seul à l'envoi.
     fr.ariegenature.geomys.store.NomenclatureCache.vider()
+    // Stations serveur OccHab : propres à l'instance (id_station/id_dataset) ET au compte
+    // (filtre numérisateur/observateur appliqué avant écriture) — un changement d'URL comme de
+    // login les rend invalides. Se resynchronise à la prochaine synchro / carte en ligne.
+    fr.ariegenature.geomys.store.StationsServeurCache.vider()
 }

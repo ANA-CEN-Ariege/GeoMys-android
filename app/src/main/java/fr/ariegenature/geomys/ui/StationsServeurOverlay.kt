@@ -29,6 +29,7 @@ import fr.ariegenature.geomys.network.OccHabApi
 import fr.ariegenature.geomys.network.humaniserErreurReseau
 import fr.ariegenature.geomys.store.GeoNatureConfig
 import fr.ariegenature.geomys.store.OccHabStore
+import fr.ariegenature.geomys.store.StationsServeurCache
 import fr.ariegenature.geomys.util.GeoJsonCoords
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -96,7 +97,9 @@ class StationsServeurOverlay(private val hote: Hote) {
 
     /** Charge les stations de l'utilisateur DÉJÀ sur le serveur GeoNature et les affiche — leurs
      *  sommets deviennent des cibles d'aimantage — puis cadre la carte sur leur emprise (+ celles
-     *  de la session). Best-effort : hors-ligne/erreur → toast humanisé, la saisie continue.
+     *  de la session). Hors-ligne/erreur → REPLI sur [StationsServeurCache] (rempli par
+     *  « Recharger les données » et au fil de l'eau ici même), toast daté ; cache vide → toast
+     *  humanisé, la saisie continue.
      *  SEULEMENT les stations du compte (filtre client dans chargerStations) ET du JEU DE DONNÉES
      *  de la saisie (demande terrain 2026-08-27) : filtre serveur `id_dataset` + filtre client. */
     fun charger() {
@@ -109,12 +112,24 @@ class StationsServeurOverlay(private val hote: Hote) {
         }
         Toast.makeText(ctx, "Chargement de vos stations GeoNature (ce jeu de données)…", Toast.LENGTH_SHORT).show()
         hote.portee.launch {
+            // Date du cache quand on affiche un REPLI hors-ligne (réseau en échec) ; null en ligne.
+            var dateCache: Long? = null
             val chargees = try {
                 OccHabApi.chargerStations(GeoNatureConfig(appContext), idDataset = idJdd)
                     .filter { it.idDataset == idJdd }
+                    // Write-through : le cache hors-ligne (StationsServeurCache) reste frais au
+                    // fil de l'eau ; les autres JDD (chargés par la synchro) sont conservés.
+                    .also { StationsServeurCache.remplacerJdd(idJdd, it) }
             } catch (e: Exception) {
-                if (hote.vueVivante) Toast.makeText(hote.contexte, humaniserErreurReseau(e), Toast.LENGTH_LONG).show()
-                return@launch
+                // REPLI HORS-LIGNE : stations du dernier chargement réussi (« Recharger les
+                // données » ou carte en ligne). Cache vide → erreur humanisée, comme avant.
+                val cache = StationsServeurCache.lire(idJdd)
+                if (cache.isEmpty()) {
+                    if (hote.vueVivante) Toast.makeText(hote.contexte, humaniserErreurReseau(e), Toast.LENGTH_LONG).show()
+                    return@launch
+                }
+                dateCache = StationsServeurCache.dateChargement
+                cache
             }
             if (!hote.vueVivante) return@launch
             stations.clear()
@@ -129,8 +144,12 @@ class StationsServeurOverlay(private val hote: Hote) {
                     if (nbIci > 0) add("$nbIci déjà dans cette saisie")
                     if (nbReprisesAilleurs > 0) add("$nbReprisesAilleurs reprise(s) dans une autre saisie")
                 }
+                val enTete = dateCache?.let {
+                    "Hors-ligne : ${chargees.size} station(s) du " +
+                        SimpleDateFormat("dd/MM/yyyy", Locale.FRANCE).format(Date(it))
+                } ?: "${chargees.size} station(s) du serveur"
                 Toast.makeText(hote.contexte,
-                    "${chargees.size} station(s) du serveur" +
+                    enTete +
                         (if (detail.isEmpty()) " affichée(s)" else " (dont ${detail.joinToString(", ")})"),
                     Toast.LENGTH_LONG).show()
                 if (hote.aucuneGeometrieEnCours) hote.afficherInstructionSelection()
@@ -161,8 +180,9 @@ class StationsServeurOverlay(private val hote: Hote) {
      *  - station SANS copie locale en attente → VIOLET, un tap propose l'IMPORT ;
      *  - copie (envoyée ou non) dans la SAISIE COURANTE, ou station en cours d'édition → PAS
      *    redessinée ici : elle est déjà rouge (ou bleue) via la session, et se modifie là ;
-     *  - copie en attente dans une AUTRE saisie → ORANGE pointillé, un tap propose d'OUVRIR cette
-     *    saisie — jamais une 2ᵉ copie.
+     *  - copie en attente dans une AUTRE saisie → ORANGE pointillé, dessinée AVEC ses
+     *    modifications locales (c'est la copie qui partira à l'envoi, pas la version serveur) ;
+     *    un tap propose d'OUVRIR cette saisie — jamais une 2ᵉ copie.
      *  Renvoie tous les points dessinés (pour le cadrage). */
     fun afficher(): List<GeoPoint> {
         val carte = hote.carte
@@ -186,7 +206,10 @@ class StationsServeurOverlay(private val hote: Hote) {
                 copie.first.id == hote.vm.saisieId -> Unit // déjà rouge/bleue (session)
                 else -> {
                     nbReprisesAilleurs++
-                    pts.addAll(dessiner(st, orange, 0x26E65100, pointille = true) {
+                    // On dessine la COPIE LOCALE (modifications comprises — géométrie déplacée,
+                    // sommets ajoutés…), pas la version serveur : c'est elle qui partira à
+                    // l'envoi, c'est donc elle que le terrain doit voir (demande 2026-08-31).
+                    pts.addAll(dessiner(copie.second, orange, 0x26E65100, pointille = true) {
                         proposerOuvrirCopieLocale(copie.first, copie.second)
                     })
                 }

@@ -88,7 +88,13 @@ class OccHabStationsFragment : Fragment() {
             onEdit = { saisie ->
                 // Réédition : on reprend la SAISIE puis on passe par la CARTE (ses stations
                 // affichées, « Valider » ajoute une station, taper une station l'édite).
-                occhabViewModel.reprendreSaisie(saisie)
+                // Les stations SERVEUR y suivent le choix mémorisé du formulaire de démarrage
+                // (affichées par défaut — demande terrain 2026-08-31).
+                occhabViewModel.reprendreSaisie(
+                    saisie,
+                    masquerStationsServeur =
+                        detailsSessionParDefaut(GeoNatureConfig(requireContext())).masquerStationsServeur,
+                )
                 findNavController().naviguerSur(R.id.action_occhab_stations_to_carte)
             },
             onEnvoyer = { envoyerSaisie(it) },

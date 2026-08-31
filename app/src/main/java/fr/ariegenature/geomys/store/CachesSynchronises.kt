@@ -33,6 +33,7 @@ fun viderCachesSynchronises() {
     NomenclatureCache.vider()
     HabitatCache.vider()
     HabitatCacheOccHab.vider()
+    StationsServeurCache.vider()
     MonitoringCache.vider()
     PictoCache.vider()  // pictos de protocole (cache disque)
     // MonitoringCache.vider() n'efface que le DISQUE : la liste des modules est aussi gardée en

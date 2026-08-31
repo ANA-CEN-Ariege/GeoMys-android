@@ -296,6 +296,30 @@
                                 android:textStyle="bold" />
                         </LinearLayout>
 
+                        <!-- Stations OccHab de l'utilisateur en cache hors-ligne (StationsServeurCache).
+                             Ligne masquée si le module OccHab n'est pas disponible sur le serveur. -->
+                        <LinearLayout
+                            android:id="@+id/ligne_count_stations_occhab"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:paddingVertical="2dp"
+                            android:visibility="gone">
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="Stations OccHab"
+                                android:textSize="14sp" />
+                            <TextView
+                                android:id="@+id/tv_count_stations_occhab"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="—"
+                                android:textSize="14sp"
+                                android:textStyle="bold" />
+                        </LinearLayout>
+
                         <Button
                             android:id="@+id/btn_taxons_par_groupe"
                             style="@style/Widget.GeoMys.Button.OutlinedButton"

@@ -252,6 +252,12 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
         // Stations serveur déjà chargées (retour de l'écran habitats, recréation de vue) : leurs
         // overlays pointaient une MapView détruite → on les redessine (audit 2026-08-27).
         if (serveur.chargees) serveur.afficher()
+        // Switch actif mais rien de chargé — reprise d'une saisie depuis « Mes stations »,
+        // process recréé, chargement précédent en échec : les stations doivent être là dès que
+        // la carte s'ouvre avec un JDD connu, pas seulement après le formulaire de démarrage
+        // (demande terrain 2026-08-31). Hors-ligne : repli sur StationsServeurCache.
+        else if (occhabViewModel.jddDefini && occhabViewModel.details.chargerStationsServeur)
+            serveur.charger()
         val aCadrer = ptsCourant + ptsSession
         if (aCadrer.isNotEmpty()) {
             cadrerSur(aCadrer)

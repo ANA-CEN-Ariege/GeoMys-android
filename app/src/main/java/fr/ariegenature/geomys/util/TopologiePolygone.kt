@@ -69,4 +69,27 @@ object TopologiePolygone {
         }
         return touche
     }
+
+    /**
+     * [p] est-il À L'INTÉRIEUR de l'anneau [anneau] (liste de sommets DISTINCTS, fermeture
+     * implicite) ? Lancer de rayon standard (parité impaire des intersections), en degrés :
+     * suffisant pour l'usage — avertir l'utilisateur qu'un sommet de TROU est sorti du contour
+     * extérieur, ce que le serveur (PostGIS) refuserait. Un point exactement sur le bord peut
+     * tomber d'un côté ou de l'autre : on ne s'en sert que pour un AVERTISSEMENT, jamais pour
+     * bloquer une saisie. False si l'anneau a moins de 3 sommets.
+     */
+    fun pointDansAnneau(p: GeoPoint, anneau: List<GeoPoint>): Boolean {
+        if (anneau.size < 3) return false
+        var dedans = false
+        var j = anneau.size - 1
+        for (i in anneau.indices) {
+            val xi = anneau[i].longitude; val yi = anneau[i].latitude
+            val xj = anneau[j].longitude; val yj = anneau[j].latitude
+            if ((yi > p.latitude) != (yj > p.latitude) &&
+                p.longitude < (xj - xi) * (p.latitude - yi) / (yj - yi) + xi
+            ) dedans = !dedans
+            j = i
+        }
+        return dedans
+    }
 }

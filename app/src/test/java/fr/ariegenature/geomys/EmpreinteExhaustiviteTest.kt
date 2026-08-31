@@ -46,6 +46,10 @@ class EmpreinteExhaustiviteTest {
         "latitude", "longitude",           // centroïde d'un polygone, recalculé localement
         "altitudeMin", "altitudeMax", "surface", // MNT / aire auto — limite assumée (lot A : « i » force)
         "observateursNoms",                // libellés d'affichage (les ids font foi)
+        // Marqueur « géométrie multi-parties tronquée à l'affichage » (MultiPolygon) : JAMAIS
+        // envoyé, et une telle station n'est pas importable — elle n'entre donc jamais dans
+        // « Mes stations », où l'empreinte sert (cf. OccHabStation.geometryPartielle).
+        "geometryPartielle",
         "envoyeGeoNature", "origineServeur", "derniereErreurEnvoi", "envoiIncertain", "empreinteOrigine", "origineEnvoyee",
         "habitats",                        // testé champ par champ ci-dessous
     )

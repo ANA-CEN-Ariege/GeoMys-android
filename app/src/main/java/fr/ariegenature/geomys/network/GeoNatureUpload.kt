@@ -649,12 +649,15 @@ object GeoNatureUpload {
      *  - `type == "Polygon"` → coordsJson est `[[lon,lat], …]` (anneau extérieur) ; on
      *    referme automatiquement si le dernier sommet diffère du premier et on wrappe
      *    dans le tableau supplémentaire requis par le format GeoJSON Polygon
-     *    (`[[[lon,lat], …]]`). */
+     *    (`[[[lon,lat], …]]`). [trousJson] (OccHab) = anneaux INTÉRIEURS `[[[lon,lat], …], …]`
+     *    ajoutés après l'extérieur et refermés de la même façon : sans eux, le ré-envoi d'une
+     *    station à trou (dessinée sous QGIS) les SUPPRIMAIT côté serveur (bug 2026-08-31). */
     internal fun construireGeometrie(
         type: String?,
         coordsJson: String?,
         lat: Double,
         lon: Double,
+        trousJson: String? = null,
     ): JSONObject {
         if (type.isNullOrEmpty() || type == "Point" || coordsJson.isNullOrEmpty()) {
             return JSONObject()
@@ -667,23 +670,44 @@ object GeoNatureUpload {
                 .put("type", "LineString")
                 .put("coordinates", coords)
             "Polygon" -> {
-                // Fermeture automatique de l'anneau si nécessaire.
-                if (coords.length() >= 3) {
-                    val premier = coords.getJSONArray(0)
-                    val dernier = coords.getJSONArray(coords.length() - 1)
-                    if (premier.getDouble(0) != dernier.getDouble(0) ||
-                        premier.getDouble(1) != dernier.getDouble(1)) {
-                        coords.put(JSONArray().put(premier.getDouble(0)).put(premier.getDouble(1)))
+                // coordinates = [ anneau extérieur, trou, … ], chaque anneau refermé.
+                val anneaux = JSONArray().put(fermerAnneau(coords))
+                try {
+                    if (!trousJson.isNullOrEmpty()) {
+                        val trous = JSONArray(trousJson)
+                        for (i in 0 until trous.length()) {
+                            val trou = trous.optJSONArray(i) ?: continue
+                            if (trou.length() >= 3) anneaux.put(fermerAnneau(trou))
+                        }
                     }
+                } catch (_: Exception) {
+                    // Trous illisibles : on envoie au moins l'anneau extérieur (jamais de
+                    // géométrie invalide) — le polygone reste complet, seul le trou est perdu.
                 }
                 JSONObject()
                     .put("type", "Polygon")
-                    .put("coordinates", JSONArray().put(coords))
+                    .put("coordinates", anneaux)
             }
             else -> JSONObject()
                 .put("type", "Point")
                 .put("coordinates", JSONArray().put(lon).put(lat))
         }
+    }
+
+    /** Referme un anneau GeoJSON (dernier sommet = premier) s'il ne l'est pas déjà. Renvoie
+     *  l'anneau lui-même (modifié en place) — l'éditeur travaille sur des sommets DISTINCTS,
+     *  le point de fermeture n'est ajouté qu'à l'envoi. */
+    private fun fermerAnneau(anneau: JSONArray): JSONArray {
+        if (anneau.length() >= 3) {
+            val premier = anneau.getJSONArray(0)
+            val dernier = anneau.getJSONArray(anneau.length() - 1)
+            if (premier.getDouble(0) != dernier.getDouble(0) ||
+                premier.getDouble(1) != dernier.getDouble(1)
+            ) {
+                anneau.put(JSONArray().put(premier.getDouble(0)).put(premier.getDouble(1)))
+            }
+        }
+        return anneau
     }
 
     /** Noms des champs additionnels Occtax à widget TEXTE LIBRE (text / textarea / widget inconnu

@@ -97,9 +97,23 @@ data class OccHabStation(
     var latitude: Double = 0.0,
     /** Longitude du point, ou centroïde du polygone (affichage carte). */
     var longitude: Double = 0.0,
-    /** Sommets du polygone sérialisés en JSON (`List<DoubleArray>` [lon, lat]). Null pour un
-     *  Point (latitude/longitude font foi). Même convention que [Observation.geometryCoordsJson]. */
+    /** Sommets du polygone sérialisés en JSON (`List<DoubleArray>` [lon, lat]) — anneau
+     *  EXTÉRIEUR seul (les trous sont dans [geometryTrousJson]). Null pour un Point
+     *  (latitude/longitude font foi). Même convention que [Observation.geometryCoordsJson]. */
     var geometryCoordsJson: String? = null,
+    /** Anneaux INTÉRIEURS (trous) du polygone : `[[[lon,lat], …], …]`, même convention que
+     *  [geometryCoordsJson] (point de fermeture RETIRÉ, refermé à l'envoi). Null = polygone
+     *  plein. Une station dessinée sous QGIS peut porter un trou (« polygone intérieur ») :
+     *  sans ce champ, l'appli n'en lisait que l'anneau extérieur et un simple ré-envoi
+     *  DÉTRUISAIT le trou côté serveur (bug terrain 2026-08-31, ex. station 2805).
+     *  L'éditeur de la carte ne modifie que l'anneau extérieur ; les trous sont conservés
+     *  tels quels et redessinés (osmdroid `Polygon.holes`). */
+    var geometryTrousJson: String? = null,
+    /** true quand la géométrie du serveur porte PLUS que ce que l'appli sait modéliser
+     *  (MultiPolygon à PLUSIEURS parties) : seule la 1ʳᵉ partie est affichée, et la station
+     *  n'est PAS importable — la renvoyer ne garderait que cette partie et supprimerait les
+     *  autres côté serveur. Modification réservée à QGIS. */
+    var geometryPartielle: Boolean = false,
     // ── Champs station ──
     /** Jeu de données (`id_dataset`, obligatoire). null → défaut de config. */
     var idDataset: Int? = null,
@@ -191,6 +205,9 @@ data class OccHabStation(
         } else {
             append(latitude).append(',').append(longitude)
         }
+        // Trous du polygone : renvoyés au serveur → doivent faire partie de l'empreinte (sinon
+        // un trou modifié passerait pour « aucune modification »).
+        append('|').append(trousNormalises(geometryTrousJson))
         append('|').append(idDataset)
         append('|').append(observateursIds.sorted())
         append('|').append(observateursTxt.orEmpty().trim())
@@ -223,6 +240,20 @@ data class OccHabStation(
     fun geometrieDefinie(): Boolean = when (geometryType) {
         "Polygon" -> !geometryCoordsJson.isNullOrEmpty()
         else -> latitude != 0.0 || longitude != 0.0
+    }
+
+    /** Anneaux intérieurs normalisés comme [coordsNormalisees], séparés par « # ». Chaîne vide
+     *  si aucun trou (polygone plein) ; JSON brut en secours si illisible. */
+    private fun trousNormalises(json: String?): String {
+        if (json.isNullOrEmpty()) return ""
+        return try {
+            val arr = org.json.JSONArray(json)
+            buildString {
+                for (i in 0 until arr.length()) {
+                    append(coordsNormalisees(arr.getJSONArray(i).toString())).append('#')
+                }
+            }
+        } catch (_: Exception) { json }
     }
 
     private fun coordsNormalisees(json: String?): String = try {

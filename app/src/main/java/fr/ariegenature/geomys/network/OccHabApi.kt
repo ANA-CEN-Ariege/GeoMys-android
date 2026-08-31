@@ -268,7 +268,8 @@ object OccHabApi {
                 // mieux vaut manquer une station que d'afficher celles d'autrui.
                 if (!estNumerisateur && !estObservateur) continue
             }
-            val (type, lat, lon, coordsJson) = parserGeometrie(f.optJSONObject("geometry"))
+            val geom = parserGeometrie(f.optJSONObject("geometry"))
+            val (type, lat, lon, coordsJson) = geom
             // Bloc ANA-EVAL de la station (porté par `comment`) : même extraction que côté
             // habitat — sans bloc exploitable, le commentaire reste strictement inchangé.
             val commentBrut = texteOuNull(props, "comment")
@@ -344,6 +345,8 @@ object OccHabApi {
                 latitude = lat,
                 longitude = lon,
                 geometryCoordsJson = coordsJson,
+                geometryTrousJson = geom.trousJson,
+                geometryPartielle = geom.partielle,
                 idDataset = props.optInt("id_dataset", -1).takeIf { it > 0 },
                 observateursIds = obsIds,
                 observateursNoms = obsNoms,
@@ -383,6 +386,10 @@ object OccHabApi {
      *  sommets JSON `[[lon,lat], …]` (polygone/ligne) pour le tracé. */
     private data class GeomParse(
         val type: String, val lat: Double, val lon: Double, val coordsJson: String?,
+        /** Anneaux intérieurs (trous) `[[[lon,lat], …], …]` — null si polygone plein. */
+        val trousJson: String? = null,
+        /** Géométrie tronquée à sa 1ʳᵉ partie (MultiPolygon multi-parties) → non importable. */
+        val partielle: Boolean = false,
     )
 
     private fun parserGeometrie(geom: JSONObject?): GeomParse {
@@ -392,25 +399,17 @@ object OccHabApi {
         return try {
             when (type) {
                 "Point" -> GeomParse("Point", coords.getDouble(1), coords.getDouble(0), null)
-                "Polygon" -> {
-                    // coordinates = [ anneau extérieur [ [lon,lat], … ] ]. GeoJSON FERME l'anneau
-                    // (dernier point = premier) : ce point de fermeture n'est PAS un sommet pour
-                    // l'éditeur (sinon deux markers superposés au 1er sommet et une poignée « + »
-                    // sur une arête de longueur nulle — audit 2026-08-27) ; construireGeometrie
-                    // referme l'anneau à l'envoi.
-                    val ring = coords.getJSONArray(0)
-                    val points = mutableListOf<Pair<Double, Double>>() // (lon, lat)
-                    for (k in 0 until ring.length()) {
-                        val pt = ring.getJSONArray(k)
-                        points.add(pt.getDouble(0) to pt.getDouble(1))
-                    }
-                    if (points.size >= 4 && points.first() == points.last()) points.removeAt(points.size - 1)
-                    val sommets = JSONArray()
-                    points.forEach { (lon, lat) -> sommets.put(JSONArray().put(lon).put(lat)) }
-                    val n = points.size
-                    val cLat = if (n > 0) points.sumOf { it.second } / n else 0.0
-                    val cLon = if (n > 0) points.sumOf { it.first } / n else 0.0
-                    GeomParse("Polygon", cLat, cLon, sommets.toString())
+                // coordinates = [ anneau extérieur, trou, … ] — un polygone dessiné sous QGIS
+                // peut porter des anneaux INTÉRIEURS (bug terrain 2026-08-31) : ils sont
+                // conservés dans geometryTrousJson et renvoyés tels quels à la mise à jour.
+                "Polygon" -> parserPolygone(coords, partielle = false)
+                "MultiPolygon" -> {
+                    // coordinates = [ polygone, … ]. UNE seule partie = un Polygon (cas courant
+                    // des couches QGIS multi-parties) → traité comme tel. PLUSIEURS parties :
+                    // l'appli n'en modélise qu'une → affichée mais NON IMPORTABLE (la renvoyer
+                    // supprimerait les autres parties côté serveur).
+                    val premier = coords.optJSONArray(0) ?: return GeomParse("Point", 0.0, 0.0, null)
+                    parserPolygone(premier, partielle = coords.length() > 1)
                 }
                 "LineString" -> {
                     val sommets = JSONArray()
@@ -428,5 +427,51 @@ object OccHabApi {
         } catch (_: Exception) {
             GeomParse("Point", 0.0, 0.0, null)
         }
+    }
+
+    /**
+     * Anneaux GeoJSON d'UN polygone (`[ extérieur, trou, … ]`) → [GeomParse].
+     * Le point de FERMETURE de chaque anneau (dernier = premier) est RETIRÉ : ce n'est pas un
+     * sommet pour l'éditeur (sinon deux markers superposés au 1er sommet et une poignée « + »
+     * sur une arête de longueur nulle — audit 2026-08-27) ; `construireGeometrie` referme tous
+     * les anneaux à l'envoi. Le point représentatif (latitude/longitude d'affichage) est le
+     * centroïde de l'anneau EXTÉRIEUR. Un trou dégénéré (< 3 sommets) est ignoré.
+     */
+    private fun parserPolygone(rings: JSONArray, partielle: Boolean): GeomParse {
+        val exterieur = anneauSommets(rings.optJSONArray(0))
+        if (exterieur.isEmpty()) return GeomParse("Point", 0.0, 0.0, null)
+        val sommets = JSONArray()
+        exterieur.forEach { (lon, lat) -> sommets.put(JSONArray().put(lon).put(lat)) }
+        val trous = JSONArray()
+        for (i in 1 until rings.length()) {
+            val trou = anneauSommets(rings.optJSONArray(i))
+            if (trou.size < 3) continue
+            trous.put(JSONArray().apply {
+                trou.forEach { (lon, lat) -> put(JSONArray().put(lon).put(lat)) }
+            })
+        }
+        val n = exterieur.size
+        return GeomParse(
+            type = "Polygon",
+            lat = exterieur.sumOf { it.second } / n,
+            lon = exterieur.sumOf { it.first } / n,
+            coordsJson = sommets.toString(),
+            trousJson = if (trous.length() > 0) trous.toString() else null,
+            partielle = partielle,
+        )
+    }
+
+    /** UN anneau GeoJSON `[[lon,lat], …]` → paires (lon, lat), point de fermeture retiré.
+     *  Une paire malformée est ignorée (robustesse : le reste de l'anneau est conservé). */
+    private fun anneauSommets(ring: JSONArray?): List<Pair<Double, Double>> {
+        if (ring == null) return emptyList()
+        val points = mutableListOf<Pair<Double, Double>>()
+        for (k in 0 until ring.length()) {
+            val pt = ring.optJSONArray(k) ?: continue
+            if (pt.length() < 2) continue
+            points.add(pt.getDouble(0) to pt.getDouble(1))
+        }
+        if (points.size >= 4 && points.first() == points.last()) points.removeAt(points.size - 1)
+        return points
     }
 }

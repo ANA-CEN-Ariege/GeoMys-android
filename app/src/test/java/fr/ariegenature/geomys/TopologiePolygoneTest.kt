@@ -74,4 +74,36 @@ class TopologiePolygoneTest {
         assertTrue(TopologiePolygone.memePoint(GeoPoint(42.0, 1.0), 42.0 + 1e-10, 1.0))
         assertFalse(TopologiePolygone.memePoint(GeoPoint(42.0, 1.0), 42.0 + 1e-6, 1.0))
     }
+
+    // ── Point dans l'anneau (avertissement « sommet de trou sorti du polygone ») ──
+
+    /** Carré 0..10 (GeoPoint = latitude, longitude). */
+    private fun carre() = listOf(
+        GeoPoint(0.0, 0.0), GeoPoint(0.0, 10.0), GeoPoint(10.0, 10.0), GeoPoint(10.0, 0.0),
+    )
+
+    @Test
+    fun point_dans_anneau_interieur_et_exterieur() {
+        assertTrue(TopologiePolygone.pointDansAnneau(GeoPoint(5.0, 5.0), carre()))
+        assertFalse(TopologiePolygone.pointDansAnneau(GeoPoint(5.0, 20.0), carre()))
+        assertFalse(TopologiePolygone.pointDansAnneau(GeoPoint(-1.0, 5.0), carre()))
+    }
+
+    @Test
+    fun point_dans_anneau_forme_concave() {
+        // « L » : le creux ne doit PAS compter comme intérieur.
+        val l = listOf(
+            GeoPoint(0.0, 0.0), GeoPoint(0.0, 10.0), GeoPoint(4.0, 10.0),
+            GeoPoint(4.0, 4.0), GeoPoint(10.0, 4.0), GeoPoint(10.0, 0.0),
+        )
+        assertTrue(TopologiePolygone.pointDansAnneau(GeoPoint(2.0, 2.0), l))
+        assertFalse("dans le creux du L", TopologiePolygone.pointDansAnneau(GeoPoint(8.0, 8.0), l))
+    }
+
+    @Test
+    fun anneau_degenere_jamais_interieur() {
+        assertFalse(TopologiePolygone.pointDansAnneau(GeoPoint(1.0, 1.0), emptyList()))
+        assertFalse(TopologiePolygone.pointDansAnneau(
+            GeoPoint(1.0, 1.0), listOf(GeoPoint(0.0, 0.0), GeoPoint(2.0, 2.0))))
+    }
 }

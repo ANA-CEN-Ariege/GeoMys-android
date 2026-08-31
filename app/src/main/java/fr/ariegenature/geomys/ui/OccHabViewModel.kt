@@ -136,9 +136,16 @@ class OccHabViewModel : ViewModel() {
         details = defautsSession.copy()
     }
 
-    fun definirGeometrie(type: String, lat: Double, lon: Double, coordsJson: String?) {
+    /** Pose la géométrie de la station courante. [trousJson] = anneaux intérieurs à CONSERVER
+     *  (station à trou lue du serveur, dont on déplace un sommet extérieur) ; **null = polygone
+     *  plein**, ce qui est le cas de tout tracé REDESSINÉ — les trous de l'ancienne géométrie ne
+     *  doivent pas survivre à un nouveau dessin. Chaque appelant le passe explicitement. */
+    fun definirGeometrie(
+        type: String, lat: Double, lon: Double, coordsJson: String?, trousJson: String? = null,
+    ) {
         station = station.copy(
             geometryType = type, latitude = lat, longitude = lon, geometryCoordsJson = coordsJson,
+            geometryTrousJson = if (type == "Polygon") trousJson else null,
         )
     }
 

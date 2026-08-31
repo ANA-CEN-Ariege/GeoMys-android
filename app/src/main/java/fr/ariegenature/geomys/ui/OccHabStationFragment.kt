@@ -142,7 +142,13 @@ class OccHabStationFragment : Fragment() {
         binding.tvGeometrie.text = when (s.geometryType) {
             "Polygon" -> {
                 val n = fr.ariegenature.geomys.util.GeoJsonCoords.parse(s.geometryCoordsJson).size
-                "Géométrie : polygone ($n sommets)"
+                // Trous (polygone dessiné sous QGIS) : signalés pour que l'utilisateur sache
+                // qu'ils sont CONSERVÉS même s'il ne peut pas les modifier ici.
+                val nbTrous = fr.ariegenature.geomys.util.GeoJsonCoords
+                    .parseAnneaux(s.geometryTrousJson).size
+                "Géométrie : polygone ($n sommets" +
+                    (if (nbTrous > 0) ", $nbTrous trou${if (nbTrous > 1) "s" else ""} conservé${if (nbTrous > 1) "s" else ""}" else "") +
+                    ")"
             }
             else -> "Géométrie : point (%.5f, %.5f)".format(s.latitude, s.longitude)
         }

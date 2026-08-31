@@ -257,6 +257,12 @@ fun airePolygoneM2(sommets: List<GeoPoint>): Double {
     return Math.abs(somme * r * r / 2.0)
 }
 
+/** Aire NETTE d'un polygone à trous : anneau extérieur MOINS ses anneaux intérieurs — même
+ *  convention que PostGIS (`ST_Area` soustrait les trous), donc que la surface calculée côté
+ *  serveur. Un trou dégénéré (< 3 sommets) compte pour 0. Jamais négative (trous incohérents). */
+fun airePolygoneM2(exterieur: List<GeoPoint>, trous: List<List<GeoPoint>>): Double =
+    (airePolygoneM2(exterieur) - trous.sumOf { airePolygoneM2(it) }).coerceAtLeast(0.0)
+
 /** Zoome la carte pour englober [points] : boîte artificielle (± [offset] en degrés) autour d'un
  *  point unique, garde contre une boîte quasi-nulle (dégénérée), marge [scale] sinon. À appeler
  *  DANS un `map.post{}` (zoomToBoundingBox exige une carte déjà mesurée). No-op si [points] vide.

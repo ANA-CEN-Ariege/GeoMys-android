@@ -151,14 +151,15 @@ class ConfigGeoNatureFragment : Fragment() {
         // - Sinon → seul le bloc connexion est visible, l'utilisateur doit se connecter
         //   puis cliquer sur "Charger les données".
         val donneesPresentes = TaxRefCache.count > 0
-        // La boîte « Chargement des données » n'apparaît QUE lorsque la connexion a réussi — pas
-        // seulement parce que des données sont en cache. Révélée par le test de connexion (manuel)
-        // OU par la vérification de version au démarrage si le serveur répond (cf. plus bas).
-        binding.llSectionCharger.visibility = View.GONE
-        // …SAUF après une mise à jour exigeant un rechargement : le bouton « Charger les données »
-        // doit être atteignable MÊME SANS RÉSEAU (le SyncRunner explique lui-même l'échec), sinon
-        // le bandeau renvoie à un bouton invisible (audit 2026-08-27).
-        if (gnConfig.rechargementRequisApresMaj) binding.llSectionCharger.visibility = View.VISIBLE
+        // La boîte « Chargement des données » est visible dès que des DONNÉES SONT EN CACHE
+        // (compteurs = état LOCAL, consultables hors-ligne ; « Recharger » échoue proprement,
+        // SyncRunner explique lui-même l'échec — demande terrain 2026-08-31 : elle disparaissait
+        // au retour sur Paramètres sans réseau) ou après une mise à jour exigeant un rechargement
+        // (le bandeau renvoie à ce bouton, audit 2026-08-27). En 1ʳᵉ CONFIGURATION (aucune
+        // donnée), elle reste cachée tant que la connexion n'a pas réussi : révélée par le test
+        // de connexion (manuel) OU par la vérification de version au démarrage (cf. plus bas).
+        binding.llSectionCharger.visibility =
+            if (donneesPresentes || gnConfig.rechargementRequisApresMaj) View.VISIBLE else View.GONE
         // Le résumé du cache et les sélecteurs restent liés à la présence de données (utilisables
         // hors-ligne), mais le résumé étant DANS la boîte 2, il ne s'affiche qu'avec elle.
         binding.llCacheResume.visibility = if (donneesPresentes) View.VISIBLE else View.GONE
@@ -837,6 +838,10 @@ class ConfigGeoNatureFragment : Fragment() {
             }
             if (_binding == null) return@launch
             val nbTaxons = c[0]; val nbNomenclatures = c[1]; val nbProtocoles = c[2]
+            // Aucun protocole monitoring accessible (CRUVED, ou pas encore synchronisé) → ligne
+            // masquée, même règle que la tuile « Suivis » de l'accueil (updateSuivisVisibility).
+            binding.ligneCountProtocoles.visibility =
+                if (nbProtocoles > 0) android.view.View.VISIBLE else android.view.View.GONE
             binding.tvCountProtocoles.text = nbProtocoles.toString()
             binding.tvCountNomenclatures.text = nbNomenclatures.toString()
             binding.tvCountTaxons.text = nbTaxons.toString()

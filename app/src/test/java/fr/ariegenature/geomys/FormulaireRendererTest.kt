@@ -31,6 +31,7 @@ import fr.ariegenature.geomys.monitoring.form.FormulaireRenderer
 import fr.ariegenature.geomys.monitoring.form.ViewType
 import kotlinx.coroutines.MainScope
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -136,5 +137,83 @@ class FormulaireRendererTest {
         renderer.flushChangementsEnAttente()
         shadowOf(Looper.getMainLooper()).idle()
         assertEquals("champ modifié par l'utilisateur conservé", 3, renderer.lireValeurs()["count_min"])
+    }
+
+    // ── Mode complétion : barre verticale rouge sur les obligatoires VIDES ─────────────
+    // Demande terrain 2026-09-03 : quand on ouvre un formulaire pour finir les champs
+    // manquants, ils doivent se repérer d'un coup d'œil.
+
+    /** Le bloc (libellé + champ) du n-ième champ rendu. */
+    private fun blocChamp(index: Int): View = parent.getChildAt(index)
+
+    /** Rouge franc attendu pour la barre — PAS la couleur d'erreur du thème (rose pâle en
+     *  thème sombre). Le test verrouille donc aussi la teinte. */
+    private val rougeAttendu = 0xFFD32F2F.toInt()
+
+    /** Retrouve la barre du champ dans [bloc] : la seule View dont le fond est [rougeAttendu].
+     *  Recherche par la COULEUR plutôt que par la position, pour ne pas casser si la structure
+     *  du bloc évolue. */
+    private fun barreDu(bloc: View): View? {
+        val fond = bloc.background
+        if (bloc !is ViewGroup && fond is android.graphics.drawable.ColorDrawable &&
+            fond.color == rougeAttendu
+        ) return bloc
+        if (bloc is ViewGroup) {
+            for (i in 0 until bloc.childCount) barreDu(bloc.getChildAt(i))?.let { return it }
+        }
+        return null
+    }
+
+    /** La barre existe ET est visible. */
+    private fun aUneBarre(bloc: View): Boolean = barreDu(bloc)?.visibility == View.VISIBLE
+
+    @Test
+    fun barre_rouge_seulement_sur_les_obligatoires_vides() {
+        renderer.rendre(listOf(
+            EditableField("rempli", ViewType.TEXT, "Rempli", value = "x", obligatoire = true),
+            EditableField("vide", ViewType.TEXT, "Vide", obligatoire = true),
+            EditableField("libre", ViewType.TEXT, "Facultatif"),
+        ))
+        renderer.marquerObligatoiresManquants(true)
+        assertTrue("obligatoire VIDE → barre", aUneBarre(blocChamp(1)))
+        assertFalse("obligatoire déjà rempli → pas de barre", aUneBarre(blocChamp(0)))
+        assertFalse("champ facultatif → pas de barre", aUneBarre(blocChamp(2)))
+    }
+
+    @Test
+    fun la_barre_disparait_quand_le_champ_est_rempli() {
+        renderer.rendre(listOf(EditableField("vide", ViewType.TEXT, "Vide", obligatoire = true)))
+        renderer.marquerObligatoiresManquants(true)
+        assertTrue(aUneBarre(blocChamp(0)))
+        editTexts(parent).single().setText("enfin saisi")
+        renderer.flushChangementsEnAttente()
+        renderer.marquerObligatoiresManquants(true)
+        assertFalse("champ rempli → barre retirée", aUneBarre(blocChamp(0)))
+    }
+
+    @Test
+    fun hors_mode_completion_aucune_barre() {
+        renderer.rendre(listOf(EditableField("vide", ViewType.TEXT, "Vide", obligatoire = true)))
+        renderer.marquerObligatoiresManquants(false)
+        assertFalse(aUneBarre(blocChamp(0)))
+        // La barre existe dans la hiérarchie mais reste GONE : elle ne prend aucune place.
+        assertEquals(View.GONE, barreDu(blocChamp(0))?.visibility)
+    }
+
+    @Test
+    fun la_barre_est_accolee_au_champ_pas_au_libelle() {
+        // Demande terrain : la barre appartient au CHAMP (elle en a la hauteur), le libellé
+        // n'est pas souligné. Elle doit donc être SŒUR de l'éditable, pas parente du bloc.
+        renderer.rendre(listOf(EditableField("vide", ViewType.TEXT, "Vide", obligatoire = true)))
+        renderer.marquerObligatoiresManquants(true)
+        val barre = barreDu(blocChamp(0))
+        assertTrue("barre absente", barre != null)
+        val rangee = barre!!.parent as ViewGroup
+        val editable = editTexts(parent).single()
+        // La rangée ne contient QUE la barre et le champ : le libellé est ailleurs (dans le
+        // bloc, au-dessus) — c'est ce qui garantit qu'il n'est pas souligné par la barre.
+        assertEquals("la rangée ne doit contenir que la barre et le champ", 2, rangee.childCount)
+        assertTrue("barre en premier", rangee.getChildAt(0) === barre)
+        assertTrue("champ juste après la barre", rangee.getChildAt(1) === editable)
     }
 }

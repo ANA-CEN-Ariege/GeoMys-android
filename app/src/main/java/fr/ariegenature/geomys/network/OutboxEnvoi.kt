@@ -110,15 +110,29 @@ object OutboxEnvoi {
                     it.copy(etat = SaisieEnAttente.Etat.PENDING, messageErreur = null)
                 }
             }
+        // Saisies « À COMPLÉTER » (champs obligatoires laissés vides — typiquement les infos
+        // de FIN de visite, cf. SaisieEnAttente.champsManquants) : ÉCARTÉES de l'envoi, ici et
+        // pour tous les chemins (flèche d'un groupe, « Tout envoyer », relance). Le serveur les
+        // rejetterait de toute façon ; on préfère un message explicite. Leurs enfants restent
+        // naturellement bloqués : leur parent local ne recevra pas d'id serveur.
+        val aCompleter = OutboxMonitoring.enAttente()
+            .filter { (uuidsACibler == null || it.uuid in uuidsACibler) && it.aCompleter }
+        val messages = mutableListOf<String>()
+        aCompleter.forEach { s ->
+            messages += "À compléter — ${s.manquants().size} champ" +
+                (if (s.manquants().size > 1) "s" else "") + " obligatoire" +
+                (if (s.manquants().size > 1) "s" else "") + " : ${s.manquants().joinToString(", ")}"
+        }
+        val uuidsACompleter = aCompleter.map { it.uuid }.toSet()
+
         val initiales = OutboxMonitoring.enAttente()
-            .filter { uuidsACibler == null || it.uuid in uuidsACibler }
-        if (initiales.isEmpty()) return@withLock Resultat(0, 0, emptyList())
+            .filter { (uuidsACibler == null || it.uuid in uuidsACibler) && it.uuid !in uuidsACompleter }
+        if (initiales.isEmpty()) return@withLock Resultat(0, aCompleter.size, messages)
 
         val total = initiales.size
         var envoyees = 0
         var succes = 0
         var echecs = 0
-        val messages = mutableListOf<String>()
 
         // Boucle : à chaque tour on ne traite que les PENDING (= jamais tentées dans cet
         // envoi). Les ERROR du tour courant restent ERROR — pour les rejouer il faut le
@@ -131,10 +145,13 @@ object OutboxEnvoi {
             // ⚠ Filtrer AUSSI par [uuidsACibler] ici : sinon « Envoyer ce groupe » envoyait
             // tous les PENDING de la file au lieu du seul sous-arbre ciblé (le filtre n'était
             // appliqué qu'au calcul de `total`, pas à la boucle d'envoi).
+            // ⚠ Même piège pour les saisies « à compléter » : les écarter du seul calcul de
+            // `total` ne suffit pas, c'est CETTE liste qui pilote les envois.
             val restantes = OutboxMonitoring.tout()
                 .filter {
                     it.etat == SaisieEnAttente.Etat.PENDING &&
-                        (uuidsACibler == null || it.uuid in uuidsACibler)
+                        (uuidsACibler == null || it.uuid in uuidsACibler) &&
+                        !it.aCompleter
                 }
             if (restantes.isEmpty()) break
 
@@ -293,7 +310,9 @@ object OutboxEnvoi {
         // qui pointaient vers ces parents locaux ont déjà résolu leur parentIdServeur
         // au tour précédent, donc plus besoin de garder l'entrée parent.
         OutboxMonitoring.purgerSent()
-        Resultat(succes, echecs, messages)
+        // Les « à compléter » écartées comptent comme des échecs : le récapitulatif doit dire
+        // que tout n'est pas parti (leurs libellés sont déjà dans `messages`).
+        Resultat(succes, echecs + aCompleter.size, messages)
         }
     }
 

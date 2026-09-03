@@ -138,6 +138,7 @@ class FormulaireRenderer(
         vuesParCode.clear()
         fieldsParCode.clear()
         wrappersParCode.clear()
+        barresParCode.clear()
         erreursParCode.clear()
         labelsParCode.clear()
         dernieresValeursAuto.clear()
@@ -333,6 +334,26 @@ class FormulaireRenderer(
                 else -> false
             }
         }.keys.toList()
+    }
+
+    /** code → barre verticale rouge accolée AU CHAMP (masquée hors mode complétion). */
+    private val barresParCode = linkedMapOf<String, View>()
+
+    /**
+     * MODE COMPLÉTION : rend visible la BARRE VERTICALE ROUGE accolée à gauche de chaque champ
+     * obligatoire encore VIDE, pour repérer d'un coup d'œil ce qu'il reste à saisir (demande
+     * terrain 2026-09-03). Chaque champ a SA barre, de la hauteur du champ (pas du bloc : le
+     * libellé n'est pas souligné). [actif] à false les masque toutes.
+     *
+     * À rappeler à chaque changement : la barre disparaît dès que le champ est rempli, et
+     * apparaît sur un champ rendu obligatoire par une règle `required` conditionnelle. Un champ
+     * masqué (`hidden`) n'est jamais marqué — [champsObligatoiresManquants] l'exclut déjà.
+     */
+    fun marquerObligatoiresManquants(actif: Boolean) {
+        val cibles = if (actif) champsObligatoiresManquants().toSet() else emptySet()
+        barresParCode.forEach { (code, barre) ->
+            barre.visibility = if (code in cibles) View.VISIBLE else View.GONE
+        }
     }
 
     /** Codes des champs actuellement en violation de min/max. Un champ vide ne compte pas
@@ -564,7 +585,29 @@ class FormulaireRenderer(
             ViewType.CHECKBOX -> creerCheckBox(field)
             ViewType.MEDIA -> creerChampMedia(field)
         }
-        container.addView(editable)
+        // BARRE « champ obligatoire à saisir » (mode complétion) : une View fine à GAUCHE DU
+        // CHAMP LUI-MÊME — pas du bloc, donc pas au niveau du libellé — créée masquée et
+        // simplement rendue visible par [marquerObligatoiresManquants]. Construire la
+        // structure une fois évite de toucher au `background` de l'éditable (un EditText y
+        // porte son propre soulignement, un Spinner sa flèche : les écraser les défigurerait).
+        val barre = View(ctx).apply {
+            setBackgroundColor(ROUGE_OBLIGATOIRE)
+            visibility = View.GONE
+            layoutParams = LinearLayout.LayoutParams(
+                (3 * density).toInt(), LinearLayout.LayoutParams.MATCH_PARENT,
+            )
+        }
+        barresParCode[field.code] = barre
+        container.addView(LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT,
+            )
+            addView(barre)
+            addView(editable, LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f,
+            ))
+        })
         // Message d'erreur de validation min/max (NUMBER avec bornes uniquement). Créé GONE,
         // peuplé/affiché par [appliquerValidations] à chaque modification de champ.
         if (field.viewType == ViewType.NUMBER &&
@@ -1164,3 +1207,8 @@ class FormulaireRenderer(
         }
     }
 }
+
+/** Rouge des barres « champ obligatoire à saisir » : le MÊME rouge franc que les repères de
+ *  la carte (`ic_pin_drop`). Volontairement PAS la couleur d'erreur du thème Material, qui
+ *  tire sur le rose pâle en thème sombre et ne se lit pas comme un rouge. */
+private const val ROUGE_OBLIGATOIRE = 0xFFD32F2F.toInt()

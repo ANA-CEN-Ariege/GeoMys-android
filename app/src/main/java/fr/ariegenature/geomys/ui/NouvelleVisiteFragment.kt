@@ -314,15 +314,28 @@ class NouvelleVisiteFragment : Fragment() {
                         }
                         .setNeutralButton("Continuer ${avecArticleType()}", null)
                     if (binding.btnSubmit.isEnabled) {
-                        dialog.setMessage("Enregistrer ${avecArticleType()} en cours avant de quitter ?")
+                        // Visite : enregistrable même avec des champs obligatoires vides — ils
+                        // sont annoncés ici, et elle partira « à compléter ». Saisie d'espèce :
+                        // le bouton n'est actif que si tout est rempli, la liste est donc vide.
+                        val manquants =
+                            if (enregistrementIncompletAutorise()) libellesManquants() else emptyList()
+                        dialog.setMessage(
+                            if (manquants.isEmpty())
+                                "Enregistrer ${avecArticleType()} en cours avant de quitter ?"
+                            else "Enregistrer ${avecArticleType()} en cours avant de quitter ?\n\n" +
+                                "${messageManquants(manquants)}")
                             .setPositiveButton("Enregistrer et quitter") { _, _ ->
                                 envoyerVisite(puisTerminer = true)
                             }
                     } else {
+                        // Bloquant : valeur hors bornes, ou champ obligatoire vide sur une
+                        // saisie d'ESPÈCE (seules les infos générales d'une visite peuvent
+                        // être enregistrées incomplètes).
                         dialog.setMessage(
                             "${avecArticleType().replaceFirstChar { it.uppercase() }} en cours est " +
-                                "${if (typeMasculin()) "incomplet" else "incomplète"} (champs obligatoires " +
-                                "manquants) et ne peut pas être enregistré${accordE()}.")
+                                "${if (typeMasculin()) "incomplet" else "incomplète"} (champ " +
+                                "obligatoire manquant ou valeur hors limites) et ne peut pas " +
+                                "être enregistré${accordE()}.")
                     }
                     dialog.show()
                 }
@@ -348,7 +361,12 @@ class NouvelleVisiteFragment : Fragment() {
         // Le bouton de submit reste inactif tant que tous les champs obligatoires visibles
         // ne sont pas remplis. Le renderer notifie via setOnChangement à chaque édition
         // (saisie texte, sélection, picker, multi-select…) — on remet le bouton à jour.
-        renderer.setOnChangement { majEtatBoutonSubmit() }
+        renderer.setOnChangement {
+            majEtatBoutonSubmit()
+            // Mode complétion : la barre rouge suit l'état réel des champs (elle disparaît
+            // dès qu'un champ est rempli, apparaît si une règle le rend obligatoire).
+            renderer.marquerObligatoiresManquants(modeCompletion())
+        }
         // Le renderer ne peut pas lancer le picker système (l'API ActivityResult exige un
         // enregistrement côté Fragment) — on lui fournit un callback qui stocke la lambda
         // de retour et déclenche le launcher photo. Cardinalité MVP : une seule photo.
@@ -378,29 +396,121 @@ class NouvelleVisiteFragment : Fragment() {
         renderer.flushChangementsEnAttente()
         val modifie = valeursApresRendu != null && renderer.lireValeurs() != valeursApresRendu
         when {
-            !modifie -> findNavController().navigateUp()
+            !modifie -> terminerOuCompleterLaVisite()
             binding.btnSubmit.isEnabled -> envoyerVisite(puisTerminer = true)
+            // Reste bloquant : valeur hors bornes, ou champ obligatoire vide sur une saisie
+            // d'ESPÈCE. Sur les infos générales d'une visite, un champ obligatoire vide
+            // n'empêche plus l'enregistrement (elle part « à compléter »).
             else -> AlertDialog.Builder(requireContext())
                 .setTitle("${labelTypeCap()} non enregistré${accordE()}")
                 .setMessage(
                     "${avecArticleType().replaceFirstChar { it.uppercase() }} en cours est " +
-                        "${if (typeMasculin()) "incomplet" else "incomplète"} (champs obligatoires " +
-                        "manquants) et ne peut pas être enregistré${accordE()}. Quitter et " +
-                        "${if (typeMasculin()) "le" else "la"} perdre ?")
+                        "${if (typeMasculin()) "incomplet" else "incomplète"} (champ obligatoire " +
+                        "manquant ou valeur hors limites) et ne peut pas être " +
+                        "enregistré${accordE()}. " +
+                        "Quitter et ${if (typeMasculin()) "le" else "la"} perdre ?")
                 .setPositiveButton("Quitter") { _, _ -> findNavController().navigateUp() }
                 .setNegativeButton("Continuer ${avecArticleType()}", null)
                 .show()
         }
     }
 
-    /** Active/désactive le bouton de submit selon que des champs obligatoires sont vides
-     *  OU qu'un champ numérique viole ses bornes min/max. Délègue le calcul au renderer
-     *  (seul à connaître la visibilité courante imposée par les expressions `hidden`). */
+    /** FIN DE VISITE (bouton « Terminer » de la chaîne de saisies) : si la VISITE PARENTE a
+     *  été enregistrée « à compléter » — champs qu'on ne connaît qu'à la fin, heure et
+     *  température de fin — on rouvre SON formulaire au lieu de sortir (demande terrain
+     *  2026-09-03). C'est le moment où l'utilisateur dispose enfin de ces valeurs. Refuser
+     *  renvoie à l'écran précédent : la visite reste « à compléter » dans « Mes visites » et
+     *  l'envoi la redemandera. */
+    private fun terminerOuCompleterLaVisite() {
+        val uuidParent = arguments?.getString("parentUuidLocal")?.takeIf { it.isNotEmpty() }
+        val parent = uuidParent?.let { u ->
+            fr.ariegenature.geomys.store.OutboxMonitoring.tout().firstOrNull { it.uuid == u }
+        }
+        if (parent == null || !parent.aCompleter) {
+            findNavController().navigateUp()
+            return
+        }
+        AlertDialog.Builder(requireContext())
+            .setTitle("Compléter la visite ?")
+            .setMessage(
+                "La visite a été enregistrée sans " +
+                    "${parent.manquants().size} champ${if (parent.manquants().size > 1) "s" else ""} " +
+                    "obligatoire${if (parent.manquants().size > 1) "s" else ""} : " +
+                    "${parent.manquants().joinToString(", ")}.\n\n" +
+                    "Ces informations sont maintenant connues — les saisir permet d'envoyer la " +
+                    "visite et ses observations.")
+            .setPositiveButton("Compléter") { _, _ -> ouvrirCompletion(parent) }
+            .setNegativeButton("Plus tard") { _, _ -> findNavController().navigateUp() }
+            .setCancelable(false)
+            .show()
+    }
+
+    /** Rouvre le formulaire de [saisie] en mode ÉDITION (même écran que « Mes visites » →
+     *  crayon) pour y saisir les champs manquants. Réutilise l'action d'ENCHAÎNEMENT, qui
+     *  REMPLACE le formulaire courant (popUpTo inclusif) : une fois la visite complétée, le
+     *  retour ne ramène pas sur le formulaire d'observation déjà quitté. */
+    private fun ouvrirCompletion(saisie: fr.ariegenature.geomys.store.SaisieEnAttente) {
+        findNavController().naviguerSur(
+            fr.ariegenature.geomys.R.id.action_nouvelle_visite_enchainer,
+            androidx.core.os.bundleOf(
+                "editUuid" to saisie.uuid,
+                "fil" to arguments?.getString("fil").orEmpty(),
+                // Même cas que depuis « Mes visites » : on ne fait que compléter les infos
+                // de la visite, donc pas de retour sur la saisie des espèces à l'issue.
+                "modeCompletion" to true,
+            ),
+        )
+    }
+
+    /** Active/désactive le bouton de submit. Seule une valeur INVALIDE (champ numérique hors
+     *  de ses bornes min/max) bloque désormais l'enregistrement : un champ obligatoire VIDE
+     *  ne bloque plus (demande terrain 2026-09-03 — certains protocoles demandent des infos
+     *  qu'on ne connaît qu'à la fin de la visite : heure de fin, température de fin). La
+     *  saisie part alors « à compléter » et c'est l'ENVOI qui est bloqué, pas la sauvegarde.
+     *  Le calcul reste délégué au renderer (seul à connaître la visibilité courante imposée
+     *  par les expressions `hidden` et les `required` dynamiques). */
     private fun majEtatBoutonSubmit() {
         if (enCoursEnvoi) return
-        val manquants = renderer.champsObligatoiresManquants()
-        val invalides = renderer.champsInvalides()
-        binding.btnSubmit.isEnabled = manquants.isEmpty() && invalides.isEmpty()
+        val invalides = renderer.champsInvalides().isEmpty()
+        binding.btnSubmit.isEnabled =
+            if (enregistrementIncompletAutorise()) invalides
+            else invalides && renderer.champsObligatoiresManquants().isEmpty()
+    }
+
+    /** L'enregistrement INCOMPLET n'est autorisé que pour les INFOS GÉNÉRALES DE LA VISITE
+     *  (demande terrain 2026-09-03) : ce sont elles qui contiennent des champs qu'on ne peut
+     *  renseigner qu'à la fin (heure de fin, température de fin). Une saisie d'ESPÈCE
+     *  (observation, rattachée à une visite) reste bloquante comme avant : rien n'y justifie
+     *  d'attendre, et une observation partielle n'a pas de sens.
+     *
+     *  Le critère : une saisie dont le PARENT est lui-même un type de saisie est un enfant de
+     *  visite (= observation) ; une saisie accrochée à un site est la visite elle-même. */
+    /** true quand le formulaire a été ouvert pour COMPLÉTER des champs obligatoires manquants
+     *  (tentative d'envoi d'une saisie incomplète, ou « Compléter » en fin de visite) : les
+     *  champs vides portent une barre rouge, et l'enregistrement rend la main à l'écran
+     *  appelant SANS enchaîner sur la saisie des enfants. */
+    private fun modeCompletion(): Boolean = arguments?.getBoolean("modeCompletion", false) == true
+
+    /** L'enregistrement INCOMPLET n'est autorisé que sur les infos générales d'une visite. */
+    private fun enregistrementIncompletAutorise(): Boolean =
+        estObjetDeNiveauVisite(arguments?.getString("parentObjectType"))
+
+    /** « N champ(s) à compléter avant l'envoi : A, B » — au plus trois libellés cités, pour
+     *  rester lisible dans un toast. */
+    private fun messageManquants(manquants: List<String>): String {
+        val cites = manquants.take(3).joinToString(", ")
+        val reste = manquants.size - 3
+        return "${manquants.size} champ${if (manquants.size > 1) "s" else ""} à compléter avant " +
+            "l'envoi : $cites" + if (reste > 0) "… (+$reste)" else ""
+    }
+
+    /** LIBELLÉS des champs obligatoires actuellement vides (pour l'outbox et les messages) —
+     *  le renderer raisonne en codes, l'utilisateur en intitulés de formulaire. */
+    private fun libellesManquants(): List<String> {
+        val codes = renderer.champsObligatoiresManquants().toSet()
+        if (codes.isEmpty()) return emptyList()
+        val parCode = champsCourants.associateBy { it.code }
+        return codes.map { code -> parCode[code]?.label?.takeIf { it.isNotBlank() } ?: code }
     }
 
     private fun chargerSchemaEtRendre(moduleCode: String) {
@@ -532,6 +642,13 @@ class NouvelleVisiteFragment : Fragment() {
             // Référence « formulaire vierge » pour terminerChaine — APRÈS les règles change
             // et les pré-remplissages, pour que seules les saisies utilisateur comptent.
             valeursApresRendu = renderer.lireValeurs()
+            // Message ÉPHÉMÈRE demandé par l'écran appelant (ex. tentative d'envoi d'une
+            // visite incomplète) : affiché seulement MAINTENANT, quand le formulaire est
+            // effectivement à l'écran, et une seule fois (l'argument est consommé).
+            arguments?.getString("messageEphemere")?.takeIf { it.isNotBlank() }?.let { msg ->
+                arguments?.remove("messageEphemere")
+                android.widget.Toast.makeText(requireContext(), msg, android.widget.Toast.LENGTH_LONG).show()
+            }
             if (construction.ignores.isNotEmpty()) {
                 val recapIgnores = construction.ignores.joinToString(", ") { "${it.first} (${it.second})" }
                 ajouterDebug("⚠ ${construction.ignores.size} champ(s) non supporté(s) : $recapIgnores")
@@ -783,6 +900,10 @@ class NouvelleVisiteFragment : Fragment() {
         val champsTexteLibre = champsCourants
             .filter { it.viewType == ViewType.TEXT || it.viewType == ViewType.TEXTAREA }
             .map { it.code }
+        // Champs obligatoires encore vides : la VISITE est enregistrée quand même, marquée
+        // « à compléter » — l'ENVOI l'écartera tant qu'ils manquent. Pour une saisie d'espèce
+        // la liste est forcément vide (le bouton reste bloqué tant qu'il manque un champ).
+        val manquants = if (enregistrementIncompletAutorise()) libellesManquants() else emptyList()
 
         // Mode édition : on remplace les valeurs ET on remet la saisie en PENDING (efface
         // un éventuel ERROR précédent). Au retour, on amène l'utilisateur sur la fiche du
@@ -807,6 +928,7 @@ class NouvelleVisiteFragment : Fragment() {
                     uuidPayload = nouvelUuid,
                     uuidFieldName = uuidFieldNameVisit ?: ancien.uuidFieldName,
                     champsTexteLibre = champsTexteLibre,
+                    champsManquants = manquants.takeIf { it.isNotEmpty() },
                 )
             }
             if (!okMaj) {
@@ -814,9 +936,43 @@ class NouvelleVisiteFragment : Fragment() {
                 return
             }
             android.widget.Toast.makeText(
-                requireContext(), "Modifications enregistrées",
-                android.widget.Toast.LENGTH_SHORT,
+                requireContext(),
+                if (manquants.isEmpty()) "Modifications enregistrées"
+                else "Enregistré — ${messageManquants(manquants)}",
+                if (manquants.isEmpty()) android.widget.Toast.LENGTH_SHORT
+                else android.widget.Toast.LENGTH_LONG,
             ).show()
+            // ENCHAÎNEMENT APRÈS RÉÉDITION, exactement comme après une création (demande
+            // terrain 2026-09-03) : si le type réédité a un type d'enfant « saisie » (visite →
+            // observation/espèce), on bascule sur la saisie de cet enfant — parent = la saisie
+            // locale qu'on vient de modifier — au lieu de revenir à la fiche. Règle GÉNÉRALE :
+            // elle vaut pour tout type qui a des enfants, pas seulement les visites.
+            // Exception : sortie explicite par « Terminer » ou par le retour système
+            // ([puisTerminer]) — là, l'utilisateur veut quitter, pas enchaîner.
+            // MODE COMPLÉTION (on est venu finir des champs obligatoires manquants) : on
+            // n'enchaîne PAS sur les espèces — il n'y a rien à ajouter, seules les infos de
+            // la visite étaient à finir (demande terrain 2026-09-03) — et on rend la main à
+            // l'écran d'où l'on vient (typiquement « Mes visites », pour y relancer l'envoi).
+            val modeCompletion = modeCompletion()
+            val enfantApresEdition = typeSaisieEnfant
+            if (modeCompletion) {
+                findNavController().navigateUp()
+                return
+            }
+            if (!puisTerminer && enfantApresEdition != null) {
+                findNavController().naviguerSur(
+                    fr.ariegenature.geomys.R.id.action_nouvelle_visite_enchainer,
+                    androidx.core.os.bundleOf(
+                        "moduleCode" to moduleCode,
+                        "parentObjectType" to visitType,
+                        "parentUuidLocal" to uuidEdition,
+                        "childObjectType" to enfantApresEdition,
+                        "titreSite" to "${labelTypeCap()} (local)",
+                        "fil" to arguments?.getString("fil").orEmpty(),
+                    ),
+                )
+                return
+            }
             val parentIdRetour = arguments?.getInt("parentId", -1)?.takeIf { it > 0 }
             val parentTypeRetour = arguments?.getString("parentObjectType")?.takeIf { it.isNotEmpty() }
             val moduleRetour = arguments?.getString("moduleCode")?.takeIf { it.isNotEmpty() }
@@ -859,6 +1015,7 @@ class NouvelleVisiteFragment : Fragment() {
             uuidFieldName = uuidFieldNameVisit,
             mediaPathsLocal = mediaPaths,
             mediaSchemaDotTable = mediaSchemaDotTable,
+            champsManquants = manquants.takeIf { it.isNotEmpty() },
         )
         // L'écriture disque peut échouer (stockage plein — plausible avec photos + cache de
         // tuiles) : dans ce cas la saisie n'existe NULLE PART. Sans ce contrôle, l'utilisateur
@@ -871,7 +1028,9 @@ class NouvelleVisiteFragment : Fragment() {
         val labelType = labelTypeCap()
         android.widget.Toast.makeText(
             requireContext(),
-            "$labelType enregistré${accordE()} localement — envoi à la demande depuis « Mes visites »",
+            if (manquants.isEmpty())
+                "$labelType enregistré${accordE()} localement — envoi à la demande depuis « Mes visites »"
+            else "$labelType enregistré${accordE()} — ${messageManquants(manquants)}",
             android.widget.Toast.LENGTH_LONG,
         ).show()
 
@@ -1156,3 +1315,27 @@ class NouvelleVisiteFragment : Fragment() {
         _binding = null
     }
 }
+
+/**
+ * La saisie est-elle un OBJET DE NIVEAU VISITE — c'est-à-dire un objet placé directement sous
+ * le PROTOCOLE (visite, transect, pelouse…) — plutôt qu'un objet ENFANT (une espèce/observation,
+ * rattachée à une visite) ?
+ *
+ * Critère : une saisie dont le PARENT est lui-même un type de saisie est un enfant ; une saisie
+ * rattachée à un site (ou sans parent connu) est l'objet de niveau visite. Fonction PURE et
+ * testée, utilisée à deux endroits qui doivent rester cohérents :
+ *  - l'enregistrement INCOMPLET n'est autorisé que sur ces objets (décision terrain 2026-09-03 :
+ *    eux seuls portent des infos connues à la FIN — heure de fin, température de fin, durée ;
+ *    une observation partielle n'a pas de sens et reste bloquante) ;
+ *  - le COMPTEUR de « Mes visites » ne totalise qu'eux (les espèces ne sont pas des visites).
+ */
+internal fun estObjetDeNiveauVisite(parentObjectType: String?): Boolean {
+    val parent = parentObjectType?.trim().orEmpty()
+    if (parent.isEmpty()) return true
+    return !fr.ariegenature.geomys.network.MonitoringSync.estTypeSaisie(parent)
+}
+
+/** Message éphémère affiché quand on ouvre un formulaire parce qu'il reste des champs
+ *  obligatoires à saisir (tentative d'envoi d'une saisie « à compléter »). Les champs
+ *  concernés portent déjà l'astérisque dans le formulaire. */
+internal const val MESSAGE_CHAMPS_OBLIGATOIRES = "Veuillez saisir les champs obligatoires (*)"

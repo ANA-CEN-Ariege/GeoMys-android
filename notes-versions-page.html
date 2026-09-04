@@ -1,0 +1,496 @@
+<title>GeoMys 1.3.8 → 1.4.0</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;450;600&family=IBM+Plex+Serif:wght@500;600&display=swap">
+<style>
+  /* ── Palette : papier de carte topographique (bleu-vert froid), encre ardoise,
+     accents repris de la légende de la carte OccHab de l'appli. ────────────── */
+  :root {
+    --papier:      #F1F5F6;
+    --surface:     #FFFFFF;
+    --surface-alt: #E7EEF0;
+    --encre:       #15242B;
+    --encre-doux:  #506870;
+    --trait:       #CEDBDF;
+    --accent:      #0B5E96;   /* bleu de l'édition sur la carte */
+    --accent-doux: #E2EDF5;
+    --serveur:     #7B2D9B;   /* violet : station déjà sur GeoNature */
+    --reprise:     #B85000;   /* orange : station reprise ailleurs */
+    --alerte-fond: #FDF3E7;
+    --alerte-trait:#C97A16;
+    --ombre: 0 1px 2px rgba(21, 36, 43, .06), 0 8px 24px -16px rgba(21, 36, 43, .28);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --papier:      #0D1518;
+      --surface:     #131F24;
+      --surface-alt: #18262C;
+      --encre:       #E3ECEE;
+      --encre-doux:  #94A9B1;
+      --trait:       #26383F;
+      --accent:      #6BB4E8;
+      --accent-doux: #16303F;
+      --serveur:     #C79BE0;
+      --reprise:     #E9A063;
+      --alerte-fond: #241C10;
+      --alerte-trait:#C9911D;
+      --ombre: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.8);
+    }
+  }
+  :root[data-theme="dark"] {
+    --papier:      #0D1518;
+    --surface:     #131F24;
+    --surface-alt: #18262C;
+    --encre:       #E3ECEE;
+    --encre-doux:  #94A9B1;
+    --trait:       #26383F;
+    --accent:      #6BB4E8;
+    --accent-doux: #16303F;
+    --serveur:     #C79BE0;
+    --reprise:     #E9A063;
+    --alerte-fond: #241C10;
+    --alerte-trait:#C9911D;
+    --ombre: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.8);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--papier);
+    color: var(--encre);
+    font-family: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+    font-size: 16px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page {
+    max-width: 1140px;
+    margin: 0 auto;
+    padding: clamp(28px, 5vw, 72px) clamp(18px, 4vw, 40px) 96px;
+  }
+
+  /* ── En-tête ─────────────────────────────────────────────────────────── */
+  .eyebrow {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--encre-doux);
+  }
+  header.tete { border-bottom: 1px solid var(--trait); padding-bottom: 30px; }
+  h1 {
+    font-family: "IBM Plex Serif", Georgia, serif;
+    font-weight: 600;
+    font-size: clamp(34px, 6vw, 56px);
+    line-height: 1.05;
+    letter-spacing: -.015em;
+    margin: 14px 0 0;
+    text-wrap: balance;
+  }
+  h1 .bornes {
+    display: block;
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: clamp(15px, 2.2vw, 21px);
+    font-weight: 500;
+    letter-spacing: 0;
+    color: var(--accent);
+    margin-top: 10px;
+  }
+  .chapeau {
+    max-width: 62ch;
+    margin: 18px 0 0;
+    font-size: 17px;
+    color: var(--encre-doux);
+  }
+  .chapeau a { color: var(--accent); text-underline-offset: 3px; }
+
+  .reperes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 40px;
+    margin-top: 26px;
+  }
+  .repere .val {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 24px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    display: block;
+    line-height: 1.2;
+  }
+  .repere .lib {
+    font-size: 13px;
+    color: var(--encre-doux);
+  }
+
+  /* ── Grille document : sommaire collant + contenu ─────────────────────── */
+  .corps { display: grid; gap: 40px; margin-top: 44px; }
+  @media (min-width: 900px) {
+    .corps { grid-template-columns: 210px minmax(0, 1fr); gap: 56px; }
+  }
+
+  nav.sommaire { align-self: start; }
+  @media (min-width: 900px) {
+    nav.sommaire { position: sticky; top: 28px; }
+  }
+  nav.sommaire ol {
+    list-style: none;
+    margin: 12px 0 0;
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 16px;
+  }
+  @media (min-width: 900px) {
+    nav.sommaire ol { display: block; }
+    nav.sommaire li { margin-bottom: 7px; }
+  }
+  nav.sommaire a {
+    color: var(--encre-doux);
+    text-decoration: none;
+    font-size: 14px;
+    border-left: 2px solid transparent;
+    padding-left: 10px;
+    display: inline-block;
+  }
+  @media (min-width: 900px) { nav.sommaire a { display: block; } }
+  nav.sommaire a:hover, nav.sommaire a:focus-visible { color: var(--accent); border-left-color: var(--accent); }
+
+  main { min-width: 0; }
+  section + section { margin-top: 52px; }
+  section { scroll-margin-top: 24px; }
+
+  h2 {
+    font-family: "IBM Plex Serif", Georgia, serif;
+    font-size: clamp(23px, 3vw, 29px);
+    font-weight: 600;
+    line-height: 1.2;
+    letter-spacing: -.01em;
+    margin: 0;
+    text-wrap: balance;
+  }
+  .titre-rang {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    border-top: 2px solid var(--encre);
+    padding-top: 14px;
+    margin-bottom: 22px;
+  }
+  /* Le rang de versions est une DONNÉE : il dit sur quelles versions le thème s'étale. */
+  .versions {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 12.5px;
+    font-variant-numeric: tabular-nums;
+    color: var(--encre-doux);
+    white-space: nowrap;
+  }
+
+  h3 {
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: .01em;
+    margin: 32px 0 12px;
+    color: var(--encre);
+  }
+  h3::before {
+    content: "";
+    display: inline-block;
+    width: 14px;
+    height: 2px;
+    background: var(--accent);
+    vertical-align: middle;
+    margin-right: 9px;
+    transform: translateY(-2px);
+  }
+
+  ul.liste { margin: 0; padding: 0; list-style: none; display: grid; gap: 13px; }
+  ul.liste li { position: relative; padding-left: 20px; max-width: 68ch; }
+  ul.liste li::before {
+    content: "";
+    position: absolute;
+    left: 2px;
+    top: .62em;
+    width: 6px;
+    height: 6px;
+    border: 1.5px solid var(--encre-doux);
+    border-radius: 50%;
+  }
+  strong { font-weight: 600; }
+  code, .mono {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: .88em;
+  }
+
+  /* ── Encadré d'avertissement ──────────────────────────────────────────── */
+  .avis {
+    background: var(--alerte-fond);
+    border: 1px solid var(--trait);
+    border-left: 3px solid var(--alerte-trait);
+    border-radius: 3px;
+    padding: 22px 24px;
+    box-shadow: var(--ombre);
+  }
+  .avis h2 { font-size: 20px; margin-bottom: 14px; }
+  .avis ul.liste li::before { border-color: var(--alerte-trait); }
+
+  /* ── Légende des couleurs de la carte (vernaculaire de l'appli) ───────── */
+  .legende {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 22px;
+    margin: 18px 0 0;
+    padding: 14px 18px;
+    background: var(--surface-alt);
+    border-radius: 3px;
+    font-size: 13.5px;
+  }
+  .legende span { display: inline-flex; align-items: center; gap: 8px; }
+  .pastille { width: 11px; height: 11px; border-radius: 50%; flex: none; }
+  .pastille.violet { background: var(--serveur); }
+  .pastille.orange { background: transparent; border: 2px dashed var(--reprise); width: 13px; height: 13px; }
+  .pastille.rouge  { background: #C4342F; }
+  .pastille.bleu   { background: var(--accent); }
+
+  /* ── Tableau des versions ─────────────────────────────────────────────── */
+  .tableau-enveloppe { overflow-x: auto; margin-top: 22px; }
+  table { border-collapse: collapse; width: 100%; font-size: 14.5px; min-width: 520px; }
+  caption { text-align: left; color: var(--encre-doux); font-size: 13.5px; padding-bottom: 12px; }
+  th, td { text-align: left; padding: 9px 14px 9px 0; border-bottom: 1px solid var(--trait); vertical-align: baseline; }
+  thead th {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 11.5px;
+    font-weight: 500;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+    color: var(--encre-doux);
+    border-bottom-color: var(--encre-doux);
+  }
+  td.v, td.d {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  td.v { font-weight: 500; }
+  tr.courante td { background: var(--accent-doux); }
+  tr.courante td.v { font-weight: 600; color: var(--accent); }
+
+  footer {
+    margin-top: 64px;
+    padding-top: 22px;
+    border-top: 1px solid var(--trait);
+    font-size: 13.5px;
+    color: var(--encre-doux);
+    max-width: 68ch;
+  }
+  footer a { color: var(--accent); }
+  a:focus-visible, :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 2px; }
+</style>
+
+<div class="page">
+
+  <header class="tete">
+    <p class="eyebrow">Notes de version · ANA — CEN Ariège</p>
+    <h1>GeoMys<span class="bornes">v1.3.8 → v1.4.0</span></h1>
+    <p class="chapeau">
+      Seize versions publiées du 20 au 31 août 2026, regroupées ici par thème. Le détail
+      version par version reste sur les
+      <a href="https://github.com/ANA-CEN-Ariege/GeoMys-android/releases">releases GitHub</a>.
+    </p>
+    <div class="reperes">
+      <div class="repere"><span class="val">16</span><span class="lib">versions publiées</span></div>
+      <div class="repere"><span class="val">12</span><span class="lib">jours</span></div>
+      <div class="repere"><span class="val">549</span><span class="lib">tests automatisés (373 en 1.3.8)</span></div>
+      <div class="repere"><span class="val">3,4 Mo</span><span class="lib">taille de l'appli (7,4 avant)</span></div>
+    </div>
+  </header>
+
+  <div class="corps">
+
+    <nav class="sommaire" aria-label="Sommaire">
+      <p class="eyebrow">Sommaire</p>
+      <ol>
+        <li><a href="#avis">À savoir</a></li>
+        <li><a href="#occhab">Module OccHab</a></li>
+        <li><a href="#envois">Fiabilité des envois</a></li>
+        <li><a href="#suivis">Suivis</a></li>
+        <li><a href="#occtax">Occtax</a></li>
+        <li><a href="#parametres">Application et Paramètres</a></li>
+        <li><a href="#capot">Sous le capot</a></li>
+        <li><a href="#reperes">Repères de versions</a></li>
+      </ol>
+    </nav>
+
+    <main>
+
+      <section id="avis" class="avis" aria-labelledby="t-avis">
+        <h2 id="t-avis">À savoir avant de mettre à jour</h2>
+        <ul class="liste">
+          <li><strong>Depuis la v1.3.17, une mise à jour peut exiger un rechargement des données.</strong> Au premier lancement, l'application ouvre alors <strong>Paramètres</strong> et demande « Recharger les données » (réseau nécessaire) avant de laisser continuer. <strong>Vos saisies en attente sont conservées</strong> — Mes saisies, Mes visites, Mes stations — et pourront être envoyées ensuite.</li>
+          <li>Même quand ce n'est pas obligatoire, un « Recharger les données » après mise à jour est conseillé : c'est lui qui remplit les caches hors-ligne (listes des formulaires, pictogrammes de protocoles, habitats HABREF, et depuis la v1.3.22 vos stations OccHab).</li>
+          <li><strong>Envoyez vos saisies en attente avant de changer de canal d'installation</strong> (APK GitHub ↔ Play Store) : ce sont deux applications distinctes, et une désinstallation efface les saisies locales.</li>
+        </ul>
+      </section>
+
+      <section id="occhab" aria-labelledby="t-occhab">
+        <div class="titre-rang">
+          <h2 id="t-occhab">Module OccHab</h2>
+          <span class="versions">1.3.9 → 1.4.0</span>
+        </div>
+        <p class="chapeau" style="margin-top:0">L'essentiel du travail de cette série : le module habitats est passé d'une saisie basique à un véritable outil de terrain, capable de reprendre et de mettre à jour les stations déjà présentes sur GeoNature.</p>
+
+        <h3>Saisie d'une station</h3>
+        <ul class="liste">
+          <li><strong>Le formulaire des informations obligatoires s'ouvre dès la carte</strong>, à chaque nouveau relevé, <strong>pré-rempli avec les valeurs du relevé précédent</strong> (les dates repartent du jour). Le bouton <strong>« i »</strong> rouvre à tout moment le formulaire complet de la station.</li>
+          <li><strong>Chaque station est indépendante</strong> : « i » et « Détails » ne modifient que la station sélectionnée — jeu de données, observateurs, dates, commentaire, nomenclatures. Une nouvelle station hérite des valeurs du formulaire de démarrage, puis vit sa vie.</li>
+          <li><strong>Champs obligatoires alignés sur GeoNature web</strong> ; <strong>surface calculée automatiquement</strong> (calcul local, fonctionne hors-ligne) et <strong>altitudes min/max remplies depuis le MNT du serveur</strong> quand il y a du réseau ; dates sans heure.</li>
+          <li>Une géométrie validée est <strong>enregistrée et envoyable telle quelle, avec ou sans habitat</strong>.</li>
+        </ul>
+
+        <h3>Dessin et modification des polygones</h3>
+        <ul class="liste">
+          <li><strong>Poignées « + »</strong> au milieu de chaque arête : les toucher insère un sommet à cet endroit (mécanisme QField) — fini les contours croisés. Appui long sur un sommet pour le déplacer.</li>
+          <li><strong>Topologie partagée</strong> : sur une arête commune à deux polygones (aimantage), un sommet inséré ou déplacé est répercuté sur le polygone voisin, y compris pendant le dessin d'un nouveau polygone. Un voisin déjà envoyé repasse alors « à envoyer ».</li>
+          <li><strong>Annuler = la dernière opération</strong> (sommet ajouté, déplacé, inséré, point déplacé), effet sur les voisins compris. Plusieurs Annuler remontent les opérations une à une.</li>
+          <li><strong>Stations à trou</strong> — un polygone dessiné sous QGIS avec un <strong>anneau intérieur</strong> est désormais lu, affiché en creux et <strong>conservé à l'identique lors d'une mise à jour</strong> : auparavant, un simple renvoi supprimait le trou sur GeoNature. Les <strong>sommets d'un trou se modifient</strong> comme ceux du contour, et la <strong>surface déduit les trous</strong>. Une géométrie multi-parties est affichée mais non modifiable dans l'appli — à retoucher sous QGIS.</li>
+        </ul>
+
+        <h3>Stations déjà présentes sur GeoNature</h3>
+        <ul class="liste">
+          <li><strong>« Afficher mes stations déjà sur GeoNature »</strong> : vos stations du serveur (votre compte, jeu de données de la saisie) s'affichent sur la carte, la cadrent et aimantent la saisie. Depuis la v1.3.22, l'option est <strong>cochée par défaut</strong> et le décochage est mémorisé.</li>
+          <li><strong>Elles sont modifiables</strong> : en toucher une l'importe dans le relevé ; géométrie et habitats se modifient, et l'envoi part en <strong>mise à jour</strong> de la station existante, jamais en doublon.</li>
+          <li><strong>Jamais plus d'une copie locale à envoyer</strong> par station serveur. Une station déjà reprise dans une autre saisie propose d'<strong>ouvrir cette saisie</strong> ; depuis la v1.3.22 elle s'affiche <strong>avec ses modifications</strong> en cours.</li>
+          <li><strong>Elle n'entre dans « Mes stations » qu'à la première modification réelle</strong> : la consulter ou la valider sans rien changer ne crée aucune copie à envoyer. Et si l'on annule toutes ses modifications, elle en ressort et redevient importable.</li>
+          <li><strong>Disponibles hors-ligne</strong> : « Recharger les données » les met en cache ; sans réseau, la carte les affiche depuis ce cache — avec la date du dernier chargement — et elles restent importables et modifiables.</li>
+        </ul>
+        <div class="legende" role="note">
+          <span><i class="pastille violet"></i> déjà sur GeoNature</span>
+          <span><i class="pastille orange"></i> reprise dans une autre saisie</span>
+          <span><i class="pastille rouge"></i> station de la saisie en cours</span>
+          <span><i class="pastille bleu"></i> station en cours d'édition</span>
+        </div>
+
+        <h3>Évaluations ANA / Natura 2000</h3>
+        <ul class="liste">
+          <li>Les stations portant un bloc <span class="mono">[ANA-EVAL]</span> (plugin QGIS maison) affichent une section <strong>éditable</strong> : statut de validation, enjeu, état de conservation, zone humide, unité végétale, échelle côté station ; enjeu, état, typicité, dynamique, restauration, plantes exotiques envahissantes côté habitat.</li>
+          <li>Le <strong>texte libre du commentaire n'est jamais touché</strong> : le bloc est extrait à la lecture et re-fusionné à l'envoi — parfaitement interopérable avec le plugin QGIS.</li>
+        </ul>
+
+        <h3>Corrections de saisie</h3>
+        <ul class="liste">
+          <li>Le <strong>nom cité</strong> d'un habitat existant (saisi sur le web ou QGIS) est conservé tant que le code HABREF ne change pas.</li>
+          <li>Le <strong>recouvrement accepte la virgule</strong> décimale ; le commentaire d'une saisie n'est plus proposé dans la suivante.</li>
+          <li>Si le téléphone a relancé l'application en pleine saisie, les écrans « habitats » renvoient à l'accueil au lieu d'enregistrer une station vide à (0, 0).</li>
+          <li>L'édition d'un habitat passe par une <strong>icône crayon</strong> ; la suppression d'une station se fait depuis « Mes stations ».</li>
+        </ul>
+      </section>
+
+      <section id="envois" aria-labelledby="t-envois">
+        <div class="titre-rang">
+          <h2 id="t-envois">Fiabilité des envois</h2>
+          <span class="versions">1.3.9 · 1.3.18 · 1.3.21</span>
+        </div>
+        <ul class="liste">
+          <li><strong>Plus de doublon si l'on quitte l'écran pendant un envoi</strong> (Occtax et OccHab) : le résultat d'un envoi abouti est toujours enregistré, et chaque observation est marquée dès sa création côté serveur.</li>
+          <li><strong>Anti-doublon Occtax</strong> : chaque observation part avec un identifiant unique ; si la réponse du serveur se perd (coupure réseau), le prochain envoi vérifie d'abord son existence avant de la renvoyer.</li>
+          <li><strong>Stockage plein</strong> : un envoi transmis mais impossible à enregistrer localement est clairement signalé, au lieu de passer pour « à envoyer » et d'être renvoyé en double. Plus largement, tout échec d'écriture sur l'appareil déclenche une alerte au lieu d'une perte silencieuse.</li>
+          <li><strong>Messages réseau justes</strong> : hors couverture, l'appli dit « Pas de réseau, ou serveur introuvable » au lieu de « Identifiants expirés (HTTP 401) » — inutile de ressaisir ses identifiants dans ce cas. Une session réellement expirée est détectée sur tous les appels, avec reconnexion automatique.</li>
+        </ul>
+      </section>
+
+      <section id="suivis" aria-labelledby="t-suivis">
+        <div class="titre-rang">
+          <h2 id="t-suivis">Suivis</h2>
+          <span class="versions">1.3.9 · 1.3.12 · 1.3.19</span>
+        </div>
+        <ul class="liste">
+          <li><strong>Vrais pictogrammes de protocole</strong> (les images du serveur, en cache hors-ligne) et liste épurée.</li>
+          <li><strong>Saisie 100 % hors-ligne</strong> : les listes déroulantes des formulaires — nomenclatures, jeux de données, observateurs — sont en cache après « Recharger les données ».</li>
+          <li>Formulaires plus fluides sur les gros protocoles ; un champ « entier » ne part plus avec une décimale ; un protocole sans image ne déclenche plus d'appel réseau à chaque ouverture.</li>
+        </ul>
+      </section>
+
+      <section id="occtax" aria-labelledby="t-occtax">
+        <div class="titre-rang">
+          <h2 id="t-occtax">Occtax</h2>
+          <span class="versions">1.3.9 · 1.3.20</span>
+        </div>
+        <ul class="liste">
+          <li>Un champ additionnel de type <strong>texte</strong> part tel quel — « 42 » reste du texte, comme depuis le site GeoNature ; les champs nombre, case à cocher et nomenclature gardent leur type.</li>
+          <li>Clavier avec séparateur décimal sur les champs numériques ; autocomplétion des espèces sans à-coups ; tracé GPS plus économe sur les longues sorties.</li>
+        </ul>
+      </section>
+
+      <section id="parametres" aria-labelledby="t-param">
+        <div class="titre-rang">
+          <h2 id="t-param">Application et Paramètres</h2>
+          <span class="versions">1.3.8 · 1.4.0</span>
+        </div>
+        <ul class="liste">
+          <li><strong>Première configuration guidée</strong> : tant que la configuration n'est pas complète (connexion, données, sélections), l'application ouvre Paramètres et empêche d'en sortir.</li>
+          <li>Modifier serveur, identifiant ou mot de passe « oublie » la connexion précédente et invite à re-tester.</li>
+          <li><strong>Paramètres utilisables hors-ligne</strong> : la boîte « Chargement des données » — bouton Recharger et compteurs — est visible dès que des données sont en cache, même sans réseau.</li>
+          <li><strong>Compteurs adaptés aux droits</strong> : « Protocoles » n'apparaît que si un protocole de suivi est accessible, « Stations OccHab » que si le module est disponible.</li>
+          <li>La liste des <strong>jeux de données</strong> s'ouvre sous le champ au lieu de le recouvrir.</li>
+        </ul>
+      </section>
+
+      <section id="capot" aria-labelledby="t-capot">
+        <div class="titre-rang">
+          <h2 id="t-capot">Sous le capot</h2>
+          <span class="versions">1.3.10 → 1.4.0</span>
+        </div>
+        <ul class="liste">
+          <li><strong>Application deux fois plus légère</strong> : 7,4 → 3,4 Mo grâce à la minification R8 — les mises à jour se téléchargent bien plus vite sur le terrain.</li>
+          <li><strong>Mot de passe</strong> chiffré via l'Android Keystore (migration automatique et transparente) ; mise à jour intégrée en HTTPS exclusivement, fichier d'installation purgé après usage.</li>
+          <li>Purge des <strong>photos orphelines</strong> ; sauvegarde Android bornée aux données utiles — référentiels, cartes hors-ligne et médias exclus.</li>
+          <li><strong>549 tests automatisés</strong> contre 373 à la v1.3.8, dont un test d'exhaustivité qui garantit qu'aucun champ OccHab envoyé au serveur ne peut être oublié lors d'une modification.</li>
+          <li>Trois audits de code menés en juillet et août 2026, appliqués par lots.</li>
+        </ul>
+      </section>
+
+      <section id="reperes" aria-labelledby="t-reperes">
+        <div class="titre-rang">
+          <h2 id="t-reperes">Repères de versions</h2>
+          <span class="versions">20 → 31 août 2026</span>
+        </div>
+        <div class="tableau-enveloppe">
+          <table>
+            <caption>Chaque version en une ligne, de la plus récente à la plus ancienne.</caption>
+            <thead>
+              <tr><th scope="col">Version</th><th scope="col">Date</th><th scope="col">En une ligne</th></tr>
+            </thead>
+            <tbody>
+              <tr class="courante"><td class="v">1.4.0</td><td class="d">31/08</td><td>Polygones à trou (lus, éditables, conservés à l'envoi) ; Paramètres hors-ligne</td></tr>
+              <tr><td class="v">1.3.22</td><td class="d">31/08</td><td>Stations serveur en cache hors-ligne ; option cochée par défaut</td></tr>
+              <tr><td class="v">1.3.21</td><td class="d">30/08</td><td>Annuler = dernière opération ; retour à l'origine = plus rien à envoyer</td></tr>
+              <tr><td class="v">1.3.20</td><td class="d">27/08</td><td>Détails par station ; champs additionnels texte</td></tr>
+              <tr><td class="v">1.3.19</td><td class="d">27/08</td><td>Corrections de saisie OccHab (nom cité, virgule, station fantôme)</td></tr>
+              <tr><td class="v">1.3.18</td><td class="d">27/08</td><td>Fiabilité des envois : anti-doublon, stockage plein, messages réseau</td></tr>
+              <tr><td class="v">1.3.17</td><td class="d">27/08</td><td>Rechargement des données requis ; entrée dans Mes stations à la 1ʳᵉ modification</td></tr>
+              <tr><td class="v">1.3.16</td><td class="d">26/08</td><td>Une seule copie locale par station serveur</td></tr>
+              <tr><td class="v">1.3.15</td><td class="d">26/08</td><td>Évaluations ANA / Natura 2000 éditables</td></tr>
+              <tr><td class="v">1.3.14</td><td class="d">26/08</td><td>Poignées « + », topologie partagée, stations serveur modifiables</td></tr>
+              <tr><td class="v">1.3.13</td><td class="d">25/08</td><td>Refonte du flux de saisie OccHab</td></tr>
+              <tr><td class="v">1.3.12</td><td class="d">25/08</td><td>Robustesse : mise à jour HTTPS, connexion, cartes</td></tr>
+              <tr><td class="v">1.3.11</td><td class="d">24/08</td><td>Station sans habitat envoyable ; mot de passe Keystore</td></tr>
+              <tr><td class="v">1.3.10</td><td class="d">24/08</td><td>Minification R8 : application deux fois plus légère</td></tr>
+              <tr><td class="v">1.3.9</td><td class="d">24/08</td><td>OccHab aligné sur le web ; suivis hors-ligne ; alertes de stockage</td></tr>
+              <tr><td class="v">1.3.8</td><td class="d">20/08</td><td>Première configuration guidée ; écran Paramètres plus sûr</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <footer>
+        GeoMys — application de saisie naturaliste pour GeoNature, développée pour l'ANA — CEN Ariège.
+        Les versions se téléchargent depuis les
+        <a href="https://github.com/ANA-CEN-Ariege/GeoMys-android/releases">releases GitHub</a>
+        ; l'application propose aussi la mise à jour depuis l'écran d'accueil.
+      </footer>
+
+    </main>
+  </div>
+</div>

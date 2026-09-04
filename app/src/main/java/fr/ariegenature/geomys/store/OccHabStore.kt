@@ -251,6 +251,12 @@ private fun normaliserSaisie(s: OccHabSaisie): OccHabSaisie? {
 
 // Écarte (retour null) une entrée structurellement invalide (id/habitats null via Gson), sinon
 // reconstruit une station sûre par CONSTRUCTEUR explicite (pas copy() : il crasherait sur null).
+// ⚠ EXHAUSTIVITÉ OBLIGATOIRE : tout champ ajouté à OccHabStation (ou OccHabHabitat) DOIT être
+// recopié ici, sinon il est silencieusement remis à son défaut à chaque relecture du disque —
+// la station paraît correcte tant qu'elle est en cache mémoire, puis « perd » le champ au
+// redémarrage. Cas réel (2026-09-03) : geometryTrousJson oublié ⇒ une station à trou perdait
+// son anneau intérieur, et l'envoi l'aurait SUPPRIMÉ côté serveur. OccHabStoreRoundTripTest
+// fait échouer tout oubli (contrôle par réflexion).
 @Suppress("SENSELESS_COMPARISON", "USELESS_ELVIS")
 private fun normaliserStation(s: OccHabStation): OccHabStation? {
     if (s.id == null || s.habitats == null) return null
@@ -266,6 +272,8 @@ private fun normaliserStation(s: OccHabStation): OccHabStation? {
     latitude = s.latitude,
     longitude = s.longitude,
     geometryCoordsJson = s.geometryCoordsJson,
+    geometryTrousJson = s.geometryTrousJson,
+    geometryPartielle = s.geometryPartielle,
     idDataset = s.idDataset,
     observateursIds = (s.observateursIds ?: emptyList()).filterNotNull(),
     observateursNoms = (s.observateursNoms ?: emptyList()).filterNotNull(),

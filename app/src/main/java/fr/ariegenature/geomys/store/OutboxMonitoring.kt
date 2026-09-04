@@ -85,8 +85,23 @@ data class SaisieEnAttente(
     /** `schema_dot_table` du champ media (ex. `gn_monitoring.t_base_visits`), résolu en
      *  id_table_location côté envoi. Null si pas de média. */
     val mediaSchemaDotTable: String? = null,
+    /** LIBELLÉS des champs OBLIGATOIRES encore vides au dernier enregistrement — saisie
+     *  « à compléter » (demande terrain 2026-09-03). Certains protocoles imposent des infos
+     *  qu'on ne connaît qu'À LA FIN de la visite (heure de fin, température de fin) : la
+     *  saisie est donc enregistrable incomplète, mais elle NE PART PAS tant qu'il reste des
+     *  manquants ([OutboxEnvoi] l'écarte, ses enfants restent bloqués avec elle). Recalculé à
+     *  chaque enregistrement du formulaire — jamais évalué ailleurs (les règles `required`
+     *  dynamiques ont besoin du rendu). Nullable : les saisies écrites avant ce champ le
+     *  relisent à null (Gson par réflexion, cf. [manquants]). */
+    val champsManquants: List<String>? = null,
 ) {
     enum class Etat { PENDING, SENDING, SENT, ERROR }
+
+    /** Libellés des champs obligatoires manquants (liste vide si la saisie est complète). */
+    fun manquants(): List<String> = champsManquants ?: emptyList()
+
+    /** true = saisie CONSERVÉE localement mais non envoyable tant qu'elle n'est pas complétée. */
+    val aCompleter: Boolean get() = !champsManquants.isNullOrEmpty()
 
     /** Liste effective des médias : [mediaPathsLocal] si renseignée, sinon repli sur l'ancien
      *  champ mono-fichier [mediaPathLocal] (brouillons d'avant la multi-pj). */
@@ -162,6 +177,11 @@ object OutboxMonitoring : JsonCollectionStore<SaisieEnAttente>() {
      *  en 0.10.4 — un brouillon écrit avant crashe au premier copy()/accès). Retourne null si un
      *  champ obligatoire manque (entrée écartée → quarantaine côté base). */
     @Suppress("SENSELESS_COMPARISON", "USELESS_ELVIS") // Gson viole la non-nullabilité Kotlin
+    /** ⚠ RECONSTRUCTION EXHAUSTIVE : tout champ ajouté à [SaisieEnAttente] DOIT être recopié
+     *  ici, sinon il est silencieusement remis à sa valeur par défaut à chaque relecture du
+     *  disque — la saisie paraît correcte tant qu'elle est en cache mémoire, puis « perd » le
+     *  champ au redémarrage (bug terrain 2026-09-03 : une visite « à compléter » redevenait
+     *  complète et partait telle quelle). `OutboxRoundTripTest` fait échouer tout oubli. */
     override fun normaliser(item: SaisieEnAttente): SaisieEnAttente? {
         val e = item
         if (e.uuid == null || e.moduleCode == null || e.objectType == null ||
@@ -180,6 +200,7 @@ object OutboxMonitoring : JsonCollectionStore<SaisieEnAttente>() {
             mediaPathLocal = e.mediaPathLocal,
             mediaPathsLocal = e.mediaPathsLocal ?: emptyList(),
             mediaSchemaDotTable = e.mediaSchemaDotTable,
+            champsManquants = e.champsManquants,
         )
     }
 

@@ -142,8 +142,14 @@ class SaisiesEnAttenteFragment : Fragment() {
     private fun rafraichir() {
         if (_binding == null) return // appelable depuis le callback de progression (cf. lancerEnvoiGroupe)
         val toutes = OutboxMonitoring.tout()
-        val enAttente = toutes.count { it.etat == SaisieEnAttente.Etat.PENDING || it.etat == SaisieEnAttente.Etat.ERROR }
-        val envoyees = toutes.count { it.etat == SaisieEnAttente.Etat.SENT }
+        // Le RÉSUMÉ compte les objets de niveau VISITE seulement (ceux placés directement sous
+        // le protocole : visite, transect, pelouse…) — pas leurs enfants (espèces/observations),
+        // qui gonflaient le total sans correspondre à ce que l'utilisateur appelle une visite
+        // (demande terrain 2026-09-03). Les enfants restent affichés sous leur visite et partent
+        // avec elle.
+        val visites = toutes.filter { estObjetDeNiveauVisite(it.parentObjectType) }
+        val enAttente = visites.count { it.etat == SaisieEnAttente.Etat.PENDING || it.etat == SaisieEnAttente.Etat.ERROR }
+        val envoyees = visites.count { it.etat == SaisieEnAttente.Etat.SENT }
         binding.tvResume.text = when {
             toutes.isEmpty() -> "Aucune donnée locale."
             enAttente == 0 -> "Toutes les données ont été envoyées ($envoyees)."
@@ -444,6 +450,10 @@ class SaisiesEnAttenteFragment : Fragment() {
         // reste accessible visuellement via l'indentation et le contexte du groupe.
         val titrePrincipal = nomTaxonDeSaisie(s) ?: labelType
         header.addView(TextView(ctx).apply {
+            // Ligne STRICTEMENT IDENTIQUE pour toutes les saisies, incomplètes comprises :
+            // c'est la FLÈCHE D'ENVOI qui passe au rouge quand il reste des champs
+            // obligatoires (demande terrain 2026-09-03) — ni pastille, ni cadre, ni bloc de
+            // texte. Le détail des champs manquants est donné à la tentative d'envoi.
             text = "$flecheEnfant$icone $titrePrincipal$parentInfo"
             textSize = 15f
             layoutParams = LinearLayout.LayoutParams(
@@ -501,10 +511,12 @@ class SaisiesEnAttenteFragment : Fragment() {
      *  de la racine ou par "Envoyer tout" — un enfant ne peut pas partir sans son parent). */
     private fun ajouterIconesActions(parent: LinearLayout, s: SaisieEnAttente, profondeur: Int) {
         if (profondeur == 0 && envoiAutorise(s)) {
+            // Flèche ROUGE = saisie incomplète : la toucher ouvre son formulaire pour finir
+            // les champs obligatoires au lieu de lancer l'envoi (cf. lancerEnvoiGroupe).
             parent.addView(creerIconeAction(
                 fr.ariegenature.geomys.R.drawable.ic_send,
-                "Envoyer ce groupe",
-                tint = couleurEnvoi(),
+                if (s.aCompleter) "Compléter avant d'envoyer" else "Envoyer ce groupe",
+                tint = if (s.aCompleter) ROUGE_A_COMPLETER else couleurEnvoi(),
             ) { lancerEnvoiGroupe(s.uuid) })
         }
         parent.addView(creerIconeAction(
@@ -515,7 +527,12 @@ class SaisiesEnAttenteFragment : Fragment() {
         parent.addView(creerIconeAction(
             fr.ariegenature.geomys.R.drawable.ic_delete,
             "Supprimer ${ceTypeDe(s)}",
-            tint = couleurErreur(requireContext()),
+            // MÊME rouge que la poubelle de « Mes saisies » et « Mes stations »
+            // (item_sortie.xml / item_occhab_station.xml) : la couleur d'erreur du thème
+            // Material tire sur le rose pâle en thème sombre.
+            tint = androidx.core.content.ContextCompat.getColor(
+                requireContext(), android.R.color.holo_red_light,
+            ),
         ) {
             val nbEnfants = OutboxMonitoring.descendants(s.uuid).size
             demanderSuppression(s, nbEnfants)
@@ -565,11 +582,22 @@ class SaisiesEnAttenteFragment : Fragment() {
     /** Navigation vers [NouvelleVisiteFragment] en mode édition pour la saisie [s]. Le
      *  fragment va récupérer les autres meta (parent serveur, type, etc.) directement
      *  depuis [OutboxMonitoring] via l'editUuid — pas besoin de tout passer ici. */
-    private fun ouvrirEdition(s: SaisieEnAttente) {
+    private fun ouvrirEdition(
+        s: SaisieEnAttente,
+        messageEphemere: String? = null,
+        /** true = on vient COMPLÉTER des champs obligatoires manquants : à l'enregistrement,
+         *  le formulaire n'enchaîne PAS sur la saisie des espèces (rien à ajouter, on ne
+         *  faisait que finir les infos de la visite) et rend la main à cet écran. */
+        modeCompletion: Boolean = false,
+    ) {
         findNavController().naviguerSur(
             fr.ariegenature.geomys.R.id.action_attente_to_edition,
             androidx.core.os.bundleOf(
                 "editUuid" to s.uuid,
+                // Affiché en toast PAR LE FORMULAIRE, une fois celui-ci rendu (le montrer
+                // ici le ferait apparaître avant l'écran, voire s'éteindre avant lui).
+                "messageEphemere" to messageEphemere,
+                "modeCompletion" to modeCompletion,
                 // Fil d'Ariane reconstruit depuis le cache (le formulaire l'affichera en
                 // texte simple : pas de pile de drill-down à remonter dans ce contexte).
                 "fil" to construireFilPourEdition(s),
@@ -748,6 +776,16 @@ class SaisiesEnAttenteFragment : Fragment() {
     /** F : envoi du sous-arbre — progression + récap final. On ne pousse que la saisie
      *  [uuidRacine] et ses descendants locaux (déclenché par « Envoyer ce groupe »). */
     private fun lancerEnvoiGroupe(uuidRacine: String) {
+        // TENTATIVE D'ENVOI d'un groupe dont la RACINE est « à compléter » : on ouvre
+        // DIRECTEMENT son formulaire, avec un message éphémère — pas de dialogue
+        // intermédiaire (demande terrain 2026-09-03). Les autres cas (un descendant à
+        // compléter, « Tout envoyer ») passent par le récapitulatif d'envoi, qui nomme les
+        // saisies concernées.
+        val racine = OutboxMonitoring.tout().firstOrNull { it.uuid == uuidRacine }
+        if (racine != null && racine.aCompleter) {
+            ouvrirEdition(racine, MESSAGE_CHAMPS_OBLIGATOIRES, modeCompletion = true)
+            return
+        }
         envoiEnCours = true
         binding.btnToutEnvoyer.visibility = View.GONE
         binding.progressEnvoi.visibility = View.VISIBLE
@@ -800,3 +838,7 @@ class SaisiesEnAttenteFragment : Fragment() {
         _binding = null
     }
 }
+
+/** Rouge de la flèche d'envoi d'une saisie « à compléter » : même rouge franc que les barres
+ *  des champs obligatoires du formulaire et que les repères de la carte. */
+private const val ROUGE_A_COMPLETER = 0xFFD32F2F.toInt()

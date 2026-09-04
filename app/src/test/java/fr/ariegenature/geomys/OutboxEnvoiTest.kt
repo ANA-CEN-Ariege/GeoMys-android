@@ -31,6 +31,7 @@ import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.RecordedRequest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -142,6 +143,7 @@ class OutboxEnvoiTest {
         parentIdServeur: Int? = null,
         uuidPayload: String? = if (avecMedia) "uuid-$uuid" else null,
         uuidFieldName: String? = if (avecMedia) "uuid_base_visit" else null,
+        champsManquants: List<String>? = null,
     ) = SaisieEnAttente(
         uuid = uuid, moduleCode = "STOC", objectType = "visite",
         parentObjectType = parentObjectType, parentIdServeur = parentIdServeur,
@@ -151,6 +153,7 @@ class OutboxEnvoiTest {
         uuidPayload = uuidPayload, uuidFieldName = uuidFieldName,
         mediaPathsLocal = if (avecMedia) listOf(fichierMedia()) else emptyList(),
         mediaSchemaDotTable = if (avecMedia) "gn_monitoring.t_base_visits" else null,
+        champsManquants = champsManquants,
     )
 
     /** Crée un vrai fichier local (uploaderMediaFile vérifie exists/canRead) et retourne son URI. */
@@ -476,5 +479,70 @@ class OutboxEnvoiTest {
         assertTrue("le re-POST de l'enfant garde la FK parent : ${postsVisite[2]}",
             postsVisite[2].contains("\"id_base_site\":41"))
         assertTrue("file vide après succès", OutboxMonitoring.tout().isEmpty())
+    }
+
+    // ── Saisies « à compléter » (champs obligatoires de FIN de visite) ─────────────────
+    // Décision terrain 2026-09-03 : certains protocoles imposent des infos qu'on ne connaît
+    // qu'à la fin (heure de fin, température de fin). La visite est donc ENREGISTRABLE
+    // incomplète, mais elle ne doit JAMAIS partir — le serveur la rejetterait, et une visite
+    // à moitié saisie côté GeoNature est pire qu'une visite en attente sur le téléphone.
+
+    @Test
+    fun saisie_a_completer_n_est_jamais_envoyee() {
+        OutboxMonitoring.ajouter(saisie("v1", champsManquants = listOf("Heure de fin")))
+        val res = envoyerTout()
+        assertEquals("aucun POST", 0, server.requestCount)
+        assertEquals(0, res.succes)
+        assertEquals(1, res.echecs)
+        assertTrue("le message nomme le champ manquant",
+            res.messages.any { it.contains("Heure de fin") })
+        // Elle reste en file, intacte, prête à être complétée.
+        val restante = OutboxMonitoring.tout().single { it.uuid == "v1" }
+        assertEquals(SaisieEnAttente.Etat.PENDING, restante.etat)
+        assertTrue(restante.aCompleter)
+    }
+
+    @Test
+    fun les_observations_d_une_visite_a_completer_restent_bloquees() {
+        OutboxMonitoring.ajouter(saisie("v1", champsManquants = listOf("Température de fin")))
+        OutboxMonitoring.ajouter(saisie("o1", parentUuidLocal = "v1"))
+        val res = envoyerTout()
+        assertEquals("ni la visite ni son observation ne partent", 0, server.requestCount)
+        assertEquals(0, res.succes)
+        assertEquals(SaisieEnAttente.Etat.PENDING,
+            OutboxMonitoring.tout().single { it.uuid == "o1" }.etat)
+    }
+
+    @Test
+    fun une_saisie_a_completer_ne_bloque_pas_les_autres() {
+        // Envoi partiel assumé (décision 2026-09-03) : bloquer tout le groupe à cause d'une
+        // visite oubliée serait pénalisant sur le terrain.
+        OutboxMonitoring.ajouter(saisie("v1", champsManquants = listOf("Heure de fin")))
+        OutboxMonitoring.ajouter(saisie("v2"))
+        val res = envoyerTout()
+        assertEquals("la visite complète part", 1, res.succes)
+        assertEquals(1, res.echecs)
+        assertTrue(OutboxMonitoring.tout().none { it.uuid == "v2" }) // envoyée puis purgée
+        assertTrue(OutboxMonitoring.tout().any { it.uuid == "v1" })
+    }
+
+    @Test
+    fun saisie_completee_part_normalement() {
+        OutboxMonitoring.ajouter(saisie("v1", champsManquants = listOf("Heure de fin")))
+        assertEquals(0, envoyerTout().succes)
+        // L'utilisateur complète le formulaire : plus de champ manquant.
+        OutboxMonitoring.mettreAJour("v1") { it.copy(champsManquants = null) }
+        assertEquals(1, envoyerTout().succes)
+    }
+
+    @Test
+    fun saisie_ecrite_avant_le_champ_est_relue_comme_complete() {
+        // Brouillon d'une version antérieure : Gson (réflexion) laisse champsManquants à null
+        // malgré le défaut Kotlin — la saisie ne doit pas être considérée « à compléter ».
+        val ancienne = com.google.gson.Gson()
+            .fromJson("""{"uuid":"vx","moduleCode":"STOC","objectType":"visite",""" +
+                """"valeursJson":"{}","etat":"PENDING"}""", SaisieEnAttente::class.java)
+        assertFalse(ancienne.aCompleter)
+        assertTrue(ancienne.manquants().isEmpty())
     }
 }

@@ -10,7 +10,13 @@ GeoMys sert à **noter des observations naturalistes sur le terrain** et à les 
 
 C'est le point de départ. Tout part d'ici.
 
-<p align="center"><img src="Images/accueil.jpg" alt="Écran d'accueil" width="240"></p>
+<p align="center">
+  <img src="Images/accueil_droits_1.jpg" alt="Accueil : saisies OccTax seules" width="200">
+  <img src="Images/accueil_droits_2.jpg" alt="Accueil : saisies OccTax et Monitoring" width="200">
+  <img src="Images/accueil.jpg" alt="Accueil : saisies OccTax, Monitoring et OccHab" width="200">
+</p>
+
+*Le même écran, vu par trois comptes différents : à gauche un compte qui n'a que les saisies OccTax ; au milieu, un compte qui a aussi accès aux protocoles de suivi ; à droite, un compte qui a en plus le module habitats.*
 
 **Vous pouvez :**
 - **Démarrer une saisie « multi-taxons » (OccTax)** — pour noter plusieurs espèces le long d'un parcours, sur une carte.
@@ -22,18 +28,29 @@ C'est le point de départ. Tout part d'ici.
 - **Ouvrir les Paramètres** <img class="ico" src="Images/icones/ic_parametres.png" alt="paramètres" height="20"> (en haut à droite). Une pastille **verte** = tout est prêt pour saisir ; **rouge** = la configuration est incomplète.
 - **Voir le numéro de version** (en bas). En le touchant, vous ouvrez l'écran de mise à jour (une pastille apparaît quand une nouvelle version est disponible).
 
-### L'accueil n'a pas la même allure pour tout le monde
+### Pourquoi votre accueil n'est pas celui de votre collègue
 
-Les deux boutons de saisie **OccTax** sont toujours présents. Les deux autres n'apparaissent **que si votre compte y a droit sur le serveur** :
+Comme le montrent les trois copies d'écran ci-dessus, **l'accueil n'a pas la même allure d'un compte à l'autre**. Ce n'est pas un réglage de l'application : elle **reflète simplement ce que le serveur lui répond**.
+
+Deux raisons se cumulent :
+
+1. **GeoNature est modulaire.** Toutes les instances n'installent pas les mêmes modules. Le suivi de protocoles (`gn_module_monitoring`) et les relevés d'habitats (OccHab) sont des modules **optionnels** : sur un serveur qui ne les a pas, il n'y a rien à proposer.
+2. **Les droits sont attribués compte par compte.** Même quand le module existe, l'administrateur décide qui peut le consulter et y saisir. Un salarié suivant un protocole précis, un bénévole, un stagiaire n'auront pas les mêmes accès.
+
+L'application **masque** ce à quoi vous n'avez pas droit plutôt que de le griser : proposer un bouton qui mènerait à un refus du serveur n'aiderait personne.
 
 | Bouton | Apparaît seulement si… |
 |---|---|
+| **Saisie multi-taxons** et **mono-taxon** | toujours — la saisie OccTax est le socle de l'application |
 | **Monitoring** | vous avez accès à **au moins un protocole** de suivi |
-| **OccHab** | le module **OccHab** est installé sur le serveur **et** vous avez le droit d'y créer des stations |
+| **OccHab** | le module **OccHab** est installé sur le serveur **et** vous avez le droit d'y **créer** des stations |
 
-Le **menu** suit exactement la même règle : *Mes visites* n'apparaît qu'avec l'accès aux protocoles, *Mes stations* qu'avec l'accès à OccHab. Un utilisateur qui n'a ni l'un ni l'autre voit donc un accueil réduit aux deux saisies OccTax, et un menu à trois entrées.
+Deux conséquences pratiques :
 
-> **Un bouton attendu n'apparaît pas ?** Ce sont vos **droits sur le serveur** qui commandent. Faites-les corriger par l'administrateur GeoNature, puis relancez un **« Recharger les données »** dans les Paramètres : c'est ce chargement qui relève vos droits et fait apparaître les boutons.
+- **Le menu suit la même règle** : *Mes visites* n'apparaît qu'avec l'accès aux protocoles, *Mes stations* qu'avec l'accès à OccHab. Le compte de gauche voit donc un menu à trois entrées seulement. Les compteurs des Paramètres se comportent de la même façon.
+- **Changer de serveur change l'accueil.** Le même téléphone, connecté à une autre instance GeoNature, peut afficher plus ou moins de boutons.
+
+> **Un bouton attendu n'apparaît pas ?** Vos droits sont relevés **pendant « Recharger les données »**, pas en continu. Après une correction faite par l'administrateur GeoNature, il faut donc **relancer un chargement** dans les Paramètres pour que le bouton apparaisse.
 
 ---
 

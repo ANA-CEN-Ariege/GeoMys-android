@@ -97,18 +97,26 @@ Jusqu'à quatre entrées principales :
 - **Monitoring** — accès aux protocoles de suivi.
 - **OccHab** — relevés d'habitats : une **station** (point ou polygone) et les **habitats** qui s'y trouvent.
 
-### L'accueil dépend de vos droits
+### Pourquoi l'accueil diffère d'un compte à l'autre
 
-Les deux saisies **OccTax** sont toujours proposées. Les deux autres entrées n'apparaissent **que si le compte y a droit sur le serveur** :
+L'accueil n'a pas la même allure pour tout le monde, et ce n'est pas un réglage de l'app : elle **reflète ce que le serveur lui répond**. Deux raisons se cumulent :
+
+1. **GeoNature est modulaire** — le suivi de protocoles (`gn_module_monitoring`) et les relevés d'habitats (OccHab) sont **optionnels**. Sur une instance qui ne les installe pas, il n'y a rien à proposer.
+2. **Les droits sont attribués compte par compte** (CRUVED) — même quand le module existe, l'administrateur décide qui le consulte et qui y saisit.
+
+L'app **masque** ce à quoi le compte n'a pas droit plutôt que de le griser : un bouton qui mènerait à un refus (403) du serveur n'aide personne.
 
 | Entrée | Condition d'affichage |
 |---|---|
+| **Saisie multi-taxons** / **mono-taxon** | toujours — la saisie OccTax est le socle de l'app |
 | **Monitoring** | accès à **au moins un protocole** (CRUVED lecture sur le module) |
 | **OccHab** | module **OccHab** présent sur l'instance **et** droit de **création** de stations |
 
-Deux utilisateurs de la même instance n'ont donc pas le même écran d'accueil. Un compte sans aucun des deux modules ne voit que les deux saisies OccTax.
+Trois configurations typiques : saisies OccTax seules ; saisies + Monitoring ; saisies + Monitoring + OccHab. Le **menu burger** et les compteurs du panneau de cache suivent exactement la même règle. Changer de serveur peut donc changer l'accueil sur le même téléphone.
 
-Ces droits sont relevés **pendant « Recharger les données »** : si un bouton attendu manque, faire corriger les droits côté GeoNature puis relancer un chargement.
+Ces droits sont relevés **pendant « Recharger les données »**, pas en continu : après une correction côté GeoNature, il faut **relancer un chargement** pour que le bouton apparaisse.
+
+*(Les trois écrans sont illustrés dans le [guide écran par écran](GUIDE_ECRANS.md).)*
 
 **Menu burger** (en haut à gauche) — mêmes conditions que les boutons :
 

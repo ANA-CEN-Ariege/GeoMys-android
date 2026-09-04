@@ -527,7 +527,12 @@ class SaisiesEnAttenteFragment : Fragment() {
         parent.addView(creerIconeAction(
             fr.ariegenature.geomys.R.drawable.ic_delete,
             "Supprimer ${ceTypeDe(s)}",
-            tint = couleurErreur(requireContext()),
+            // MÊME rouge que la poubelle de « Mes saisies » et « Mes stations »
+            // (item_sortie.xml / item_occhab_station.xml) : la couleur d'erreur du thème
+            // Material tire sur le rose pâle en thème sombre.
+            tint = androidx.core.content.ContextCompat.getColor(
+                requireContext(), android.R.color.holo_red_light,
+            ),
         ) {
             val nbEnfants = OutboxMonitoring.descendants(s.uuid).size
             demanderSuppression(s, nbEnfants)

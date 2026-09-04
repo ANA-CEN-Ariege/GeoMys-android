@@ -52,7 +52,8 @@ Une fois la connexion validée, le bouton **Charger les données** apparaît. Il
 - les **observateurs** (membres des listes UsersHub),
 - le **référentiel TaxRef** complet (noms français et scientifiques) pour l'autocomplétion,
 - les **nomenclatures** (types de comptage, stades de vie, statuts, etc.),
-- les **protocoles de suivi** (`gn_module_monitoring`) auxquels vous avez droit, avec leur schéma et l'arborescence de leurs sites.
+- les **protocoles de suivi** (`gn_module_monitoring`) auxquels vous avez droit, avec leur schéma et l'arborescence de leurs sites,
+- pour **OccHab** (si le module vous est ouvert) : les jeux de données du module, le référentiel **HABREF** des habitats, et **vos stations déjà enregistrées sur le serveur** — ce qui les rend consultables et modifiables hors réseau.
 
 ⏱️ Compter quelques minutes selon la taille du serveur et la qualité de la connexion. À refaire périodiquement au cas où y a eu des changements côté serveur. Les taxons ne sont rechargés que si nécessaire (changement de version).
 
@@ -66,13 +67,18 @@ Trois listes déroulantes apparaissent une fois le chargement terminé :
 
 ### d. Panneau « Données en cache »
 
-Affiche en permanence :
+Affiche l'état des données présentes **dans le téléphone** :
 
 ```
-Protocoles       N
-Nomenclatures    M
 Taxons           K     [ Détails ]
+Nomenclatures    M
+Listes           L
+Observateurs     O
+Protocoles       N          (si accès aux protocoles)
+Stations OccHab  S          (si accès à OccHab)
 ```
+
+Les deux dernières lignes **suivent vos droits** : elles n'apparaissent pas pour un compte qui n'a pas le module correspondant. Le panneau reste **consultable sans réseau** dès que des données ont été chargées.
 
 Le bouton **Détails** ouvre la liste des groupes taxonomiques (Oiseaux, Mammifères, …) avec leur effectif filtré par la liste sélectionnée. Un tap sur un groupe affiche la liste complète des taxons.
 
@@ -84,21 +90,40 @@ Valider en haut à droite avec la **coche verte** : la configuration est sauvega
 
 ## 3. Écran d'accueil
 
-Trois entrées principales :
+Jusqu'à quatre entrées principales :
 
 - **Saisie multi-taxons** — relevés OccTax pour plusieurs taxons.
 - **Saisie mono-taxon (« rapide »)** — relevés éclair pour un taxon.
-- **Monitoring** — accès aux protocoles. Cette entrée n'est affichée que si vous avez les droits nécessaires pour au moins un protocole.
+- **Monitoring** — accès aux protocoles de suivi.
+- **OccHab** — relevés d'habitats : une **station** (point ou polygone) et les **habitats** qui s'y trouvent.
 
-**Menu burger** (en haut à gauche) :
+### L'accueil dépend de vos droits
+
+Les deux saisies **OccTax** sont toujours proposées. Les deux autres entrées n'apparaissent **que si le compte y a droit sur le serveur** :
+
+| Entrée | Condition d'affichage |
+|---|---|
+| **Monitoring** | accès à **au moins un protocole** (CRUVED lecture sur le module) |
+| **OccHab** | module **OccHab** présent sur l'instance **et** droit de **création** de stations |
+
+Deux utilisateurs de la même instance n'ont donc pas le même écran d'accueil. Un compte sans aucun des deux modules ne voit que les deux saisies OccTax.
+
+Ces droits sont relevés **pendant « Recharger les données »** : si un bouton attendu manque, faire corriger les droits côté GeoNature puis relancer un chargement.
+
+**Menu burger** (en haut à gauche) — mêmes conditions que les boutons :
 
 - **Mes saisies** — sorties OccTax enregistrées en attente d'envoi.
-- **Mes visites** — saisies monitoring enregistrée en attente d'envoi.
-- **Explorer** — affichage sur la carte des relevés du serveur enregistrés sur le serveur geonature dans la dernière année.
-- **Cache Manager** — téléchargent des fonds de carte pour usage hors réseau.
+- **Mes visites** — saisies monitoring en attente d'envoi. *(Affiché avec l'accès aux protocoles.)*
+- **Mes stations** — relevés d'habitats OccHab en attente d'envoi. *(Affiché avec l'accès à OccHab.)*
+- **Explorer** — affichage sur la carte des relevés enregistrés sur le serveur GeoNature dans la dernière année.
+- **Maps Manager** — téléchargement de fonds de carte pour usage hors réseau.
 
-**Enregistrer la trace**
-- si cette coche est activé, lors d'une saisie dans les saisies multi-taxons, on peut démarrer et enregistrer la trace GPX du parcours.
+Une **pastille rouge** sur une entrée signale qu'il reste des données à envoyer.
+
+**Enregistrer la trace GPS**
+
+Quand cet interrupteur est activé, une saisie multi-taxons permet de démarrer l'enregistrement de la trace GPX du parcours.
+
 ---
 
 ## 4. Saisie multi-taxons (OccTax)
@@ -219,15 +244,67 @@ Spécificités :
 
 Après la création d'une visite, l'app propose directement de créer l'observation enfant — pas besoin de retourner à la liste pour le « + » suivant.
 
+### Informations de fin de visite
+
+Certains protocoles imposent des champs qu'on ne connaît **qu'à la fin** de la visite (heure de fin, température de fin, durée). Il n'est donc pas nécessaire de les inventer au départ :
+
+- la visite s'enregistre **sans eux**, marquée **à compléter** ;
+- au moment de **Terminer**, l'app propose de la compléter ;
+- tant qu'un champ obligatoire manque, elle **ne part pas** au serveur : dans *Mes visites*, sa flèche d'envoi est **rouge** et la toucher ouvre le formulaire sur les champs restants, chacun signalé par une **barre rouge**.
+
+Cela ne vaut que pour les **informations générales de la visite**. Une saisie d'**espèce** reste bloquée tant que ses champs obligatoires ne sont pas remplis.
+
 ### Saisies en attente
 
-Bandeau **Saisies en attente d'envoi (N)** dans l'écran Suivis. Tape-y pour voir/éditer/envoyer chaque saisie locale.
+Écran **Mes visites** (menu burger), regroupé par protocole et par site. Le compteur en tête ne totalise que les **visites** (ou passages, transects…), pas les espèces qu'elles contiennent.
 
-L'**envoi est manuel** (jamais automatique). Tu choisis explicitement quand pousser au serveur.
+L'**envoi est manuel** (jamais automatique) : vous choisissez explicitement quand pousser au serveur, visite par visite ou d'un bloc avec **Tout envoyer**. Une visite incomplète est écartée de l'envoi — les autres du lot partent normalement.
 
 ---
 
-## 7. Cartographie
+## 7. OccHab (relevés d'habitats)
+
+Le module **OccHab** décrit *où* l'on se trouve — une **station**, point ou polygone — et *quels habitats* s'y trouvent. Accessible depuis la tuile **OccHab** de l'accueil, si le module et le droit de création sont accordés.
+
+### Démarrer un relevé
+
+Un formulaire **Informations obligatoires** s'ouvre dès la carte : jeu de données, observateurs, dates de début et de fin, nature de l'objet géographique. Il est **pré-rempli avec le relevé précédent** (les dates repartent du jour) — en général, il n'y a qu'à valider.
+
+L'interrupteur **« Afficher mes stations déjà sur GeoNature »** est **coché par défaut** : la carte fait alors apparaître vos stations déjà envoyées. Le décocher est mémorisé pour les relevés suivants ; la carte se centre alors sur votre position.
+
+### Dessiner une station
+
+- **Point** : toucher la carte. **Polygone** : toucher pour poser les sommets (3 minimum).
+- **Appui long** sur un sommet pour le déplacer ; **poignée +** au milieu d'une arête pour y insérer un sommet.
+- Un sommet posé près d'un sommet existant s'y **aimante**. Ensuite, déplacer ce sommet commun déplace **les deux** polygones : les limites restent jointives.
+- **Annuler** défait la dernière opération (sommet ajouté, déplacé, inséré), effet sur le polygone voisin compris.
+- La **surface** est calculée automatiquement (localement, donc hors réseau) et les **altitudes** min/max sont remplies depuis le MNT du serveur quand il y a du réseau.
+
+### Reprendre une station du serveur
+
+Vos stations déjà envoyées apparaissent en **violet**. En toucher une propose de l'ouvrir dans le relevé en cours : géométrie et habitats deviennent modifiables, et l'envoi repartira en **mise à jour** de la station existante — jamais en doublon.
+
+- Une station n'entre dans **Mes stations** qu'à partir du moment où elle est **réellement modifiée**. La consulter ne crée rien ; annuler toutes les modifications l'en fait ressortir.
+- Une station déjà reprise dans une **autre** saisie apparaît en **orange pointillé** : la toucher propose d'ouvrir cette saisie. Il n'existe jamais deux copies locales d'une même station serveur.
+- Ces stations sont mises en cache au chargement des données : elles s'affichent et se modifient **sans réseau** (l'app indique la date du dernier chargement).
+- Une station dessinée sous QGIS peut comporter un **trou** (polygone intérieur) : il s'affiche en creux, ses sommets se modifient comme les autres, et il est **conservé** au renvoi.
+- Une géométrie **multi-parties** est affichée mais non modifiable dans l'app : la retoucher sous QGIS.
+
+### Habitats
+
+Après validation de la géométrie, on décrit le ou les habitats : **habitat HABREF** (autocomplétion **hors ligne**, restreinte à la liste du module), déterminateur, type de détermination, technique de collecte, recouvrement en %, abondance…
+
+Une station peut être **enregistrée et envoyée sans habitat** ; les habitats se complètent plus tard.
+
+Sur les stations issues du **plugin QGIS de l'ANA**, une section **Évaluation ANA / Natura 2000** apparaît en plus (enjeu, état de conservation, typicité, plantes exotiques envahissantes…). Elle est modifiable, et le reste du commentaire n'est jamais altéré.
+
+### Envoi
+
+Écran **Mes stations** (menu burger) : relevés classés *à envoyer* / *envoyées*, avec le nombre de stations. L'envoi est **manuel**, relevé par relevé ou via **Tout envoyer**. Supprimer un relevé n'efface que la copie locale — rien n'est supprimé sur GeoNature.
+
+---
+
+## 8. Cartographie
 
 Quatre fonds disponibles, basculables au tap sur l'icône en haut à droite de la carte :
 
@@ -252,24 +329,33 @@ Pour préparer une sortie sans couverture :
 
 ---
 
-## 8. Mode offline
+## 9. Mode offline
 
 L'app fonctionne **entièrement hors-réseau** une fois les données chargées :
 
 - liste des protocoles, fiches, schémas — depuis le cache local,
 - saisies — stockées en local, taggées comme « en attente d'envoi »,
 - cartes — depuis les tuiles téléchargées,
-- autocomplétion taxon — depuis le cache TaxRef.
+- autocomplétion taxon — depuis le cache TaxRef,
+- OccHab — habitats HABREF et **vos stations déjà sur le serveur**, depuis le cache.
 
 Quand la connexion revient, les saisies en attente restent en local jusqu'à ce que **vous** lanciez explicitement l'envoi.
 
 ---
 
-## 9. Cas particuliers et dépannage
+## 10. Cas particuliers et dépannage
 
 ### « Aucun protocole accessible »
 
 Vous voyez ce message si le compte n'a aucun droit CRUVED sur les protocoles de l'instance. Vérifier côté GeoNature que les rôles attribués couvrent au moins la lecture sur les modules visés.
+
+### Un bouton attendu n'apparaît pas sur l'accueil
+
+**Monitoring** et **OccHab** ne s'affichent qu'avec les droits correspondants (cf. § 3). Les droits sont relevés pendant **Recharger les données** : après une correction côté GeoNature, il faut donc **relancer un chargement** pour que le bouton apparaisse. Même chose pour les entrées *Mes visites* / *Mes stations* du menu et pour les compteurs du panneau de cache.
+
+### L'app exige un rechargement des données après une mise à jour
+
+Certaines versions modifient le format des données mises en cache. Au premier lancement, l'app ouvre alors **Configuration** et demande un **Recharger les données** avant de laisser continuer. **Les saisies en attente sont conservées** (Mes saisies, Mes visites, Mes stations) et restent envoyables ensuite.
 
 ### Synchronisation incomplète
 
@@ -293,7 +379,7 @@ Vérifier le détail de la sortie côté serveur. Si une photo est marquée comm
 
 ---
 
-## 10. Configuration avancée
+## 11. Configuration avancée
 
 ### Champs additionnels
 
@@ -309,7 +395,9 @@ Retour à **Configuration** → modifier URL / identifiants → **Connexion** �
 
 ## Releases & versions
 
-Chaque version est publiée sur la page [Releases GitHub](https://github.com/ANA-CEN-Ariege/GeoMys-android/releases) avec un APK debug attaché. La version installée est visible dans **Configuration** (en bas de l'écran).
+Chaque version est publiée sur la page [Releases GitHub](https://github.com/ANA-CEN-Ariege/GeoMys-android/releases) avec un **APK signé** attaché, et sur le **Play Store**. La version installée est visible sur l'écran d'accueil (en bas) et dans **Configuration**.
+
+⚠️ Les deux canaux sont des **applications distinctes** : passer de l'un à l'autre impose de désinstaller la précédente — donc d'**envoyer ses saisies en attente avant**. Sur la version Play, les mises à jour viennent du Store (toucher le numéro de version n'ouvre pas d'écran de mise à jour).
 
 ---
 

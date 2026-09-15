@@ -48,13 +48,27 @@ object StationsServeurCache {
     private lateinit var dir: File
     private val gson = Gson()
 
-    /** Contenu du fichier : date du dernier remplacement (epoch millis, pour informer
-     *  l'utilisateur de la fraîcheur en mode hors-ligne) + stations filtrées utilisateur.
+    /** Version du FORMAT des stations écrites dans ce fichier — à incrémenter dès qu'un champ de
+     *  géométrie apparaît ou change de sens dans [OccHabStation]. Un fichier d'une autre version
+     *  est ignoré (cache vide) plutôt que relu : il a été écrit par un parseur qui ne savait pas
+     *  lire ce que la version courante sait lire.
+     *
+     *  2 — v1.4.0 : anneaux intérieurs (`geometryTrousJson`) et MultiPolygon (`geometryPartielle`).
+     *  Le parseur de v1.3.22 ne gardait que l'anneau extérieur et réduisait tout MultiPolygon à un
+     *  Point (0,0). Relire un tel cache, c'était afficher un polygone PLEIN puis, à l'envoi de la
+     *  copie modifiée, SUPPRIMER le trou côté GeoNature — la régression même que la v1.4.0
+     *  corrigeait, rouverte par le chemin hors-ligne (audit 2026-09-14, R3-C1 / R2-M1). */
+    private const val VERSION_FORMAT = 2
+
+    /** Contenu du fichier : version du format, date du dernier remplacement (epoch millis, pour
+     *  informer l'utilisateur de la fraîcheur en mode hors-ligne) + stations filtrées utilisateur.
      *  [stations] nullable : Gson (réflexion, sans les défauts Kotlin) peut le laisser null
-     *  sur un fichier corrompu/tronqué — normalisé par [Contenu.liste]. */
+     *  sur un fichier corrompu/tronqué — normalisé par [Contenu.liste]. [versionFormat] vaut 0 sur
+     *  un fichier écrit avant l'introduction du champ (v1.3.22 à v1.4.1). */
     private data class Contenu(
         val dateChargement: Long = 0L,
         val stations: List<OccHabStation>? = emptyList(),
+        val versionFormat: Int = 0,
     ) {
         val liste: List<OccHabStation> get() = stations ?: emptyList()
     }
@@ -71,8 +85,23 @@ object StationsServeurCache {
         val f = fichier()
         if (!f.exists()) return Contenu()
         return try {
-            (gson.fromJson(f.readText(), Contenu::class.java) ?: Contenu())
-                .also { mem = it }
+            val brut = gson.fromJson(f.readText(), Contenu::class.java) ?: Contenu()
+            // Fichier écrit par une version dont le parseur de géométrie ne savait pas tout lire :
+            // on l'ignore et on le supprime. Le prochain chargement carte (ou la prochaine synchro)
+            // le réécrira au format courant ; d'ici là, l'utilisateur hors ligne n'a simplement pas
+            // de station serveur — ce qui vaut mille fois mieux que d'en afficher une amputée de
+            // ses trous et de la renvoyer ainsi au serveur (audit 2026-09-14, R3-C1).
+            if (brut.versionFormat != VERSION_FORMAT) {
+                runCatching { f.delete() }
+                return Contenu().also { mem = it }
+            }
+            // NORMALISATION POST-GSON, comme OccHabStore : Gson construit par réflexion, sans les
+            // valeurs par défaut de Kotlin — une station tronquée arrivait ici avec des champs
+            // non-nullables à null. C'est la TROISIÈME porte d'entrée d'OccHabStation (avec le
+            // store et le parseur réseau) et la seule qui ne normalisait pas (R2-m1).
+            @Suppress("SENSELESS_COMPARISON")
+            val stations = brut.liste.mapNotNull { s -> if (s == null) null else normaliserStation(s) }
+            Contenu(brut.dateChargement, stations, brut.versionFormat).also { mem = it }
         } catch (_: Exception) { Contenu() }
     }
 
@@ -93,14 +122,14 @@ object StationsServeurCache {
      *  un chargement réseau RÉUSSI — sur échec (exception), il ne touche pas au cache. */
     @Synchronized
     fun remplacerTout(stations: List<OccHabStation>) =
-        ecrire(Contenu(System.currentTimeMillis(), stations))
+        ecrire(Contenu(System.currentTimeMillis(), stations, VERSION_FORMAT))
 
     /** Remplace les stations d'UN jeu de données (chargement réseau réussi depuis la carte),
      *  en conservant celles des autres JDD (chargées par la synchro). */
     @Synchronized
     fun remplacerJdd(idJdd: Int, stations: List<OccHabStation>) {
         val autres = charger().liste.filter { it.idDataset != idJdd }
-        ecrire(Contenu(System.currentTimeMillis(), autres + stations))
+        ecrire(Contenu(System.currentTimeMillis(), autres + stations, VERSION_FORMAT))
     }
 
     /** Stations en cache pour ce jeu de données (repli hors-ligne de la carte). */

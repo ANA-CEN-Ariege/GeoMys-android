@@ -657,6 +657,13 @@ class ConfigGeoNatureFragment : Fragment() {
     private fun majBandeauRechargement() {
         val requis = gnConfig.rechargementRequisApresMaj
         binding.tvBandeauRechargement.visibility = if (requis) View.VISIBLE else View.GONE
+        // Accès de secours aux trois écrans « Mes … » tant que le rechargement n'a pas eu lieu :
+        // l'écran Paramètres reste verrouillé (la configuration est incomplète par construction),
+        // mais l'utilisateur doit pouvoir CONSULTER et ENVOYER ce qu'il a déjà saisi. Sans cela, un
+        // lancement hors-ligne après mise à jour rendait une journée de terrain impossible et
+        // poussait à ressaisir ailleurs — voire à désinstaller (audit 2026-09-14, R7-C1). Le retour
+        // système depuis ces écrans ramène ici : le verrou de configuration n'est pas contourné.
+        binding.llAccesSaisiesRechargement.visibility = if (requis) View.VISIBLE else View.GONE
         if (!requis) return
         val couleur = couleurAvertissement()
         binding.tvBandeauRechargement.setTextColor(couleur)
@@ -664,7 +671,16 @@ class ConfigGeoNatureFragment : Fragment() {
         binding.tvBandeauRechargement.text =
             "Mise à jour de l'application : les données doivent être rechargées avant de continuer.\n" +
             "Appuyez sur « Charger les données » (réseau nécessaire). Vos saisies en attente sont " +
-            "conservées et pourront être envoyées après le rechargement."
+            "conservées, consultables ci-dessous, et envoyables dès que le réseau revient."
+        binding.btnRechargementMesSaisies.setOnClickListener {
+            findNavController().naviguerSur(R.id.sortiesFragment)
+        }
+        binding.btnRechargementMesVisites.setOnClickListener {
+            findNavController().naviguerSur(R.id.saisiesEnAttenteFragment)
+        }
+        binding.btnRechargementMesStations.setOnClickListener {
+            findNavController().naviguerSur(R.id.occhabStationsFragment)
+        }
     }
 
     /** Purge les caches synchronisés (TaxRef, nomenclatures, habitats, monitoring, pictos) en une

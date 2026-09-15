@@ -78,7 +78,13 @@ object MonitoringDatalists {
         }
         val idListObserver = schema["module"]?.idListObserver
         val base = config.urlServeur.trim().trimEnd('/')
-        val auth = GeoNatureAuth.loginAvecCookies(base, config.login, config.motDePasse)
+        // Même correctif que `chargerOptionsDatalist` ci-dessous : hors-ligne, `loginAvecCookies`
+        // LÈVE l'IOException (lot B3, audit 2026-08-27) et le repli « auth == null » ne la voyait
+        // pas — les observateurs d'une visite relue hors-ligne s'affichaient en identifiants bruts
+        // au lieu de leurs noms (audit 2026-09-14, R7-m1).
+        val auth = try {
+            GeoNatureAuth.loginAvecCookies(base, config.login, config.motDePasse)
+        } catch (_: IOException) { null }
         // En offline (auth KO), on peut quand même servir les observateurs via le cache
         // disque écrit par le sync. On ne retourne plus immédiatement un resolver vide :
         // on tente le fallback observateurs avant d'abandonner.
@@ -240,7 +246,18 @@ object MonitoringDatalists {
         val base = config.urlServeur.trim().trimEnd('/')
         // Hors-ligne (login impossible) : cache datalist EXACT d'abord — le cache datasets
         // d'Occtax n'est pas filtré CRUVED, il ne sert qu'en dernier ressort.
-        val (token, _, cookies) = GeoNatureAuth.loginAvecCookies(base, config.login, config.motDePasse)
+        // HORS-LIGNE : `loginAvecCookies` LÈVE l'IOException depuis le lot B3 (audit 2026-08-27)
+        // au lieu de renvoyer null — `null` y est désormais réservé au REFUS d'authentification.
+        // Sans ce catch, l'exception traversait `enrichirAvecOptions` (awaitAll d'un `async`)
+        // jusqu'au `lifecycleScope.launch` de NouvelleVisiteFragment, qui n'a aucun try/catch sur
+        // tout le chemin : l'application PLANTAIT à l'ouverture — et donc aussi à la COMPLÉTION —
+        // d'une visite sans réseau, alors que le repli hors-ligne ci-dessous existait déjà
+        // (audit 2026-09-14, R7-C2). Même patron que chargerSchemaProtocole / chargerModules /
+        // chargerEnfants : réseau absent ⇒ on sert le cache, on ne remonte pas l'exception.
+        val auth = try {
+            GeoNatureAuth.loginAvecCookies(base, config.login, config.motDePasse)
+        } catch (_: IOException) { null }
+        val (token, _, cookies) = auth
             ?: return@withContext cacheOffline() ?: fallbackDatasetCache()
         val estDataset = apiPath.startsWith("meta/datasets") ||
             prop.typeWidget.equals("dataset", ignoreCase = true)

@@ -258,7 +258,7 @@ private fun normaliserSaisie(s: OccHabSaisie): OccHabSaisie? {
 // son anneau intérieur, et l'envoi l'aurait SUPPRIMÉ côté serveur. OccHabStoreRoundTripTest
 // fait échouer tout oubli (contrôle par réflexion).
 @Suppress("SENSELESS_COMPARISON", "USELESS_ELVIS")
-private fun normaliserStation(s: OccHabStation): OccHabStation? {
+internal fun normaliserStation(s: OccHabStation): OccHabStation? {
     if (s.id == null || s.habitats == null) return null
     return OccHabStation(
     id = s.id,
@@ -305,7 +305,7 @@ private fun normaliserStation(s: OccHabStation): OccHabStation? {
 }
 
 @Suppress("SENSELESS_COMPARISON", "USELESS_ELVIS")
-private fun normaliserHabitat(h: OccHabHabitat): OccHabHabitat? {
+internal fun normaliserHabitat(h: OccHabHabitat): OccHabHabitat? {
     if (h.id == null) return null
     return OccHabHabitat(
         id = h.id,

@@ -345,4 +345,55 @@ class OccHabParserTest {
         val stations = OccHabApi.parserFeatureCollection(texte, idRoleFiltre = 7)
         assertEquals(listOf(1), stations.map { it.idStationServeur })
     }
+
+    // ── Géométries non modélisables (audit 2026-09-14, R6-M2) ──
+
+    private fun featureAvecGeometrie(geom: String) = """
+        {"type":"FeatureCollection","features":[
+          {"type":"Feature","geometry":$geom,
+           "properties":{"id_station":91,"id_dataset":10,"habitats":[]}}]}
+    """.trimIndent()
+
+    @Test
+    fun geometrie_non_modelisee_ecarte_la_station_au_lieu_de_la_placer_en_zero() {
+        // Le serveur n'impose aucun type (colonne Geometry("GEOMETRY")) : une couche QGIS peut
+        // stocker un MultiPoint. Place en (0, 0), la station etait comptee comme affichee mais
+        // introuvable sur la carte — l'utilisateur la redessinait, d'ou un doublon serveur.
+        val ignorees = java.util.concurrent.atomic.AtomicInteger(0)
+        val stations = OccHabApi.parserFeatureCollection(
+            featureAvecGeometrie("""{"type":"MultiPoint","coordinates":[[1.6,42.9],[1.7,43.0]]}"""),
+            ignorees = ignorees,
+        )
+        assertTrue("la station ne doit pas entrer dans la liste", stations.isEmpty())
+        assertEquals("elle doit etre comptee pour que le message dise la verite", 1, ignorees.get())
+    }
+
+    @Test
+    fun geometrie_absente_ou_illisible_ecarte_aussi() {
+        val ignorees = java.util.concurrent.atomic.AtomicInteger(0)
+        assertTrue(OccHabApi.parserFeatureCollection(
+            """{"type":"FeatureCollection","features":[
+                 {"type":"Feature","properties":{"id_station":92,"id_dataset":10,"habitats":[]}}]}""",
+            ignorees = ignorees,
+        ).isEmpty())
+        assertTrue(OccHabApi.parserFeatureCollection(
+            featureAvecGeometrie("""{"type":"Polygon","coordinates":"pas un tableau"}"""),
+            ignorees = ignorees,
+        ).isEmpty())
+        assertEquals(2, ignorees.get())
+    }
+
+    @Test
+    fun les_geometries_connues_restent_acceptees() {
+        // Contre-epreuve : le rejet doit porter sur ce qui n'est pas modelise, rien d'autre.
+        val ignorees = java.util.concurrent.atomic.AtomicInteger(0)
+        val point = OccHabApi.parserFeatureCollection(
+            featureAvecGeometrie("""{"type":"Point","coordinates":[1.6,42.9]}"""), ignorees = ignorees)
+        val polygone = OccHabApi.parserFeatureCollection(
+            featureAvecGeometrie("""{"type":"Polygon","coordinates":[[[1.6,42.9],[1.7,42.9],[1.7,43.0],[1.6,42.9]]]}"""),
+            ignorees = ignorees)
+        assertEquals(1, point.size)
+        assertEquals(1, polygone.size)
+        assertEquals("aucune station valide ne doit etre ecartee", 0, ignorees.get())
+    }
 }

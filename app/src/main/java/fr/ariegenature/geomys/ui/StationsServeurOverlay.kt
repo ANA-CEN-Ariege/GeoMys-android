@@ -114,8 +114,13 @@ class StationsServeurOverlay(private val hote: Hote) {
         hote.portee.launch {
             // Date du cache quand on affiche un REPLI hors-ligne (réseau en échec) ; null en ligne.
             var dateCache: Long? = null
+            // Stations que le serveur détient mais que l'appli ne sait pas dessiner (MultiPoint,
+            // GeometryCollection… tracés sous QGIS) : elles sont ÉCARTÉES et comptées à part, pour
+            // que le message dise la vérité. Avant, elles étaient placées en (0, 0) : comptées comme
+            // affichées, mais introuvables sur la carte — l'utilisateur les redessinait (R6-M2).
+            val ignorees = java.util.concurrent.atomic.AtomicInteger(0)
             val chargees = try {
-                OccHabApi.chargerStations(GeoNatureConfig(appContext), idDataset = idJdd)
+                OccHabApi.chargerStations(GeoNatureConfig(appContext), idDataset = idJdd, ignorees = ignorees)
                     .filter { it.idDataset == idJdd }
                     // Write-through : le cache hors-ligne (StationsServeurCache) reste frais au
                     // fil de l'eau ; les autres JDD (chargés par la synchro) sont conservés.
@@ -148,9 +153,15 @@ class StationsServeurOverlay(private val hote: Hote) {
                     "Hors-ligne : ${chargees.size} station(s) du " +
                         SimpleDateFormat("dd/MM/yyyy", Locale.FRANCE).format(Date(it))
                 } ?: "${chargees.size} station(s) du serveur"
+                val nbIgnorees = ignorees.get()
+                val suffixeIgnorees = if (nbIgnorees > 0)
+                    "\n⚠ $nbIgnorees station(s) à géométrie non prise en charge par l'application " +
+                        "(à corriger sur le serveur) — non affichée(s)."
+                else ""
                 Toast.makeText(hote.contexte,
                     enTete +
-                        (if (detail.isEmpty()) " affichée(s)" else " (dont ${detail.joinToString(", ")})"),
+                        (if (detail.isEmpty()) " affichée(s)" else " (dont ${detail.joinToString(", ")})") +
+                        suffixeIgnorees,
                     Toast.LENGTH_LONG).show()
                 if (hote.aucuneGeometrieEnCours) hote.afficherInstructionSelection()
                 hote.cadrerSur(pts + hote.afficherStationsSession())

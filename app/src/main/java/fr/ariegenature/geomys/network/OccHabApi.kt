@@ -179,7 +179,12 @@ object OccHabApi {
      * `origineServeur = true` : affichées en consultation (violet) sur la carte, importables dans
      * la saisie courante pour être modifiées puis renvoyées en MISE À JOUR (cf. [OccHabUpload]).
      */
-    suspend fun chargerStations(config: GeoNatureConfig, idDataset: Int? = null): List<OccHabStation> =
+    suspend fun chargerStations(
+        config: GeoNatureConfig,
+        idDataset: Int? = null,
+        /** Voir [parserFeatureCollection] : stations écartées faute de géométrie modélisable. */
+        ignorees: java.util.concurrent.atomic.AtomicInteger? = null,
+    ): List<OccHabStation> =
         withContext(Dispatchers.IO) {
             val base = config.urlServeur.trim().trimEnd('/')
             val (token, idRole, cookies) = GeoNatureAuth.loginAvecCookies(base, config.login, config.motDePasse)
@@ -205,7 +210,7 @@ object OccHabApi {
             // ignoré silencieusement, vérifié dans models.py). Un CRUVED « lire » large
             // (portée 2/3) renvoie donc les stations d'autrui : on ne garde que celles où le
             // compte est NUMÉRISATEUR ou OBSERVATEUR (bug terrain 2026-08-26).
-            parserFeatureCollection(text, idRoleFiltre = idRole)
+            parserFeatureCollection(text, idRoleFiltre = idRole, ignorees = ignorees)
         }
 
     private val dateParsers = listOf(
@@ -250,7 +255,13 @@ object OccHabApi {
      * unique_id_sinp_hab), dates, observateurs, altitudes/profondeurs/surface/précision,
      * nomenclatures station et habitat, textes libres.
      */
-    internal fun parserFeatureCollection(text: String, idRoleFiltre: Int? = null): List<OccHabStation> {
+    internal fun parserFeatureCollection(
+        text: String,
+        idRoleFiltre: Int? = null,
+        /** Compteur des stations ÉCARTÉES faute de géométrie modélisable — pour que l'appelant
+         *  puisse le dire à l'utilisateur au lieu d'annoncer un nombre faux. */
+        ignorees: java.util.concurrent.atomic.AtomicInteger? = null,
+    ): List<OccHabStation> {
         val root = try { JSONObject(text) } catch (_: Exception) { return emptyList() }
         val features = root.optJSONArray("features") ?: return emptyList()
         val stations = mutableListOf<OccHabStation>()
@@ -268,7 +279,12 @@ object OccHabApi {
                 // mieux vaut manquer une station que d'afficher celles d'autrui.
                 if (!estNumerisateur && !estObservateur) continue
             }
-            val geom = parserGeometrie(f.optJSONObject("geometry"))
+            // Géométrie non modélisable : la station est ÉCARTÉE plutôt que placée en (0, 0) —
+            // une station invisible et non tapable pousse à la redessiner, donc au doublon.
+            val geom = parserGeometrie(f.optJSONObject("geometry")) ?: run {
+                ignorees?.incrementAndGet()
+                continue
+            }
             val (type, lat, lon, coordsJson) = geom
             // Bloc ANA-EVAL de la station (porté par `comment`) : même extraction que côté
             // habitat — sans bloc exploitable, le commentaire reste strictement inchangé.
@@ -392,10 +408,18 @@ object OccHabApi {
         val partielle: Boolean = false,
     )
 
-    private fun parserGeometrie(geom: JSONObject?): GeomParse {
-        if (geom == null) return GeomParse("Point", 0.0, 0.0, null)
+    /** null = géométrie que l'application ne sait PAS modéliser (type inconnu, coordonnées
+     *  illisibles, géométrie absente). Elle renvoyait auparavant un point à (0, 0) : la station
+     *  entrait alors dans la liste, était COMPTÉE dans le message affiché, mais n'apparaissait ni
+     *  sur la carte ni sous le doigt — au large de l'Afrique. L'utilisateur la croyait absente et
+     *  la redessinait : doublon côté serveur, précédé d'un message qui mentait sur le nombre
+     *  affiché. Le serveur n'impose aucun type (colonne `Geometry("GEOMETRY")`) : MultiPoint,
+     *  MultiLineString et GeometryCollection sont stockables depuis QGIS (audit 2026-09-14,
+     *  R6-M2). */
+    private fun parserGeometrie(geom: JSONObject?): GeomParse? {
+        if (geom == null) return null
         val type = geom.optString("type", "Point")
-        val coords = geom.optJSONArray("coordinates") ?: return GeomParse("Point", 0.0, 0.0, null)
+        val coords = geom.optJSONArray("coordinates") ?: return null
         return try {
             when (type) {
                 "Point" -> GeomParse("Point", coords.getDouble(1), coords.getDouble(0), null)
@@ -408,7 +432,7 @@ object OccHabApi {
                     // des couches QGIS multi-parties) → traité comme tel. PLUSIEURS parties :
                     // l'appli n'en modélise qu'une → affichée mais NON IMPORTABLE (la renvoyer
                     // supprimerait les autres parties côté serveur).
-                    val premier = coords.optJSONArray(0) ?: return GeomParse("Point", 0.0, 0.0, null)
+                    val premier = coords.optJSONArray(0) ?: return null
                     parserPolygone(premier, partielle = coords.length() > 1)
                 }
                 "LineString" -> {
@@ -422,10 +446,14 @@ object OccHabApi {
                     }
                     GeomParse("LineString", if (n > 0) sLat / n else 0.0, if (n > 0) sLon / n else 0.0, sommets.toString())
                 }
-                else -> GeomParse("Point", 0.0, 0.0, null)
+                else -> {
+                    android.util.Log.w("OccHabApi", "Géométrie non prise en charge : $type")
+                    null
+                }
             }
         } catch (_: Exception) {
-            GeomParse("Point", 0.0, 0.0, null)
+            android.util.Log.w("OccHabApi", "Géométrie illisible (type $type)")
+            null
         }
     }
 

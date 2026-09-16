@@ -216,4 +216,59 @@ class FormulaireRendererTest {
         assertTrue("barre en premier", rangee.getChildAt(0) === barre)
         assertTrue("champ juste après la barre", rangee.getChildAt(1) === editable)
     }
+
+    // ── Champs masqués et envoi (audit 2026-09-14, R4-M4 / R4-M3) ──
+
+    @Test
+    fun un_champ_masque_conserve_sa_valeur_mais_ne_part_PAS_au_serveur() {
+        // Un protocole qui masque « nombre de nids » quand « espèce observée = non » transmettait
+        // quand même le nombre saisi avant la bascule : donnée fausse en base, sans aucun signal.
+        // Le client mobile officiel PnX-SI, lui, n'envoie pas les champs masqués.
+        renderer.rendre(listOf(
+            EditableField("vue", ViewType.TEXT, "Espèce observée", value = "non"),
+            EditableField("nids", ViewType.NUMBER, "Nombre de nids", value = "3",
+                hiddenExpr = "\${vue} === 'non'"),
+        ))
+
+        assertEquals(
+            "la valeur reste lisible : masquer n'est pas effacer, l'utilisateur la retrouve si la " +
+                "condition redevient vraie",
+            3, renderer.lireValeurs()["nids"],
+        )
+        assertTrue(
+            "mais elle ne doit pas partir au serveur",
+            !renderer.lireValeursPourEnvoi().containsKey("nids"),
+        )
+        assertEquals("les champs visibles partent normalement", "non", renderer.lireValeursPourEnvoi()["vue"])
+    }
+
+    @Test
+    fun un_champ_masque_mais_REQUIS_part_quand_meme() {
+        // Exception voulue, alignée sur le client officiel : le serveur refuserait la saisie
+        // autrement, et une incohérence du schéma ne doit pas faire perdre une visite de terrain.
+        renderer.rendre(listOf(
+            EditableField("vue", ViewType.TEXT, "Espèce observée", value = "non"),
+            EditableField("nids", ViewType.NUMBER, "Nombre de nids", value = "3",
+                obligatoire = true, hiddenExpr = "\${vue} === 'non'"),
+        ))
+        assertEquals(3, renderer.lireValeursPourEnvoi()["nids"])
+    }
+
+    @Test
+    fun setReglesChange_recalcule_l_etat_du_formulaire() {
+        // appliquerChangeRules ne fait que POSER des valeurs. Sans recalcul derrière, la visibilité
+        // conditionnelle et l'état du bouton restaient ceux d'AVANT la règle — et le rattrapage par
+        // listener est neutralisé pendant l'application (garde appliquantChange).
+        var notifie = false
+        renderer.setOnChangement { notifie = true }
+        renderer.rendre(listOf(
+            EditableField("mode", ViewType.TEXT, "Mode", value = "auto"),
+            EditableField("calcule", ViewType.TEXT, "Calculé"),
+        ))
+        notifie = false
+
+        renderer.setReglesChange(listOf("calcule = 'rempli par la règle'"))
+
+        assertTrue("le formulaire doit être notifié du recalcul", notifie)
+    }
 }

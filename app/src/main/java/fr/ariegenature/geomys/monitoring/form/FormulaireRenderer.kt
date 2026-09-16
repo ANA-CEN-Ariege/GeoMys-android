@@ -170,6 +170,17 @@ class FormulaireRenderer(
     fun setReglesChange(lignes: List<String>) {
         reglesChange = ChangeRules.parser(lignes)
         appliquerChangeRules()
+        // RECALCUL COMPLET après la première application. `appliquerChangeRules` ne fait que POSER
+        // des valeurs : elle ne réévalue ni la visibilité conditionnelle, ni les validations, ni
+        // l'état du bouton — contrairement à `rendre()` et à `notifierChangement()`. Or une règle
+        // `change` peut très bien, dès son premier passage, renseigner le champ dont dépend une
+        // expression `hidden`, ou remplir un obligatoire. Sans ce recalcul, le formulaire
+        // s'affichait avec une visibilité et un bouton calculés sur l'état d'AVANT la règle, et le
+        // rattrapage par listener est justement neutralisé pendant l'application (garde
+        // `appliquantChange`) — audit 2026-09-14, R4-M3.
+        appliquerVisibiliteConditionnelle()
+        appliquerValidations()
+        onChangement?.invoke()
     }
 
     /** Évalue les règles `change` contre les valeurs courantes (enrichies des drapeaux
@@ -474,6 +485,46 @@ class FormulaireRenderer(
         return valeurs
     }
 
+
+    /**
+     * Valeurs destinées à L'ENVOI : comme [lireValeurs], mais SANS les champs masqués par une
+     * expression `hidden` conditionnelle.
+     *
+     * Un champ masqué conserve sa valeur — c'est voulu, l'utilisateur retrouve sa saisie si la
+     * condition redevient vraie — mais cette valeur partait au serveur, alors que le client mobile
+     * officiel PnX-SI ne l'envoie pas. Concrètement, un protocole qui masque « nombre de nids »
+     * quand « espèce observée = non » transmettait quand même le nombre saisi avant la bascule :
+     * donnée fausse en base, que rien ne signalait (audit 2026-09-14, R4-M4).
+     *
+     * DEUX EXCEPTIONS, qui suivent la règle du client officiel :
+     *  - un champ masqué mais REQUIS (`required` conditionnel encore vrai) est envoyé : le serveur
+     *    le refuserait autrement, et une incohérence du schéma ne doit pas faire perdre la saisie ;
+     *  - un champ POSÉ PAR UNE RÈGLE `change` est envoyé : c'est le moteur qui l'a calculé, sa
+     *    valeur est voulue même si le champ n'est pas montré.
+     *
+     * [lireValeurs] reste inchangée : elle sert à `valeursApresRendu` (détection de modification)
+     * et à `onSaveInstanceState`, qui doivent voir TOUS les champs — y compris masqués, sinon une
+     * rotation perdrait leur contenu.
+     */
+    fun lireValeursPourEnvoi(): Map<String, Any?> {
+        val toutes = lireValeurs()
+        val requis = champsObligatoiresManquantsOuRemplis()
+        return toutes.filterKeys { code ->
+            val masque = wrappersParCode[code]?.visibility == View.GONE
+            !masque || code in requis || code in dernieresValeursAuto
+        }
+    }
+
+    /** Codes des champs actuellement REQUIS (obligatoires en dur, ou par expression), qu'ils soient
+     *  remplis ou non — [champsObligatoiresManquants] ne rend que les vides, et écarte les masqués,
+     *  or c'est précisément ce qu'il faut savoir ici. */
+    private fun champsObligatoiresManquantsOuRemplis(): Set<String> {
+        val valeurs = valeursPourExpressions()
+        return fieldsParCode.filterValues { field ->
+            field.obligatoire ||
+                (field.obligatoireExpr != null && HiddenExpr.evaluerBooleen(field.obligatoireExpr, valeurs))
+        }.keys
+    }
 
     /** Lit la valeur courante de chaque champ. Renvoie une Map code → valeur typée :
      *  - TEXT / TEXTAREA → String (vide si non rempli)

@@ -107,8 +107,12 @@ class SortieDetailFragment : Fragment() {
             binding.btnListeEspeces.setOnClickListener { montrerListeEspeces() }
         }
 
+        // `occtaxPeutCreer` (CRUVED C) : cet écran l'omettait, contrairement à « Mes saisies »
+        // (SortiesFragment) — un utilisateur sans droit de création voyait le bouton ici et se
+        // prenait un 403 opaque. Garde CRUVED sur TOUS les boutons d'envoi, c'est l'invariant du
+        // projet (audit 2026-09-14, relevé en instruisant le verrou d'envoi).
         val peutEnvoyer = !sortie.envoyeGeoNature && !sortie.estImportee
-            && gnConfig.estConfiguree
+            && gnConfig.estConfiguree && gnConfig.occtaxPeutCreer
             && sortie.observations.any { it.cdNom != null || it.releveSansEspece }
         if (peutEnvoyer) {
             binding.btnEnvoyerGn.visibility = View.VISIBLE

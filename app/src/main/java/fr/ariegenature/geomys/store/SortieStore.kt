@@ -70,9 +70,30 @@ class SortieStore(context: Context) : JsonCollectionStore<Sortie>() {
     /** Remplace la sortie [id] par [sortieMaj] en préservant sa position dans la liste. Si
      *  l'id n'existe pas, ajoute en tête (= comportement [ajouter]). Utilisé pour la reprise
      *  d'une sortie depuis l'onglet "À envoyer". */
+    /** Remplace une sortie, en PRÉSERVANT les acquis d'envoi observation par observation.
+     *
+     *  Les écrans d'édition (« Continuer la saisie » : `TraceViewModel.persisterBrouillon`,
+     *  `TraceFragment.terminerSortie`, `SaisieRapideFragment`) réécrivent la sortie avec la liste
+     *  d'observations de leur ViewModel — un instantané pris à la reprise. Sans cette fusion, toute
+     *  observation marquée `envoyeeServeur` par un envoi en cours APRÈS cette reprise repassait à
+     *  false SUR LE DISQUE : le doublon survivait au redémarrage et l'anti-doublon restait désarmé
+     *  pour tous les envois suivants (audit 2026-09-14, instruction du 2026-09-16).
+     *
+     *  UNION, jamais écrasement, et le sens du risque le commande : un faux `false` crée un doublon
+     *  irrécupérable en base régionale, un faux `true` perdrait une observation. Or `envoyeeServeur`
+     *  n'est jamais posé qu'après un 2xx du serveur : l'union ne peut pas fabriquer de faux `true`.
+     *  Même raisonnement pour `idReleveIncertain`, qui déclenche la vérification anti-doublon. */
     fun remplacer(id: String, sortieMaj: Sortie): Boolean = muter { liste ->
         val idx = liste.indexOfFirst { it.id == id }
-        if (idx >= 0) liste[idx] = sortieMaj else liste.add(0, sortieMaj)
+        if (idx < 0) { liste.add(0, sortieMaj); return@muter }
+        val acquis = liste[idx].observations.associateBy { it.id }
+        liste[idx] = sortieMaj.copy(observations = sortieMaj.observations.map { o ->
+            val ancienne = acquis[o.id] ?: return@map o
+            o.copy(
+                envoyeeServeur = o.envoyeeServeur || ancienne.envoyeeServeur,
+                idReleveIncertain = o.idReleveIncertain ?: ancienne.idReleveIncertain,
+            )
+        })
     }
 
     fun supprimer(id: String) { muter { liste -> liste.removeAll { it.id == id } } }

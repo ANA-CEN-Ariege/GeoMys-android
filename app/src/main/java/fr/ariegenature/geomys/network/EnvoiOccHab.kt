@@ -25,6 +25,16 @@ import fr.ariegenature.geomys.store.OccHabStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+/** Un verrou d'envoi PAR SAISIE, process-wide — pendant OccHab de `VerrousEnvoiSortie`
+ *  (EnvoiSortie.kt) et de `OutboxEnvoi.mutexEnvoi` (monitoring). `tryLock` : un second envoi est
+ *  REFUSE et le dit, plutot que d'attendre en silence derriere un premier qui peut durer des
+ *  minutes. Audit 2026-09-14, instruction du 2026-09-16. */
+private object VerrousEnvoiOccHab {
+    private val verrous = java.util.concurrent.ConcurrentHashMap<String, kotlinx.coroutines.sync.Mutex>()
+    fun pour(saisieId: String): kotlinx.coroutines.sync.Mutex =
+        verrous.computeIfAbsent(saisieId) { kotlinx.coroutines.sync.Mutex() }
+}
+
 /** Résultat d'un envoi de saisie OccHab : [succes] + [message] humanisé prêt à afficher. */
 data class ResultatEnvoiOccHab(val succes: Boolean, val message: String)
 
@@ -47,11 +57,29 @@ suspend fun envoyerSaisieOccHabVersGeoNature(
     /** Envoi d'UNE station — injectable pour les tests (défaut : le POST réseau réel). */
     envoyer: suspend (OccHabStation, GeoNatureConfig) -> OccHabEnvoiResult = OccHabUpload::envoyer,
 ): ResultatEnvoiOccHab = withContext(Dispatchers.IO) {
+    // Même verrou process-wide que côté Occtax (cf. EnvoiSortie.VerrousEnvoiSortie) : les écrans
+    // OccHab n'avaient eux aussi que des drapeaux `envoiEnCours` d'instance (OccHabStationsFragment
+    // via EnvoiGroupeUi), aveugles d'un écran à l'autre. « Tentée » est certes persisté avant tout
+    // POST de création, mais un second envoi concurrent lit SON instantané, où l'incertitude n'est
+    // pas encore posée : il POSTerait sans passer par la vérification anti-doublon.
+    val verrou = VerrousEnvoiOccHab.pour(saisie.id)
+    if (!verrou.tryLock()) {
+        return@withContext ResultatEnvoiOccHab(
+            false,
+            "Un envoi de cette saisie est déjà en cours — attendez qu'il se termine avant d'en " +
+                "relancer un (sinon les stations partiraient en double sur GeoNature).",
+        )
+    }
+    try {
     // Sur IO : les commits synchrones du store (gson.toJson + prefs.commit) ne bloquent PAS le
     // thread UI à l'envoi d'une saisie multi-stations.
-    val aEnvoyer = saisie.stations.filter { !it.envoyeGeoNature }
-    val dejaEnvoyees = saisie.stations.size - aEnvoyer.size
-    val total = saisie.stations.size
+    // RELECTURE SOUS VERROU : on repart de l'état DISQUE et non de l'instantané de l'écran, sinon
+    // le second envoi sérialisé reposterait les stations que le premier vient de marquer. Repli sur
+    // l'objet reçu si la saisie est absente du store (cas dégradé : écriture refusée).
+    val saisieRelue = store.charger().find { it.id == saisie.id } ?: saisie
+    val aEnvoyer = saisieRelue.stations.filter { !it.envoyeGeoNature }
+    val dejaEnvoyees = saisieRelue.stations.size - aEnvoyer.size
+    val total = saisieRelue.stations.size
 
     if (aEnvoyer.isEmpty()) {
         // Tout avait déjà été transmis (la saisie est déjà marquée envoyée au store).
@@ -136,5 +164,8 @@ suspend fun envoyerSaisieOccHabVersGeoNature(
         }
         store.marquerErreurSaisie(saisie.id, msg)
         ResultatEnvoiOccHab(false, msg)
+    }
+    } finally {
+        verrou.unlock()
     }
 }

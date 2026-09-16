@@ -154,6 +154,66 @@ class StationsServeurCacheTest {
         assertNull(StationsServeurCache.dateChargement)
     }
 
+    // ── Version du format (audit 2026-09-14, R3-C1 / R2-M1) ──
+
+    private fun fichierCache() = File(
+        ApplicationProvider.getApplicationContext<android.content.Context>().filesDir,
+        "stations_serveur_occhab_v1.json",
+    )
+
+    @Test
+    fun cache_ecrit_par_une_version_anterieure_est_ignore_et_supprime() {
+        // Fichier tel que l'écrivaient les v1.3.22 à v1.4.1 : pas de champ versionFormat, et un
+        // polygone à trou déjà APLATI par l'ancien parseur (geometryTrousJson absent). Le relire
+        // afficherait un polygone plein, et l'envoi de la copie modifiée SUPPRIMERAIT le trou
+        // côté GeoNature — la régression corrigée en v1.4.0, rouverte par le chemin hors-ligne.
+        fichierCache().writeText(
+            """{"dateChargement":1757000000000,"stations":[""" +
+                """{"id":"x","uuidStation":"u","idStationServeur":1,"idDataset":10,""" +
+                """"geometryType":"Polygon","latitude":42.9,"longitude":1.6,""" +
+                """"geometryCoordsJson":"[[1.6,42.9],[1.7,42.9],[1.7,43.0]]",""" +
+                """"habitats":[],"origineServeur":true}]}"""
+        )
+        StationsServeurCache.resetPourTests()
+        assertTrue("un cache d'un autre format ne doit JAMAIS être servi", StationsServeurCache.lire(10).isEmpty())
+        assertNull(StationsServeurCache.dateChargement)
+        assertTrue("le fichier périmé doit être supprimé, pas relu à chaque ouverture", !fichierCache().exists())
+    }
+
+    @Test
+    fun cache_ecrit_par_la_version_courante_est_relu() {
+        // Contre-épreuve de la précédente : le rejet doit porter sur la VERSION, pas tout jeter.
+        StationsServeurCache.remplacerTout(listOf(station(1, 10)))
+        StationsServeurCache.resetPourTests()
+        assertEquals(listOf(1), StationsServeurCache.lire(10).map { it.idStationServeur })
+        assertNotNull(StationsServeurCache.dateChargement)
+    }
+
+    @Test
+    fun station_a_champs_nuls_est_normalisee_a_la_relecture() {
+        // Un JSON portant des `null` EXPLICITES sur des champs non-nullables (fichier tronqué,
+        // écrit par une autre version, ou édité à la main) court-circuite les valeurs par défaut
+        // de Kotlin : Gson les pose tels quels et l'application manipulait ensuite des `null` sur
+        // des types déclarés non-null — crash au premier usage. C'est la 3ᵉ porte d'entrée
+        // d'OccHabStation (avec le store et le parseur réseau) et la seule qui ne normalisait pas
+        // (audit 2026-09-14, R2-m1).
+        fichierCache().writeText(
+            """{"dateChargement":1757000000000,"versionFormat":2,"stations":[""" +
+                """{"id":"x","uuidStation":null,"idStationServeur":1,"idDataset":10,""" +
+                """"geometryType":null,"observateursIds":null,"observateursNoms":null,""" +
+                """"latitude":42.9,"longitude":1.6,"habitats":[]},""" +
+                // Sans `id` : structurellement invalide, écartée.
+                """{"id":null,"idStationServeur":2,"idDataset":10,"habitats":[]}]}"""
+        )
+        StationsServeurCache.resetPourTests()
+        val lues = StationsServeurCache.lire(10)
+        assertEquals(listOf(1), lues.map { it.idStationServeur })
+        assertNotNull("uuidStation doit être généré, pas laissé null", lues[0].uuidStation)
+        assertEquals("Point", lues[0].geometryType)
+        assertTrue(lues[0].observateursIds.isEmpty())
+        assertTrue(lues[0].observateursNoms.isEmpty())
+    }
+
     // ── Purges ──
 
     @Test

@@ -142,21 +142,10 @@ class SaisiesEnAttenteFragment : Fragment() {
     private fun rafraichir() {
         if (_binding == null) return // appelable depuis le callback de progression (cf. lancerEnvoiGroupe)
         val toutes = OutboxMonitoring.tout()
-        // Le RÉSUMÉ compte les objets de niveau VISITE seulement (ceux placés directement sous
-        // le protocole : visite, transect, pelouse…) — pas leurs enfants (espèces/observations),
-        // qui gonflaient le total sans correspondre à ce que l'utilisateur appelle une visite
-        // (demande terrain 2026-09-03). Les enfants restent affichés sous leur visite et partent
-        // avec elle.
-        val visites = toutes.filter { estObjetDeNiveauVisite(it.parentObjectType) }
-        val enAttente = visites.count { it.etat == SaisieEnAttente.Etat.PENDING || it.etat == SaisieEnAttente.Etat.ERROR }
-        val envoyees = visites.count { it.etat == SaisieEnAttente.Etat.SENT }
-        binding.tvResume.text = when {
-            toutes.isEmpty() -> "Aucune donnée locale."
-            enAttente == 0 -> "Toutes les données ont été envoyées ($envoyees)."
-            else -> "$enAttente en attente · $envoyees envoyées"
-        }
-        binding.tabLayout.getTabAt(0)?.text = "À envoyer ($enAttente)"
-        binding.tabLayout.getTabAt(1)?.text = "Envoyées ($envoyees)"
+        val resume = resumeOutbox(toutes) { estObjetDeNiveauVisite(it) }
+        binding.tvResume.text = resume.texte
+        binding.tabLayout.getTabAt(0)?.text = "À envoyer (${resume.nbAEnvoyer})"
+        binding.tabLayout.getTabAt(1)?.text = "Envoyées (${resume.nbEnvoyees})"
         peuplerListe(toutes)
         majBoutonToutEnvoyer(toutes)
     }
@@ -838,6 +827,60 @@ class SaisiesEnAttenteFragment : Fragment() {
         _binding = null
     }
 }
+/** Résumé de l'écran « Mes visites » : le texte de synthèse et les deux compteurs d'onglet. */
+internal data class ResumeOutbox(val texte: String, val nbAEnvoyer: Int, val nbEnvoyees: Int)
+
+/**
+ * Calcule le résumé — fonction PURE, pour être testable sans Android.
+ *
+ * Deux exigences qui se contredisaient, d'où ce calcul en deux temps :
+ *
+ * 1. Le LIBELLÉ compte les objets de niveau VISITE seulement (ceux placés directement sous le
+ *    protocole : visite, transect, pelouse…), pas leurs enfants — les observations gonflaient le
+ *    total sans correspondre à ce que l'utilisateur appelle une visite (demande terrain
+ *    2026-09-03).
+ * 2. Mais les COMPTEURS et la phrase « tout a été envoyé » doivent porter sur TOUT ce qui reste.
+ *    Ils ne portaient que sur les visites : une observation PENDING ou ERROR sous une visite déjà
+ *    SENT — un état qui existe bel et bien (`OutboxMonitoring.purgerSent` conserve un parent SENT
+ *    référencé par un enfant non envoyé, et cet écran l'affiche sous « Visite déjà envoyée ») —
+ *    n'était comptée nulle part. L'écran affirmait « Toutes les données ont été envoyées » alors
+ *    qu'une observation naturaliste n'était jamais partie, et l'onglet annonçait « À envoyer (0) »
+ *    au-dessus d'une liste non vide. L'utilisateur pouvait alors vider le cache, changer de compte
+ *    ou réinstaller : donnée perdue (audit 2026-09-14, R4-C1).
+ *
+ * On garde donc le vocabulaire « visites » pour le décompte principal, mais on ne prétend JAMAIS
+ * que tout est parti tant qu'il reste quoi que ce soit, et les observations restantes sont
+ * nommées à part.
+ */
+internal fun resumeOutbox(
+    toutes: List<SaisieEnAttente>,
+    estNiveauVisite: (String?) -> Boolean,
+): ResumeOutbox {
+    fun resteAEnvoyer(s: SaisieEnAttente) =
+        s.etat == SaisieEnAttente.Etat.PENDING || s.etat == SaisieEnAttente.Etat.ERROR
+    val visites = toutes.filter { estNiveauVisite(it.parentObjectType) }
+    val aEnvoyerTotal = toutes.count { resteAEnvoyer(it) }
+    val visitesAEnvoyer = visites.count { resteAEnvoyer(it) }
+    val visitesEnvoyees = visites.count { it.etat == SaisieEnAttente.Etat.SENT }
+    val enfantsAEnvoyer = aEnvoyerTotal - visitesAEnvoyer
+    val texte = when {
+        toutes.isEmpty() -> "Aucune donnée locale."
+        aEnvoyerTotal == 0 -> "Toutes les données ont été envoyées ($visitesEnvoyees)."
+        else -> buildString {
+            val restants = buildList {
+                if (visitesAEnvoyer > 0) add("$visitesAEnvoyer visite" + (if (visitesAEnvoyer > 1) "s" else ""))
+                if (enfantsAEnvoyer > 0) add("$enfantsAEnvoyer observation" + (if (enfantsAEnvoyer > 1) "s" else ""))
+            }
+            append(restants.joinToString(" et "))
+            append(" en attente · $visitesEnvoyees envoyée")
+            if (visitesEnvoyees > 1) append("s")
+        }
+    }
+    // Les COMPTEURS d'onglet portent sur tout : l'onglet « À envoyer » doit s'accorder avec ce que
+    // la liste montre réellement, enfants orphelins compris.
+    return ResumeOutbox(texte, aEnvoyerTotal, toutes.count { it.etat == SaisieEnAttente.Etat.SENT })
+}
+
 
 /** Rouge de la flèche d'envoi d'une saisie « à compléter » : même rouge franc que les barres
  *  des champs obligatoires du formulaire et que les repères de la carte. */

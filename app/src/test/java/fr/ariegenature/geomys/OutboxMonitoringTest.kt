@@ -104,4 +104,39 @@ class OutboxMonitoringTest {
         OutboxMonitoring.supprimer("a")
         assertTrue(OutboxMonitoring.tout().none { it.uuid == "a" })
     }
+
+    // ── Médias déjà transmis (audit 2026-09-14, R1-M3) ──
+
+    @Test
+    fun mediasARenvoyer_exclut_ceux_deja_transmis() {
+        // Un « Réessayer » après un échec partiel ne doit renvoyer QUE les manquants : renvoyer la
+        // liste complète empilait les doublons dans gn_commons.t_medias — trois essais échouant sur
+        // la 3ᵉ photo laissaient trois exemplaires des deux premières dans la visite GeoNature.
+        val s = SaisieEnAttente(
+            uuid = "u1", moduleCode = "M", objectType = "visit", valeursJson = "{}",
+            mediaPathsLocal = listOf("file:///a.jpg", "file:///b.jpg", "file:///c.jpg"),
+            mediasEnvoyes = listOf("file:///a.jpg", "file:///b.jpg"),
+        )
+        assertEquals(listOf("file:///c.jpg"), s.mediasARenvoyer())
+    }
+
+    @Test
+    fun mediasARenvoyer_sans_acquis_renvoie_tout() {
+        // Premier essai, et saisies écrites AVANT ce champ (relues à null par Gson) : tout part.
+        val neuve = SaisieEnAttente(
+            uuid = "u2", moduleCode = "M", objectType = "visit", valeursJson = "{}",
+            mediaPathsLocal = listOf("file:///a.jpg"),
+        )
+        assertEquals(listOf("file:///a.jpg"), neuve.mediasARenvoyer())
+    }
+
+    @Test
+    fun mediasARenvoyer_tout_transmis_ne_renvoie_rien() {
+        val s = SaisieEnAttente(
+            uuid = "u3", moduleCode = "M", objectType = "visit", valeursJson = "{}",
+            mediaPathsLocal = listOf("file:///a.jpg"),
+            mediasEnvoyes = listOf("file:///a.jpg"),
+        )
+        assertTrue(s.mediasARenvoyer().isEmpty())
+    }
 }

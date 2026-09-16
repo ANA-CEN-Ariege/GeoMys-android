@@ -40,6 +40,28 @@ internal object EnvoisNonPersistes {
     @androidx.annotation.VisibleForTesting fun vider() { obs.clear() }
 }
 
+/**
+ * Un verrou d'envoi PAR SAISIE, process-wide — le pendant Occtax de `OutboxEnvoi.mutexEnvoi`
+ * (monitoring), qui protégeait déjà ce module et n'avait jamais été porté ici.
+ *
+ * Les cinq points d'appel d'un envoi Occtax (« Tout envoyer » et flèche de ligne dans Mes saisies,
+ * écran de détail, fin de trace multi-taxons, saisie rapide) n'avaient pour toute garde que des
+ * drapeaux `envoiEnCours` de FRAGMENT : aveugles d'un écran à l'autre. Cas réel : l'envoi est lancé
+ * depuis l'écran de détail, l'utilisateur revient à la liste — dont l'instance n'a jamais posé son
+ * drapeau —, la saisie y est toujours « À envoyer » avec sa flèche, et un second envoi part sans
+ * même un toast. Chacun crée son propre relevé : doublons en base régionale puis en synthèse
+ * nationale, qu'aucune contrainte serveur n'arrête (`unique_id_occurence_occtax` n'est pas unique
+ * côté GeoNature, et `unique_id_sinp_occtax`, qui l'est, n'est jamais envoyé).
+ *
+ * `tryLock` et non `lock` : un second envoi est REFUSÉ et le dit, plutôt que d'attendre en silence
+ * derrière un premier qui peut durer des minutes (photos, réseau de terrain).
+ */
+private object VerrousEnvoiSortie {
+    private val verrous = java.util.concurrent.ConcurrentHashMap<String, kotlinx.coroutines.sync.Mutex>()
+    fun pour(sortieId: String): kotlinx.coroutines.sync.Mutex =
+        verrous.computeIfAbsent(sortieId) { kotlinx.coroutines.sync.Mutex() }
+}
+
 private const val AVERT_PERSISTANCE =
     "\n\n⚠ Transmis à GeoNature mais l'enregistrement local a ÉCHOUÉ (espace disque ?) : libérez " +
         "de l'espace AVANT tout nouvel envoi de cette saisie — un ré-envoi après redémarrage " +
@@ -62,13 +84,42 @@ suspend fun envoyerSortieVersGeoNature(
     sortieStore: SortieStore,
     config: GeoNatureConfig,
 ): ResultatEnvoiSortie = withContext(NonCancellable) {
+    val verrou = VerrousEnvoiSortie.pour(sortie.id)
+    if (!verrou.tryLock()) {
+        return@withContext ResultatEnvoiSortie(
+            false,
+            "Un envoi de cette saisie est déjà en cours — attendez qu'il se termine avant d'en " +
+                "relancer un (sinon les observations partiraient en double sur GeoNature).",
+        )
+    }
+    try {
+    // RELECTURE SOUS VERROU. Le verrou seul ne corrigerait rien : il sérialiserait les deux envois,
+    // après quoi le second repartirait de l'instantané que son écran a chargé à l'ouverture — donc
+    // reposterait tout ce que le premier vient de créer. Les cinq chemins d'appel persistent la
+    // sortie dans le store sous son id AVANT d'envoyer (vérifié un par un), la relecture est donc
+    // sûre ; on se replie sur l'objet reçu si l'id est absent (cas dégradé : écriture disque
+    // refusée), pour ne jamais transformer une saisie en envoi vide.
+    // UNION des acquis, et pas simple préférence au disque : `envoyeeServeur` n'étant posé qu'après
+    // un 2xx, l'union ne peut pas fabriquer de faux positif, et elle rattrape les marquages qu'une
+    // réécriture concurrente aurait effacés.
+    val passees = sortie.observations.associateBy { it.id }
+    val sortieRelue = sortieStore.charger().find { it.id == sortie.id }?.let { s ->
+        s.copy(observations = s.observations.map { o ->
+            val p = passees[o.id] ?: return@map o
+            o.copy(
+                envoyeeServeur = o.envoyeeServeur || p.envoyeeServeur,
+                idReleveIncertain = o.idReleveIncertain ?: p.idReleveIncertain,
+            )
+        })
+    } ?: sortie
     // Filet mémoire : occurrences transmises lors d'un envoi précédent de CE process dont le
-    // marquage disque avait échoué → exclues comme si elles étaient marquées.
-    val sortieEff = if (sortie.observations.any { EnvoisNonPersistes.contient(it.id) })
-        sortie.copy(observations = sortie.observations.map {
+    // marquage disque avait échoué → exclues comme si elles étaient marquées. Il couvre ce qu'aucune
+    // relecture ne verra jamais, puisque justement rien n'a pu être écrit.
+    val sortieEff = if (sortieRelue.observations.any { EnvoisNonPersistes.contient(it.id) })
+        sortieRelue.copy(observations = sortieRelue.observations.map {
             if (EnvoisNonPersistes.contient(it.id)) it.copy(envoyeeServeur = true) else it
         })
-    else sortie
+    else sortieRelue
     var marquageEchoue = false
     val marqueur = object : MarqueurEnvoiOcctax {
         override fun occurrenceCreee(obsId: String) {
@@ -79,6 +130,25 @@ suspend fun envoyerSortieVersGeoNature(
         }
         override fun occurrenceIncertaine(obsId: String, idReleve: Int) {
             sortieStore.marquerObservationIncertaine(sortie.id, obsId, idReleve)
+        }
+        override fun occurrencesATenter(obsIds: List<String>, idReleve: Int) {
+            // Échec d'écriture NON bloquant, contrairement au monitoring qui refuse de poster :
+            // ici le POST part quand même, et c'est l'avertissement de persistance déjà en place
+            // (AVERT_PERSISTANCE, via marquageEchoue) qui prévient l'utilisateur. Refuser l'envoi
+            // sur un disque plein empêcherait de transmettre une journée de terrain — le remède
+            // serait pire que le mal.
+            if (!sortieStore.marquerObservationsIncertaines(sortie.id, obsIds, idReleve)) {
+                marquageEchoue = true
+            }
+        }
+        override fun occurrenceEchecNet(obsId: String) {
+            sortieStore.effacerIncertitudeObservation(sortie.id, obsId)
+        }
+        override fun releveATenter(obsIds: List<String>) {
+            if (!sortieStore.marquerReleveTente(sortie.id, obsIds, true)) marquageEchoue = true
+        }
+        override fun releveEchecNet(obsIds: List<String>) {
+            sortieStore.marquerReleveTente(sortie.id, obsIds, false)
         }
     }
     try {
@@ -153,5 +223,8 @@ suspend fun envoyerSortieVersGeoNature(
         val msg = humaniserErreurReseau(e)
         sortieStore.marquerErreurEnvoi(sortie.id, msg)
         ResultatEnvoiSortie(false, msg)
+    }
+    } finally {
+        verrou.unlock()
     }
 }

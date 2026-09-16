@@ -18,6 +18,7 @@
 
 package fr.ariegenature.geomys
 
+import fr.ariegenature.geomys.network.GeoNatureSync.meilleurCandidatVernaculaire
 import fr.ariegenature.geomys.network.GeoNatureSync.meilleurCdNomPrefListe
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -62,5 +63,47 @@ class CollisionCdNomTest {
     @Test
     fun cd_nom_unique_retourne_ce_cd_nom() {
         assertEquals(42, meilleurCdNomPrefListe(listOf(42), mapOf(42 to setOf(1)), 1))
+    }
+
+    // ── Collision de noms VERNACULAIRES (terrain 2026-09-16) ──
+
+    /** Cas réel, relevé sur l'appareil : « gobemouche gris » est le nom PRINCIPAL de
+     *  Muscicapa striata (4319, l'oiseau) et le QUATRIÈME nom de Menemerus bivittatus (2080, une
+     *  araignée sauteuse : « Atte muscivore », « Araignéechat », « araignée sauteuse à deux
+     *  bandes », « gobemouche gris »). Les deux appartiennent à la liste 100, donc la préférence
+     *  de liste ne les départage pas — et le « plus petit cd_nom » donnait l'ARAIGNÉE. Saisir
+     *  « gobemouche gris » affichait « Menemerus bivittatus » et envoyait ce cd_nom à GeoNature. */
+    private val gobemouche = listOf(
+        Triple(2080, "gobemouche gris", 3),   // araignée : 4e nom vernaculaire
+        Triple(4319, "Gobemouche gris", 0),   // oiseau : nom principal
+    )
+    private val listesGobemouche = mapOf(2080 to setOf(100), 4319 to setOf(100))
+
+    @Test
+    fun le_nom_principal_l_emporte_sur_un_synonyme_secondaire() {
+        val best = meilleurCandidatVernaculaire(gobemouche, listesGobemouche, 100)
+        assertEquals("« gobemouche gris » doit désigner l'oiseau, pas l'araignée", 4319, best?.first)
+    }
+
+    @Test
+    fun le_rang_departage_aussi_sans_liste_configuree() {
+        val best = meilleurCandidatVernaculaire(gobemouche, listesGobemouche, null)
+        assertEquals(4319, best?.first)
+    }
+
+    @Test
+    fun la_liste_configuree_prime_toujours_sur_le_rang() {
+        // Le protocole de l'utilisateur reste le critère le plus fort : si seul le taxon dont le
+        // nom est secondaire appartient à sa liste, c'est lui qu'il faut proposer.
+        val listes = mapOf(2080 to setOf(100), 4319 to setOf(999))
+        val best = meilleurCandidatVernaculaire(gobemouche, listes, 100)
+        assertEquals(2080, best?.first)
+    }
+
+    @Test
+    fun a_rang_egal_le_plus_petit_cd_nom_departage() {
+        // Espèce et sous-espèce partageant leur nom principal : on reste déterministe.
+        val cands = listOf(Triple(600, "Mésange bleue", 0), Triple(500, "Mésange bleue", 0))
+        assertEquals(500, meilleurCandidatVernaculaire(cands, emptyMap(), null)?.first)
     }
 }

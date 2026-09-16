@@ -82,7 +82,11 @@ object TaxRefService {
             // 1. Cache synchronisé depuis le serveur GeoNature (cd_nom autoritatif du serveur)
             //    On valide l'appartenance au groupe avant d'accepter le match — sinon
             //    "Tourterelle turque" matche même quand le user a sélectionné Mammifères.
-            TaxRefCache.get(nom)?.let { entry ->
+            // get(nom, cdNomsAutorises) et non get(nom) : quand deux taxons partagent un nom, le
+            // cache ne garde qu'une entrée, et filtrer ne savait que REJETER l'intrus — jamais
+            // retrouver le bon. Le taxon du groupe est désormais retrouvé dans l'index
+            // vernaculaire, donc HORS LIGNE aussi (avant, il fallait l'API pour se rattraper).
+            TaxRefCache.get(nom, cdNomsAutorises)?.let { entry ->
                 if (appartientAuGroupe(entry.cdNom)) {
                     val nomFr = entry.nomFrOriginal ?: TaxRefCache.getVernaculaireParCdNom(entry.cdNom)
                     return@withContext Pair(TaxRefStatut.Trouve(entry.cdNom, entry.sciNom, nomFr), false)

@@ -207,13 +207,21 @@ class GeoNatureUploadEnvoyerTest {
         }
         val o = obs("o1").apply { uuidOccurrence = "dddddddd-1111-2222-3333-444444444444" }
         val crees = mutableListOf<String>()
+        val aTenter = mutableListOf<String>()
         val marqueur = object : MarqueurEnvoiOcctax {
             override fun occurrenceCreee(obsId: String) { crees.add(obsId) }
             override fun occurrenceIncertaine(obsId: String, idReleve: Int) {}
+            override fun occurrencesATenter(obsIds: List<String>, idReleve: Int) { aTenter.addAll(obsIds) }
+            override fun occurrenceEchecNet(obsId: String) {}
+            override fun releveATenter(obsIds: List<String>) {}
+            override fun releveEchecNet(obsIds: List<String>) {}
         }
         val res = runBlocking { GeoNatureUpload.envoyer(Sortie(observations = listOf(o)), config, marqueur) }
         assertEquals(1, res.nbCrees)
         assertEquals(listOf("o1"), crees)
+        // Pre-marquage AVANT le POST : l'occurrence est declaree « peut-etre creee » des l'emission,
+        // sinon la mort du processus la laisserait sur GeoNature sans trace locale (R1-C1).
+        assertEquals("le groupe doit etre pre-marque avant tout POST", listOf("o1"), aTenter)
         assertTrue("uuid client dans le payload",
             corps.single().contains("\"unique_id_occurence_occtax\":\"dddddddd-1111-2222-3333-444444444444\""))
     }

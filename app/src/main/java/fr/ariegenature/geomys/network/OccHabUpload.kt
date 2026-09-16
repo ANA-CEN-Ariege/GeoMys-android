@@ -222,11 +222,26 @@ object OccHabUpload {
             conn.disconnect()
 
             // Réponse = la station en GeoJSON Feature. id_station en top-level `id` ou dans properties.
-            val idStation = try {
+            val idStationLu = try {
                 val resp = JSONObject(respText)
                 resp.optInt("id", -1).takeIf { it > 0 }
                     ?: resp.optJSONObject("properties")?.optInt("id_station", -1)?.takeIf { it > 0 }
             } catch (_: Exception) { null }
+
+            // 2xx mais id ILLISIBLE sur une CRÉATION (corps tronqué, réponse non-JSON, id sous un
+            // autre nom) : la station EST créée côté serveur, et sans son id elle serait marquée
+            // « envoyée » sans rien pour la retrouver — sa réédition en créerait une seconde, le
+            // module OccHab n'ayant aucune contrainte d'unicité (audit 2026-09-14, R1-M2). On va
+            // donc chercher l'id par notre uuid, immédiatement. Si cette vérification est elle-même
+            // impossible, `verifierStationExistante` lève EnvoiIncertain : la station reste
+            // incertaine et le prochain envoi vérifiera au lieu de re-POSTer — c'est exactement ce
+            // qu'il faut.
+            val idStation = idStationLu
+                ?: if (!estMiseAJour) {
+                    android.util.Log.w("OccHabUpload",
+                        "Création acceptée mais id_station illisible — récupération par uuid")
+                    verifierStationExistante(base, token, cookies, station.uuidStation, datasetId)
+                } else null
 
             OccHabEnvoiResult(idStationServeur = idStation, nbHabitats = habitatsValides.size)
         }

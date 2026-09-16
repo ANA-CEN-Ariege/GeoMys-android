@@ -657,6 +657,22 @@ class ConfigGeoNatureFragment : Fragment() {
     private fun majBandeauRechargement() {
         val requis = gnConfig.rechargementRequisApresMaj
         binding.tvBandeauRechargement.visibility = if (requis) View.VISIBLE else View.GONE
+
+        // Accès de secours aux trois écrans « Mes … » — RÉSERVÉ au rechargement exigé par une mise
+        // à jour, et à lui seul.
+        //
+        // DÉCISION PRODUIT (2026-09-16, explicite) : `configurationComplete` est faux pour trois
+        // raisons, et une seule mérite une issue de secours. Vider le cache et remplir les champs de
+        // Paramètres sont des actes VOLONTAIRES : le blocage y est délibéré, l'utilisateur doit
+        // resynchroniser et ressaisir chaque champ, et on ne lui ouvre aucune porte dérobée. Le
+        // rechargement après mise à jour, lui, est IMPOSÉ à une application qui fonctionnait la
+        // veille — il peut tomber en pleine journée de terrain, sans réseau, sur un téléphone plein
+        // de saisies non envoyées. C'est le seul cas où l'utilisateur n'a rien demandé, donc le seul
+        // où ses données doivent rester joignables.
+        //
+        // Ne PAS élargir cette condition à `!configurationComplete(gnConfig)` : l'audit 2026-09-14
+        // l'avait proposé (R7-M3), la demande a été écartée pour la raison ci-dessus.
+        binding.llAccesSaisiesRechargement.visibility = if (requis) View.VISIBLE else View.GONE
         if (!requis) return
         val couleur = couleurAvertissement()
         binding.tvBandeauRechargement.setTextColor(couleur)
@@ -664,7 +680,16 @@ class ConfigGeoNatureFragment : Fragment() {
         binding.tvBandeauRechargement.text =
             "Mise à jour de l'application : les données doivent être rechargées avant de continuer.\n" +
             "Appuyez sur « Charger les données » (réseau nécessaire). Vos saisies en attente sont " +
-            "conservées et pourront être envoyées après le rechargement."
+            "conservées, consultables ci-dessous, et envoyables dès que le réseau revient."
+        binding.btnRechargementMesSaisies.setOnClickListener {
+            findNavController().naviguerSur(R.id.sortiesFragment)
+        }
+        binding.btnRechargementMesVisites.setOnClickListener {
+            findNavController().naviguerSur(R.id.saisiesEnAttenteFragment)
+        }
+        binding.btnRechargementMesStations.setOnClickListener {
+            findNavController().naviguerSur(R.id.occhabStationsFragment)
+        }
     }
 
     /** Purge les caches synchronisés (TaxRef, nomenclatures, habitats, monitoring, pictos) en une

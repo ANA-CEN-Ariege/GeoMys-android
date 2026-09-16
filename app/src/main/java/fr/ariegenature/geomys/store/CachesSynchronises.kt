@@ -29,11 +29,33 @@ import fr.ariegenature.geomys.network.MonitoringApi
  * de « rechargement requis » (cf. [armerRechargementSiRequis]).
  */
 fun viderCachesSynchronises() {
-    TaxRefCache.vider()
-    NomenclatureCache.vider()
+    viderCachesReecritsEnPhaseB()
+    // Caches remplis par la PHASE A de SyncRunner. Le bouton « Vider le cache » les efface (c'est
+    // son contrat : tout enlever), mais le rechargement après mise à jour NON : cf.
+    // [viderCachesReecritsEnPhaseB].
     HabitatCache.vider()
     HabitatCacheOccHab.vider()
     StationsServeurCache.vider()
+}
+
+/**
+ * Purge réservée au RECHARGEMENT APRÈS MISE À JOUR (SyncRunner, une fois le serveur joignable) :
+ * n'efface QUE les caches que la phase B réécrit derrière elle — TaxRef, nomenclatures, monitoring,
+ * pictogrammes.
+ *
+ * Les caches de la PHASE A — les deux HABREF et les stations serveur — sont volontairement
+ * ÉPARGNÉS : la phase A vient de les remplacer EN BLOC (`remplacerTout`) quelques lignes plus haut,
+ * et la phase B ne les réécrit jamais. Les purger ici revenait à effacer ce que la synchro venait
+ * tout juste d'écrire : après un rechargement pourtant annoncé réussi, plus aucun habitat proposé
+ * hors ligne — donc saisie OccHab IMPOSSIBLE, l'habitat y étant obligatoire — et plus aucune
+ * station serveur. Audit 2026-09-14, R1-C2.
+ *
+ * Si une étape best-effort de la phase A a échoué, son cache garde son contenu précédent : périmé
+ * vaut mieux que vide sur une application dont tout l'usage est hors réseau.
+ */
+fun viderCachesReecritsEnPhaseB() {
+    TaxRefCache.vider()
+    NomenclatureCache.vider()
     MonitoringCache.vider()
     PictoCache.vider()  // pictos de protocole (cache disque)
     // MonitoringCache.vider() n'efface que le DISQUE : la liste des modules est aussi gardée en

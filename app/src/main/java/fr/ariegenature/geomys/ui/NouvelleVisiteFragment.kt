@@ -303,7 +303,9 @@ class NouvelleVisiteFragment : Fragment() {
                         renderer.lireValeurs() != valeursApresRendu
                     if (!modifie || enCoursEnvoi) {
                         isEnabled = false
-                        findNavController().navigateUp()
+                        // Même raison qu'en fin de chaîne : le retour système est une sortie de
+                        // chaîne comme une autre, la visite parente incomplète doit être proposée.
+                        terminerOuCompleterLaVisite()
                         return
                     }
                     val dialog = AlertDialog.Builder(requireContext())
@@ -363,9 +365,13 @@ class NouvelleVisiteFragment : Fragment() {
         // (saisie texte, sélection, picker, multi-select…) — on remet le bouton à jour.
         renderer.setOnChangement {
             majEtatBoutonSubmit()
-            // Mode complétion : la barre rouge suit l'état réel des champs (elle disparaît
-            // dès qu'un champ est rempli, apparaît si une règle le rend obligatoire).
-            renderer.marquerObligatoiresManquants(modeCompletion())
+            // Barres rouges des champs obligatoires vides. Elles s'arment en mode complétion —
+            // et, désormais, dès que le bouton reste GRISÉ : sur une saisie d'espèce, un champ
+            // obligatoire vide bloque l'enregistrement, et l'utilisateur n'avait AUCUN moyen de
+            // savoir lequel. Le repérage visuel existait déjà, il n'était simplement pas armé sur
+            // ce chemin (audit 2026-09-14, R4-M5). Elles suivent l'état réel : elles disparaissent
+            // dès qu'un champ est rempli, réapparaissent si une règle le rend obligatoire.
+            renderer.marquerObligatoiresManquants(modeCompletion() || !binding.btnSubmit.isEnabled)
         }
         // Le renderer ne peut pas lancer le picker système (l'API ActivityResult exige un
         // enregistrement côté Fragment) — on lui fournit un callback qui stocke la lambda
@@ -871,7 +877,14 @@ class NouvelleVisiteFragment : Fragment() {
             majEtatBoutonSubmit()
             return
         }
-        val valeurs = renderer.lireValeurs().toMutableMap()
+        // lireValeursPourEnvoi (et non lireValeurs) : un champ masqué par une expression `hidden`
+        // conditionnelle CONSERVE sa valeur — l'utilisateur la retrouve si la condition redevient
+        // vraie — mais elle ne doit pas partir au serveur, comme le fait le client mobile officiel
+        // PnX-SI. Un protocole qui masque « nombre de nids » quand « espèce observée = non »
+        // transmettait sinon le nombre saisi avant la bascule : donnée fausse en base, sans aucun
+        // signal (audit 2026-09-14, R4-M4). Les autres appels à lireValeurs() — détection de
+        // modification et onSaveInstanceState — doivent, eux, continuer à tout voir.
+        val valeurs = renderer.lireValeursPourEnvoi().toMutableMap()
         // Extraction des médias : on prend le premier champ MEDIA non vide parmi les champs
         // montés, on capture ses URIs + schema_dot_table, puis on RETIRE la clé du payload
         // `valeurs` — le serveur Marshmallow n'accepte pas un media:"file://…" dans le POST de
@@ -1036,8 +1049,16 @@ class NouvelleVisiteFragment : Fragment() {
 
         // Sortie via « Terminer » : la saisie en cours vient d'être enregistrée, on quitte
         // la chaîne au lieu d'enchaîner ou de réinitialiser le formulaire.
+        //
+        // On passe par terminerOuCompleterLaVisite() et non par un navigateUp() sec : c'est ICI
+        // que la visite parente doit être proposée à la complétion, et c'est le chemin le PLUS
+        // COURANT (l'utilisateur a saisi quelque chose, donc `modifie` est vrai). Branchée sur la
+        // seule branche « formulaire vierge », la fonctionnalité de fin de visite ne se déclenchait
+        // que dans le cas minoritaire : les visites restaient bloquées à l'envoi et leurs infos de
+        // fin étaient reconstituées de mémoire au bureau (audit 2026-09-14, R3-M3 / R4-M2). La
+        // fonction est idempotente : elle sort d'elle-même si le parent est absent ou déjà complet.
         if (puisTerminer) {
-            findNavController().navigateUp()
+            terminerOuCompleterLaVisite()
             return
         }
 

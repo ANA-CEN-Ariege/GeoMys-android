@@ -286,8 +286,12 @@ object OutboxEnvoi {
                             // (objetCree déjà posé par envoyerUne). Avant ce correctif, la
                             // saisie passait SENT et les photos étaient perdues en silence.
                             echecs++
+                            // La promesse de ce message est désormais TENUE : les fichiers déjà
+                            // transmis sont mémorisés (mediasEnvoyes) et ne repartent pas. Elle
+                            // était trompeuse jusqu'ici — tout était renvoyé (R1-M3).
                             val msg = ("Objet créé (#${envoi.idServeur}) mais média(s) non envoyé(s) : " +
-                                "${envoi.erreurMedia} — « Réessayer » ne renverra que les médias.").take(300)
+                                "${envoi.erreurMedia} — « Réessayer » ne renverra que les médias " +
+                                "manquants.").take(300)
                             OutboxMonitoring.mettreAJour(saisie.uuid) {
                                 it.copy(etat = SaisieEnAttente.Etat.ERROR, messageErreur = msg)
                             }
@@ -470,20 +474,38 @@ object OutboxEnvoi {
             // l'appelant marque la saisie ERREUR ré-essayable (médias seulement) — avant, il
             // n'était que loggé et les photos étaient perdues en silence.
             var erreurMedia: String? = null
-            val medias = s.mediasLocaux()
+            // Seuls les médias PAS ENCORE transmis repartent : sans cette soustraction, chaque
+            // « Réessayer » après un échec partiel renvoyait la liste complète et empilait les
+            // doublons dans gn_commons.t_medias — trois essais échouant sur la 3ᵉ photo laissaient
+            // trois exemplaires des deux premières (audit 2026-09-14, R1-M3).
+            val medias = s.mediasARenvoyer()
             if (medias.isNotEmpty() && s.mediaSchemaDotTable != null && s.uuidPayload != null) {
-                val (ok, err) = fr.ariegenature.geomys.network.GeoNatureUpload.uploaderMediaMonitoring(
+                val resMedia = fr.ariegenature.geomys.network.GeoNatureUpload.uploaderMediaMonitoring(
                     config = config,
                     mediaPaths = medias,
                     schemaDotTable = s.mediaSchemaDotTable,
                     uuidAttachedRow = s.uuidPayload,
                     titre = "${s.objectType} ${s.uuidPayload.take(8)}",
                     author = config.nomUtilisateur.ifEmpty { config.login },
+                    // RÉ-ESSAI : l'objet existait déjà, ou des médias ont déjà été acquis. On
+                    // demande alors au serveur ce qu'il détient avant de renvoyer quoi que ce soit
+                    // — un POST dont la RÉPONSE s'est perdue n'a laissé aucune trace locale, et
+                    // c'est exactement lui qui repartait en double (terrain, 2026-09-16).
+                    reconcilier = s.objetCree || s.mediasEnvoyes != null,
                 )
-                if (!ok) {
-                    erreurMedia = err ?: "upload média échoué"
+                // L'ACQUIS d'abord, et même quand l'ensemble échoue : les fichiers réellement
+                // transmis sont persistés AVANT tout traitement d'erreur, faute de quoi l'essai
+                // suivant les renverrait. Un échec d'écriture ici n'est pas bloquant (le pire est
+                // de revenir au comportement d'avant : un doublon de média, pas une perte).
+                if (resMedia.transmis.isNotEmpty()) {
+                    OutboxMonitoring.mettreAJour(s.uuid) { saisie ->
+                        saisie.copy(mediasEnvoyes = (saisie.mediasEnvoyes ?: emptyList()) + resMedia.transmis)
+                    }
+                }
+                if (!resMedia.ok) {
+                    erreurMedia = resMedia.message ?: "upload média échoué"
                     android.util.Log.w("OutboxEnvoi",
-                        "Upload média échoué pour ${s.uuid} (objet créé OK) : $err")
+                        "Upload média échoué pour ${s.uuid} (objet créé OK) : ${resMedia.message}")
                 }
             }
             Result.success(EnvoiUne(idServeur, erreurMedia, doublonPossible))

@@ -236,7 +236,10 @@ object SyncRunner {
                 if (serveurJoignable) {
                     publier("Purge des anciennes données…")
                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                        fr.ariegenature.geomys.store.viderCachesSynchronises()
+                        // PAS viderCachesSynchronises() : la phase A vient de réécrire les deux
+                        // caches HABREF et les stations serveur, que la phase B ne retouche pas —
+                        // les purger ici les effaçait pour de bon (audit 2026-09-14, R1-C2).
+                        fr.ariegenature.geomys.store.viderCachesReecritsEnPhaseB()
                     }
                     purgeFaite = true
                 } else {

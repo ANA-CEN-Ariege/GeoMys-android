@@ -85,6 +85,15 @@ data class SaisieEnAttente(
     /** `schema_dot_table` du champ media (ex. `gn_monitoring.t_base_visits`), résolu en
      *  id_table_location côté envoi. Null si pas de média. */
     val mediaSchemaDotTable: String? = null,
+    /** Chemins des médias DÉJÀ TRANSMIS au serveur, acquis au fil de l'eau.
+     *
+     *  Sans cette mémoire, un « Réessayer » après un échec PARTIEL renvoyait la liste COMPLÈTE :
+     *  trois essais échouant sur la 3ᵉ photo laissaient trois exemplaires des deux premières dans
+     *  gn_commons.t_medias, donc dans la visite GeoNature — et le message affiché promettait
+     *  pourtant le contraire. La consommation réseau doublait aussi à chaque essai, sur un lien
+     *  déjà fragile (audit 2026-09-14, R1-M3). Nullable : les saisies écrites avant ce champ le
+     *  relisent à null (Gson par réflexion, cf. [normaliser]). */
+    val mediasEnvoyes: List<String>? = null,
     /** LIBELLÉS des champs OBLIGATOIRES encore vides au dernier enregistrement — saisie
      *  « à compléter » (demande terrain 2026-09-03). Certains protocoles imposent des infos
      *  qu'on ne connaît qu'À LA FIN de la visite (heure de fin, température de fin) : la
@@ -107,6 +116,13 @@ data class SaisieEnAttente(
      *  champ mono-fichier [mediaPathLocal] (brouillons d'avant la multi-pj). */
     fun mediasLocaux(): List<String> =
         mediaPathsLocal.ifEmpty { listOfNotNull(mediaPathLocal?.takeIf { it.isNotEmpty() }) }
+
+    /** Médias qu'il RESTE à transmettre : les locaux moins ceux déjà acquis. C'est cette liste
+     *  seule qui doit partir à chaque tentative, sinon un « Réessayer » duplique les précédents. */
+    fun mediasARenvoyer(): List<String> {
+        val acquis = mediasEnvoyes ?: return mediasLocaux()
+        return mediasLocaux().filterNot { it in acquis }
+    }
 }
 
 /** Store JSON local des saisies monitoring en attente d'envoi, sur [JsonCollectionStore].
@@ -199,6 +215,7 @@ object OutboxMonitoring : JsonCollectionStore<SaisieEnAttente>() {
             uuidPayload = e.uuidPayload, uuidFieldName = e.uuidFieldName,
             mediaPathLocal = e.mediaPathLocal,
             mediaPathsLocal = e.mediaPathsLocal ?: emptyList(),
+            mediasEnvoyes = e.mediasEnvoyes,
             mediaSchemaDotTable = e.mediaSchemaDotTable,
             champsManquants = e.champsManquants,
         )

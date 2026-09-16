@@ -98,6 +98,7 @@ class GsonRoundTripTest {
             releveSansEspece = false,
             uuidOccurrence = "cccccccc-1111-2222-3333-444444444444",
             idReleveIncertain = 77,
+            releveTente = true,
         )
         val sortie = Sortie(
             id = "sortie-1",

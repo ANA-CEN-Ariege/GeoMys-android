@@ -139,7 +139,13 @@ object MonitoringDatalists {
                 users = usersMap,
                 datasets = datasetsMap,
             )
-            cacheResolvers[moduleCode] = resolver
+            // On ne mémorise QUE le résolveur construit avec le réseau. Depuis que le login lève
+            // l'IOException hors-ligne (et qu'on la rattrape, cf. `auth` plus haut), un résolveur
+            // DÉGRADÉ — observateurs et jeux de données vides, donc affichés en identifiants bruts —
+            // pouvait être mis en cache pour toute la session et resservi même après le retour du
+            // réseau : l'utilisateur devait tuer l'application pour revoir des noms (effet de bord
+            // du lot A du 2026-09-15, relevé à la vérification de l'audit 2026-09-14).
+            if (auth != null) cacheResolvers[moduleCode] = resolver
             resolver
         }
     }

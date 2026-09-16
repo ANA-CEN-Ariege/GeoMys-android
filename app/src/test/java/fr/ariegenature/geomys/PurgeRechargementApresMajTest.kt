@@ -27,11 +27,14 @@ import fr.ariegenature.geomys.store.StationsServeurCache
 import fr.ariegenature.geomys.store.viderCachesReecritsEnPhaseB
 import fr.ariegenature.geomys.store.viderCachesSynchronises
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import java.io.File
 
 /**
  * Purge du « rechargement requis après mise à jour » (SyncRunner).
@@ -88,5 +91,50 @@ class PurgeRechargementApresMajTest {
         assertEquals(0, HabitatCacheOccHab.count)
         StationsServeurCache.resetPourTests()
         assertEquals(0, StationsServeurCache.count)
+    }
+
+    // ── Garde sur le SITE D'APPEL ──
+
+    /** Remonte depuis le répertoire de travail des tests jusqu'à trouver le fichier, et rend son
+     *  CODE seul : les lignes de commentaire sont retirées, sinon un commentaire qui cite la
+     *  fonction proscrite (« PAS viderCachesSynchronises() : … », justement écrit au-dessus de
+     *  l'appel pour expliquer la règle) ferait échouer la garde. */
+    private fun lireCodeSource(chemin: String): String {
+        var dir: File? = File(System.getProperty("user.dir") ?: ".")
+        while (dir != null) {
+            val f = File(dir, chemin)
+            if (f.exists()) {
+                return f.readLines()
+                    .filterNot { val l = it.trim(); l.startsWith("//") || l.startsWith("*") || l.startsWith("/*") }
+                    .joinToString("\n")
+            }
+            dir = dir.parentFile
+        }
+        throw AssertionError("Source introuvable : $chemin")
+    }
+
+    @Test
+    fun syncrunner_appelle_la_purge_restreinte_et_jamais_la_purge_totale() {
+        // Les deux tests ci-dessus prouvent que les DEUX fonctions se comportent correctement — pas
+        // que SyncRunner appelle la bonne. Or c'est précisément le site d'appel qui portait le
+        // défaut : la régression consistait à appeler `viderCachesSynchronises()` là où il fallait
+        // la purge restreinte, et elle repasserait sans qu'aucun test ne tombe.
+        //
+        // `SyncRunner.executer()` n'est pas testable unitairement (réseau, coroutines, phases A et
+        // B entrelacées) : on garde donc le site d'appel par une lecture de la source. C'est
+        // grossier, mais cela ferme exactement le trou, et le message dit quoi faire.
+        val src = lireCodeSource("app/src/main/java/fr/ariegenature/geomys/network/SyncRunner.kt")
+        assertTrue(
+            "SyncRunner doit purger via viderCachesReecritsEnPhaseB() — la purge restreinte aux " +
+                "caches que la phase B réécrit (audit 2026-09-14, R1-C2).",
+            src.contains("viderCachesReecritsEnPhaseB()"),
+        )
+        assertFalse(
+            "SyncRunner ne doit JAMAIS appeler viderCachesSynchronises() : cette purge efface aussi " +
+                "les deux caches HABREF et les stations serveur, que la phase A vient d'écrire et que " +
+                "la phase B ne réécrit pas — après un rechargement annoncé réussi, plus aucun habitat " +
+                "proposé hors ligne, donc saisie OccHab impossible (audit 2026-09-14, R1-C2).",
+            src.contains("viderCachesSynchronises()"),
+        )
     }
 }

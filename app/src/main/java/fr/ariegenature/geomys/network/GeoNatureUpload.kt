@@ -78,6 +78,19 @@ data class EnvoiResult(
 interface MarqueurEnvoiOcctax {
     fun occurrenceCreee(obsId: String)
     fun occurrenceIncertaine(obsId: String, idReleve: Int)
+
+    /** PRÉ-MARQUAGE d'un groupe, AVANT son premier POST d'occurrence : tant qu'aucune réponse n'est
+     *  revenue, chacune a peut-être été créée côté serveur. Un seul commit pour tout le groupe. */
+    fun occurrencesATenter(obsIds: List<String>, idReleve: Int)
+
+    /** Rejet FRANC du serveur (4xx) : rien n'a été créé, l'incertitude du pré-marquage est levée. */
+    fun occurrenceEchecNet(obsId: String)
+
+    /** PRÉ-MARQUAGE du RELEVÉ d'un groupe, AVANT son POST de création. */
+    fun releveATenter(obsIds: List<String>)
+
+    /** Rejet FRANC du serveur sur la création du relevé : rien n'a été créé. */
+    fun releveEchecNet(obsIds: List<String>)
 }
 
 object GeoNatureUpload {
@@ -197,7 +210,7 @@ object GeoNatureUpload {
             // deux relevés au lieu d'un, mais aucune observation perdue ni dupliquée.
             val groupes = aEnvoyer.groupBy { it.releveId ?: it.id }
 
-            for ((_, groupeBrut) in groupes) {
+            for ((cleGroupe, groupeBrut) in groupes) {
                 // ANTI-DOUBLON (audit 2026-08-27) : une occurrence dont le POST précédent est resté
                 // INCERTAIN (coupure après émission) existe peut-être déjà dans le relevé de
                 // l'époque. On vérifie par son uuid client AVANT de créer un nouveau relevé :
@@ -259,7 +272,12 @@ object GeoNatureUpload {
                         .ifEmpty { listOfNotNull(o.observateurReleveId?.takeIf { it > 0 }) }
                         .ifEmpty { listOfNotNull(idRole) }
                 }
+                val uuidGrp = uuidReleveGroupe(cleGroupe)
                 val properties = JSONObject().apply {
+                    // Identité client STABLE du relevé (colonne unique_id_sinp_grp de
+                    // TRelevesOccurrence) : permet de retrouver un relevé créé dont la réponse
+                    // s'est perdue, au lieu d'en créer un second (audit 2026-09-14, R1-M1).
+                    put("unique_id_sinp_grp", uuidGrp)
                     put("id_dataset", datasetGroupe)
                     put("date_min", dateFmt.format(dateMin))
                     put("date_max", dateFmt.format(dateMax))
@@ -315,6 +333,33 @@ object GeoNatureUpload {
                     lon = lon,
                 )
 
+                // ANTI-DOUBLON DU RELEVÉ : si sa création a DÉJÀ été tentée (POST émis lors d'un
+                // envoi précédent, puis processus tué ou réseau coupé), le relevé existe peut-être
+                // côté serveur. On interroge son uuid AVANT d'en créer un second. Décisif pour un
+                // RELEVÉ SANS ESPÈCE, où le relevé EST la donnée (R1-M1) ; pour les autres, cela
+                // évite en prime le « deux relevés au lieu d'un » d'un ré-envoi partiel.
+                var idReleveReutilise: Int? = null
+                if (groupe.any { it.releveTente }) {
+                    when (val existant = relevePresent(base, token, cookies, uuidGrp)) {
+                        is ReleveExistant.Trouve -> idReleveReutilise = existant.idReleve
+                        ReleveExistant.Absent -> {}
+                        // Vérification IMPOSSIBLE : on ne crée RIEN. Re-POSTer à l'aveugle est
+                        // exactement ce que l'invariant anti-doublon du projet interdit — la sortie
+                        // reste ré-envoyable, et le prochain essai retentera la vérification.
+                        ReleveExistant.Indeterminable -> {
+                            derniereErreur = "Impossible de vérifier si le relevé a déjà été créé " +
+                                "lors d'un envoi interrompu — rien n'a été renvoyé, réessayez."
+                            continue
+                        }
+                    }
+                }
+
+                val idReleve: Int
+                if (idReleveReutilise != null) {
+                    idReleve = idReleveReutilise
+                } else {
+                // PRÉ-MARQUAGE du relevé, AVANT le POST : à partir d'ici il a peut-être été créé.
+                marqueur?.releveATenter(groupe.map { it.id })
                 val body1 = JSONObject()
                     .put("geometry", geometry)
                     .put("status", "to_sync")
@@ -341,6 +386,9 @@ object GeoNatureUpload {
                     conn1.disconnect()
                     dernierCodeErreur = code1
                     derniereErreur = parseErreur(code1, bodyErr)
+                    // Rejet FRANC : aucun relevé créé, on lève le pré-marquage (sinon chaque envoi
+                    // ultérieur paierait une vérification par uuid pour rien).
+                    if (code1 in 400..499) marqueur?.releveEchecNet(groupe.map { it.id })
                     continue
                 }
                 val resp1Text = try { conn1.inputStream.bufferedReader().readText() } catch (_: Exception) { "" }
@@ -351,11 +399,11 @@ object GeoNatureUpload {
                 }
 
                 // Extraction de l'ID robuste (identique iOS)
-                val idReleve = resp1.optInt("id", -1).takeIf { it > 0 }
+                val idExtrait = resp1.optInt("id", -1).takeIf { it > 0 }
                     ?: resp1.optJSONObject("properties")?.optInt("id_releve_occtax", -1)?.takeIf { it > 0 }
                     ?: resp1.optInt("id_releve_occtax", -1).takeIf { it > 0 }
 
-                if (idReleve == null) {
+                if (idExtrait == null) {
                     val keys = try {
                         val kList = mutableListOf<String>()
                         val it = resp1.keys()
@@ -364,6 +412,8 @@ object GeoNatureUpload {
                     } catch (_: Exception) { "?" }
                     derniereErreur = "id absent de la réponse (clés: $keys)"
                     continue
+                }
+                idReleve = idExtrait
                 }
                 if (premierIdReleve == null) premierIdReleve = idReleve
 
@@ -378,6 +428,17 @@ object GeoNatureUpload {
                     groupe.forEach { obsCreesIds.add(it.id); marqueur?.occurrenceCreee(it.id) }
                     continue
                 }
+
+                // PRÉ-MARQUAGE du groupe, AVANT tout POST d'occurrence : à partir d'ici, chacune
+                // a peut-être été créée côté serveur tant qu'aucune réponse n'est revenue. C'est
+                // ce qui manquait (audit 2026-09-14, R1-C1) : le seul marquage persistant était
+                // dans le catch(IOException), et la mort du processus entre l'émission et la
+                // réponse laissait l'occurrence créée sur GeoNature sans aucune trace locale —
+                // elle repartait au ré-envoi, le filtre anti-doublon étant indexé sur
+                // idReleveIncertain. Un seul commit pour tout le groupe (le store réécrit toute la
+                // saison à chaque écriture) ; il est levé au fil des succès par occurrenceCreee et
+                // sur rejet franc par occurrenceEchecNet.
+                marqueur?.occurrencesATenter(occurrencesReelles.map { it.id }, idReleve)
 
                 // Une occurrence par taxon — toutes attachées au même relevé.
                 var nbReussisGroupe = 0
@@ -487,6 +548,10 @@ object GeoNatureUpload {
                         val bodyErr = try { (conn2.errorStream ?: conn2.inputStream)?.bufferedReader()?.readText() } catch (_: Exception) { null }
                         dernierCodeErreur = code2
                         derniereErreur = parseErreur(code2, bodyErr)
+                        // Rejet FRANC du serveur : rien n'a été créé, on lève l'incertitude posée
+                        // par le pré-marquage — sinon chaque envoi ultérieur paierait une
+                        // vérification par uuid parfaitement inutile.
+                        marqueur?.occurrenceEchecNet(obs.id)
                     }
                     conn2.disconnect() // libère la connexion à chaque occurrence (lot multi-taxons).
                 }
@@ -533,6 +598,91 @@ object GeoNatureUpload {
                 obsIncertaines = obsIncertaines.toList(),
             )
         }
+
+    /** UUID client DÉTERMINISTE du relevé d'un groupe, dérivé de la clé de regroupement locale
+     *  (`releveId`, ou l'id de l'observation pour une saisie mono-taxon). Déterministe et non
+     *  stocké : la même saisie produit toujours le même uuid, donc on peut interroger le serveur
+     *  à son sujet même après un redémarrage, sans avoir eu à persister quoi que ce soit. */
+    internal fun uuidReleveGroupe(cleGroupe: String): String =
+        java.util.UUID.nameUUIDFromBytes("geomys-releve:$cleGroupe".toByteArray(Charsets.UTF_8)).toString()
+
+    /** Résultat d'une recherche de relevé par uuid client. [Indeterminable] impose de NE RIEN
+     *  créer : c'est l'invariant anti-doublon du projet (jamais de POST quand la vérification
+     *  échoue). */
+    internal sealed class ReleveExistant {
+        data class Trouve(val idReleve: Int) : ReleveExistant()
+        object Absent : ReleveExistant()
+        object Indeterminable : ReleveExistant()
+    }
+
+    /**
+     * Le relevé portant [uuid] (`unique_id_sinp_grp`) existe-t-il déjà sur le serveur ?
+     * `GET /api/occtax/OCCTAX/releves?unique_id_sinp_grp=<uuid>&limit=1` — la colonne appartient à
+     * `TRelevesOccurrence`, que le filtre générique du backend sait exploiter.
+     *
+     * Le point délicat est le serveur qui IGNORE le filtre (version ancienne, colonne absente) : il
+     * renvoie alors des relevés quelconques, et conclure « absent » ferait créer un doublon. D'où la
+     * règle en trois temps — l'uuid figure dans la réponse ⇒ TROUVÉ ; la réponse est VIDE ⇒ ABSENT
+     * (un filtre qui fonctionne et ne trouve rien ne renvoie rien) ; la réponse est NON VIDE mais
+     * sans notre uuid ⇒ le filtre a vraisemblablement été ignoré ⇒ INDÉTERMINABLE, on ne crée rien.
+     */
+    internal fun relevePresent(
+        base: String, token: String?, cookies: String, uuid: String,
+    ): ReleveExistant {
+        if (uuid.isBlank()) return ReleveExistant.Indeterminable
+        val conn = try {
+            HttpClient.get(
+                URL("$base/api/occtax/OCCTAX/releves?unique_id_sinp_grp=$uuid&limit=1"),
+                token, cookies, 30000,
+            )
+        } catch (_: IOException) { return ReleveExistant.Indeterminable }
+        return try {
+            when (val code = HttpClient.lireCode(conn)) {
+                in 200..299 -> {
+                    val txt = conn.inputStream.bufferedReader().readText()
+                    val features = extraireFeaturesReleves(txt)
+                    val mien = features.firstOrNull { it.optJSONObject("properties")
+                        ?.optString("unique_id_sinp_grp").equals(uuid, ignoreCase = true) }
+                    when {
+                        mien != null -> idDepuisFeatureReleve(mien)
+                            ?.let { ReleveExistant.Trouve(it) } ?: ReleveExistant.Indeterminable
+                        features.isEmpty() -> ReleveExistant.Absent
+                        else -> {
+                            android.util.Log.w("GeoNatureUpload",
+                                "Vérification relevé : le serveur semble ignorer le filtre unique_id_sinp_grp")
+                            ReleveExistant.Indeterminable
+                        }
+                    }
+                }
+                // 404 = route absente sur cette instance : on ne peut rien conclure.
+                else -> {
+                    android.util.Log.w("GeoNatureUpload", "Vérification relevé : HTTP $code")
+                    ReleveExistant.Indeterminable
+                }
+            }
+        } catch (_: Exception) { ReleveExistant.Indeterminable } finally { conn.disconnect() }
+    }
+
+    /** Extrait la liste des Feature d'une réponse `/releves`, en tolérant les formes connues :
+     *  `{items:{features:[…]}}` (GeoNature actuel), `{features:[…]}` ou un tableau nu. */
+    private fun extraireFeaturesReleves(txt: String): List<JSONObject> {
+        val arr: JSONArray = try {
+            val racine = try { JSONObject(txt) } catch (_: Exception) { null }
+            when {
+                racine == null -> JSONArray(txt)
+                racine.optJSONObject("items")?.optJSONArray("features") != null ->
+                    racine.getJSONObject("items").getJSONArray("features")
+                racine.optJSONArray("items") != null -> racine.getJSONArray("items")
+                racine.optJSONArray("features") != null -> racine.getJSONArray("features")
+                else -> JSONArray()
+            }
+        } catch (_: Exception) { return emptyList() }
+        return (0 until arr.length()).mapNotNull { arr.optJSONObject(it) }
+    }
+
+    private fun idDepuisFeatureReleve(f: JSONObject): Int? =
+        f.optJSONObject("properties")?.optInt("id_releve_occtax", -1)?.takeIf { it > 0 }
+            ?: f.optInt("id", -1).takeIf { it > 0 }
 
     /**
      * L'occurrence portant [uuid] (`unique_id_occurence_occtax`) existe-t-elle dans le relevé

@@ -131,6 +131,25 @@ suspend fun envoyerSortieVersGeoNature(
         override fun occurrenceIncertaine(obsId: String, idReleve: Int) {
             sortieStore.marquerObservationIncertaine(sortie.id, obsId, idReleve)
         }
+        override fun occurrencesATenter(obsIds: List<String>, idReleve: Int) {
+            // Échec d'écriture NON bloquant, contrairement au monitoring qui refuse de poster :
+            // ici le POST part quand même, et c'est l'avertissement de persistance déjà en place
+            // (AVERT_PERSISTANCE, via marquageEchoue) qui prévient l'utilisateur. Refuser l'envoi
+            // sur un disque plein empêcherait de transmettre une journée de terrain — le remède
+            // serait pire que le mal.
+            if (!sortieStore.marquerObservationsIncertaines(sortie.id, obsIds, idReleve)) {
+                marquageEchoue = true
+            }
+        }
+        override fun occurrenceEchecNet(obsId: String) {
+            sortieStore.effacerIncertitudeObservation(sortie.id, obsId)
+        }
+        override fun releveATenter(obsIds: List<String>) {
+            if (!sortieStore.marquerReleveTente(sortie.id, obsIds, true)) marquageEchoue = true
+        }
+        override fun releveEchecNet(obsIds: List<String>) {
+            sortieStore.marquerReleveTente(sortie.id, obsIds, false)
+        }
     }
     try {
         val res = GeoNatureUpload.envoyer(sortieEff, config, marqueur)

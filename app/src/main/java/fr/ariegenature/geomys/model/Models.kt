@@ -159,6 +159,14 @@ data class Observation(
      *  par [uuidOccurrence] avant de re-POSTer ; effacé dès que l'occurrence est marquée créée.
      *  Null = aucune incertitude. */
     var idReleveIncertain: Int? = null,
+    /** true dès que la création du RELEVÉ de ce groupe a été TENTÉE (POST émis). Posé AVANT le
+     *  POST : si le processus meurt pendant celui-ci, le relevé existe peut-être côté serveur sans
+     *  aucune trace locale — au prochain envoi, on interroge le serveur sur l'uuid déterministe du
+     *  groupe (`unique_id_sinp_grp`) au lieu d'en créer un second. Décisif pour un RELEVÉ SANS
+     *  ESPÈCE, où le relevé EST la donnée : le re-créer produit un doublon franc d'absence
+     *  (audit 2026-09-14, R1-M1). Reste posé après un envoi partiel, ce qui permet de rattacher les
+     *  observations restantes au relevé déjà créé au lieu d'en ouvrir un second. */
+    var releveTente: Boolean = false,
 )
 
 data class Sortie(

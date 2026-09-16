@@ -92,6 +92,7 @@ class SortieStore(context: Context) : JsonCollectionStore<Sortie>() {
             o.copy(
                 envoyeeServeur = o.envoyeeServeur || ancienne.envoyeeServeur,
                 idReleveIncertain = o.idReleveIncertain ?: ancienne.idReleveIncertain,
+                releveTente = o.releveTente || ancienne.releveTente,
             )
         })
     }
@@ -126,10 +127,58 @@ class SortieStore(context: Context) : JsonCollectionStore<Sortie>() {
     /** POST de l'occurrence [obsId] émis sans réponse dans le relevé serveur [idReleve] : elle y
      *  a peut-être été créée. Le prochain envoi vérifiera par son uuid client avant de
      *  re-POSTer (cf. GeoNatureUpload). Renvoie le succès de la persistance. */
-    fun marquerObservationIncertaine(id: String, obsId: String, idReleve: Int): Boolean = muter { liste ->
+    fun marquerObservationIncertaine(id: String, obsId: String, idReleve: Int): Boolean =
+        marquerObservationsIncertaines(id, listOf(obsId), idReleve)
+
+    /** PRÉ-MARQUAGE d'un groupe : les occurrences de [obsIds] vont être postées dans le relevé
+     *  serveur [idReleve] — tant qu'aucune réponse n'est revenue, chacune a PEUT-ÊTRE été créée.
+     *
+     *  Écrit AVANT le premier POST du groupe (et non après coup) : jusqu'ici, le seul marquage
+     *  persistant était dans le `catch (IOException)` et le succès n'était écrit qu'APRÈS la
+     *  réponse. Si Android tuait le processus entre l'émission et la réponse, l'occurrence existait
+     *  côté serveur et l'appareil l'ignorait ; au ré-envoi elle repartait sans vérification, le
+     *  filtre anti-doublon étant justement indexé sur `idReleveIncertain` (audit 2026-09-14, R1-C1).
+     *  Le `NonCancellable` ajouté en v1.3.18 protège de l'annulation de coroutine, pas de la mort
+     *  du processus.
+     *
+     *  En UN SEUL commit pour tout le groupe : le store réécrit l'intégralité de la saison à chaque
+     *  écriture, une par occurrence aurait doublé le coût disque d'un envoi multi-taxons.
+     *  `occurrenceCreee` efface l'incertitude au fil des succès, `occurrenceEchecNet` sur un rejet
+     *  franc du serveur (4xx : rien n'a été créé). Renvoie le succès de la persistance. */
+    fun marquerObservationsIncertaines(id: String, obsIds: Collection<String>, idReleve: Int): Boolean {
+        if (obsIds.isEmpty()) return true
+        val ids = obsIds.toSet()
+        return muter { liste ->
+            val idx = liste.indexOfFirst { it.id == id }
+            if (idx >= 0) liste[idx] = liste[idx].copy(observations = liste[idx].observations.map { o ->
+                if (o.id in ids && !o.envoyeeServeur) o.copy(idReleveIncertain = idReleve) else o
+            })
+        }
+    }
+
+    /** PRÉ-MARQUAGE du RELEVÉ d'un groupe : sa création va être tentée (POST émis). Posé AVANT le
+     *  POST — si le processus meurt pendant, le relevé existe peut-être côté serveur sans trace
+     *  locale, et le prochain envoi doit interroger l'uuid déterministe du groupe au lieu d'en créer
+     *  un second. [tente] = false lève le marquage sur un rejet franc (4xx : rien n'a été créé).
+     *  Renvoie le succès de la persistance. */
+    fun marquerReleveTente(id: String, obsIds: Collection<String>, tente: Boolean = true): Boolean {
+        if (obsIds.isEmpty()) return true
+        val ids = obsIds.toSet()
+        return muter { liste ->
+            val idx = liste.indexOfFirst { it.id == id }
+            if (idx >= 0) liste[idx] = liste[idx].copy(observations = liste[idx].observations.map { o ->
+                if (o.id in ids) o.copy(releveTente = tente) else o
+            })
+        }
+    }
+
+    /** Le serveur a REJETÉ franchement l'occurrence [obsId] (4xx) : rien n'a été créé, l'incertitude
+     *  posée par le pré-marquage est levée. Sans cela, l'observation resterait « peut-être créée »
+     *  et chaque envoi ultérieur paierait une vérification par uuid inutile. */
+    fun effacerIncertitudeObservation(id: String, obsId: String): Boolean = muter { liste ->
         val idx = liste.indexOfFirst { it.id == id }
         if (idx >= 0) liste[idx] = liste[idx].copy(observations = liste[idx].observations.map { o ->
-            if (o.id == obsId && !o.envoyeeServeur) o.copy(idReleveIncertain = idReleve) else o
+            if (o.id == obsId) o.copy(idReleveIncertain = null) else o
         })
     }
 
@@ -222,6 +271,7 @@ private fun normaliserObservation(o: Observation): Observation? {
         // maintenant ; il se fige au prochain enregistrement (stable pour l'anti-doublon).
         uuidOccurrence = o.uuidOccurrence ?: java.util.UUID.randomUUID().toString(),
         idReleveIncertain = o.idReleveIncertain,
+        releveTente = o.releveTente,
     )
 }
 

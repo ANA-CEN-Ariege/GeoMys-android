@@ -74,6 +74,7 @@ class OutboxRoundTripTest {
         uuidFieldName = "uuid_base_visit",
         mediaPathLocal = "file:///legacy.jpg",
         mediaPathsLocal = listOf("file:///a.jpg", "file:///b.jpg"),
+        mediasEnvoyes = listOf("file:///a.jpg"),
         mediaSchemaDotTable = "gn_monitoring.t_base_visits",
         champsManquants = listOf("Heure de fin", "Température à la fin du relevé"),
     )

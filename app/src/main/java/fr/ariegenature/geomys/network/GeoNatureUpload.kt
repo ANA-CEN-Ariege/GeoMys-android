@@ -1025,6 +1025,51 @@ object GeoNatureUpload {
      *  `uuid_attached_row` pour rattacher le média à l'objet créé côté gn_commons.t_medias.
      *  Diffère du flot OCCTAX qui embarque le media dans le payload du counting via media_id.
      *  Retourne (succes, messageErreur). */
+    /** Titre du média, DÉTERMINISTE pour un fichier local donné : il sert d'identité client, le
+     *  seul champ que nous contrôlons et que le serveur nous rend tel quel (`title_fr`). Le nom de
+     *  fichier local est déjà unique (MediaImport horodate chaque copie). Surtout, il ne dépend PAS
+     *  de la position dans la liste : un titre indexé « (1) », « (2) » se décalait dès qu'un
+     *  fichier était sauté, rendant toute réconciliation impossible. */
+    internal fun titreMedia(titreBase: String, mediaPath: String): String {
+        val nom = mediaPath.substringAfterLast('/').substringBefore('?').ifEmpty { "media" }
+        return "$titreBase — $nom"
+    }
+
+    /** Titres (`title_fr`) des médias DÉJÀ attachés à [uuidAttachedRow] côté serveur.
+     *  `GET /api/gn_commons/medias/<uuid_attached_row>`. null = vérification impossible (réseau,
+     *  route absente sur cette instance, HTTP ≠ 2xx) : l'appelant uploadera alors sans filtrer —
+     *  un doublon de photo reste préférable à des photos de terrain qui n'arrivent jamais. */
+    internal fun mediasDejaPresents(
+        base: String, token: String?, cookies: String, uuidAttachedRow: String,
+    ): Set<String>? {
+        if (uuidAttachedRow.isBlank()) return emptySet()
+        val conn = try {
+            HttpClient.get(URL("$base/api/gn_commons/medias/$uuidAttachedRow"), token, cookies, 20000)
+        } catch (_: IOException) { return null }
+        return try {
+            when (val code = HttpClient.lireCode(conn)) {
+                in 200..299 -> {
+                    val arr = JSONArray(conn.inputStream.bufferedReader().readText())
+                    (0 until arr.length()).mapNotNull { arr.optJSONObject(it)?.optString("title_fr") }
+                        .filter { it.isNotEmpty() }.toSet()
+                }
+                else -> {
+                    android.util.Log.w(TAG_MEDIA, "Médias déjà présents : HTTP $code")
+                    null
+                }
+            }
+        } catch (_: Exception) { null } finally { conn.disconnect() }
+    }
+
+    /** Résultat d'un upload de médias monitoring. [transmis] = les chemins RÉELLEMENT acquis par
+     *  le serveur : l'appelant les persiste pour qu'un « Réessayer » ne les renvoie pas une
+     *  seconde fois (ils étaient jusqu'ici perdus, seul un booléen global remontait). */
+    data class ResultatMediasMonitoring(
+        val ok: Boolean,
+        val message: String?,
+        val transmis: List<String>,
+    )
+
     suspend fun uploaderMediaMonitoring(
         config: GeoNatureConfig,
         mediaPaths: List<String>,
@@ -1032,15 +1077,19 @@ object GeoNatureUpload {
         uuidAttachedRow: String,
         titre: String,
         author: String,
-    ): Pair<Boolean, String?> = withContext(Dispatchers.IO) {
-        if (mediaPaths.isEmpty()) return@withContext Pair(true, null)
+        /** true = RÉ-ESSAI : on demande d'abord au serveur ce qu'il détient déjà pour cet objet.
+         *  Inutile (et un aller-retour de trop) sur un premier envoi. */
+        reconcilier: Boolean = false,
+    ): ResultatMediasMonitoring = withContext(Dispatchers.IO) {
+        if (mediaPaths.isEmpty()) return@withContext ResultatMediasMonitoring(true, null, emptyList())
         val base = config.urlServeur.trim().trimEnd('/')
         val auth = GeoNatureAuth.loginAvecCookies(base, config.login, config.motDePasse)
-            ?: return@withContext Pair(false, "Authentification GeoNature échouée")
+            ?: return@withContext ResultatMediasMonitoring(false, "Authentification GeoNature échouée", emptyList())
         val (token, _, cookies) = auth
         // id_table_location résolu une seule fois (même table cible pour tous les médias du champ).
         val (idTableLoc, errTable) = resoudreIdTableLocationPour(base, token, cookies, schemaDotTable)
-        if (idTableLoc == null) return@withContext Pair(false, errTable ?: "id_table_location introuvable pour $schemaDotTable")
+        if (idTableLoc == null) return@withContext ResultatMediasMonitoring(
+            false, errTable ?: "id_table_location introuvable pour $schemaDotTable", emptyList())
         // id_nomenclature_media_type : NOT NULL côté gn_commons.t_medias — son ABSENCE faisait
         // partir le POST en 500 opaque (« photo en échec », bug terrain ; l'objet, lui, était
         // créé). Résolution identique au flux OCCTAX : cache TYPE_MEDIA (labels stables entre
@@ -1049,9 +1098,25 @@ object GeoNatureUpload {
             .associate { normaliserLabelNomenclature(it.label) to it.id }
             .ifEmpty { resolverNomenclatures(base, token, cookies, "TYPE_MEDIA") }
         // Upload séquentiel de chaque fichier, tous rattachés au même objet (uuid_attached_row).
-        var nbOk = 0
+        // RÉCONCILIATION AVEC LE SERVEUR (audit 2026-09-14, R1-M3 — second temps).
+        // Mémoriser les fichiers dont la réponse est revenue ne suffit pas : un POST parti, reçu et
+        // traité par le serveur, dont la RÉPONSE se perd (réseau coupé en plein upload) n'est pas
+        // mémorisé — et repart au « Réessayer », en double. C'est le défaut constaté sur le terrain
+        // le 2026-09-16 : trois photos, réseau coupé pendant l'envoi, une seule en double au
+        // ré-envoi — précisément celle qui était en vol.
+        // On demande donc au serveur ce qu'il détient DÉJÀ pour cet objet, et on écarte ces
+        // fichiers. L'appariement se fait sur `title_fr`, que nous contrôlons et qui est
+        // DÉTERMINISTE par fichier (cf. titreMedia) — d'où l'abandon du titre indexé « (1) »,
+        // « (2) », qui se décalait dès qu'un fichier était sauté.
+        val dejaLa = if (reconcilier) mediasDejaPresents(base, token, cookies, uuidAttachedRow) else emptySet()
+        val aEnvoyer = if (dejaLa == null) mediaPaths else mediaPaths.filterNot { titreMedia(titre, it) in dejaLa }
+        if (aEnvoyer.isEmpty()) return@withContext ResultatMediasMonitoring(true, null, mediaPaths)
+        val transmis = mutableListOf<String>()
+        // Les fichiers déjà détenus par le serveur comptent comme transmis : c'est ce que
+        // l'appelant persiste, et c'est vrai.
+        transmis.addAll(mediaPaths.filterNot { it in aEnvoyer })
         var premiereErreur: String? = null
-        mediaPaths.forEachIndexed { i, mediaPath ->
+        aEnvoyer.forEach { mediaPath ->
             val mimeHint = try {
                 val path = android.net.Uri.parse(mediaPath).path ?: ""
                 java.net.URLConnection.guessContentTypeFromName(path) ?: "image/jpeg"
@@ -1059,14 +1124,20 @@ object GeoNatureUpload {
             val (json, err) = uploaderMediaFile(
                 base = base, token = token, cookies = cookies,
                 mediaPath = mediaPath, author = author,
-                titre = if (mediaPaths.size > 1) "$titre (${i + 1})" else titre,
+                titre = titreMedia(titre, mediaPath),
                 idTableLocation = idTableLoc, idTypeMedia = idTypeMediaPour(typesMedia, mimeHint),
                 uuidAttachedRow = uuidAttachedRow,
             )
-            if (json != null) nbOk++ else if (premiereErreur == null) premiereErreur = err
+            // On MÉMORISE chaque fichier réellement transmis : c'est ce que l'appelant persiste
+            // pour ne pas le renvoyer au prochain essai (audit 2026-09-14, R1-M3).
+            if (json != null) transmis.add(mediaPath) else if (premiereErreur == null) premiereErreur = err
         }
-        if (nbOk == mediaPaths.size) Pair(true, null)
-        else Pair(false, "$nbOk/${mediaPaths.size} média(s) envoyé(s)" + (premiereErreur?.let { " — $it" } ?: ""))
+        if (transmis.size == mediaPaths.size) ResultatMediasMonitoring(true, null, transmis)
+        else ResultatMediasMonitoring(
+            false,
+            "${transmis.size}/${mediaPaths.size} média(s) envoyé(s)" + (premiereErreur?.let { " — $it" } ?: ""),
+            transmis,
+        )
     }
 
     /** Mappe un type mime → id_nomenclature TYPE_MEDIA via les labels stables entre instances

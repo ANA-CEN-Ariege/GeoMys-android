@@ -107,6 +107,20 @@ suspend fun envoyerSaisieOccHabVersGeoNature(
             // l'envoi) ne peut plus jeter le résultat d'un POST abouti.
             withContext(kotlinx.coroutines.NonCancellable) {
                 val res = envoyer(station, config)
+                // FILET : création acceptée mais id serveur toujours inconnu (la récupération par
+                // uuid d'OccHabUpload a elle-même échoué). Marquer « envoyée » ici poserait
+                // envoiIncertain = false avec idStationServeur = null : la station serait
+                // définitivement sans identité serveur, et sa réédition — qui repasse par une
+                // CRÉATION faute d'id — en produirait une seconde sur GeoNature, sans que rien ne
+                // déclenche la vérification anti-doublon (audit 2026-09-14, R1-M2). On la laisse
+                // donc INCERTAINE : le prochain envoi la retrouvera par son uuid.
+                if (creation && res.idStationServeur == null) {
+                    store.marquerStationIncertain(saisie.id, station.id,
+                        "Station transmise mais le serveur n'a pas renvoyé son identifiant — " +
+                            "vérification au prochain envoi (aucun doublon ne sera créé).")
+                    derniereErreur = "Identifiant de station non renvoyé par le serveur"
+                    return@withContext
+                }
                 // L'ACQUIS d'abord : la station créée est marquée AVANT tout le reste — un ré-envoi
                 // ne la re-postera pas (recalcule aussi l'état de la saisie).
                 val persiste = store.marquerStationEnvoyee(saisie.id, station.id, res.idStationServeur)

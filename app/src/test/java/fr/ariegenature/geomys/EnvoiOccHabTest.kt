@@ -69,6 +69,45 @@ class EnvoiOccHabTest {
     private fun stationB() = store.stationsDeSaisie("sa").first { it.id == "B" }
 
     @Test
+    fun creation_sans_id_serveur_reste_INCERTAINE_et_ne_duplique_pas() = runBlocking {
+        // 2xx mais id_station illisible (corps tronqué, id sous un autre nom), et la récupération
+        // par uuid a elle aussi échoué. Marquer « envoyée » ici poserait envoiIncertain = false
+        // avec idStationServeur = null : la station n'aurait plus aucune identité serveur, et sa
+        // réédition — qui repasse par une CRÉATION faute d'id — en produirait une SECONDE sur
+        // GeoNature, le module OccHab n'ayant aucune contrainte d'unicité (R1-M2).
+        val res = envoyerSaisieOccHabVersGeoNature(saisie(), store, config) { _, _ ->
+            OccHabEnvoiResult(idStationServeur = null, nbHabitats = 1)
+        }
+
+        assertFalse("un envoi sans identifiant serveur n'est pas un succès", res.succes)
+        store.stationsDeSaisie("sa").forEach { st ->
+            assertFalse("la station ne doit pas être marquée envoyée sans id serveur", st.envoyeGeoNature)
+            assertTrue(
+                "elle doit rester INCERTAINE pour que le prochain envoi la retrouve par son uuid " +
+                    "au lieu d'en créer une seconde",
+                st.envoiIncertain,
+            )
+        }
+    }
+
+    @Test
+    fun mise_a_jour_sans_id_renvoye_reste_un_succes() = runBlocking {
+        // Contre-épreuve : en MISE À JOUR l'id serveur est déjà connu, le POST /stations/<id>/ est
+        // idempotent — l'absence d'id dans la réponse n'a aucune conséquence.
+        store.upsertStation("sa", station("A").copy(idStationServeur = 900))
+        store.upsertStation("sa", station("B").copy(idStationServeur = 901))
+        val res = envoyerSaisieOccHabVersGeoNature(saisie(), store, config) { _, _ ->
+            OccHabEnvoiResult(idStationServeur = null, nbHabitats = 1)
+        }
+
+        assertTrue("une mise à jour sans id renvoyé reste un succès : ${res.message}", res.succes)
+        store.stationsDeSaisie("sa").forEach { st ->
+            assertTrue(st.envoyeGeoNature)
+            assertEquals("l'id serveur connu doit être conservé", true, (st.idStationServeur ?: 0) > 0)
+        }
+    }
+
+    @Test
     fun envoi_complet_marque_la_saisie_envoyee() = runBlocking {
         val res = envoyerSaisieOccHabVersGeoNature(saisie(), store, config) { _, _ ->
             OccHabEnvoiResult(idStationServeur = 100, nbHabitats = 1)

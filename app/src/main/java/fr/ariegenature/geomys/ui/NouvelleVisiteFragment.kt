@@ -303,7 +303,9 @@ class NouvelleVisiteFragment : Fragment() {
                         renderer.lireValeurs() != valeursApresRendu
                     if (!modifie || enCoursEnvoi) {
                         isEnabled = false
-                        findNavController().navigateUp()
+                        // Même raison qu'en fin de chaîne : le retour système est une sortie de
+                        // chaîne comme une autre, la visite parente incomplète doit être proposée.
+                        terminerOuCompleterLaVisite()
                         return
                     }
                     val dialog = AlertDialog.Builder(requireContext())
@@ -1036,8 +1038,16 @@ class NouvelleVisiteFragment : Fragment() {
 
         // Sortie via « Terminer » : la saisie en cours vient d'être enregistrée, on quitte
         // la chaîne au lieu d'enchaîner ou de réinitialiser le formulaire.
+        //
+        // On passe par terminerOuCompleterLaVisite() et non par un navigateUp() sec : c'est ICI
+        // que la visite parente doit être proposée à la complétion, et c'est le chemin le PLUS
+        // COURANT (l'utilisateur a saisi quelque chose, donc `modifie` est vrai). Branchée sur la
+        // seule branche « formulaire vierge », la fonctionnalité de fin de visite ne se déclenchait
+        // que dans le cas minoritaire : les visites restaient bloquées à l'envoi et leurs infos de
+        // fin étaient reconstituées de mémoire au bureau (audit 2026-09-14, R3-M3 / R4-M2). La
+        // fonction est idempotente : elle sort d'elle-même si le parent est absent ou déjà complet.
         if (puisTerminer) {
-            findNavController().navigateUp()
+            terminerOuCompleterLaVisite()
             return
         }
 

@@ -158,6 +158,46 @@ object TaxRefCache {
         Regex("""\s*\(\s*(?:[Ll]es?|[Ll]a|[Ll][''’]|[UuDd]ne?|[Dd]es)\s*\)\s*$""")
     fun nettoyerSuffixeArticle(nom: String): String = nom.replace(regexSuffixeArticle, "").trim()
 
+    /**
+     * Résolution d'un nom RESTREINTE À UN GROUPE de taxons (oiseaux, mammifères…).
+     *
+     * Le cache principal est indexé par nom et ne garde qu'UNE entrée par clé : quand deux taxons
+     * partagent un nom vernaculaire, l'autre devient inatteignable par ce nom. Cas réel du terrain
+     * (2026-09-16) : « gobemouche gris » est le nom usuel de *Muscicapa striata* (4319, l'oiseau)
+     * ET le quatrième nom de *Menemerus bivittatus* (2080, une araignée sauteuse) ; la clé pointait
+     * sur l'araignée, et saisir « gobemouche gris » dans le groupe OISEAUX en attachait le cd_nom.
+     *
+     * Filtrer ne suffisait donc pas : un filtre ne sait que REJETER l'intrus, jamais RETROUVER le
+     * bon. Ici, si l'entrée globale n'appartient pas au groupe, on cherche parmi les cd_nom DU
+     * GROUPE celui qui porte ce nom — l'information existe déjà dans l'index vernaculaire, elle
+     * n'était simplement pas consultée à la résolution.
+     *
+     * Le parcours porte sur le groupe (quelques centaines de cd_nom pour les vertébrés), et
+     * seulement quand l'entrée globale est hors groupe — donc jamais sur le chemin nominal.
+     */
+    fun get(nom: String, cdNomsAutorises: Set<Int>?): TaxRefEntry? {
+        val globale = get(nom)
+        if (cdNomsAutorises == null || globale == null || globale.cdNom in cdNomsAutorises) return globale
+        val cle = normaliser(nettoyerSuffixeArticle(nom))
+        if (cle.isEmpty()) return globale
+        val verns = vernsParCdNom()
+        val parCdNom = entreesParCdNom()
+        for (cd in cdNomsAutorises) {
+            val correspond = verns[cd].orEmpty().any { normaliser(nettoyerSuffixeArticle(it)) == cle } ||
+                parCdNom[cd]?.sciNom?.let { normaliser(it) == cle } == true
+            if (correspond) {
+                val e = parCdNom[cd] ?: continue
+                // Le nom AFFICHÉ reste celui que l'utilisateur a choisi, pas le nom principal du
+                // taxon retrouvé : il a tapé « gobemouche gris », il doit lire « gobemouche gris ».
+                return TaxRefEntry(e.cdNom, e.sciNom, verns[cd].orEmpty()
+                    .firstOrNull { normaliser(nettoyerSuffixeArticle(it)) == cle } ?: e.nomFrOriginal)
+            }
+        }
+        // Aucun taxon du groupe ne porte ce nom : on rend l'entrée globale telle quelle, à charge
+        // pour l'appelant de la rejeter (c'est ce que fait TaxRefService via appartientAuGroupe).
+        return globale
+    }
+
     fun get(nom: String): TaxRefEntry? {
         val cache = charger()
         val base = normaliser(nom)

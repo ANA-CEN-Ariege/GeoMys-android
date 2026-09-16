@@ -828,7 +828,15 @@ class SaisieObservationFragment : Fragment() {
 
     /** Ajoute une nouvelle PendingObs à partir d'une suggestion d'autocomplétion. */
     private fun ajouterDepuisSuggestion(nom: String) {
-        val entry = TaxRefCache.get(nom)
+        // Résolution RESTREINTE AU GROUPE sélectionné (toujours défini en Occtax). La liste de
+        // suggestions est déjà filtrée par groupe — c'est pour cela que « Gobemouche gris »
+        // apparaît sous OISEAUX — mais la résolution, elle, était GLOBALE : le tap attachait le
+        // cd_nom de l'autre taxon portant ce nom, ici une araignée sauteuse. C'est ce chemin qui
+        // décide de ce qui est enregistré puis envoyé à GeoNature (terrain 2026-09-16).
+        val autorises = taxonSelector.taxon?.let {
+            TaxRefCache.indexParTaxon(it)?.takeIf { l -> l.isNotEmpty() }?.toHashSet()
+        }
+        val entry = TaxRefCache.get(nom, autorises)
         val (cdNom, especeAffichee) = if (entry != null) {
             val nomAffiche = entry.nomFrOriginal ?: nom
             Pair(entry.cdNom, nomAffiche)

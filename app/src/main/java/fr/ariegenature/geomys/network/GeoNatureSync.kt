@@ -52,6 +52,31 @@ object GeoNatureSync {
             .thenBy { it }
     )
 
+    /** Candidat retenu pour une clé de nom VERNACULAIRE partagée par plusieurs taxons.
+     *  [cands] = (cd_nom, nom tel qu'écrit, RANG du nom dans la liste vernaculaire de ce taxon).
+     *
+     *  Trois critères, dans cet ordre :
+     *  1. appartenance à la LISTE CONFIGURÉE — elle exprime le protocole de l'utilisateur ;
+     *  2. le RANG : TaxRef énumère `nom_vern` par ordre de préférence, le premier étant le nom
+     *     usuel du taxon. Un nom qui n'est que le 4ᵉ d'un taxon est un synonyme secondaire, il ne
+     *     doit pas l'emporter sur le taxon dont c'est LE nom ;
+     *  3. le plus petit cd_nom, pour rester déterministe.
+     *
+     *  Sans le critère 2, le départage tombait directement sur le cd_nom, purement arbitraire :
+     *  « gobemouche gris » est le nom principal de Muscicapa striata (4319, l'oiseau) et le 4ᵉ nom
+     *  de Menemerus bivittatus (2080, une araignée sauteuse). Tous deux dans la liste 100, c'est
+     *  l'araignée qui gagnait — saisir « gobemouche gris » affichait « Menemerus bivittatus » et
+     *  envoyait ce cd_nom à GeoNature (terrain 2026-09-16). Extrait pour être testable. */
+    internal fun meilleurCandidatVernaculaire(
+        cands: List<Triple<Int, String, Int>>,
+        listesParCdNom: Map<Int, Set<Int>>,
+        listeConfig: Int?,
+    ): Triple<Int, String, Int>? = cands.minWithOrNull(
+        compareByDescending<Triple<Int, String, Int>> {
+            listeConfig != null && listeConfig in (listesParCdNom[it.first] ?: emptySet())
+        }.thenBy { it.third }.thenBy { it.first }
+    )
+
     suspend fun verifierVersionTaxRef(config: GeoNatureConfig): String? =
         withContext(Dispatchers.IO) {
             try {
@@ -304,18 +329,23 @@ object GeoNatureSync {
         // nom vernaculaire (typiquement une espèce et ses sous-espèces) entrent en collision de
         // clé ; on privilégie la liste configurée puis le plus petit cd_nom. On NE remplace PAS
         // une clé scientifique homonyme déjà posée.
-        val candidatsFr = HashMap<String, MutableList<Pair<Int, String>>>()
-        for ((cd, noms) in vernsCdNom) for (nom in noms) {
+        // Le RANG du nom dans la liste vernaculaire de son taxon départage les collisions : TaxRef
+        // énumère `nom_vern` par ordre de préférence, le PREMIER étant le nom usuel du taxon. Sans
+        // ce critère, le départage tombait sur « plus petit cd_nom », purement arbitraire — et
+        // faux : « gobemouche gris » est le nom PRINCIPAL de Muscicapa striata (4319, l'oiseau) mais
+        // aussi le 4ᵉ nom de Menemerus bivittatus (2080, une araignée sauteuse). Les deux étant dans
+        // la même liste, c'est l'araignée qui l'emportait, et saisir « gobemouche gris » affichait
+        // « Menemerus bivittatus » — détermination fausse envoyée à GeoNature (terrain 2026-09-16).
+        // Ordre des critères : la liste configurée d'abord (elle exprime le protocole de
+        // l'utilisateur), puis le rang, puis le cd_nom pour rester déterministe.
+        val candidatsFr = HashMap<String, MutableList<Triple<Int, String, Int>>>()
+        for ((cd, noms) in vernsCdNom) for ((rang, nom) in noms.withIndex()) {
             val cle = TaxRefCache.normaliser(nom)
-            if (cle.isNotEmpty()) candidatsFr.getOrPut(cle) { mutableListOf() }.add(cd to nom)
+            if (cle.isNotEmpty()) candidatsFr.getOrPut(cle) { mutableListOf() }.add(Triple(cd, nom, rang))
         }
         for ((cle, cands) in candidatsFr) {
             if (cle in entrees) continue
-            val best = cands.minWithOrNull(
-                compareByDescending<Pair<Int, String>> {
-                    listeConfig != null && listeConfig in (listesParCdNom[it.first] ?: emptySet())
-                }.thenBy { it.first }
-            ) ?: continue
+            val best = meilleurCandidatVernaculaire(cands, listesParCdNom, listeConfig) ?: continue
             entrees[cle] = TaxRefEntry(best.first, lbNomParCd[best.first].orEmpty(), best.second)
         }
 

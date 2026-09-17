@@ -169,4 +169,28 @@ class TaxRefCacheTest {
         fin.await()
         assertEquals("aucune entrée perdue", nb * parThread, TaxRefCache.count)
     }
+
+    /** La normalisation a été réécrite sans allocation (elle est appelée sur 20 à 50 000 noms à
+     *  chaque bascule de mode) : son résultat doit rester STRICTEMENT celui de l'ancienne. */
+    @Test
+    fun normaliser_est_equivalent_a_l_implementation_de_reference() {
+        fun reference(nom: String) = nom.trim().lowercase().map { c ->
+            when (c) {
+                'à', 'â', 'ä' -> 'a'
+                'é', 'è', 'ê', 'ë' -> 'e'
+                'î', 'ï' -> 'i'
+                'ô', 'ö' -> 'o'
+                'ù', 'û', 'ü' -> 'u'
+                'ç' -> 'c'
+                else -> c
+            }
+        }.joinToString("")
+
+        val echantillons = listOf(
+            "", "   ", "Machaon", "  Triton palmé (Le) ", "PIÉRIS", "Œdipode", "Bombus lucorum",
+            "Épervier d'Europe", "Ægolius", "Rouge-gorge familier", "ÀÂÄÉÈÊËÎÏÔÖÙÛÜÇ",
+            "Cœur-de-Marie", "Sphagnum × auriculatum", "ß-test", "İstanbul", "ARGYNNE D'ÉLISE",
+        )
+        echantillons.forEach { assertEquals("« $it »", reference(it), TaxRefCache.normaliser(it)) }
+    }
 }

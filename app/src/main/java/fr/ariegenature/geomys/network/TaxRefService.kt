@@ -23,13 +23,16 @@ import fr.ariegenature.geomys.store.GeoNatureConfig
 import fr.ariegenature.geomys.store.TaxRefCache
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.json.JSONArray
-import java.net.URL
 
 sealed class TaxRefStatut {
     data class Trouve(val cdNom: Int, val nomScientifique: String, val nomFrancais: String? = null) : TaxRefStatut()
     object NonTrouve : TaxRefStatut()
-    object Indisponible : TaxRefStatut()
+
+    /** La liste de taxons configurée n'est pas en cache : aucune proposition n'est faite, donc
+     *  aucun nom n'est résolvable. Ne devrait pas se produire — le chargement des données est
+     *  exigé avant la saisie — mais un cache purgé ou partiel doit le dire au lieu d'accepter
+     *  n'importe quel nom du référentiel global. */
+    object PasDeDonnees : TaxRefStatut()
 }
 
 object TaxRefService {
@@ -44,6 +47,7 @@ object TaxRefService {
         candidats: List<String>,
         taxon: Taxon? = null,
         gnConfig: GeoNatureConfig? = null,
+        scientifique: Boolean = false,
     ): Pair<TaxRefStatut, String?> = withContext(Dispatchers.IO) {
         val liste = candidats.map { it.trim() }.filter { it.isNotEmpty() }
         if (liste.isEmpty()) return@withContext Pair(TaxRefStatut.NonTrouve, null)
@@ -51,124 +55,99 @@ object TaxRefService {
         // (Levenshtein) du 1er — sinon « Rouge-gorge » approché sur l'hypothèse n°1 gagnait sur
         // l'hypothèse n°2 exacte (audit 2026-08-27).
         for (cand in liste) {
-            val (statut, _) = rechercher(cand, taxon, gnConfig, avecRechercheEtendue = false)
+            val statut = rechercher(cand, taxon, gnConfig, scientifique, avecRechercheEtendue = false)
             if (statut is TaxRefStatut.Trouve) return@withContext Pair(statut, cand)
         }
         for (cand in liste) {
-            val (statut, _) = rechercher(cand, taxon, gnConfig, avecRechercheEtendue = true)
+            val statut = rechercher(cand, taxon, gnConfig, scientifique, avecRechercheEtendue = true)
             if (statut is TaxRefStatut.Trouve) return@withContext Pair(statut, cand)
         }
         Pair(TaxRefStatut.NonTrouve, liste.first())
     }
 
+    /**
+     * Résolution d'un nom d'espèce — **exclusivement sur le cache local** (décision produit
+     * 2026-09-17).
+     *
+     * L'interrogation de l'API TaxHub a été retirée : elle était lancée à chaque pause de frappe
+     * sur un texte que le cache ne résolvait pas, avec 5 s de timeout — donc autant d'attentes
+     * sur le terrain en réseau faible — pour un apport devenu nul. Depuis que la saisie n'accepte
+     * que les noms PROPOSÉS, et que les propositions sortent du cache, un taxon que l'API sait
+     * résoudre mais que le cache ignore ne serait de toute façon pas proposable. Le cache est
+     * donc la seule source, et il est complet par construction : recharger les données est exigé
+     * avant d'entrer dans les saisies.
+     */
     suspend fun rechercher(
         nom: String,
         taxon: Taxon? = null,
         gnConfig: GeoNatureConfig? = null,
-        /** true (chemin VOCAL) : après échec du match exact (cache + API), tente une résolution
-         *  ÉTENDUE sur le cache local — index par MOTS puis APPROCHÉ. Jamais activé par
-         *  l'autocomplétion clavier (perf sur 15-50k entrées, à chaque frappe). */
+        /** Mode d'affichage de l'autocomplétion : il définit l'ensemble des noms PROPOSÉS, donc
+         *  celui des noms acceptables. */
+        scientifique: Boolean = false,
+        /** true (chemin VOCAL) : après échec du match exact, tente une résolution ÉTENDUE sur le
+         *  cache local — index par MOTS puis APPROCHÉ. Jamais activé par l'autocomplétion
+         *  clavier (perf sur 15-50k entrées, à chaque frappe). */
         avecRechercheEtendue: Boolean = false,
-    ): Pair<TaxRefStatut, Boolean> =
+    ): TaxRefStatut =
         withContext(Dispatchers.IO) {
-            // Set des cd_nom autorisés pour le groupe sélectionné. Null si pas de groupe
-            // demandé OU si l'index par taxon n'a pas (encore) été synchronisé pour ce groupe
-            // — dans ce cas on reste permissif pour ne pas bloquer le user qui n'a pas sync.
+            // Périmètre = groupe sélectionné ET liste de saisie configurée : le même que celui
+            // des propositions d'autocomplétion (règle 2026-09-17 — seuls les noms proposés sont
+            // acceptés). Liste absente du cache ⇒ [indexParTaxon] rend une liste vide et on
+            // reste permissif (groupe seul), comme pour un index de groupe non synchronisé.
+            val idListeFiltre = gnConfig?.taxaListeId?.trim()?.toIntOrNull()
+            // Liste configurée absente du cache : la saisie ne propose rien, elle ne doit rien
+            // accepter non plus (décision produit 2026-09-17).
+            if (idListeFiltre != null && TaxRefCache.listeAbsenteDuCache(idListeFiltre)) {
+                return@withContext TaxRefStatut.PasDeDonnees
+            }
             val cdNomsAutorises: Set<Int>? = if (taxon != null) {
-                TaxRefCache.indexParTaxon(taxon)?.takeIf { it.isNotEmpty() }?.toHashSet()
+                TaxRefCache.indexParTaxon(taxon, idListeFiltre)?.takeIf { it.isNotEmpty() }?.toHashSet()
+                    ?: TaxRefCache.indexParTaxon(taxon)?.takeIf { it.isNotEmpty() }?.toHashSet()
             } else null
-            fun appartientAuGroupe(cd: Int): Boolean = cdNomsAutorises?.contains(cd) ?: true
 
-            // 1. Cache synchronisé depuis le serveur GeoNature (cd_nom autoritatif du serveur)
-            //    On valide l'appartenance au groupe avant d'accepter le match — sinon
-            //    "Tourterelle turque" matche même quand le user a sélectionné Mammifères.
-            // get(nom, cdNomsAutorises) et non get(nom) : quand deux taxons partagent un nom, le
-            // cache ne garde qu'une entrée, et filtrer ne savait que REJETER l'intrus — jamais
-            // retrouver le bon. Le taxon du groupe est désormais retrouvé dans l'index
-            // vernaculaire, donc HORS LIGNE aussi (avant, il fallait l'API pour se rattraper).
-            TaxRefCache.get(nom, cdNomsAutorises)?.let { entry ->
-                if (appartientAuGroupe(entry.cdNom)) {
+            // 1. Résolution dans les PROPOSITIONS du périmètre : mêmes groupe, liste et mode
+            // d'affichage que la liste déroulante — seuls les noms proposés sont acceptés.
+            if (taxon != null) {
+                fr.ariegenature.geomys.TaxRefLocal
+                    .resoudreDansPropositions(nom, taxon, scientifique, idListeFiltre)
+                    ?.let { s ->
+                        val sci = TaxRefCache.entreesParCdNom()[s.cdNom]?.sciNom.orEmpty()
+                        return@withContext TaxRefStatut.Trouve(
+                            s.cdNom,
+                            sci.ifEmpty { s.nom },
+                            if (scientifique) s.secondaire else s.nom,
+                        )
+                    }
+            } else {
+                // Pas de groupe (chemin vocal générique, tests) : cache entier.
+                TaxRefCache.get(nom, cdNomsAutorises)?.let { entry ->
                     val nomFr = entry.nomFrOriginal ?: TaxRefCache.getVernaculaireParCdNom(entry.cdNom)
-                    return@withContext Pair(TaxRefStatut.Trouve(entry.cdNom, entry.sciNom, nomFr), false)
+                    return@withContext TaxRefStatut.Trouve(entry.cdNom, entry.sciNom, nomFr)
                 }
             }
 
-            // 2. API TaxRef GeoNature en direct (si configuré) — filtre &regne déjà appliqué
-            //    côté URL, on revérifie tout de même contre l'index local pour rester cohérent.
-            if (gnConfig != null && gnConfig.connexionConfiguree) {
-                rechercherViaGeoNature(nom, taxon, gnConfig)?.let { statut ->
-                    if (statut is TaxRefStatut.Trouve && appartientAuGroupe(statut.cdNom)) {
-                        TaxRefCache.set(nom, statut.cdNom, statut.nomScientifique, statut.nomFrancais)
-                        return@withContext Pair(statut, true)
-                    }
-                    if (statut !is TaxRefStatut.Trouve) {
-                        return@withContext Pair(statut, true)
-                    }
-                }
-            }
-
-            // 3. Recherche ÉTENDUE (chemin vocal) sur le cache local, en dernier recours.
+            // 2. Recherche ÉTENDUE (chemin vocal) sur le cache local, en dernier recours.
             //    Ordre : index par MOTS (déterministe, sans faux positif) AVANT l'APPROCHÉ
-            //    (Levenshtein, seul tier pouvant se tromper). Les deux filtrent déjà par groupe.
+            //    (Levenshtein, seul tier pouvant se tromper). Les deux filtrent par périmètre.
             if (avecRechercheEtendue) {
+                // Ces deux niveaux balaient les clés du cache : le taxon retenu doit, lui aussi,
+                // faire partie des noms PROPOSÉS — sinon la dictée pourrait enregistrer un taxon
+                // que l'écran n'aurait jamais montré.
+                val proposes = if (taxon != null)
+                    fr.ariegenature.geomys.TaxRefLocal.cdNomsProposes(taxon, scientifique, idListeFiltre)
+                else null
+                fun accepte(cd: Int) = proposes == null || cd in proposes
                 val norm = TaxRefCache.normaliser(TaxRefCache.nettoyerSuffixeArticle(nom))
-                TaxRefCache.chercherParMots(norm, cdNomsAutorises)?.let { e ->
+                TaxRefCache.chercherParMots(norm, cdNomsAutorises)?.takeIf { accepte(it.cdNom) }?.let { e ->
                     val nomFr = e.nomFrOriginal ?: TaxRefCache.getVernaculaireParCdNom(e.cdNom)
-                    return@withContext Pair(TaxRefStatut.Trouve(e.cdNom, e.sciNom, nomFr), false)
+                    return@withContext TaxRefStatut.Trouve(e.cdNom, e.sciNom, nomFr)
                 }
-                TaxRefCache.chercherApproche(norm, cdNomsAutorises)?.let { e ->
+                TaxRefCache.chercherApproche(norm, cdNomsAutorises)?.takeIf { accepte(it.cdNom) }?.let { e ->
                     val nomFr = e.nomFrOriginal ?: TaxRefCache.getVernaculaireParCdNom(e.cdNom)
-                    return@withContext Pair(TaxRefStatut.Trouve(e.cdNom, e.sciNom, nomFr), false)
+                    return@withContext TaxRefStatut.Trouve(e.cdNom, e.sciNom, nomFr)
                 }
             }
 
-            Pair(TaxRefStatut.NonTrouve, false)
-        }
-
-    private suspend fun rechercherViaGeoNature(nom: String, taxon: Taxon?, config: GeoNatureConfig): TaxRefStatut? =
-        withContext(Dispatchers.IO) {
-            try {
-                // Encodage COMPLET du paramètre de query (pas seulement les espaces) : un nom
-                // avec &, ', accents… cassait l'URL. URLEncoder encode l'espace en « + »,
-                // décodé en espace par Flask/werkzeug dans une query string — accepté.
-                val encoded = java.net.URLEncoder.encode(nom.trim(), "UTF-8")
-                
-                val regneParam = when(taxon) {
-                    Taxon.FONGE -> "&regne=Fungi"
-                    Taxon.PLANTE -> "&regne=Plantae"
-                    Taxon.OISEAU, Taxon.MAMMIFERE, Taxon.REPTILE, Taxon.BATRACIEN,
-                    Taxon.POISSON, Taxon.INSECTE, Taxon.MOLLUSQUE, Taxon.INVERTEBRES -> "&regne=Animalia"
-                    null -> ""
-                }
-
-                val url = URL("${config.urlTaxhub}/api/taxref/?nom_cite=$encoded&limit=10$regneParam")
-                val conn = HttpClient.get(url, timeoutMs = 5000)
-                if (HttpClient.lireCode(conn) != 200) { conn.disconnect(); return@withContext null }
-                val array = JSONArray(conn.inputStream.bufferedReader().readText())
-                val nomNettoye = TaxRefCache.nettoyerSuffixeArticle(nom)
-                val nomNorm = TaxRefCache.normaliser(nomNettoye)
-                val nomLc = nomNettoye.lowercase()
-                for (i in 0 until array.length()) {
-                    val item = array.getJSONObject(i)
-                    val cdNom = item.optInt("cd_nom", -1)
-                    val lbNom = item.optString("lb_nom", "")
-                    if (cdNom <= 0) continue
-                    // Correspondance sur nom vernaculaire (peut contenir plusieurs valeurs séparées par virgule).
-                    val vernRaw = item.optString("nom_vern", "")
-                    val vernMatch = vernRaw.split(",")
-                        .map { TaxRefCache.nettoyerSuffixeArticle(it.trim()) }
-                        .any { TaxRefCache.normaliser(it) == nomNorm }
-                    if (vernMatch) {
-                        return@withContext TaxRefStatut.Trouve(cdNom, lbNom, vernRaw.ifEmpty { null })
-                    }
-                    // Correspondance sur nom scientifique (lb_nom)
-                    if (lbNom.lowercase() == nomLc) {
-                        return@withContext TaxRefStatut.Trouve(cdNom, lbNom, vernRaw.ifEmpty { null })
-                    }
-                }
-                null
-            } catch (_: Exception) {
-                null
-            }
+            TaxRefStatut.NonTrouve
         }
 }

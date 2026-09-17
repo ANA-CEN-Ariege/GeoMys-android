@@ -42,6 +42,9 @@ class TaxRefLookupController(
     private val tvStatut: TextView,
     private val taxonProvider: () -> Taxon,
     private val configProvider: () -> GeoNatureConfig,
+    /** Mode d'affichage courant de l'autocomplétion (noms scientifiques ou français) : il définit
+     *  l'ensemble des noms proposés, donc celui des noms acceptables. */
+    private val scientifiqueProvider: () -> Boolean = { false },
     private val onChange: (TaxRefStatut?) -> Unit = {},
 ) {
     var statut: TaxRefStatut? = null
@@ -49,9 +52,63 @@ class TaxRefLookupController(
 
     private var job: Job? = null
 
+    /** Texte pour lequel le taxon a été CHOISI dans la liste de propositions : tant qu'il est
+     *  affiché tel quel, aucune recherche ne vient le réécrire (cf. [poser]). */
+    private var nomFige: String? = null
+
+    /** Aucune proposition disponible (liste de taxons absente du cache) : le message reste
+     *  affiché, la frappe et les remises à zéro ne l'effacent pas. */
+    private var pasDeDonnees = false
+
+    /** Signale l'absence de données de saisie (ou la lève avec [actif] à false). */
+    fun signalerPasDeDonnees(actif: Boolean) {
+        if (pasDeDonnees == actif) return
+        pasDeDonnees = actif
+        job?.cancel()
+        statut = if (actif) TaxRefStatut.PasDeDonnees else null
+        updateUI()
+        onChange(statut)
+    }
+
+    /**
+     * Fixe le taxon CHOISI dans la liste de propositions, sans le re-chercher (audit 2026-09-17,
+     * C2) : la suggestion connaît son `cd_nom`, le retrouver à partir de son seul texte pouvait
+     * désigner un autre taxon du même groupe et de la même liste portant ce nom.
+     * La recherche déclenchée par la frappe est annulée, et ignorée tant que le texte ne change
+     * pas — c'est la même liste qui a fourni le nom et le taxon.
+     */
+    fun poser(trouve: TaxRefStatut.Trouve, pourTexte: String) {
+        job?.cancel()
+        nomFige = pourTexte
+        statut = trouve
+        updateUI()
+        onChange(trouve)
+    }
+
+    /**
+     * Relance la résolution du texte affiché dans un périmètre qui vient de CHANGER (groupe
+     * taxonomique choisi pendant la frappe).
+     *
+     * Le statut courant est invalidé IMMÉDIATEMENT — pas seulement à la fin du debounce : il
+     * désigne un taxon de l'ancien groupe, et le laisser en place laisserait démarrer une saisie
+     * avec ce taxon pendant la demi-seconde suivante. Un choix figé dans la liste ([poser]) est
+     * levé pour la même raison.
+     */
+    fun relancer(nom: String) {
+        nomFige = null
+        statut = null
+        updateUI()
+        onChange(null)
+        rechercher(nom)
+    }
+
     /** Annule la recherche en cours et en lance une nouvelle après 500 ms si
      *  [nom] fait au moins 2 caractères ; sinon réinitialise. */
     fun rechercher(nom: String) {
+        if (pasDeDonnees) { updateUI(); return }
+        // Texte inchangé depuis un choix dans la liste : le taxon est déjà connu.
+        if (nom == nomFige && statut is TaxRefStatut.Trouve) { updateUI(); return }
+        nomFige = null
         job?.cancel()
         if (nom.length < 2) {
             statut = null
@@ -64,7 +121,9 @@ class TaxRefLookupController(
             if (!isActive) return@launch
             progress.visibility = View.VISIBLE
             tvStatut.visibility = View.GONE
-            val (s, _) = TaxRefService.rechercher(nom, taxonProvider(), configProvider())
+            val s = TaxRefService.rechercher(
+                nom, taxonProvider(), configProvider(), scientifiqueProvider(),
+            )
             statut = s
             progress.visibility = View.GONE
             updateUI()
@@ -74,6 +133,8 @@ class TaxRefLookupController(
 
     fun reset() {
         job?.cancel()
+        nomFige = null
+        if (pasDeDonnees) { updateUI(); return }
         statut = null
         updateUI()
     }
@@ -91,10 +152,10 @@ class TaxRefLookupController(
                 tvStatut.text = ctx.getString(R.string.taxref_non_trouve)
                 tvStatut.setTextColor(ContextCompat.getColor(ctx, android.R.color.holo_orange_dark))
             }
-            TaxRefStatut.Indisponible -> {
+            TaxRefStatut.PasDeDonnees -> {
                 tvStatut.visibility = View.VISIBLE
-                tvStatut.text = ctx.getString(R.string.taxref_indisponible)
-                tvStatut.setTextColor(ContextCompat.getColor(ctx, android.R.color.darker_gray))
+                tvStatut.text = ctx.getString(R.string.taxref_pas_de_donnees)
+                tvStatut.setTextColor(fr.ariegenature.geomys.ui.couleurAvertissement())
             }
             null -> {
                 tvStatut.visibility = View.GONE

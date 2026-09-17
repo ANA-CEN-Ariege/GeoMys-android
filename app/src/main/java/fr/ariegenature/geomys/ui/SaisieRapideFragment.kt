@@ -236,6 +236,7 @@ class SaisieRapideFragment : Fragment() {
             tvStatut = binding.tvTaxrefStatut,
             taxonProvider = { taxon },
             configProvider = { gnConfig },
+            scientifiqueProvider = { rechercheNomSci },
             onChange = { s -> taxRefStatut = s; updateDemarrerState() },
         )
 
@@ -376,11 +377,15 @@ class SaisieRapideFragment : Fragment() {
         ) { t ->
             taxon = t
             fr.ariegenature.geomys.ui.saisie.PreferencesSaisie.memoiserTaxon(requireContext(), t)
-            binding.etEspece.setText("")
+            // Le texte déjà tapé est CONSERVÉ et re-résolu dans le nouveau groupe (demande
+            // terrain 2026-09-17). Le statut est invalidé sur-le-champ par `relancer` : sans
+            // cela, « Démarrer » resterait actif avec le taxon de l'ancien groupe le temps du
+            // debounce.
             taxRefStatut = null
-            taxrefLookup.reset()
             refreshAutocompleteAdapter()
             updateEspeceHint()
+            taxrefLookup.relancer(binding.etEspece.text?.toString().orEmpty())
+            updateDemarrerState()
         }
         taxonSelector.init()
     }
@@ -410,15 +415,36 @@ class SaisieRapideFragment : Fragment() {
             rechercheNomSci = isChecked
             fr.ariegenature.geomys.ui.saisie.PreferencesSaisie
                 .memoiserNomSci(requireContext(), isChecked)
-            binding.etEspece.setText("")
+            // Le texte tapé survit à la bascule du mode (demande terrain 2026-09-17), comme au
+            // changement de groupe, et il est re-résolu dans le nouveau mode — un nom français
+            // affichera « Nom invalide » tant qu'il n'est pas remplacé. `relancer` invalide le
+            // taxon précédent sur-le-champ : « Démarrer » ne peut pas partir avec celui de
+            // l'autre mode le temps du debounce.
             taxRefStatut = null
-            taxrefLookup.reset()
             refreshAutocompleteAdapter()
             updateEspeceHint()
+            taxrefLookup.relancer(binding.etEspece.text?.toString().orEmpty())
+            updateDemarrerState()
         }
 
         binding.tilEspece.setEndIconOnClickListener { speech.lancer() }
 
+        // Un taxon CHOISI dans la liste est pris tel quel, avec son cd_nom (audit 2026-09-17,
+        // C2) : re-chercher son texte pouvait désigner un autre taxon du même groupe et de la
+        // même liste portant ce nom.
+        binding.etEspece.setOnItemClickListener { _, _, position, _ ->
+            val suggestion = binding.etEspece.adapter.getItem(position)
+                as? fr.ariegenature.geomys.store.SuggestionTaxon ?: return@setOnItemClickListener
+            val sci = TaxRefCache.entreesParCdNom()[suggestion.cdNom]?.sciNom
+                .orEmpty().ifEmpty { suggestion.nom }
+            taxrefLookup.poser(
+                // En mode « noms scientifiques », le nom choisi EST le nom scientifique : pas de
+                // nom français à annoncer (c'est lui qui sert de libellé par défaut à la saisie).
+                TaxRefStatut.Trouve(suggestion.cdNom, sci,
+                    if (rechercheNomSci) null else suggestion.nom),
+                pourTexte = suggestion.nom,
+            )
+        }
         binding.btnDemarrer.isEnabled = false
         binding.etEspece.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
@@ -444,7 +470,7 @@ class SaisieRapideFragment : Fragment() {
     private fun resoudreEtReinjecterDepuisVoix(candidats: List<String>) {
         viewLifecycleOwner.lifecycleScope.launch {
             val (statut, gagnant) = fr.ariegenature.geomys.network.TaxRefService
-                .rechercherParmiCandidats(candidats, taxon, gnConfig)
+                .rechercherParmiCandidats(candidats, taxon, gnConfig, rechercheNomSci)
             if (!isAdded || _binding == null) return@launch
             if (statut is TaxRefStatut.Trouve && gagnant != null &&
                 gagnant != binding.etEspece.text?.toString()
@@ -456,18 +482,39 @@ class SaisieRapideFragment : Fragment() {
     }
 
     private fun refreshAutocompleteAdapter() {
+        // Les propositions courantes appartiennent à l'ANCIENNE configuration (groupe ou mode
+        // d'affichage qui vient de changer) : on les retire tout de suite. Sinon l'ancienne liste
+        // continuait de répondre à la frappe pendant le recalcul, puis était remplacée sous les
+        // yeux de l'utilisateur — les noms français s'affichaient une seconde après être passé
+        // en noms scientifiques (terrain 2026-09-17).
+        binding.etEspece.dismissDropDown()
+        binding.etEspece.setAdapter(null)
         viewLifecycleOwner.lifecycleScope.launch {
             val (suggestions, normalized) = withContext(Dispatchers.Default) {
-                val s = TaxRefLocal.getSuggestionsAutocomplete(
+                // Propositions ET clés de recherche en un seul calcul, mémorisé par
+                // configuration (groupe × mode × liste) : plus de seconde normalisation des
+                // 20 à 50 000 noms au retour sur le thread principal.
+                val res = TaxRefLocal.getPropositionsNormalisees(
                     taxon,
                     rechercheNomSci,
                     idListeFiltre = gnConfig.taxaListeId.trim().toIntOrNull(),
                 )
-                // Normalisation (accents/casse) pré-calculée HORS thread principal.
-                s to s.map { TaxRefCache.normaliser(it) to it }
+                res
             }
             if (!isAdded || _binding == null) return@launch
-            val adapter = createSpeciesAutocompleteAdapter(requireContext(), suggestions, normalized)
+            // Liste de taxons configurée mais absente du cache : rien n'est proposé et rien ne
+            // sera accepté — on le dit sous le champ (décision produit 2026-09-17). Ne devrait
+            // pas arriver : le chargement des données est exigé avant d'entrer dans les saisies.
+            val idListeConfig = gnConfig.taxaListeId.trim().toIntOrNull()
+            taxrefLookup.signalerPasDeDonnees(
+                idListeConfig != null && TaxRefCache.listeAbsenteDuCache(idListeConfig)
+            )
+            val adapter = fr.ariegenature.geomys.ui.saisie.createAutocompleteAdapter(
+                requireContext(), suggestions, normalized,
+                // Nom scientifique sous le nom français (et l'inverse en mode « noms
+                // scientifiques ») : c'est lui qui distingue deux taxons au même nom.
+                secondaire = { it.secondaire },
+            )
             binding.etEspece.setAdapter(adapter)
             // Race possible : si l'utilisateur a tapé avant la fin du scan asynchrone,
             // AutoCompleteTextView a déclenché le filtre sur un adapter encore vide et

@@ -349,6 +349,7 @@ class SaisieObservationFragment : Fragment() {
             tvStatut = binding.tvTaxrefStatut,
             taxonProvider = { taxonSelector.taxon },
             configProvider = { gnConfig },
+            scientifiqueProvider = { rechercheNomSci },
         )
 
         setupAutocomplete()
@@ -698,25 +699,49 @@ class SaisieObservationFragment : Fragment() {
         // d'un écran de saisie (mono ou multi-taxons).
         fr.ariegenature.geomys.ui.saisie.PreferencesSaisie
             .memoiserTaxon(requireContext(), taxonSelector.taxon)
-        binding.etEspece.setText("")
-        taxrefLookup.reset()
+        // Le texte déjà tapé est CONSERVÉ et re-résolu dans le nouveau groupe (demande
+        // terrain 2026-09-17) : on tape souvent le nom avant de s'apercevoir qu'on est dans le
+        // mauvais groupe, et tout effacer obligeait à ressaisir. Les propositions sont
+        // reconstruites pour le nouveau groupe, et le filtre relancé sur le texte courant.
         refreshAutocompleteAdapter()
         updateEspeceHint()
+        taxrefLookup.relancer(binding.etEspece.text?.toString().orEmpty())
     }
 
     private fun refreshAutocompleteAdapter() {
+        // Les propositions courantes appartiennent à l'ANCIENNE configuration (groupe ou mode
+        // d'affichage qui vient de changer) : on les retire tout de suite. Sinon l'ancienne liste
+        // continuait de répondre à la frappe pendant le recalcul, puis était remplacée sous les
+        // yeux de l'utilisateur — les noms français s'affichaient une seconde après être passé
+        // en noms scientifiques (terrain 2026-09-17).
+        binding.etEspece.dismissDropDown()
+        binding.etEspece.setAdapter(null)
         viewLifecycleOwner.lifecycleScope.launch {
             val (suggestions, normalized) = withContext(Dispatchers.Default) {
-                val s = TaxRefLocal.getSuggestionsAutocomplete(
+                // Propositions ET clés de recherche en un seul calcul, mémorisé par
+                // configuration (groupe × mode × liste) : plus de seconde normalisation des
+                // 20 à 50 000 noms au retour sur le thread principal.
+                val res = TaxRefLocal.getPropositionsNormalisees(
                     taxonSelector.taxon,
                     rechercheNomSci,
                     idListeFiltre = gnConfig.taxaListeId.trim().toIntOrNull(),
                 )
-                // Normalisation (accents/casse) pré-calculée HORS thread principal.
-                s to s.map { TaxRefCache.normaliser(it) to it }
+                res
             }
             if (!isAdded || _binding == null) return@launch
-            val adapter = createSpeciesAutocompleteAdapter(requireContext(), suggestions, normalized)
+            // Liste de taxons configurée mais absente du cache : rien n'est proposé et rien ne
+            // sera accepté — on le dit sous le champ (décision produit 2026-09-17). Ne devrait
+            // pas arriver : le chargement des données est exigé avant d'entrer dans les saisies.
+            val idListeConfig = gnConfig.taxaListeId.trim().toIntOrNull()
+            taxrefLookup.signalerPasDeDonnees(
+                idListeConfig != null && TaxRefCache.listeAbsenteDuCache(idListeConfig)
+            )
+            val adapter = fr.ariegenature.geomys.ui.saisie.createAutocompleteAdapter(
+                requireContext(), suggestions, normalized,
+                // Nom scientifique sous le nom français (et l'inverse en mode « noms
+                // scientifiques ») : c'est lui qui distingue deux taxons au même nom.
+                secondaire = { it.secondaire },
+            )
             binding.etEspece.setAdapter(adapter)
             // Race possible : si l'utilisateur a tapé avant la fin du scan asynchrone,
             // AutoCompleteTextView a déclenché le filtre sur un adapter encore vide et
@@ -763,15 +788,19 @@ class SaisieObservationFragment : Fragment() {
             rechercheNomSci = isChecked
             fr.ariegenature.geomys.ui.saisie.PreferencesSaisie
                 .memoiserNomSci(requireContext(), isChecked)
-            binding.etEspece.setText("")
-            taxrefLookup.reset()
+            // Le texte tapé survit aussi à la bascule du mode (demande terrain 2026-09-17),
+            // comme au changement de groupe : basculer pour retrouver le nom scientifique d'une
+            // espèce ne doit pas obliger à tout ressaisir. Il est re-résolu dans le nouveau mode
+            // — un nom français affichera « Nom invalide » tant qu'il n'est pas remplacé.
             refreshAutocompleteAdapter()
             updateEspeceHint()
+            taxrefLookup.relancer(binding.etEspece.text?.toString().orEmpty())
         }
 
         binding.etEspece.setOnItemClickListener { _, _, position, _ ->
-            val nomSelectionne = binding.etEspece.adapter.getItem(position) as? String ?: return@setOnItemClickListener
-            ajouterDepuisSuggestion(nomSelectionne)
+            val suggestion = binding.etEspece.adapter.getItem(position)
+                as? fr.ariegenature.geomys.store.SuggestionTaxon ?: return@setOnItemClickListener
+            ajouterDepuisSuggestion(suggestion)
         }
 
         binding.etEspece.addTextChangedListener(object : TextWatcher {
@@ -791,7 +820,7 @@ class SaisieObservationFragment : Fragment() {
     private fun resoudreEtAjouterDepuisVoix(candidats: List<String>) {
         viewLifecycleOwner.lifecycleScope.launch {
             val (statut, _) = TaxRefService.rechercherParmiCandidats(
-                candidats, taxonSelector.taxon, gnConfig,
+                candidats, taxonSelector.taxon, gnConfig, rechercheNomSci,
             )
             if (!isAdded || _binding == null) return@launch
             if (statut is TaxRefStatut.Trouve) {
@@ -826,36 +855,21 @@ class SaisieObservationFragment : Fragment() {
         declencherCaracterisationSiNidification(pendingObs.lastIndex)
     }
 
-    /** Ajoute une nouvelle PendingObs à partir d'une suggestion d'autocomplétion. */
-    private fun ajouterDepuisSuggestion(nom: String) {
-        // Résolution RESTREINTE AU GROUPE sélectionné (toujours défini en Occtax). La liste de
-        // suggestions est déjà filtrée par groupe — c'est pour cela que « Gobemouche gris »
-        // apparaît sous OISEAUX — mais la résolution, elle, était GLOBALE : le tap attachait le
-        // cd_nom de l'autre taxon portant ce nom, ici une araignée sauteuse. C'est ce chemin qui
-        // décide de ce qui est enregistré puis envoyé à GeoNature (terrain 2026-09-16).
-        val autorises = taxonSelector.taxon?.let {
-            TaxRefCache.indexParTaxon(it)?.takeIf { l -> l.isNotEmpty() }?.toHashSet()
-        }
-        val entry = TaxRefCache.get(nom, autorises)
-        val (cdNom, especeAffichee) = if (entry != null) {
-            val nomAffiche = entry.nomFrOriginal ?: nom
-            Pair(entry.cdNom, nomAffiche)
-        } else {
-            // Log diagnostique : si l'autocomplete propose un nom mais TaxRefCache.get
-            // retourne null, c'est un cas à investiguer (TaxRef partiel, données embarquées,
-            // caractères invisibles, etc.). Le code-points de chaque char aide à repérer un
-            // espace insécable ou autre caractère parasite. À filtrer via `adb logcat | grep
-            // TaxRef-miss`.
-            val codepoints = nom.map { "%04X".format(it.code) }.joinToString(" ")
-            android.util.Log.w("TaxRef-miss",
-                "Suggestion sans cd_nom : '$nom' (codepoints: $codepoints, normalisé: '${fr.ariegenature.geomys.store.TaxRefCache.normaliser(nom)}')"
-            )
-            Pair(null, nom)
-        }
+    /**
+     * Ajoute une PendingObs à partir de la suggestion CHOISIE — avec son `cd_nom`, pas son texte.
+     *
+     * Le texte était jusqu'ici re-résolu contre le cache après le clic (audit 2026-09-17, C2).
+     * Le cache ne gardant qu'un taxon par clé, la re-résolution pouvait rendre un AUTRE taxon du
+     * même groupe et de la même liste : « Bousier rhinocéros », proposé pour *Copris lunaris*,
+     * enregistrait *Odonteus armiger* — 39 cas mesurés sur le référentiel de l'appareil. La
+     * suggestion porte désormais son taxon de bout en bout ([SuggestionTaxon]), et l'identité de
+     * ce qui a été proposé est exactement celle de ce qui est enregistré.
+     */
+    private fun ajouterDepuisSuggestion(suggestion: fr.ariegenature.geomys.store.SuggestionTaxon) {
         pendingObs.add(PendingObs(
             taxon = taxonSelector.taxon,
-            espece = especeAffichee,
-            cdNom = cdNom,
+            espece = suggestion.nom,
+            cdNom = suggestion.cdNom,
             nombre = 1,
             determinateur = determinateurParDefaut(),
         ))

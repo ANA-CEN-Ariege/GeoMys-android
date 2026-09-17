@@ -1,0 +1,47 @@
+Notes de version Google Play — GeoMys
+=====================================
+
+Contraintes console Play : 500 caractères maximum par langue. Le balisage <fr-FR> est celui
+attendu pour un dépôt automatisé (fastlane / API Publishing) ; en saisie manuelle dans la
+console, copier le texte sans les balises.
+
+
+A — Notes couvrant TOUT ce qui a suivi la 1.4.1  (465 caractères)
+-----------------------------------------------------------------
+À utiliser si les utilisateurs Play viennent de la 1.4.1 et que le dépôt regroupe la 1.4.2 et
+la 1.4.3.
+
+<fr-FR>
+Saisie des espèces plus sûre : seuls les noms proposés sont acceptés, et le nom scientifique s'affiche sous chaque proposition. Dans les Suivis, le champ espèce respecte enfin la liste du protocole. Le nom déjà tapé est conservé quand vous changez de groupe.
+Corrections : module Suivis utilisable hors ligne, plus de doublons d'observations ni de photos envoyées deux fois, et « Mes visites » ne dit plus que tout est envoyé s'il reste des observations en attente.
+</fr-FR>
+
+
+B — Notes de la 1.4.3 seule  (389 caractères)
+----------------------------------------------
+À utiliser puisque l'AAB 191 (1.4.2) a déjà été déposé : les utilisateurs Play ont donc déjà
+reçu les correctifs de la 1.4.2.
+
+<fr-FR>
+Saisie des espèces : seuls les noms proposés dans la liste sont acceptés, et le nom scientifique s'affiche sous chaque nom français — deux espèces qui portent le même nom ne se confondent plus. Dans les Suivis, le champ espèce respecte la liste du protocole. Le nom déjà tapé est conservé quand vous changez de groupe ou de mode d'affichage. La recherche d'espèce ne dépend plus du réseau.
+</fr-FR>
+
+
+Ce que ces notes résument
+-------------------------
+1.4.2 (versionCode 191, déposée) : hors-ligne du module Suivis réparé, anti-doublon d'envoi
+(observations, relevés, photos), « Mes visites » qui compte enfin les observations restantes,
+champ masqué non envoyé, et résolution d'un nom vernaculaire partagé dans le groupe choisi.
+
+1.4.3 (versionCode 192, à publier) : propositions et résolution alignées sur le même ensemble —
+groupe, liste de saisie et mode d'affichage — dans les deux écrans Occtax et dans les
+formulaires de suivi ; propositions à deux lignes avec le nom scientifique, une ligne par taxon
+quand un nom est partagé ; nom conservé au changement de groupe ou de mode ; résolution
+purement locale (plus d'appel à l'API TaxRef pendant la frappe) ; taxons dont tous les noms
+étaient captés par d'autres redevenus visibles ; réduction des ressources activée (−11 % sur
+l'AAB).
+
+Non repris dans les notes utilisateur (avertissements console Play sur la 1.4.2) : affichage
+bord à bord déjà géré (enableEdgeToEdge + encarts par écran), API dépréciées situées dans les
+bibliothèques, décodage d'images relevant d'osmdroid — nos décodages appliquent déjà le
+sous-échantillonnage.

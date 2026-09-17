@@ -18,8 +18,10 @@
     <string name="erreur_envoi">Erreur d\'envoi</string>
     <string name="erreur_import">Erreur d\'import</string>
     <string name="erreur_import_gpx">Impossible de lire ce fichier GPX. Vérifiez qu\'il contient un parcours ou des waypoints valides.</string>
-    <string name="taxref_non_trouve">Non trouvé — cd_nom saisissable dans Détails</string>
-    <string name="taxref_indisponible">TaxRef indisponible — cd_nom dans Détails</string>
+    <string name="taxref_non_trouve">Nom invalide — choisissez parmi les propositions</string>
+    <!-- Liste de taxons absente du cache : la saisie ne peut proposer ni résoudre aucun nom.
+         Ne devrait pas se produire, le chargement des données étant obligatoire avant la saisie. -->
+    <string name="taxref_pas_de_donnees">Pas de données — rechargez les données</string>
     <string name="configuration_complete">✓ Configuration complète</string>
     <string name="configuration_incomplete">⚠ Configuration incomplète</string>
     <string name="observations_count">Observations (%d)</string>

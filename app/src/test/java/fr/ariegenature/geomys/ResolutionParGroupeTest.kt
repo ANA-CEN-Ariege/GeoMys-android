@@ -107,6 +107,30 @@ class ResolutionParGroupeTest {
     }
 
     @Test
+    fun quand_deux_taxons_du_groupe_portent_le_nom_le_rang_departage() {
+        // Audit 2026-09-17 (C4) : le repli rendait « le premier du Set », donc l'ordre de hachage
+        // d'un HashSet décidait de la détermination. Départage explicite désormais : le nom
+        // SCIENTIFIQUE d'abord, puis le RANG du nom vernaculaire (TaxRef énumère nom_vern par
+        // ordre de préférence), puis le plus petit cd_nom.
+        // L'intrus doit avoir une entrée dans le cache principal, sinon le repli le saute
+        // (`cd !in parCdNom`) et le test ne prouverait rien.
+        TaxRefCache.set("Fictivus testus", 999, "Fictivus testus", null)
+        TaxRefCache.ajouterVerns(
+            mapOf(
+                2080 to listOf("Atte muscivore", "gobemouche gris"),
+                4319 to listOf("Gobemouche gris"),
+                // Intrus du même groupe qui ne porte ce nom qu'en 4ᵉ position : il ne doit PAS
+                // l'emporter sur le taxon dont c'est LE nom usuel, quel que soit son cd_nom.
+                999 to listOf("a", "b", "c", "Gobemouche gris"),
+            )
+        )
+        val e = TaxRefCache.get("gobemouche gris", setOf(4319, 999))
+        assertEquals(4319, e?.cdNom)
+        // Et l'ordre de construction du Set n'y change rien.
+        assertEquals(4319, TaxRefCache.get("gobemouche gris", setOf(999, 4319))?.cdNom)
+    }
+
+    @Test
     fun un_nom_absent_du_groupe_rend_l_entree_globale_a_charge_de_l_appelant_de_la_rejeter() {
         // « Atte muscivore » n'existe que chez l'araignée : dans le groupe OISEAUX, la résolution
         // n'invente rien — elle rend l'entrée globale, que TaxRefService rejettera via son filtre.

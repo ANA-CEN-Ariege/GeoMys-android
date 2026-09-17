@@ -29,6 +29,8 @@ import androidx.test.core.app.ApplicationProvider
 import fr.ariegenature.geomys.monitoring.form.EditableField
 import fr.ariegenature.geomys.monitoring.form.FormulaireRenderer
 import fr.ariegenature.geomys.monitoring.form.ViewType
+import fr.ariegenature.geomys.store.TaxRefCache
+import fr.ariegenature.geomys.store.TaxRefEntry
 import kotlinx.coroutines.MainScope
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -270,5 +272,112 @@ class FormulaireRendererTest {
         renderer.setReglesChange(listOf("calcule = 'rempli par la règle'"))
 
         assertTrue("le formulaire doit être notifié du recalcul", notifie)
+    }
+
+    /**
+     * SITE D'APPEL du correctif C1 (audit 2026-09-17) : le champ espèce d'un protocole à liste
+     * taxonomique ne doit plus poser le cd_nom d'un taxon HORS liste. Cas réel : sur STERF
+     * (liste 109), « Souci » est *Colias crocea* (641941) — la clé du cache appartient pourtant à
+     * *Calendula* (190178), la plante, qui partait à GeoNature comme observation de papillon.
+     * Testé ICI, sur la vue rendue, et pas seulement sur TaxRefCache : c'est le renderer qui
+     * décide ce que `lireValeurs` renverra à l'envoi.
+     */
+    @Test
+    fun champ_taxon_d_un_protocole_ne_resout_pas_hors_de_sa_liste() {
+        TaxRefCache.init(ApplicationProvider.getApplicationContext())
+        TaxRefCache.vider()
+        TaxRefCache.remplacerTout(mapOf(
+            TaxRefCache.normaliser("Souci") to TaxRefEntry(190178, "Calendula", "Souci"),
+            TaxRefCache.normaliser("Colias crocea") to TaxRefEntry(641941, "Colias crocea", null),
+        ))
+        TaxRefCache.ajouterVerns(mapOf(190178 to listOf("Souci"), 641941 to listOf("Souci")))
+        TaxRefCache.ajouterListesParCdNom(mapOf(641941 to listOf(100, 109), 190178 to listOf(100)))
+
+        renderer.rendre(listOf(
+            EditableField("esp", ViewType.TAXON, "Espèce", idListeTaxonomieRestreinte = 109),
+            EditableField("esp_libre", ViewType.TAXON, "Espèce (sans liste)"),
+        ))
+        val champs = editTexts(parent)
+        champs[0].setText("Souci")
+        champs[1].setText("Souci")
+
+        val v = renderer.lireValeurs()
+        assertEquals("le protocole impose sa liste : c'est le papillon", 641941, v["esp"])
+        assertEquals("sans liste, la résolution globale est inchangée", 190178, v["esp_libre"])
+    }
+
+    /** Un nom étranger au protocole n'est pas silencieusement remplacé par un taxon d'ailleurs :
+     *  aucune valeur n'est posée (le champ signale « non reconnue » au blur). */
+    @Test
+    fun champ_taxon_refuse_un_nom_etranger_au_protocole() {
+        TaxRefCache.init(ApplicationProvider.getApplicationContext())
+        TaxRefCache.vider()
+        TaxRefCache.remplacerTout(mapOf(
+            TaxRefCache.normaliser("Genette") to TaxRefEntry(60831, "Genetta genetta", "Genette"),
+            TaxRefCache.normaliser("Colias crocea") to TaxRefEntry(641941, "Colias crocea", null),
+        ))
+        TaxRefCache.ajouterVerns(mapOf(60831 to listOf("Genette"), 641941 to listOf("Souci")))
+        TaxRefCache.ajouterListesParCdNom(mapOf(641941 to listOf(100, 109), 60831 to listOf(100)))
+
+        renderer.rendre(listOf(
+            EditableField("esp", ViewType.TAXON, "Espèce", idListeTaxonomieRestreinte = 109),
+        ))
+        editTexts(parent)[0].setText("Genette")
+        assertNull(renderer.lireValeurs()["esp"])
+    }
+
+    /** Un texte d'espèce non reconnu n'est plus ignoré en silence : il rend le formulaire
+     *  INVALIDE, ce qui grise le bouton d'enregistrement (NouvelleVisiteFragment le lit via
+     *  [FormulaireRenderer.champsInvalides]). Règle produit 2026-09-17. */
+    @Test
+    fun un_nom_d_espece_non_reconnu_rend_le_formulaire_invalide() {
+        TaxRefCache.init(ApplicationProvider.getApplicationContext())
+        TaxRefCache.vider()
+        TaxRefCache.remplacerTout(mapOf(
+            TaxRefCache.normaliser("Colias crocea") to TaxRefEntry(641941, "Colias crocea", null),
+        ))
+        TaxRefCache.ajouterVerns(mapOf(641941 to listOf("Souci")))
+        TaxRefCache.ajouterListesParCdNom(mapOf(641941 to listOf(100, 109)))
+
+        renderer.rendre(listOf(
+            EditableField("esp", ViewType.TAXON, "Espèce", idListeTaxonomieRestreinte = 109),
+        ))
+        val champ = editTexts(parent)[0]
+
+        champ.setText("Bidule inexistant")
+        assertTrue("un nom inconnu doit bloquer", renderer.champsInvalides().contains("esp"))
+
+        champ.setText("Souci")
+        assertFalse("un nom du protocole ne bloque pas", renderer.champsInvalides().contains("esp"))
+
+        champ.setText("")
+        assertFalse("un champ vide ne bloque pas (c'est `obligatoire` qui s'en charge)",
+            renderer.champsInvalides().contains("esp"))
+    }
+
+    /** Liste du protocole absente du cache : aucune proposition, et le moindre texte saisi rend
+     *  le formulaire invalide (le champ affiche « Pas de données — rechargez les données »).
+     *  Avant, l'écran repliait sur TOUTES les espèces du cache et acceptait n'importe quel
+     *  taxon, hors protocole compris. */
+    @Test
+    fun liste_du_protocole_absente_du_cache_rien_n_est_propose_ni_accepte() {
+        TaxRefCache.init(ApplicationProvider.getApplicationContext())
+        TaxRefCache.vider()
+        TaxRefCache.remplacerTout(mapOf(
+            TaxRefCache.normaliser("Colias crocea") to TaxRefEntry(641941, "Colias crocea", null),
+            // La clé « souci » appartient à la plante : sans garde, le repli global la poserait.
+            TaxRefCache.normaliser("Souci") to TaxRefEntry(190178, "Calendula", "Souci"),
+        ))
+        TaxRefCache.ajouterVerns(mapOf(641941 to listOf("Souci"), 190178 to listOf("Souci")))
+        // Les taxons sont en cache, mais AUCUNE appartenance à la liste 109 n'a été synchronisée.
+        TaxRefCache.ajouterListesParCdNom(mapOf(641941 to listOf(100), 190178 to listOf(100)))
+
+        renderer.rendre(listOf(
+            EditableField("esp", ViewType.TAXON, "Espèce", idListeTaxonomieRestreinte = 109),
+        ))
+        val champ = editTexts(parent)[0]
+        champ.setText("Souci")
+        assertNull("aucun cd_nom ne doit être posé", renderer.lireValeurs()["esp"])
+        assertTrue("et le formulaire est invalide", renderer.champsInvalides().contains("esp"))
     }
 }

@@ -38,6 +38,21 @@ data class TaxRefEntry(
     val nomFrOriginal: String? = null
 )
 
+/** Une proposition d'autocomplétion d'espèce : le nom AFFICHÉ, le `cd_nom` qu'il désigne, et le
+ *  nom montré juste en dessous (nom scientifique sous un nom français, et l'inverse en mode
+ *  « noms scientifiques »).
+ *
+ *  Le nom seul ne suffit pas (audit 2026-09-17, C2) : deux taxons du même périmètre peuvent le
+ *  porter, et le cache ne garde qu'un taxon par clé. Re-résoudre le texte après le clic rendait
+ *  alors un AUTRE taxon que celui proposé — « Bousier rhinocéros » (*Copris lunaris*) enregistrait
+ *  *Odonteus armiger*. La suggestion transporte donc son cd_nom jusqu'à l'enregistrement, et son
+ *  nom scientifique rend le choix lisible quand deux taxons partagent le même nom français.
+ *
+ *  [toString] rend le nom principal : c'est lui que l'AutoCompleteTextView recopie dans le champ. */
+data class SuggestionTaxon(val nom: String, val cdNom: Int, val secondaire: String? = null) {
+    override fun toString(): String = nom
+}
+
 // Tolère l'ancien format (vernNoms: List<String>) pour éviter un crash si le
 // fichier de cache survit à la mise à jour de l'app.
 private class TaxRefEntryDeserializer : JsonDeserializer<TaxRefEntry> {
@@ -80,6 +95,12 @@ object TaxRefCache {
     // principal est indexé par NOM : quand plusieurs cd_nom partagent un nom vernaculaire, leurs
     // clés entrent en collision et tous sauf un perdent l'association. Cet index, lui, est sans perte.
     private const val FILE_VERNS = "verns_v1.json"
+    // Index COMPLET cd_nom → nom scientifique, construit à la synchro. Même raison d'être que
+    // [FILE_VERNS] côté noms français : le cache principal étant indexé par NOM, un taxon dont le
+    // nom scientifique est déjà pris par un autre (homonymie inter-règnes comme le genre *Pieris*,
+    // papillon ET plante ; ou deux cd_nom TaxRef pour un même lb_nom) n'y a AUCUNE entrée et
+    // devient invisible partout. Cet index, lui, est sans perte.
+    private const val FILE_SCI = "sci_v1.json"
 
     // Anciennes clés SharedPreferences — purgées à l'init pour libérer l'espace
     // après migration vers le stockage fichier.
@@ -107,6 +128,12 @@ object TaxRefCache {
     @Volatile private var memListes: Map<String, List<Int>>? = null
     @Volatile private var memEntreesParCdNom: Map<Int, TaxRefEntry>? = null
     @Volatile private var memVernsParCdNom: Map<Int, List<String>>? = null
+    @Volatile private var memSciParCdNom: Map<Int, String>? = null
+
+    /** Incrémenté à chaque écriture du cache ou de ses index. Sert aux mémos EXTERNES
+     *  (TaxRefLocal) qui dérivent du cache et doivent tomber avec lui. */
+    @Volatile private var version = 0
+    val versionDonnees: Int get() = version
     // Memoization du dernier filtre par id_liste demandé — la saisie reste sur la même
     // liste pendant toute une session, recalculer à chaque suggestion serait gâché.
     @Volatile private var memCdNomsDansListe: Pair<Int, Set<Int>>? = null
@@ -114,6 +141,9 @@ object TaxRefCache {
     // pour ne pas re-matérialiser 15-50k entrées à chaque rendu d'un champ TAXON (audit B5).
     @Volatile private var memTousLesNoms: List<String>? = null
     @Volatile private var memNomsParListe: Pair<Int, List<String>>? = null
+    // Index de RESOLUTION restreint a une liste taxonomique (module Suivis) : cle normalisee →
+    // taxon. Memoize comme les suggestions — un formulaire reste sur la liste de son protocole.
+    @Volatile private var memIndexResolutionListe: Pair<Int, Map<String, TaxRefEntry>>? = null
 
     fun init(context: Context) {
         prefs = context.getSharedPreferences("taxref_cache", Context.MODE_PRIVATE)
@@ -182,16 +212,34 @@ object TaxRefCache {
         if (cle.isEmpty()) return globale
         val verns = vernsParCdNom()
         val parCdNom = entreesParCdNom()
+        // DÉPARTAGE STABLE quand plusieurs taxons du groupe portent le nom (audit 2026-09-17,
+        // C4) : rendre « le premier du Set » laissait décider l'ordre de hachage d'un HashSet.
+        // Même critère qu'à la synchro (GeoNatureSync.meilleurCandidatVernaculaire) : le nom
+        // SCIENTIFIQUE prime (rang -1, désignation univoque), puis le RANG du nom vernaculaire
+        // (TaxRef énumère nom_vern par ordre de préférence), puis le plus petit cd_nom.
+        var meilleurCd = -1
+        var meilleurRang = Int.MAX_VALUE
+        var meilleurNomFr: String? = null
         for (cd in cdNomsAutorises) {
-            val correspond = verns[cd].orEmpty().any { normaliser(nettoyerSuffixeArticle(it)) == cle } ||
-                parCdNom[cd]?.sciNom?.let { normaliser(it) == cle } == true
-            if (correspond) {
-                val e = parCdNom[cd] ?: continue
-                // Le nom AFFICHÉ reste celui que l'utilisateur a choisi, pas le nom principal du
-                // taxon retrouvé : il a tapé « gobemouche gris », il doit lire « gobemouche gris ».
-                return TaxRefEntry(e.cdNom, e.sciNom, verns[cd].orEmpty()
-                    .firstOrNull { normaliser(nettoyerSuffixeArticle(it)) == cle } ?: e.nomFrOriginal)
+            if (cd !in parCdNom) continue
+            val rangVern = verns[cd].orEmpty()
+                .indexOfFirst { normaliser(nettoyerSuffixeArticle(it)) == cle }
+            val rang = when {
+                parCdNom[cd]?.sciNom?.let { normaliser(it) == cle } == true -> -1
+                rangVern >= 0 -> rangVern
+                else -> continue
             }
+            if (rang < meilleurRang || (rang == meilleurRang && cd < meilleurCd)) {
+                meilleurRang = rang
+                meilleurCd = cd
+                meilleurNomFr = verns[cd].orEmpty().getOrNull(rangVern)
+            }
+        }
+        if (meilleurCd > 0) {
+            val e = parCdNom[meilleurCd]!!
+            // Le nom AFFICHÉ reste celui que l'utilisateur a choisi, pas le nom principal du
+            // taxon retrouvé : il a tapé « gobemouche gris », il doit lire « gobemouche gris ».
+            return TaxRefEntry(e.cdNom, e.sciNom, meilleurNomFr ?: e.nomFrOriginal)
         }
         // Aucun taxon du groupe ne porte ce nom : on rend l'entrée globale telle quelle, à charge
         // pour l'appelant de la rejeter (c'est ce que fait TaxRefService via appartientAuGroupe).
@@ -200,22 +248,154 @@ object TaxRefCache {
 
     fun get(nom: String): TaxRefEntry? {
         val cache = charger()
+        for (cle in variantesCle(nom)) cache[cle]?.let { return it }
+        return null
+    }
+
+    /** Toutes les écritures d'un nom acceptées à la LECTURE, dans l'ordre d'essai : clé brute,
+     *  clé sans suffixe d'article, puis — pour chacune — espaces multiples repliés, tiret ↔
+     *  espace, et suppression totale des séparateurs (« rouge gorge » → « rougegorge », pour
+     *  matcher les noms INPN écrits en un mot). La clé canonique écrite à la synchro n'est PAS
+     *  modifiée : aucun rechargement requis, ces variantes marchent sur les caches existants.
+     *  Factorisé pour que [get] et [getDansListe] acceptent EXACTEMENT les mêmes écritures. */
+    internal fun variantesCle(nom: String): Set<String> {
         val base = normaliser(nom)
-        cache[base]?.let { return it }
         val sansArticle = normaliser(nettoyerSuffixeArticle(nom))
-        cache[sansArticle]?.let { return it }
-        // Variantes de séparateurs testées À LA LECTURE seulement (la clé canonique stockée au
-        // sync n'est PAS modifiée → aucun resync requis, marche sur les caches existants) :
-        // espaces multiples repliés, tiret ↔ espace, et suppression totale des séparateurs
-        // (« rouge gorge » → « rougegorge » pour matcher les noms INPN en un mot).
+        val res = linkedSetOf(base, sansArticle)
         for (b in linkedSetOf(base, sansArticle)) {
             val collapse = b.replace(Regex("\\s+"), " ").trim()
-            cache[collapse]?.let { return it }
-            cache[collapse.replace(' ', '-')]?.let { return it }
-            cache[collapse.replace('-', ' ')]?.let { return it }
-            cache[collapse.replace(" ", "").replace("-", "")]?.let { return it }
+            res.add(collapse)
+            res.add(collapse.replace(' ', '-'))
+            res.add(collapse.replace('-', ' '))
+            res.add(collapse.replace(" ", "").replace("-", ""))
         }
+        return res
+    }
+
+    /**
+     * Résolution d'un nom DANS le périmètre d'une liste taxonomique — celle qu'un protocole de
+     * monitoring impose à son champ espèce (`id_list_taxonomy`).
+     *
+     * Pourquoi (audit 2026-09-17, C1) : le champ espèce des formulaires monitoring restreignait
+     * ses SUGGESTIONS à la liste du protocole mais résolvait le nom saisi contre le cache ENTIER.
+     * Le cache ne gardant qu'un taxon par clé, un nom du protocole capté par un autre taxon
+     * partait avec le cd_nom de l'intrus : sur STERF (papillons), « Souci » — *Colias crocea* —
+     * rendait *Calendula*, la plante ; « Paon » rendait *Pavo cristatus*, l'oiseau ; sur la liste
+     * flore, « Genette » rendait le mammifère. Aucun signal : le champ n'affiche pas le taxon
+     * retenu, et ne proteste que sur une résolution NULLE.
+     *
+     * [idListe] null → résolution globale inchangée. Liste absente du cache (non synchronisée) →
+     * repli sur la résolution globale, cohérent avec le repli des suggestions côté formulaire
+     * (un champ sans suggestion est inutilisable sur le terrain). Sinon, un nom qui ne désigne
+     * aucun taxon de la liste est REFUSÉ (null) : le protocole impose son périmètre.
+     */
+    fun getDansListe(nom: String, idListe: Int?): TaxRefEntry? {
+        if (idListe == null) return get(nom)
+        // Liste ABSENTE du cache : aucune proposition n'est faite, donc aucun nom n'est
+        // acceptable (décision produit 2026-09-17). Ce cas ne devrait pas se produire — le
+        // chargement des données, listes comprises, est exigé avant toute saisie.
+        if (listeAbsenteDuCache(idListe)) return null
+        val index = indexResolutionListe(idListe)
+        // Liste si large qu'elle ne restreint rien (cf. SEUIL_INDEX_LISTE) : résolution globale.
+        if (index.isEmpty()) return get(nom)
+        for (cle in variantesCle(nom)) index[cle]?.let { return it }
         return null
+    }
+
+    /** true quand la liste taxonomique demandée n'est pas du tout en cache : ni proposition ni
+     *  résolution possibles — il faut recharger les données. */
+    fun listeAbsenteDuCache(idListe: Int): Boolean = cdNomsDansListe(idListe).isEmpty()
+
+    /**
+     * Noms PROPOSABLES pour une liste taxonomique : exactement les noms que [getDansListe] sait
+     * résoudre dans cette liste, dans leur graphie d'origine (« Souci », pas « souci »).
+     *
+     * Règle produit (2026-09-17) : dans un champ espèce, **seuls les noms proposés sont
+     * acceptés** — et réciproquement, tout nom d'un taxon du protocole doit être proposé. Les
+     * suggestions venaient jusqu'ici des CLÉS du cache principal, où un seul taxon garde chaque
+     * clé : « Souci » (nom usuel de *Colias crocea*, dans la liste STERF) n'était pas proposé
+     * parce que la clé appartient à *Calendula*, la plante. Construites depuis l'index de
+     * résolution, les deux listes ne peuvent plus diverger.
+     */
+    fun nomsProposablesListe(idListe: Int): List<String> {
+        // Liste absente du cache : AUCUNE proposition (et la résolution refuse tout de même).
+        if (listeAbsenteDuCache(idListe)) return emptyList()
+        val propositions = propositionsListe(idListe)
+        // Liste si large qu'elle ne restreint rien (cf. SEUIL_INDEX_LISTE) : on garde les clés
+        // du cache, que la résolution globale sait toutes retrouver.
+        if (propositions.isEmpty()) return nomsSuggestion(idListe)
+        return propositions.map { it.nom }.distinct()
+    }
+
+    /** Propositions d'un protocole, **porteuses de leur `cd_nom`** et du nom à afficher dessous
+     *  (nom scientifique sous un nom français, premier nom français sous un nom scientifique).
+     *
+     *  Un nom porté par plusieurs taxons de la liste donne UNE LIGNE PAR TAXON : le nom
+     *  scientifique affiché rend le choix explicite, au lieu de le trancher par une heuristique.
+     *  Vide quand la liste n'est pas exploitable (non synchronisée, ou couvrant tout le
+     *  référentiel) — l'appelant retombe alors sur [nomsProposablesListe]. */
+    fun propositionsListe(idListe: Int): List<SuggestionTaxon> {
+        if (indexResolutionListe(idListe).isEmpty()) return emptyList()
+        val autorises = cdNomsDansListe(idListe)
+        val parCdNom = entreesParCdNom()
+        val verns = vernsParCdNom()
+        val lignes = ArrayList<SuggestionTaxon>(autorises.size * 2)
+        for (cd in autorises) {
+            val sci = parCdNom[cd]?.sciNom.orEmpty()
+            val vs = verns[cd].orEmpty()
+            for (nom in vs) lignes.add(SuggestionTaxon(nom, cd, sci.ifEmpty { null }))
+            if (sci.isNotEmpty()) lignes.add(SuggestionTaxon(sci, cd, vs.firstOrNull()))
+        }
+        return lignes.distinctBy { it.nom to it.cdNom }
+            .sortedWith(compareBy({ it.nom }, { it.cdNom }))
+    }
+
+    /** Taille au-delà de laquelle une liste taxonomique est considérée comme non restrictive
+     *  (cf. [indexResolutionListe]). Les listes de protocole réelles font quelques centaines à
+     *  quelques milliers de taxons ; seule une liste « toutes espèces » approche ce seuil. */
+    private const val SEUIL_INDEX_LISTE = 60_000
+
+    /** Index de résolution d'une liste taxonomique : clé normalisée → taxon DE CETTE LISTE.
+     *  Construit depuis l'index vernaculaire complet ([vernsParCdNom]) et les noms scientifiques,
+     *  donc SANS la perte par collision du cache principal. Départage identique à la synchro :
+     *  nom scientifique d'abord, puis rang du nom vernaculaire, puis plus petit cd_nom.
+     *  Memoizé pour la dernière liste demandée — un formulaire reste sur celle de son protocole ;
+     *  à préchauffer hors du thread principal (le rendu du champ TAXON le fait). */
+    fun indexResolutionListe(idListe: Int): Map<String, TaxRefEntry> {
+        memIndexResolutionListe?.let { (id, index) -> if (id == idListe) return index }
+        val autorises = cdNomsDansListe(idListe)
+        // Une « liste » qui couvre tout le référentiel (la 100 de ce serveur : 100 454 taxons sur
+        // 100 468) ne restreint rien : lui construire un index dupliquerait le cache entier en
+        // mémoire — plusieurs dizaines de Mo sur un téléphone d'entrée de gamme — pour un
+        // résultat équivalent à la résolution globale. On rend alors un index VIDE, ce qui fait
+        // retomber [getDansListe] sur [get] et [nomsProposablesListe] sur les clés du cache.
+        if (autorises.size >= SEUIL_INDEX_LISTE) {
+            return emptyMap<String, TaxRefEntry>().also { memIndexResolutionListe = idListe to it }
+        }
+        val parCdNom = entreesParCdNom()
+        val verns = vernsParCdNom()
+        // clé → (rang, cd_nom, nom français d'origine)
+        val meilleur = HashMap<String, Triple<Int, Int, String?>>()
+        fun proposer(cle: String, rang: Int, cd: Int, nomFr: String?) {
+            if (cle.isEmpty()) return
+            val actuel = meilleur[cle]
+            if (actuel == null || rang < actuel.first || (rang == actuel.first && cd < actuel.second)) {
+                meilleur[cle] = Triple(rang, cd, nomFr)
+            }
+        }
+        for (cd in autorises) {
+            parCdNom[cd]?.sciNom?.takeIf { it.isNotEmpty() }?.let { proposer(normaliser(it), -1, cd, null) }
+            verns[cd].orEmpty().forEachIndexed { rang, nom ->
+                proposer(normaliser(nettoyerSuffixeArticle(nom)), rang, cd, nom)
+            }
+        }
+        // Un cd_nom de la liste peut n'avoir AUCUNE entrée dans le cache principal (toutes ses
+        // clés captées par d'autres taxons) : on le sert quand même, avec un nom scientifique
+        // vide plutôt que de le rendre introuvable dans son propre protocole.
+        val index = meilleur.mapValues { (_, v) ->
+            TaxRefEntry(v.second, parCdNom[v.second]?.sciNom.orEmpty(), v.third)
+        }
+        return index.also { memIndexResolutionListe = idListe to it }
     }
 
     // ── Recherche vocale : index par mots (niveau 3) + approché (niveau 2) ─────────────────────
@@ -340,6 +520,10 @@ object TaxRefCache {
         return prev[m]
     }
 
+    /** Ajoute UNE entrée et réécrit tout le fichier (plusieurs Mo) en invalidant les mémos :
+     *  réservé aux préparations de cache et aux tests. **Aucun chemin de saisie ne doit
+     *  l'appeler** — c'était le défaut C3 de l'audit 2026-09-17, quand une réponse de l'API
+     *  TaxRef y passait à chaque frappe. La résolution est désormais purement locale. */
     fun set(nom: String, cdNom: Int, sciNom: String, nomFr: String? = null) = synchronized(verrou) {
         val cache = chargerInterne().toMutableMap()
         cache[normaliser(nom)] = TaxRefEntry(cdNom, sciNom, nomFr?.takeIf { it.isNotEmpty() })
@@ -373,6 +557,15 @@ object TaxRefCache {
                 parCdNom[e.cdNom] = e
             }
         }
+        // Taxons dont AUCUN nom n'a gagné sa clé dans le cache principal (260 sur le référentiel
+        // de référence : homonymies comme le genre *Pieris*, papillon et plante à la fois). Sans
+        // eux ici, ils n'étaient ni affichables, ni proposables, ni résolvables — audit
+        // 2026-09-17, constat C5. L'index par cd_nom, lui, ne perd personne.
+        val verns = vernsParCdNom()
+        for ((cd, sci) in sciNomsParCdNom()) {
+            if (cd in parCdNom || sci.isEmpty()) continue
+            parCdNom[cd] = TaxRefEntry(cd, sci, verns[cd]?.firstOrNull())
+        }
         return parCdNom.also { memEntreesParCdNom = it }
     }
 
@@ -405,12 +598,55 @@ object TaxRefCache {
         return frozen
     }
 
+    /** Map cdNom → nom scientifique, SANS la perte par collision de clés du cache principal
+     *  (cf. [FILE_SCI]). Vide tant que l'index n'a pas été écrit par une synchro. */
+    fun sciNomsParCdNom(): Map<Int, String> {
+        memSciParCdNom?.let { return it }
+        lireFichier(FILE_SCI)?.let { json ->
+            runCatching {
+                val type = object : TypeToken<Map<String, String>>() {}.type
+                val m: Map<String, String> = gson.fromJson(json, type) ?: emptyMap()
+                if (m.isNotEmpty()) {
+                    val parInt = HashMap<Int, String>(m.size)
+                    for ((k, v) in m) k.toIntOrNull()?.let { parInt[it] = v }
+                    memSciParCdNom = parInt
+                    return parInt
+                }
+            }
+        }
+        // Index absent (cache écrit avant ce correctif) : VIDE, et non un repli dérivé du cache
+        // principal — celui-ci ne contient par définition que les taxons ayant déjà une entrée,
+        // le repli n'apporterait donc rien et dupliquerait 100 000 entrées en mémoire. Les
+        // taxons sans clé restent invisibles jusqu'au prochain « Recharger les données » : pas
+        // de rechargement forcé pour 260 taxons sur 100 000.
+        return emptyMap<Int, String>().also { memSciParCdNom = it }
+    }
+
+    /** Persiste l'index COMPLET cd_nom → nom scientifique (cf. [FILE_SCI]).
+     *  À appeler APRÈS [remplacerTout], qui réinitialise les mémos. */
+    fun ajouterSciNoms(sciNoms: Map<Int, String>) {
+        val asString = sciNoms.entries.filter { it.value.isNotEmpty() }
+            .associate { it.key.toString() to it.value }
+        if (asString.isEmpty()) return
+        ecrireFichier(FILE_SCI, gson.toJson(asString))
+        version++
+        memSciParCdNom = asString.entries.associate { it.key.toInt() to it.value }
+        // [entreesParCdNom] intègre ces taxons : le mémo précédent les ignore.
+        memEntreesParCdNom = null
+    }
+
     /** Persiste l'index COMPLET cd_nom → noms français, construit à la synchro sans collision de
      *  clés (cf. [FILE_VERNS]). À appeler APRÈS [remplacerTout] (qui réinitialise les memo). */
     fun ajouterVerns(verns: Map<Int, Collection<String>>) {
         val asString = verns.entries.associate { it.key.toString() to it.value.toList() }
         ecrireFichier(FILE_VERNS, gson.toJson(asString))
+        version++
         memVernsParCdNom = verns.entries.associate { it.key to it.value.toList() }
+        // L'index de résolution par liste est construit SUR ces noms : le laisser en place
+        // servirait des taxons résolus depuis l'index vernaculaire précédent. Idem pour les
+        // entrées par cd_nom, qui y puisent le nom français des taxons sans clé.
+        memIndexResolutionListe = null
+        memEntreesParCdNom = null
     }
 
     fun getVernaculaireParCdNom(cdNom: Int): String? =
@@ -473,9 +709,11 @@ object TaxRefCache {
         val existing = chargerListesParCdNom().toMutableMap()
         listes.forEach { (cd, l) -> if (l.isNotEmpty()) existing[cd.toString()] = l }
         ecrireFichier(FILE_LISTES, gson.toJson(existing))
+        version++
         memListes = existing
         memCdNomsDansListe = null
         memNomsParListe = null
+        memIndexResolutionListe = null
     }
 
     /** Retourne les id_liste UsersHub auxquelles le cd_nom appartient (vide si inconnu). */
@@ -554,6 +792,7 @@ object TaxRefCache {
     fun setIndexParTaxon(index: Map<Taxon, List<Int>>) {
         val asString = index.mapKeys { it.key.name }
         ecrireFichier(FILE_INDEX_TAXON, gson.toJson(asString))
+        version++
         memIndexTaxon = asString
     }
 
@@ -579,7 +818,8 @@ object TaxRefCache {
     }
 
     fun vider() {
-        listOf(FILE_CACHE, FILE_GROUPES, FILE_GROUPES1, FILE_REGNES, FILE_INDEX_TAXON, FILE_LISTES, FILE_VERNS)
+        listOf(FILE_CACHE, FILE_GROUPES, FILE_GROUPES1, FILE_REGNES, FILE_INDEX_TAXON, FILE_LISTES,
+            FILE_VERNS, FILE_SCI)
             .forEach { runCatching { fichier(it).delete() } }
         prefs.edit()
             .remove(KEY_VERSION)
@@ -595,10 +835,13 @@ object TaxRefCache {
         memListes = null
         memEntreesParCdNom = null
         memVernsParCdNom = null
+        memSciParCdNom = null
         memCdNomsDansListe = null
         memTousLesNoms = null
         memNomsParListe = null
+        memIndexResolutionListe = null
         memIndexMots = null
+        version++
     }
 
     var versionSauvegardee: String?
@@ -623,19 +866,31 @@ object TaxRefCache {
             ?: emptyList()
         set(v) = prefs.edit().putString(KEY_LISTES_SYNC, v.joinToString(",")).apply()
 
-    fun normaliser(nom: String): String =
-        nom.trim().lowercase()
-            .map { c ->
-                when (c) {
-                    'à', 'â', 'ä' -> 'a'
-                    'é', 'è', 'ê', 'ë' -> 'e'
-                    'î', 'ï' -> 'i'
-                    'ô', 'ö' -> 'o'
-                    'ù', 'û', 'ü' -> 'u'
-                    'ç' -> 'c'
-                    else -> c
-                }
-            }.joinToString("")
+    /** Clé de recherche : minuscules, accents dépliés. C'est la fonction la plus appelée de
+     *  l'application (chaque nom proposé, à chaque frappe, sur des listes de 20 à 50 000 noms) —
+     *  d'où l'écriture sans allocation : `map { }.joinToString()` construisait une liste de
+     *  caractères BOXÉS par nom, et les noms scientifiques, tous en ASCII, ressortent désormais
+     *  sans qu'une seule chaîne intermédiaire soit créée. */
+    fun normaliser(nom: String): String {
+        val bas = nom.trim().lowercase()
+        var i = 0
+        while (i < bas.length && deplier(bas[i]) == bas[i]) i++
+        if (i == bas.length) return bas // rien à déplier (cas majoritaire)
+        val sb = StringBuilder(bas.length)
+        sb.append(bas, 0, i)
+        while (i < bas.length) { sb.append(deplier(bas[i])); i++ }
+        return sb.toString()
+    }
+
+    private fun deplier(c: Char): Char = when (c) {
+        'à', 'â', 'ä' -> 'a'
+        'é', 'è', 'ê', 'ë' -> 'e'
+        'î', 'ï' -> 'i'
+        'ô', 'ö' -> 'o'
+        'ù', 'û', 'ü' -> 'u'
+        'ç' -> 'c'
+        else -> c
+    }
 
     // Verrouillé : sérialise avec set/ajouter/sauvegarder (le corps réel est [chargerInterne]).
     private fun charger(): Map<String, TaxRefEntry> = synchronized(verrou) { chargerInterne() }
@@ -692,10 +947,12 @@ object TaxRefCache {
     private fun sauvegarder(cache: Map<String, TaxRefEntry>): Boolean = synchronized(verrou) {
         if (!ecrireCacheStream(cache)) return@synchronized false
         mem = cache
+        version++
         memEntreesParCdNom = null
         memVernsParCdNom = null
         memTousLesNoms = null
         memNomsParListe = null
+        memIndexResolutionListe = null
         memIndexMots = null
         true
     }

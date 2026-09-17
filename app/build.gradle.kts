@@ -26,8 +26,8 @@ android {
         minSdk = 24
         targetSdk = 36
         // versionCode croissant partagé github/play (un code déposé sur Play est consommé à jamais).
-        versionCode = 191
-        versionName = "1.4.2"
+        versionCode = 192
+        versionName = "1.4.3"
 
     }
 
@@ -71,6 +71,12 @@ android {
             // restent lisibles (SourceFile,LineNumberTable conservés) ; mapping.txt produit
             // sous app/build/outputs/mapping/ — à archiver avec chaque release.
             isMinifyEnabled = true
+            // Réduction des RESSOURCES (signalée par la console Play sur la 1.4.2) : retire des
+            // binaires les drawables, layouts et traductions de bibliothèques que rien ne
+            // référence. Sûr ici : aucune ressource n'est résolue par son nom à l'exécution
+            // (aucun `getIdentifier(` dans le code) — le rapport
+            // build/outputs/mapping/<flavor>Release/resources.txt liste ce qui est supprimé.
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

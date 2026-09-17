@@ -89,6 +89,11 @@ class FormulaireRenderer(
      *  façon DYNAMIQUE (un `required` conditionnel ne doit marquer le champ que quand sa
      *  condition est vraie au regard des valeurs courantes). */
     private val labelsParCode = linkedMapOf<String, TextView>()
+
+    /** Ligne « ✓ <nom scientifique> • cd_nom N » affichée sous un champ TAXON. Le formulaire
+     *  monitoring n'affichait RIEN du taxon retenu : une résolution erronée était indétectable
+     *  (audit 2026-09-17, C1). La saisie Occtax, elle, montre le nom scientifique depuis toujours. */
+    private val statutsTaxonParCode = linkedMapOf<String, TextView>()
     /** Callback notifié à chaque modification d'un champ (saisie, sélection, picker…).
      *  Utilisé par l'écran appelant pour piloter l'état du bouton de submit selon que
      *  les champs obligatoires sont remplis ou non. */
@@ -141,6 +146,7 @@ class FormulaireRenderer(
         barresParCode.clear()
         erreursParCode.clear()
         labelsParCode.clear()
+        statutsTaxonParCode.clear()
         dernieresValeursAuto.clear()
         fields.forEach { field ->
             fieldsParCode[field.code] = field
@@ -367,16 +373,29 @@ class FormulaireRenderer(
         }
     }
 
-    /** Codes des champs actuellement en violation de min/max. Un champ vide ne compte pas
-     *  (c'est `obligatoire` qui s'en charge) et un champ masqué non plus. À combiner avec
-     *  [champsObligatoiresManquants] côté caller pour piloter l'état du bouton de submit. */
+    /** Codes des champs actuellement INVALIDES : violation de min/max (NUMBER), ou texte
+     *  d'espèce non reconnu (TAXON). Un champ vide ne compte pas (c'est `obligatoire` qui s'en
+     *  charge) et un champ masqué non plus. À combiner avec [champsObligatoiresManquants] côté
+     *  caller pour piloter l'état du bouton de submit. */
     fun champsInvalides(): List<String> {
         val valeurs = lireValeurs()
         return fieldsParCode.mapNotNull { (code, field) ->
-            if (field.viewType != ViewType.NUMBER) return@mapNotNull null
             if (wrappersParCode[code]?.visibility == View.GONE) return@mapNotNull null
-            val v = ValidationExpr.violation(valeurs[code], field.minValue, field.maxValue, valeurs)
-            if (v != null) code else null
+            when (field.viewType) {
+                // RÈGLE 2026-09-17 : dans un champ espèce, seuls les noms PROPOSÉS sont
+                // acceptés. Un texte qui ne désigne aucun taxon proposable n'est plus ignoré
+                // en silence (le champ partait sans cd_nom, l'espèce saisie disparaissait) :
+                // il bloque l'enregistrement tant qu'il n'est pas corrigé ou effacé.
+                ViewType.TAXON -> {
+                    val ac = vuesParCode[code] as? android.widget.AutoCompleteTextView
+                    if (ac != null && !ac.text.isNullOrBlank() && ac.tag == null) code else null
+                }
+                ViewType.NUMBER -> {
+                    val v = ValidationExpr.violation(valeurs[code], field.minValue, field.maxValue, valeurs)
+                    if (v != null) code else null
+                }
+                else -> null
+            }
         }
     }
 
@@ -659,6 +678,8 @@ class FormulaireRenderer(
                 0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f,
             ))
         })
+        // Taxon retenu, sous le champ espèce (cf. [statutsTaxonParCode]).
+        statutsTaxonParCode[field.code]?.let { container.addView(it) }
         // Message d'erreur de validation min/max (NUMBER avec bornes uniquement). Créé GONE,
         // peuplé/affiché par [appliquerValidations] à chaque modification de champ.
         if (field.viewType == ViewType.NUMBER &&
@@ -871,10 +892,58 @@ class FormulaireRenderer(
         return h to m
     }
 
-    /** Champ TAXON : AutoCompleteTextView branché sur le cache TaxRef local. À la sélection
-     *  d'une suggestion, on résout le `cd_nom` via [fr.ariegenature.geomys.store.TaxRefCache.get]
-     *  et on le stocke dans le `tag` du champ pour la lecture côté envoi. */
+    /** Champ TAXON : AutoCompleteTextView branché sur le cache TaxRef local. Suggestions ET
+     *  résolution sont restreintes à la liste taxonomique du protocole (`id_list_taxonomy`) ;
+     *  le `cd_nom` retenu est stocké dans le `tag` du champ pour la lecture côté envoi, et
+     *  affiché sous le champ. */
     private fun creerChampTaxon(field: EditableField): android.widget.AutoCompleteTextView {
+        val idListeRestreinte = field.idListeTaxonomieRestreinte
+        // Ligne de statut : ce que l'application a réellement retenu. Ajoutée au bloc du champ
+        // par [creerBloc] via [statutsTaxonParCode].
+        val tvStatut = TextView(ctx).apply {
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            setPadding(0, (2 * density).toInt(), 0, 0)
+            visibility = View.GONE
+        }
+        statutsTaxonParCode[field.code] = tvStatut
+
+        fun afficherStatut(cd: Int?) {
+            if (cd == null) { tvStatut.visibility = View.GONE; return }
+            val sci = fr.ariegenature.geomys.store.TaxRefCache.entreesParCdNom()[cd]?.sciNom.orEmpty()
+            tvStatut.text = if (sci.isEmpty()) "✓ cd_nom $cd" else "✓ $sci  •  cd_nom $cd"
+            tvStatut.setTextColor(fr.ariegenature.geomys.ui.couleurSucces())
+            tvStatut.visibility = View.VISIBLE
+        }
+
+        /** Liste du protocole absente du cache : rien ne peut être proposé ni résolu. */
+        fun afficherPasDeDonnees() {
+            tvStatut.text = ctx.getString(fr.ariegenature.geomys.R.string.taxref_pas_de_donnees)
+            tvStatut.setTextColor(fr.ariegenature.geomys.ui.couleurAvertissement())
+            tvStatut.visibility = View.VISIBLE
+        }
+
+        /** Refus explicite, sous le champ : le bouton d'enregistrement est grisé tant que ce
+         *  texte est là, l'utilisateur doit pouvoir lire POURQUOI. */
+        fun afficherRefus() {
+            tvStatut.text = if (idListeRestreinte != null)
+                "✗ Espèce non reconnue dans la liste du protocole — choisissez une proposition"
+            else "✗ Espèce non reconnue — choisissez une proposition"
+            tvStatut.setTextColor(couleurErreur)
+            tvStatut.visibility = View.VISIBLE
+        }
+
+        // Résolution du nom saisi, RESTREINTE au périmètre du protocole. Avant (audit
+        // 2026-09-17, C1), c'était `TaxRefCache.get(saisi)` — le cache ENTIER : sur STERF,
+        // « Souci » (Colias crocea, dans la liste) rendait Calendula, la plante, et partait
+        // ainsi à GeoNature. Liste absente du cache ⇒ [getDansListe] retombe de lui-même sur la
+        // résolution globale, comme les suggestions retombent sur toutes les espèces.
+        fun resoudre(saisi: String): Int? =
+            fr.ariegenature.geomys.store.TaxRefCache.getDansListe(saisi, idListeRestreinte)?.cdNom
+
+        // Taxon CHOISI dans la liste, avec le texte pour lequel il l'a été : tant que ce texte
+        // est affiché tel quel, la frappe ne le remplace pas par une re-résolution.
+        var choixFige: Pair<String, Int>? = null
+
         val ac = android.widget.AutoCompleteTextView(ctx).apply {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -896,6 +965,7 @@ class FormulaireRenderer(
                     setText("cd_nom $cd", false)
                 }
                 tag = cd
+                afficherStatut(cd)
             }
             (field.value as? String)?.takeIf { it.isNotEmpty() }?.let { setText(it, false) }
         }
@@ -905,25 +975,36 @@ class FormulaireRenderer(
         // cd_nom qui appartiennent à cette liste (= taxons "autorisés" pour ce protocole).
         // Le rattachement au lifecycle annule automatiquement le scan si la View est détruite
         // pendant le calcul (rotation, back) — plus de race contre une vue déjà détachée.
-        val idListeRestreinte = field.idListeTaxonomieRestreinte
         val hintInitial = ac.hint
         scope.launch {
             val (nomsEtNorm, listeVide, diagDetails) = withContext(Dispatchers.Default) {
                 // Index memoizé côté TaxRefCache : pas de re-matérialisation des 15-50k
                 // entrées à chaque rendu d'un champ TAXON (cf. audit B5).
-                val restreint = fr.ariegenature.geomys.store.TaxRefCache.nomsSuggestion(idListeRestreinte)
-                // Liste taxonomique imposée par le protocole mais AUCUN taxon n'en est en cache
-                // (liste non synchronisée — la résolution de l'id de liste passe parfois par le
-                // réseau, le cache local peut ne pas la couvrir). Dégradation gracieuse : on
-                // propose TOUTES les espèces du cache plutôt qu'un champ inutilisable — un champ
-                // vide empêchait carrément de saisir l'obs sur le terrain (« l'autocomplétion ne
-                // marche plus »), pire qu'une suggestion hors liste que le serveur validera.
+                // Les suggestions d'un protocole viennent de l'index de RÉSOLUTION de sa
+                // liste : proposé ⇔ accepté (règle 2026-09-17). Elles portent la graphie
+                // d'origine (« Souci »), là où les clés du cache sont normalisées (« souci »),
+                // et incluent les noms qu'un autre taxon a captés dans le cache principal.
+                // Construire l'index ici, hors du thread principal : il parcourt toute la liste
+                // du protocole (jusqu'à 45 000 taxons).
+                // Propositions PORTEUSES de leur cd_nom et de leur nom scientifique (affiché
+                // sous le nom français). Vide = liste non exploitable : on retombe sur les noms
+                // seuls, comme avant.
+                val typees = if (idListeRestreinte != null)
+                    fr.ariegenature.geomys.store.TaxRefCache.propositionsListe(idListeRestreinte)
+                else emptyList()
+                val restreint = if (typees.isNotEmpty()) typees.map { it.nom }
+                else if (idListeRestreinte != null)
+                    fr.ariegenature.geomys.store.TaxRefCache.nomsProposablesListe(idListeRestreinte)
+                else fr.ariegenature.geomys.store.TaxRefCache.nomsSuggestion(null)
+                // Liste taxonomique imposée par le protocole mais ABSENTE du cache : on ne
+                // propose RIEN et on le dit (décision produit 2026-09-17). Proposer toutes les
+                // espèces, comme avant, revenait à laisser saisir des taxons hors protocole ;
+                // et le cas ne devrait pas se produire, le chargement des données — listes
+                // comprises — étant exigé avant d'entrer dans les saisies.
                 val listeVide = idListeRestreinte != null && restreint.isEmpty()
-                val effectifs = if (listeVide)
-                    fr.ariegenature.geomys.store.TaxRefCache.nomsSuggestion(null) else restreint
+                val effectifs = if (listeVide) emptyList() else restreint
                 val diag = when {
-                    listeVide -> "liste=$idListeRestreinte VIDE en cache (non synchronisée) — " +
-                        "repli sur toutes les espèces (${effectifs.size})"
+                    listeVide -> "liste=$idListeRestreinte ABSENTE du cache — aucune proposition"
                     idListeRestreinte != null -> "liste=$idListeRestreinte, ${effectifs.size} suggestions"
                     else -> "liste=null (toutes), ${effectifs.size} suggestions"
                 }
@@ -932,24 +1013,48 @@ class FormulaireRenderer(
                 val normalises = effectifs.map {
                     fr.ariegenature.geomys.store.TaxRefCache.normaliser(it) to it
                 }
-                Triple(effectifs to normalises, listeVide, diag)
+                Triple(
+                    Triple(effectifs, normalises, if (listeVide) emptyList() else typees),
+                    listeVide, diag,
+                )
             }
-            val (noms, nomsNormalises) = nomsEtNorm
+            val (noms, nomsNormalises, propositionsTypees) = nomsEtNorm
             android.util.Log.i("FormulaireRenderer",
                 "Champ TAXON '${field.code}' → $diagDetails")
             // Adapter posé inconditionnellement : le scope (lifecycle du Fragment) annule déjà
             // la coroutine si la vue est détruite. L'ancien garde `isAttachedToWindow` sautait
             // silencieusement la pose quand le rendu aboutissait AVANT l'attachement de la vue
             // (cache rapide) → champ définitivement sans suggestions, de façon intermittente.
-            val adapter = fr.ariegenature.geomys.ui.saisie.createSpeciesAutocompleteAdapter(ctx, noms, nomsNormalises)
-            ac.setAdapter(adapter)
-            ac.hint = if (listeVide)
-                "Liste du protocole non synchronisée — toutes les espèces proposées" else hintInitial
+            if (propositionsTypees.isNotEmpty()) {
+                ac.setAdapter(fr.ariegenature.geomys.ui.saisie.createAutocompleteAdapter(
+                    ctx,
+                    propositionsTypees,
+                    propositionsTypees.map {
+                        fr.ariegenature.geomys.store.TaxRefCache.normaliser(it.nom) to it
+                    },
+                    secondaire = { it.secondaire },
+                ))
+            } else {
+                ac.setAdapter(
+                    fr.ariegenature.geomys.ui.saisie.createSpeciesAutocompleteAdapter(ctx, noms, nomsNormalises)
+                )
+            }
+            if (listeVide) {
+                ac.hint = ctx.getString(fr.ariegenature.geomys.R.string.taxref_pas_de_donnees)
+                afficherPasDeDonnees()
+            } else ac.hint = hintInitial
         }
-        // Sélection d'une suggestion : on résout le cd_nom via TaxRefCache et on le stocke.
-        ac.setOnItemClickListener { _, _, _, _ ->
+        // Sélection d'une proposition : quand elle porte son taxon (liste du protocole
+        // exploitable), c'est CELUI-LÀ qui est retenu — deux taxons peuvent partager un nom et
+        // la re-résolution du texte ne rendrait que le plus usuel des deux.
+        ac.setOnItemClickListener { _, _, position, _ ->
             val saisi = ac.text?.toString().orEmpty()
-            ac.tag = fr.ariegenature.geomys.store.TaxRefCache.get(saisi)?.cdNom
+            val choisi = (ac.adapter?.getItem(position)
+                as? fr.ariegenature.geomys.store.SuggestionTaxon)?.cdNom
+            choixFige = choisi?.let { saisi to it }
+            ac.tag = choisi ?: resoudre(saisi)
+            afficherStatut(ac.tag as? Int)
+            if (ac.tag != null) ac.error = null
             notifierChangement()
         }
         // Si l'utilisateur édite manuellement, on invalide le cd_nom (oblige re-sélection).
@@ -960,19 +1065,33 @@ class FormulaireRenderer(
                 // Re-tente la résolution sur saisie complète (cas où l'utilisateur a tapé
                 // un nom exact sans cliquer une suggestion).
                 val saisi = s?.toString().orEmpty()
-                val resolu = fr.ariegenature.geomys.store.TaxRefCache.get(saisi)?.cdNom
-                if (resolu != ac.tag) ac.tag = resolu
+                // Texte inchangé depuis un choix dans la liste : on garde CE taxon.
+                val fige = choixFige?.takeIf { it.first == saisi }?.second
+                if (fige == null) choixFige = null
+                val resolu = fige ?: resoudre(saisi)
+                val changement = resolu != ac.tag
+                if (changement) ac.tag = resolu
+                afficherStatut(resolu)
                 // La résolution a abouti → efface l'éventuel signalement posé au blur.
                 if (resolu != null) ac.error = null
+                // Un texte devenu (ou redevenu) non reconnu change la validité du formulaire :
+                // c'est [champsInvalides] qui grise le bouton, il faut donc le recalculer.
+                if (changement) notifierChangement()
             }
         })
         // Signalement VISIBLE au blur si le texte affiché ne résout aucun taxon : l'utilisateur
         // voyait un nom écrit et croyait l'espèce saisie, alors que lireValeurs renvoyait null
         // (payload sans cd_nom, silencieusement si le champ n'est pas requis). Au blur et non à
         // la frappe : pendant la saisie, un texte partiel non résolu est l'état normal.
+        // Le message nomme le protocole quand c'est lui qui restreint : un nom parfaitement
+        // valide ailleurs (« Souci » la plante) est refusé ici parce qu'il n'est pas du
+        // protocole — le dire évite de croire à un cache incomplet.
         ac.setOnFocusChangeListener { _, aLeFocus ->
             if (!aLeFocus && ac.text?.isNotEmpty() == true && ac.tag == null) {
-                ac.error = "Espèce non reconnue — choisissez une suggestion"
+                ac.error = if (idListeRestreinte != null)
+                    "Espèce non reconnue dans la liste du protocole — choisissez une suggestion"
+                else "Espèce non reconnue — choisissez une suggestion"
+                afficherRefus()
             }
         }
         return ac

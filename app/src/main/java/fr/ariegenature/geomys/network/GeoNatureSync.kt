@@ -367,8 +367,11 @@ object GeoNatureSync {
             return@withContext Pair(0, "Écriture du cache des taxons impossible (espace de stockage " +
                 "insuffisant ?) — libérez de l'espace puis relancez « Recharger les données ».")
         }
-        // Index complet cd_nom → noms français (APRÈS remplacerTout qui réinitialise les memo).
+        // Index complets cd_nom → noms (APRÈS remplacerTout qui réinitialise les memo). Le cache
+        // principal étant indexé par NOM, il perd les taxons dont tous les noms sont déjà pris ;
+        // ces deux index, eux, sont sans perte (audit 2026-09-17, C5).
         TaxRefCache.ajouterVerns(vernsCdNom)
+        TaxRefCache.ajouterSciNoms(lbNomParCd)
         if (groupeMap.isNotEmpty()) TaxRefCache.ajouterGroupes(groupeMap)
         if (groupe1Map.isNotEmpty() || regneMap.isNotEmpty()) TaxRefCache.ajouterGroupes1etRegnes(groupe1Map, regneMap)
         // Sérialise Set<Int> → List<Int> pour stockage. L'ordre n'est pas signifiant.

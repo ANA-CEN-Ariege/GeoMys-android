@@ -47,7 +47,6 @@ import fr.ariegenature.geomys.ui.saisie.AdditionalFieldsRenderer
 import fr.ariegenature.geomys.ui.saisie.SpeechToTextHelper
 import fr.ariegenature.geomys.ui.saisie.TaxRefLookupController
 import fr.ariegenature.geomys.ui.saisie.TaxonSelector
-import fr.ariegenature.geomys.ui.saisie.createSpeciesAutocompleteAdapter
 import fr.ariegenature.geomys.ui.saisie.filtrerBoutonsGroupesNonVides
 import fr.ariegenature.geomys.ui.saisie.taxonIcon
 import kotlinx.coroutines.*
@@ -94,7 +93,6 @@ class SaisieObservationFragment : Fragment() {
         var naturalite: String = "",
         var determinateur: String = "",
         var notes: String = "",
-        var cdNomManuel: String = "",
         // ── Médias par counting ──
         var mediaUrisCounting0: List<String> = emptyList(),
         // ── Champs additionnels gn_commons ──
@@ -245,7 +243,6 @@ class SaisieObservationFragment : Fragment() {
                         naturalite = obsExistante.naturalite ?: "",
                         determinateur = obsExistante.determinateur ?: "",
                         notes = obsExistante.notes,
-                        cdNomManuel = obsExistante.cdNom?.toString() ?: "",
                         mediaUrisCounting0 = obsExistante.mediaUrisCounting0,
                         additionalFieldsReleve = obsExistante.additionalFieldsReleve,
                         additionalFieldsOccurrence = obsExistante.additionalFieldsOccurrence,
@@ -662,10 +659,6 @@ class SaisieObservationFragment : Fragment() {
         consommerString("stadeVie")    { obs.stadeVie = it }
         consommerString("objDenbr")    { obs.objDenbr = it }
         consommerString("typDenbr")    { obs.typDenbr = it }
-        consommerString("cdNomManuel") { v ->
-            obs.cdNomManuel = v
-            v.trim().toIntOrNull()?.takeIf { it > 0 }?.let { obs.cdNom = it }
-        }
 
         // Dénombrements (DenombrementFragment) — JSON sérialisé d'une List<Denombrement>.
         consommerString("denombrementsJson") { json ->
@@ -990,7 +983,7 @@ class SaisieObservationFragment : Fragment() {
         val nouvelles = pendingObs.map { obs ->
             val id = obs.existingId ?: obs.vmId
             val nomFinal = obs.espece.ifEmpty { "Espèce inconnue" }
-            val cdNomFinal = obs.cdNom ?: obs.cdNomManuel.trim().toIntOrNull()
+            val cdNomFinal = obs.cdNom
             // Repart de l'obs existante (préserve date / position d'origine en édition),
             // sinon crée une nouvelle obs à la position courante.
             val base = traceViewModel.observations.value?.find { it.id == id }

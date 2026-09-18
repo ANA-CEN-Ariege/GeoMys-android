@@ -101,13 +101,6 @@ object TaxRefLocal {
     fun cdNomsProposes(taxon: Taxon?, scientifique: Boolean, idListeFiltre: Int?): Set<Int> =
         propositions(taxon, scientifique, idListeFiltre).liste.mapTo(HashSet()) { it.cdNom }
 
-    /** Noms seuls — pour les appelants qui n'ont pas besoin du cd_nom. */
-    fun getSuggestionsAutocomplete(
-        taxon: Taxon?,
-        scientifique: Boolean,
-        idListeFiltre: Int? = null,
-    ): List<String> = getSuggestionsTaxon(taxon, scientifique, idListeFiltre).map { it.nom }
-
     fun getSuggestionsTaxon(
         taxon: Taxon?,
         scientifique: Boolean,
@@ -209,11 +202,12 @@ object TaxRefLocal {
 
             // Fonge : règne = 'Fungi'
             Taxon.FONGE -> {
-                if (regnes.isNotEmpty()) {
-                    val cdNoms = HashSet<Int>()
-                    for ((cdStr, r) in regnes) if (r == "Fungi") cdStr.toIntOrNull()?.let(cdNoms::add)
-                    if (cdNoms.isNotEmpty()) return suggestionsPour(cdNoms)
-                }
+                // Même périmètre que l'index construit à la synchro : règne Fungi + myxomycètes,
+                // que TaxRef range en Protozoa (décision produit 2026-09-18).
+                val cdNoms = HashSet<Int>()
+                for ((cdStr, r) in regnes) if (r == "Fungi") cdStr.toIntOrNull()?.let(cdNoms::add)
+                for ((cdStr, g) in groupes1) if (g == "Myxomycètes") cdStr.toIntOrNull()?.let(cdNoms::add)
+                if (cdNoms.isNotEmpty()) return suggestionsPour(cdNoms)
                 filtrerParGroup2(NomenclatureCache.GROUPES_FONGE)
             }
 

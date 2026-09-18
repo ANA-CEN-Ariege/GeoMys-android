@@ -22,6 +22,9 @@
     <!-- Liste de taxons absente du cache : la saisie ne peut proposer ni résoudre aucun nom.
          Ne devrait pas se produire, le chargement des données étant obligatoire avant la saisie. -->
     <string name="taxref_pas_de_donnees">Pas de données — rechargez les données</string>
+    <!-- Même situation, mais pendant une synchro : le cache est en cours de réécriture (une
+         quinzaine de secondes), inutile d'envoyer l'utilisateur recharger ce qui se charge. -->
+    <string name="taxref_chargement_en_cours">Chargement des données en cours…</string>
     <string name="configuration_complete">✓ Configuration complète</string>
     <string name="configuration_incomplete">⚠ Configuration incomplète</string>
     <string name="observations_count">Observations (%d)</string>

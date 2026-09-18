@@ -45,3 +45,62 @@ Non repris dans les notes utilisateur (avertissements console Play sur la 1.4.2)
 bord à bord déjà géré (enableEdgeToEdge + encarts par écran), API dépréciées situées dans les
 bibliothèques, décodage d'images relevant d'osmdroid — nos décodages appliquent déjà le
 sous-échantillonnage.
+
+
+Fiche Play — description complète (4 000 caractères max)
+--------------------------------------------------------
+Console Play > Croissance > Présence sur le Play Store > Fiche Play principale.
+Version du 2026-09-17 : ajout du module OccHab (relevés d'habitats) au chapeau, section
+dédiée, et mention des habitats et stations disponibles hors réseau.
+
+GeoMys est une application de terrain destinée aux naturalistes. Elle permet la saisie mobile d'observations faunistiques et floristiques ainsi que de relevés d'habitats, en connexion avec une instance GeoNature (modules Occtax, Monitoring et OccHab).
+
+🌿 SAISIE D'OBSERVATIONS
+• Mode multi-espèces pour des relevés complexes avec comptages
+  et médias
+• Mode mono-espèce pour des relevés avec comptages
+  et médias
+• Mode monitoring
+
+🌱 RELEVÉS D'HABITATS (OccHab)
+• Stations dessinées directement sur la carte, en point ou en
+  polygone
+• Habitats caractérisés depuis le référentiel national HABREF
+• Surface calculée automatiquement et altitudes issues du MNT
+• Aimantage et sommets partagés entre stations voisines, pour
+  des contours jointifs
+• Vos stations déjà enregistrées sur GeoNature sont affichées,
+  modifiables et renvoyées en mise à jour, sans doublon
+
+🗺️ CARTOGRAPHIE INTÉGRÉE
+• Quatre fonds de carte disponibles : OSM, IGN Topo, Scan25 et
+  Ortho
+• Visualisation et interaction avec les sites de suivi
+• Cache local de tuiles (~200 km²) pour une utilisation hors ligne
+
+📡 MODE HORS LIGNE
+• Toutes les observations sont sauvegardées localement
+• Synchronisation automatique dès le retour de la connexion
+• Données de référence et listes d'espèces disponibles sans réseau
+• Habitats HABREF et stations déjà saisies également accessibles
+  hors réseau
+
+📍 GÉOLOCALISATION
+• Enregistrement du tracé GPS de l'observateur en arrière-plan
+• Coordonnées automatiques sur chaque observation
+
+📋 FORMULAIRES DYNAMIQUES
+• Formulaires de suivi construits dynamiquement depuis la
+  configuration serveur
+• Adaptation automatique aux protocoles de votre organisation
+
+🔒 VIE PRIVÉE
+• Aucune donnée transmise aux serveurs de l'ANA – CEN Ariège
+• Les observations sont envoyées uniquement vers votre instance
+  GeoNature configurée
+
+---
+
+Développée par l'Ana – Conservatoire d'espaces naturels Ariège.
+
+⚠️ Prérequis : un compte sur une instance GeoNature est nécessaire.

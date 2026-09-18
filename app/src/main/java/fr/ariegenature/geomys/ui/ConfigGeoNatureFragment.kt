@@ -63,7 +63,12 @@ fun configurationComplete(cfg: GeoNatureConfig): Boolean =
     cfg.saisieOcctaxValide && TaxRefCache.versionSauvegardee != null &&
         // Mise à jour exigeant un rechargement (données encore en place, purgées par la synchro) :
         // bloqué jusqu'à la synchro, cf. store/CachesSynchronises.armerRechargementSiRequis.
-        !cfg.rechargementRequisApresMaj
+        !cfg.rechargementRequisApresMaj &&
+        // Liste de taxons partiellement téléchargée (coupure réseau, serveur qui lâche en cours de
+        // pagination) : le cache contient une liste tronquée mais NON VIDE, donc il se croit
+        // complet. La saisie refuserait alors des espèces réellement présentes dans le protocole,
+        // avec un « Nom invalide » qui met en cause l'observateur (audit 2026-09-18, T3).
+        TaxRefCache.listesIncompletes.isEmpty()
 
 /** Refus de sortie de Paramètres après une mise à jour qui a purgé les caches (cf.
  *  [fr.ariegenature.geomys.store.purgerSiRechargementRequis]). */
@@ -656,40 +661,31 @@ class ConfigGeoNatureFragment : Fragment() {
      *  de fond pastel (illisible en thème sombre). */
     private fun majBandeauRechargement() {
         val requis = gnConfig.rechargementRequisApresMaj
-        binding.tvBandeauRechargement.visibility = if (requis) View.VISIBLE else View.GONE
+        // Listes partiellement téléchargées : blocage SUBI lui aussi (coupure réseau en pleine
+        // pagination), donc même bandeau que le rechargement imposé par une mise à jour, avec son
+        // propre texte — celui-ci NOMME la ou les listes en cause (audit 2026-09-18, T3).
+        val incompletes = TaxRefCache.listesIncompletes
+        val bloque = requis || incompletes.isNotEmpty()
+        binding.tvBandeauRechargement.visibility = if (bloque) View.VISIBLE else View.GONE
 
-        // Accès de secours aux trois écrans « Mes … » — RÉSERVÉ au rechargement exigé par une mise
-        // à jour, et à lui seul.
-        //
-        // DÉCISION PRODUIT (2026-09-16, explicite) : `configurationComplete` est faux pour trois
-        // raisons, et une seule mérite une issue de secours. Vider le cache et remplir les champs de
-        // Paramètres sont des actes VOLONTAIRES : le blocage y est délibéré, l'utilisateur doit
-        // resynchroniser et ressaisir chaque champ, et on ne lui ouvre aucune porte dérobée. Le
-        // rechargement après mise à jour, lui, est IMPOSÉ à une application qui fonctionnait la
-        // veille — il peut tomber en pleine journée de terrain, sans réseau, sur un téléphone plein
-        // de saisies non envoyées. C'est le seul cas où l'utilisateur n'a rien demandé, donc le seul
-        // où ses données doivent rester joignables.
-        //
-        // Ne PAS élargir cette condition à `!configurationComplete(gnConfig)` : l'audit 2026-09-14
-        // l'avait proposé (R7-M3), la demande a été écartée pour la raison ci-dessus.
-        binding.llAccesSaisiesRechargement.visibility = if (requis) View.VISIBLE else View.GONE
-        if (!requis) return
+        // AUCUN accès de secours vers « Mes saisies / Mes visites / Mes stations » depuis cet
+        // écran — DÉCISION PRODUIT DE L'UTILISATEUR (2026-09-18, rappelée) : le blocage de
+        // Paramètres est ENTIER, sans porte dérobée, quelle que soit sa cause. Les audits ont
+        // proposé l'inverse à deux reprises (2026-09-14 R7-C1 pour le rechargement imposé, R7-M3
+        // pour l'élargir) : NE PAS RÉINSTRUIRE, et ne pas réintroduire ces boutons.
+        if (!bloque) return
         val couleur = couleurAvertissement()
         binding.tvBandeauRechargement.setTextColor(couleur)
         binding.tvBandeauRechargement.background = cadreColore(couleur, resources.displayMetrics.density)
-        binding.tvBandeauRechargement.text =
+        binding.tvBandeauRechargement.text = if (requis)
             "Mise à jour de l'application : les données doivent être rechargées avant de continuer.\n" +
             "Appuyez sur « Charger les données » (réseau nécessaire). Vos saisies en attente sont " +
-            "conservées, consultables ci-dessous, et envoyables dès que le réseau revient."
-        binding.btnRechargementMesSaisies.setOnClickListener {
-            findNavController().naviguerSur(R.id.sortiesFragment)
-        }
-        binding.btnRechargementMesVisites.setOnClickListener {
-            findNavController().naviguerSur(R.id.saisiesEnAttenteFragment)
-        }
-        binding.btnRechargementMesStations.setOnClickListener {
-            findNavController().naviguerSur(R.id.occhabStationsFragment)
-        }
+            "conservées."
+        else
+            "Chargement incomplet : la liste de taxons ${incompletes.joinToString(", ")} n'a pas été " +
+            "téléchargée en entier (réseau interrompu ou serveur indisponible).\n" +
+            "Relancez « Charger les données » — sans quoi des espèces pourtant valides seraient " +
+            "refusées à la saisie. Vos saisies en attente sont conservées."
     }
 
     /** Purge les caches synchronisés (TaxRef, nomenclatures, habitats, monitoring, pictos) en une

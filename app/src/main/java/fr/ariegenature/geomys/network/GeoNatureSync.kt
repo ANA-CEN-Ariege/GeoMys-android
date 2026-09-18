@@ -370,19 +370,41 @@ object GeoNatureSync {
         // Index complets cd_nom → noms (APRÈS remplacerTout qui réinitialise les memo). Le cache
         // principal étant indexé par NOM, il perd les taxons dont tous les noms sont déjà pris ;
         // ces deux index, eux, sont sans perte (audit 2026-09-17, C5).
-        TaxRefCache.ajouterVerns(vernsCdNom)
-        TaxRefCache.ajouterSciNoms(lbNomParCd)
-        if (groupeMap.isNotEmpty()) TaxRefCache.ajouterGroupes(groupeMap)
-        if (groupe1Map.isNotEmpty() || regneMap.isNotEmpty()) TaxRefCache.ajouterGroupes1etRegnes(groupe1Map, regneMap)
+        //
+        // Chaque écriture est CONTRÔLÉE, comme celle du cache principal : un échec (disque plein)
+        // était jusqu'ici avalé en silence et laissait l'appli en mode dégradé sans le dire —
+        // appartenance aux listes absente ⇒ la saisie refuse TOUS les taxons du protocole, index
+        // vernaculaire absent ⇒ le mode « noms français » ne propose rien (audit 2026-09-18, T8).
+        val indexEnEchec = mutableListOf<String>()
+        if (!TaxRefCache.ajouterVerns(vernsCdNom)) indexEnEchec += "noms français"
+        if (!TaxRefCache.ajouterSciNoms(lbNomParCd)) indexEnEchec += "noms scientifiques"
+        if (groupeMap.isNotEmpty() && !TaxRefCache.ajouterGroupes(groupeMap)) {
+            indexEnEchec += "groupes"
+        }
+        if ((groupe1Map.isNotEmpty() || regneMap.isNotEmpty()) &&
+            !TaxRefCache.ajouterGroupes1etRegnes(groupe1Map, regneMap)
+        ) {
+            indexEnEchec += "groupes et règnes"
+        }
         // Sérialise Set<Int> → List<Int> pour stockage. L'ordre n'est pas signifiant.
-        if (listesParCdNom.isNotEmpty()) {
-            TaxRefCache.ajouterListesParCdNom(listesParCdNom.mapValues { (_, v) -> v.toList() })
+        if (listesParCdNom.isNotEmpty() &&
+            !TaxRefCache.ajouterListesParCdNom(listesParCdNom.mapValues { (_, v) -> v.toList() })
+        ) {
+            indexEnEchec += "appartenance aux listes"
         }
 
         // Index pré-calculé Taxon → cdNoms : permet à l'autocomplétion de servir
         // les suggestions sans rescanner l'ensemble du cache à chaque switch de taxon.
         val indexTaxon = construireIndexTaxon(groupeMap, groupe1Map, regneMap)
-        TaxRefCache.setIndexParTaxon(indexTaxon)
+        if (!TaxRefCache.setIndexParTaxon(indexTaxon)) indexEnEchec += "index par groupe"
+
+        // Sortie en ÉCHEC sans poser la version : l'appli reste « non configurée » et réclame un
+        // rechargement, plutôt que de passer pour synchronisée avec un référentiel troué.
+        if (indexEnEchec.isNotEmpty()) {
+            return@withContext Pair(0, "Écriture des index de taxons impossible " +
+                "(${indexEnEchec.joinToString(", ")}) — espace de stockage insuffisant ? " +
+                "Libérez de l'espace puis relancez « Recharger les données ».")
+        }
         // Marque le cache comme exhaustif (toutes les listes serveur ont été tentées).
         TaxRefCache.listesSynchronisees = listesSynchronisees
         // Champ legacy conservé pour compatibilité ascendante du SharedPreferences.
@@ -397,6 +419,10 @@ object GeoNatureSync {
         // Message minimal : le détail des compteurs (taxons, par groupe, etc.) est désormais
         // affiché dans l'écran Paramètres (boîte « Chargement des données » + bouton « Détails »).
         // On ne conserve ici que l'avertissement des listes non/partiellement chargées.
+        // Verdict de complétude, PERSISTÉ : une liste tronquée rend la configuration incomplète
+        // (cf. TaxRefCache.listesIncompletes) et bloque la saisie jusqu'au prochain chargement
+        // réussi — sans quoi l'application refuserait des taxons réels en accusant l'utilisateur.
+        TaxRefCache.listesIncompletes = listesEnEchec.sorted()
         val msg = if (listesEnEchec.isNotEmpty())
             "⚠ ${listesEnEchec.size} liste(s) non ou partiellement chargée(s) : ${listesEnEchec.joinToString(",")}"
         else ""
@@ -617,7 +643,7 @@ object GeoNatureSync {
         return emptyMap()
     }
 
-    private fun construireIndexTaxon(
+    internal fun construireIndexTaxon(
         groupe2: Map<Int, String>,
         groupe1: Map<Int, String>,
         regne: Map<Int, String>
@@ -631,7 +657,14 @@ object GeoNatureSync {
             groupe1.filterValues { it == "Poissons" }.keys +
             groupe2.filter { it.value in NomenclatureCache.GROUP2_POISSONS }.keys).toSet()
         val insectes   = parG2["Insectes"].orEmpty().toSet()
-        val fonge      = regne.filterValues { it == "Fungi" }.keys
+        // Fonge = règne Fungi, PLUS les myxomycètes (décision produit 2026-09-18). TaxRef classe
+        // ces « champignons visqueux » en règne Protozoa : ils n'entraient donc dans aucun des dix
+        // groupes de saisie et restaient invisibles en Occtax, alors que les naturalistes les
+        // récoltent et les déterminent avec les champignons. Ce sont les SEULS Protozoa rattachés
+        // ici ; les cyanobactéries (Bacteria) et les algues (Chromista), sans groupe elles aussi,
+        // ne sont pas concernées.
+        val fonge      = (regne.filterValues { it == "Fungi" }.keys +
+            groupe1.filterValues { it == "Myxomycètes" }.keys).toSet()
         // Plantes : group2_inpn botanique (Angiospermes, Trachéophytes, Mousses, Lichens…)
         // — critère principal, identique iOS. Complété par group1 et regne pour les instances
         // où ces champs sont mieux peuplés que group2.

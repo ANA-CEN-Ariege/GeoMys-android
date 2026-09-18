@@ -114,7 +114,9 @@ class ResolutionParGroupeTest {
         // ordre de préférence), puis le plus petit cd_nom.
         // L'intrus doit avoir une entrée dans le cache principal, sinon le repli le saute
         // (`cd !in parCdNom`) et le test ne prouverait rien.
-        TaxRefCache.set("Fictivus testus", 999, "Fictivus testus", null)
+        TaxRefCache.ajouter(mapOf(
+            TaxRefCache.normaliser("Fictivus testus") to TaxRefEntry(999, "Fictivus testus"),
+        ))
         TaxRefCache.ajouterVerns(
             mapOf(
                 2080 to listOf("Atte muscivore", "gobemouche gris"),

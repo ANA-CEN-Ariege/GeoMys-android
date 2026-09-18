@@ -917,7 +917,13 @@ class FormulaireRenderer(
 
         /** Liste du protocole absente du cache : rien ne peut être proposé ni résolu. */
         fun afficherPasDeDonnees() {
-            tvStatut.text = ctx.getString(fr.ariegenature.geomys.R.string.taxref_pas_de_donnees)
+            // Pendant une synchro, le cache est en cours de réécriture : ce n'est pas à
+            // l'utilisateur de recharger (audit 2026-09-18, T2).
+            tvStatut.text = ctx.getString(
+                if (fr.ariegenature.geomys.network.SyncRunner.actif)
+                    fr.ariegenature.geomys.R.string.taxref_chargement_en_cours
+                else fr.ariegenature.geomys.R.string.taxref_pas_de_donnees
+            )
             tvStatut.setTextColor(fr.ariegenature.geomys.ui.couleurAvertissement())
             tvStatut.visibility = View.VISIBLE
         }
@@ -1040,7 +1046,11 @@ class FormulaireRenderer(
                 )
             }
             if (listeVide) {
-                ac.hint = ctx.getString(fr.ariegenature.geomys.R.string.taxref_pas_de_donnees)
+                ac.hint = ctx.getString(
+                    if (fr.ariegenature.geomys.network.SyncRunner.actif)
+                        fr.ariegenature.geomys.R.string.taxref_chargement_en_cours
+                    else fr.ariegenature.geomys.R.string.taxref_pas_de_donnees
+                )
                 afficherPasDeDonnees()
             } else ac.hint = hintInitial
         }

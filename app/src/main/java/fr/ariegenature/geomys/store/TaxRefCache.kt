@@ -81,6 +81,10 @@ object TaxRefCache {
     private const val KEY_COMPTES = "gn_taxref_comptes_v1"
     private const val KEY_LISTE_SYNC = "gn_taxref_liste_sync"
     private const val KEY_LISTES_SYNC = "gn_taxref_listes_sync_v1"
+    // Listes dont le téléchargement n'est pas allé à son terme lors de la dernière synchro. Leur
+    // contenu partiel EST conservé (mieux que rien), mais le cache ne peut pas être considéré
+    // comme fiable : la saisie refuserait des taxons pourtant valides, en accusant l'utilisateur.
+    private const val KEY_LISTES_INCOMPLETES = "gn_taxref_listes_incompletes_v1"
 
     // Gros fichiers stockés sur disque dans filesDir/taxref/.
     // SharedPreferences (XML lu/écrit en bloc) tronque ou échoue silencieusement
@@ -166,20 +170,32 @@ object TaxRefCache {
         if (f.exists()) f.readText() else null
     } catch (_: Exception) { null }
 
-    private fun ecrireFichier(nom: String, contenu: String) {
+    /** Écrit un index annexe et REND COMPTE de son échec — même contrat que [ecrireCacheStream]
+     *  pour le cache principal. L'échec était avalé en silence : la synchro se déclarait réussie
+     *  et l'application partait en mode dégradé sans aucun signal, alors qu'un index manquant se
+     *  paie cher (appartenance aux listes absente ⇒ tous les taxons refusés en monitoring, index
+     *  vernaculaire absent ⇒ mode « noms français » vide). Audit 2026-09-18, T8. */
+    private fun ecrireFichier(nom: String, contenu: String): Boolean {
+        val cible = fichier(nom)
+        val tmp = File(dir, "$nom.tmp")
         try {
             // Écriture atomique : tmp + rename (qui écrase la cible). On NE supprime PAS la
             // cible avant le rename — sinon un kill entre delete et rename laisserait l'ancien
             // cache PERDU (pas seulement non mis à jour). delete + retry seulement si le rename
             // direct échoue (certains FS refusent l'écrasement).
-            val cible = fichier(nom)
-            val tmp = File(dir, "$nom.tmp")
             tmp.writeText(contenu)
-            if (!tmp.renameTo(cible)) {
-                if (cible.exists()) cible.delete()
-                tmp.renameTo(cible)
-            }
-        } catch (_: Exception) {}
+            if (tmp.renameTo(cible)) return true
+            if (cible.exists()) cible.delete()
+            if (tmp.renameTo(cible)) return true
+            // Renommage refusé deux fois : pas d'exception, mais rien n'est en place.
+            android.util.Log.e("TaxRefCache", "Écriture de $nom échouée : renommage refusé")
+        } catch (e: Exception) {
+            android.util.Log.e(
+                "TaxRefCache", "Écriture de $nom échouée : ${e.javaClass.simpleName} ${e.message}"
+            )
+        }
+        runCatching { tmp.delete() }
+        return false
     }
 
     // Suffixe d'article ajouté par l'INPN aux noms vernaculaires : "Triton palmé (Le)".
@@ -520,16 +536,6 @@ object TaxRefCache {
         return prev[m]
     }
 
-    /** Ajoute UNE entrée et réécrit tout le fichier (plusieurs Mo) en invalidant les mémos :
-     *  réservé aux préparations de cache et aux tests. **Aucun chemin de saisie ne doit
-     *  l'appeler** — c'était le défaut C3 de l'audit 2026-09-17, quand une réponse de l'API
-     *  TaxRef y passait à chaque frappe. La résolution est désormais purement locale. */
-    fun set(nom: String, cdNom: Int, sciNom: String, nomFr: String? = null) = synchronized(verrou) {
-        val cache = chargerInterne().toMutableMap()
-        cache[normaliser(nom)] = TaxRefEntry(cdNom, sciNom, nomFr?.takeIf { it.isNotEmpty() })
-        sauvegarder(cache)
-    }
-
     fun ajouter(entries: Map<String, TaxRefEntry>) = synchronized(verrou) {
         val cache = chargerInterne().toMutableMap()
         cache.putAll(entries)
@@ -624,29 +630,32 @@ object TaxRefCache {
 
     /** Persiste l'index COMPLET cd_nom → nom scientifique (cf. [FILE_SCI]).
      *  À appeler APRÈS [remplacerTout], qui réinitialise les mémos. */
-    fun ajouterSciNoms(sciNoms: Map<Int, String>) {
+    fun ajouterSciNoms(sciNoms: Map<Int, String>): Boolean {
         val asString = sciNoms.entries.filter { it.value.isNotEmpty() }
             .associate { it.key.toString() to it.value }
-        if (asString.isEmpty()) return
-        ecrireFichier(FILE_SCI, gson.toJson(asString))
+        if (asString.isEmpty()) return true
+        // [entreesParCdNom] intègre ces taxons : le mémo précédent les ignore. Invalidé dans TOUS
+        // les cas — un mémo est toujours reconstructible, le garder après un échec ne l'est pas.
+        memEntreesParCdNom = null
+        if (!ecrireFichier(FILE_SCI, gson.toJson(asString))) return false
         version++
         memSciParCdNom = asString.entries.associate { it.key.toInt() to it.value }
-        // [entreesParCdNom] intègre ces taxons : le mémo précédent les ignore.
-        memEntreesParCdNom = null
+        return true
     }
 
     /** Persiste l'index COMPLET cd_nom → noms français, construit à la synchro sans collision de
      *  clés (cf. [FILE_VERNS]). À appeler APRÈS [remplacerTout] (qui réinitialise les memo). */
-    fun ajouterVerns(verns: Map<Int, Collection<String>>) {
+    fun ajouterVerns(verns: Map<Int, Collection<String>>): Boolean {
         val asString = verns.entries.associate { it.key.toString() to it.value.toList() }
-        ecrireFichier(FILE_VERNS, gson.toJson(asString))
-        version++
-        memVernsParCdNom = verns.entries.associate { it.key to it.value.toList() }
         // L'index de résolution par liste est construit SUR ces noms : le laisser en place
         // servirait des taxons résolus depuis l'index vernaculaire précédent. Idem pour les
         // entrées par cd_nom, qui y puisent le nom français des taxons sans clé.
         memIndexResolutionListe = null
         memEntreesParCdNom = null
+        if (!ecrireFichier(FILE_VERNS, gson.toJson(asString))) return false
+        version++
+        memVernsParCdNom = verns.entries.associate { it.key to it.value.toList() }
+        return true
     }
 
     fun getVernaculaireParCdNom(cdNom: Int): String? =
@@ -668,11 +677,18 @@ object TaxRefCache {
         }
         set(v) = prefs.edit().putString(KEY_COMPTES, gson.toJson(v)).apply()
 
-    fun ajouterGroupes(groupes: Map<Int, String>) {
+    /** Persiste group2_inpn par cd_nom. Incrémente [version] comme les autres index : les
+     *  propositions de saisie retombent sur ces groupes dès que l'index par taxon est absent ou
+     *  vide (cf. `TaxRefLocal.calculerSuggestions`), donc un mémo externe calculé avant cette
+     *  écriture est périmé. Sans effet tant que la synchro écrit tout d'un bloc, mais une écriture
+     *  isolée des groupes servirait sinon d'anciennes propositions (audit 2026-09-18, T6). */
+    fun ajouterGroupes(groupes: Map<Int, String>): Boolean {
         val existing = chargerGroupes().toMutableMap()
         groupes.forEach { (k, v) -> existing[k.toString()] = v }
-        ecrireFichier(FILE_GROUPES, gson.toJson(existing))
+        if (!ecrireFichier(FILE_GROUPES, gson.toJson(existing))) return false
+        version++
         memGroupes = existing
+        return true
     }
 
     fun tousLesGroupes(): Map<String, String> = chargerGroupes()
@@ -686,16 +702,22 @@ object TaxRefCache {
         } catch (e: Exception) { emptyMap() }
     }
 
-    fun ajouterGroupes1etRegnes(groupes1: Map<Int, String>, regnes: Map<Int, String>) {
+    /** group1_inpn et règne par cd_nom — même raison qu'[ajouterGroupes] d'incrémenter [version] :
+     *  le repli FONGE lit ces deux index (myxomycètes, cf. `TaxRefLocal`). Les deux fichiers sont
+     *  traités séparément : l'un peut réussir et l'autre non. */
+    fun ajouterGroupes1etRegnes(groupes1: Map<Int, String>, regnes: Map<Int, String>): Boolean {
         val existingG1 = chargerGroupes1().toMutableMap()
         groupes1.forEach { (k, v) -> if (v.isNotEmpty()) existingG1[k.toString()] = v }
-        ecrireFichier(FILE_GROUPES1, gson.toJson(existingG1))
-        memGroupes1 = existingG1
+        val okG1 = ecrireFichier(FILE_GROUPES1, gson.toJson(existingG1))
+        if (okG1) memGroupes1 = existingG1
 
         val existingR = chargerRegnes().toMutableMap()
         regnes.forEach { (k, v) -> if (v.isNotEmpty()) existingR[k.toString()] = v }
-        ecrireFichier(FILE_REGNES, gson.toJson(existingR))
-        memRegnes = existingR
+        val okR = ecrireFichier(FILE_REGNES, gson.toJson(existingR))
+        if (okR) memRegnes = existingR
+
+        if (okG1 || okR) version++
+        return okG1 && okR
     }
 
     fun tousLesGroupes1(): Map<String, String> = chargerGroupes1()
@@ -704,16 +726,17 @@ object TaxRefCache {
     /** Stocke les listes UsersHub auxquelles chaque cd_nom appartient.
      *  Sert au filtrage des additional_fields (un champ avec `id_list = X` ne s'affiche que
      *  si le taxon observé est dans la liste X). */
-    fun ajouterListesParCdNom(listes: Map<Int, List<Int>>) {
-        if (listes.isEmpty()) return
+    fun ajouterListesParCdNom(listes: Map<Int, List<Int>>): Boolean {
+        if (listes.isEmpty()) return true
         val existing = chargerListesParCdNom().toMutableMap()
         listes.forEach { (cd, l) -> if (l.isNotEmpty()) existing[cd.toString()] = l }
-        ecrireFichier(FILE_LISTES, gson.toJson(existing))
-        version++
-        memListes = existing
         memCdNomsDansListe = null
         memNomsParListe = null
         memIndexResolutionListe = null
+        if (!ecrireFichier(FILE_LISTES, gson.toJson(existing))) return false
+        version++
+        memListes = existing
+        return true
     }
 
     /** Retourne les id_liste UsersHub auxquelles le cd_nom appartient (vide si inconnu). */
@@ -789,11 +812,13 @@ object TaxRefCache {
     }
 
     /** Index pré-calculé Taxon → list<cdNom> pour servir l'autocomplétion en O(1) sur switch. */
-    fun setIndexParTaxon(index: Map<Taxon, List<Int>>) {
+    fun setIndexParTaxon(index: Map<Taxon, List<Int>>): Boolean {
         val asString = index.mapKeys { it.key.name }
-        ecrireFichier(FILE_INDEX_TAXON, gson.toJson(asString))
+        memIndexTaxon = null
+        if (!ecrireFichier(FILE_INDEX_TAXON, gson.toJson(asString))) return false
         version++
         memIndexTaxon = asString
+        return true
     }
 
     fun indexParTaxon(taxon: Taxon): List<Int>? = chargerIndexTaxon()[taxon.name]
@@ -826,6 +851,7 @@ object TaxRefCache {
             .remove(KEY_COMPTES)
             .remove(KEY_LISTE_SYNC)
             .remove(KEY_LISTES_SYNC)
+            .remove(KEY_LISTES_INCOMPLETES)
             .apply()
         mem = null
         memGroupes = null
@@ -855,6 +881,17 @@ object TaxRefCache {
     var listeSynchroniseeId: String?
         get() = prefs.getString(KEY_LISTE_SYNC, null)
         set(v) = prefs.edit().putString(KEY_LISTE_SYNC, v).apply()
+
+    /** Listes de taxons partiellement chargées à la dernière synchro (cf. [KEY_LISTES_INCOMPLETES]).
+     *  Vide = cache complet. Tant qu'elle ne l'est pas, `configurationComplete` est faux et la
+     *  saisie reste bloquée : mieux vaut un blocage explicite qu'un référentiel troué qui fait
+     *  refuser des espèces réelles (audit 2026-09-18, T3). */
+    var listesIncompletes: List<Int>
+        get() = prefs.getString(KEY_LISTES_INCOMPLETES, "")
+            ?.split(",")
+            ?.mapNotNull { it.trim().toIntOrNull() }
+            ?: emptyList()
+        set(v) = prefs.edit().putString(KEY_LISTES_INCOMPLETES, v.joinToString(",")).apply()
 
     /** Ensemble des id_liste UsersHub couvertes par le dernier sync exhaustif.
      *  Vide quand seul l'ancien sync mono-liste a été exécuté ou que rien n'est en cache.

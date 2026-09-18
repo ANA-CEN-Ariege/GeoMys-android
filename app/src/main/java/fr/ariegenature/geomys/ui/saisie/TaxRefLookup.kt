@@ -154,7 +154,13 @@ class TaxRefLookupController(
             }
             TaxRefStatut.PasDeDonnees -> {
                 tvStatut.visibility = View.VISIBLE
-                tvStatut.text = ctx.getString(R.string.taxref_pas_de_donnees)
+                // Une synchro réécrit le cache pendant une quinzaine de secondes : pendant ce
+                // laps, les listes sont vides et la saisie refuse tout. Dire « rechargez les
+                // données » à quelqu'un qui recharge n'aide pas (audit 2026-09-18, T2).
+                tvStatut.text = ctx.getString(
+                    if (fr.ariegenature.geomys.network.SyncRunner.actif)
+                        R.string.taxref_chargement_en_cours else R.string.taxref_pas_de_donnees
+                )
                 tvStatut.setTextColor(fr.ariegenature.geomys.ui.couleurAvertissement())
             }
             null -> {

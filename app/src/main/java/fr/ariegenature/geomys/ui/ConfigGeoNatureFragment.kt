@@ -63,7 +63,12 @@ fun configurationComplete(cfg: GeoNatureConfig): Boolean =
     cfg.saisieOcctaxValide && TaxRefCache.versionSauvegardee != null &&
         // Mise à jour exigeant un rechargement (données encore en place, purgées par la synchro) :
         // bloqué jusqu'à la synchro, cf. store/CachesSynchronises.armerRechargementSiRequis.
-        !cfg.rechargementRequisApresMaj
+        !cfg.rechargementRequisApresMaj &&
+        // Liste de taxons partiellement téléchargée (coupure réseau, serveur qui lâche en cours de
+        // pagination) : le cache contient une liste tronquée mais NON VIDE, donc il se croit
+        // complet. La saisie refuserait alors des espèces réellement présentes dans le protocole,
+        // avec un « Nom invalide » qui met en cause l'observateur (audit 2026-09-18, T3).
+        TaxRefCache.listesIncompletes.isEmpty()
 
 /** Refus de sortie de Paramètres après une mise à jour qui a purgé les caches (cf.
  *  [fr.ariegenature.geomys.store.purgerSiRechargementRequis]). */
@@ -656,7 +661,14 @@ class ConfigGeoNatureFragment : Fragment() {
      *  de fond pastel (illisible en thème sombre). */
     private fun majBandeauRechargement() {
         val requis = gnConfig.rechargementRequisApresMaj
-        binding.tvBandeauRechargement.visibility = if (requis) View.VISIBLE else View.GONE
+        // Listes partiellement téléchargées : blocage SUBI lui aussi (coupure réseau en pleine
+        // pagination), donc même traitement que le rechargement imposé — bandeau + accès aux
+        // saisies (audit 2026-09-18, T3). Ce n'est PAS l'élargissement écarté le 2026-09-16 :
+        // celui-ci portait sur « Vider le cache » et les champs de Paramètres, deux actes
+        // VOLONTAIRES dont le blocage reste délibéré et sans porte dérobée.
+        val incompletes = TaxRefCache.listesIncompletes
+        val bloque = requis || incompletes.isNotEmpty()
+        binding.tvBandeauRechargement.visibility = if (bloque) View.VISIBLE else View.GONE
 
         // Accès de secours aux trois écrans « Mes … » — RÉSERVÉ au rechargement exigé par une mise
         // à jour, et à lui seul.
@@ -672,15 +684,21 @@ class ConfigGeoNatureFragment : Fragment() {
         //
         // Ne PAS élargir cette condition à `!configurationComplete(gnConfig)` : l'audit 2026-09-14
         // l'avait proposé (R7-M3), la demande a été écartée pour la raison ci-dessus.
-        binding.llAccesSaisiesRechargement.visibility = if (requis) View.VISIBLE else View.GONE
-        if (!requis) return
+        binding.llAccesSaisiesRechargement.visibility = if (bloque) View.VISIBLE else View.GONE
+        if (!bloque) return
         val couleur = couleurAvertissement()
         binding.tvBandeauRechargement.setTextColor(couleur)
         binding.tvBandeauRechargement.background = cadreColore(couleur, resources.displayMetrics.density)
-        binding.tvBandeauRechargement.text =
+        binding.tvBandeauRechargement.text = if (requis)
             "Mise à jour de l'application : les données doivent être rechargées avant de continuer.\n" +
             "Appuyez sur « Charger les données » (réseau nécessaire). Vos saisies en attente sont " +
             "conservées, consultables ci-dessous, et envoyables dès que le réseau revient."
+        else
+            "Chargement incomplet : la liste de taxons ${incompletes.joinToString(", ")} n'a pas été " +
+            "téléchargée en entier (réseau interrompu ou serveur indisponible).\n" +
+            "Relancez « Charger les données » — sans quoi des espèces pourtant valides seraient " +
+            "refusées à la saisie. Vos saisies en attente sont conservées, consultables ci-dessous, " +
+            "et envoyables dès que le réseau revient." 
         binding.btnRechargementMesSaisies.setOnClickListener {
             findNavController().naviguerSur(R.id.sortiesFragment)
         }

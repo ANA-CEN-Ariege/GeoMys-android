@@ -54,7 +54,6 @@ import fr.ariegenature.geomys.store.TaxRefCache
 import fr.ariegenature.geomys.ui.saisie.SpeechToTextHelper
 import fr.ariegenature.geomys.ui.saisie.TaxRefLookupController
 import fr.ariegenature.geomys.ui.saisie.TaxonSelector
-import fr.ariegenature.geomys.ui.saisie.createSpeciesAutocompleteAdapter
 import fr.ariegenature.geomys.ui.saisie.filtrerBoutonsGroupesNonVides
 import fr.ariegenature.geomys.ui.saisie.taxonCouleur
 import fr.ariegenature.geomys.ui.saisie.taxonIcon
@@ -90,7 +89,6 @@ class SaisieRapideFragment : Fragment() {
     private var nombre = 1
     private var rechercheNomSci = false  // remplacé par la valeur mémorisée au setupAutocomplete
     private var taxRefStatut: TaxRefStatut? = null
-    private var cdNomManuel = ""
 
     private lateinit var taxonSelector: TaxonSelector
     private lateinit var speech: SpeechToTextHelper
@@ -460,8 +458,10 @@ class SaisieRapideFragment : Fragment() {
     private fun updateDemarrerState() {
         val texte = binding.etEspece.text?.toString()?.trim().orEmpty()
         val matchTaxRef = taxRefStatut is TaxRefStatut.Trouve
-        val cdNomManuelOk = (cdNomManuel.trim().toIntOrNull() ?: 0) > 0
-        binding.btnDemarrer.isEnabled = texte.isNotEmpty() && (matchTaxRef || cdNomManuelOk)
+        // Seule une espèce RÉELLEMENT proposée ouvre la saisie (règle 2026-09-17) : il n'y a
+        // plus de porte de secours par cd_nom tapé à la main — elle n'existait d'ailleurs plus
+        // dans l'interface, seul le code en gardait la trace (audit 2026-09-18, T7).
+        binding.btnDemarrer.isEnabled = texte.isNotEmpty() && matchTaxRef
     }
 
     /** Dictée vocale : essaie les hypothèses ASR contre TaxRef (recherche étendue) et réinjecte
@@ -704,10 +704,9 @@ class SaisieRapideFragment : Fragment() {
             gnConfig.nomUtilisateur.ifEmpty { gnConfig.login }
         }
 
-    /** cd_nom courant — résolu via TaxRef si l'autocomplete a trouvé une correspondance,
-     *  sinon parse le champ saisi à la main. Null tant qu'aucune espèce n'est identifiée. */
-    private fun cdNomCourant(): Int? =
-        (taxRefStatut as? TaxRefStatut.Trouve)?.cdNom ?: cdNomManuel.trim().toIntOrNull()
+    /** cd_nom courant — celui de l'espèce choisie dans les propositions. Null tant qu'aucune
+     *  espèce n'est identifiée. */
+    private fun cdNomCourant(): Int? = (taxRefStatut as? TaxRefStatut.Trouve)?.cdNom
 
     /** group2_inpn courant — déduit du cd_nom si connu, sinon fallback par taxon
      *  (alignement avec la logique de SaisieObservationFragment). */
@@ -797,7 +796,6 @@ class SaisieRapideFragment : Fragment() {
             else -> especeText.ifEmpty { taxon.nomGroupe() }
         }
         cdNomDefaut = (taxRefStatut as? TaxRefStatut.Trouve)?.cdNom
-            ?: cdNomManuel.trim().toIntOrNull()
 
         modeActif = true
         snackJob?.cancel()

@@ -161,7 +161,9 @@ class TaxRefCacheTest {
         (0 until nb).forEach { e ->
             Thread {
                 depart.await()
-                for (i in 0 until parThread) TaxRefCache.set("t-$e-$i", 1000 * e + i, "Sci $e $i")
+                for (i in 0 until parThread) TaxRefCache.ajouter(
+                    mapOf("t-$e-$i" to TaxRefEntry(1000 * e + i, "Sci $e $i")),
+                )
                 fin.countDown()
             }.start()
         }

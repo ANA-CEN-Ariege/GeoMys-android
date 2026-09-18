@@ -34,56 +34,6 @@
                 android:textStyle="bold"
                 android:visibility="gone" />
 
-            <!-- Accès de secours aux saisies en attente pendant un rechargement exigé : sans eux,
-                 un lancement HORS-LIGNE après mise à jour enfermait l'utilisateur dans Paramètres,
-                 ses saisies de la veille devenant inaccessibles ET non envoyables — journée de
-                 terrain perdue (audit 2026-09-14, R7-C1). Visibilité posée par
-                 ConfigGeoNatureFragment.majBandeauRechargement. -->
-            <LinearLayout
-                android:id="@+id/ll_acces_saisies_rechargement"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="16dp"
-                android:orientation="horizontal"
-                android:visibility="gone">
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btn_rechargement_mes_saisies"
-                    style="@style/Widget.Material3.Button.TextButton"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:minWidth="0dp"
-                    android:paddingStart="4dp"
-                    android:paddingEnd="4dp"
-                    android:text="Mes saisies"
-                    android:textSize="12sp" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btn_rechargement_mes_visites"
-                    style="@style/Widget.Material3.Button.TextButton"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:minWidth="0dp"
-                    android:paddingStart="4dp"
-                    android:paddingEnd="4dp"
-                    android:text="Mes visites"
-                    android:textSize="12sp" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btn_rechargement_mes_stations"
-                    style="@style/Widget.Material3.Button.TextButton"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:minWidth="0dp"
-                    android:paddingStart="4dp"
-                    android:paddingEnd="4dp"
-                    android:text="Mes stations"
-                    android:textSize="12sp" />
-            </LinearLayout>
-
             <!-- ══════════ BOÎTE 1 : Connexion au serveur ══════════ -->
             <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"

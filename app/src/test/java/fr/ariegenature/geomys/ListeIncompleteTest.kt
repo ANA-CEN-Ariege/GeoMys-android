@@ -115,10 +115,9 @@ class ListeIncompleteTest {
         assertEquals(emptyList<Int>(), TaxRefCache.listesIncompletes)
     }
 
-    /** SITE D'APPEL : la synchro doit écrire ce verdict, sinon le blocage ne se déclenche jamais —
-     *  et l'écran Paramètres doit ouvrir les accès aux saisies, comme pour un rechargement imposé. */
+    /** SITE D'APPEL : la synchro doit écrire ce verdict, sinon le blocage ne se déclenche jamais. */
     @Test
-    fun la_synchro_persiste_le_verdict_et_l_ecran_ouvre_les_acces_aux_saisies() {
+    fun la_synchro_persiste_le_verdict_et_l_ecran_le_prend_en_compte() {
         val sync = File("src/main/java/fr/ariegenature/geomys/network/GeoNatureSync.kt").readText()
         assertTrue("la synchro doit persister les listes incomplètes",
             sync.contains("TaxRefCache.listesIncompletes = listesEnEchec.sorted()"))
@@ -126,7 +125,36 @@ class ListeIncompleteTest {
         val config = File("src/main/java/fr/ariegenature/geomys/ui/ConfigGeoNatureFragment.kt").readText()
         assertTrue("configurationComplete doit en tenir compte",
             config.contains("TaxRefCache.listesIncompletes.isEmpty()"))
-        assertTrue("les accès aux saisies doivent rester ouverts pendant ce blocage",
-            config.contains("binding.llAccesSaisiesRechargement.visibility = if (bloque)"))
+    }
+
+    /**
+     * L'écran Paramètres ne doit offrir AUCUNE sortie vers « Mes saisies / Mes visites / Mes
+     * stations » — décision produit de l'utilisateur (2026-09-18) : le blocage est entier, sans
+     * porte dérobée, quelle qu'en soit la cause. Deux audits ont proposé l'inverse (R7-C1 pour le
+     * rechargement imposé, R7-M3 pour l'élargir) ; cette garde est là pour que la proposition ne
+     * repasse pas en douce, dans le code comme dans le layout.
+     */
+    @Test
+    fun parametres_n_ouvre_aucune_porte_derobee_vers_les_saisies() {
+        val config = File("src/main/java/fr/ariegenature/geomys/ui/ConfigGeoNatureFragment.kt").readText()
+        val layout = File("src/main/res/layout/fragment_config_geonature.xml").readText()
+        for (interdit in listOf(
+            "llAccesSaisiesRechargement", "btnRechargementMesSaisies",
+            "btnRechargementMesVisites", "btnRechargementMesStations",
+        )) {
+            assertFalse(
+                "ConfigGeoNatureFragment ne doit plus référencer $interdit : les accès de secours " +
+                    "ont été retirés sur demande explicite (2026-09-18).",
+                config.contains(interdit),
+            )
+        }
+        assertFalse(
+            "le layout de Paramètres ne doit plus porter les boutons d'accès aux saisies",
+            layout.contains("ll_acces_saisies_rechargement"),
+        )
+        assertFalse(
+            "le bandeau ne doit plus renvoyer à des écrans accessibles « ci-dessous »",
+            config.contains("consultables ci-dessous"),
+        )
     }
 }

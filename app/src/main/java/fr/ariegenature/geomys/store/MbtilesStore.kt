@@ -54,16 +54,29 @@ object MbtilesStore {
         val nomBrut = nomDepuisUri(context, uri) ?: "carte_${System.currentTimeMillis()}.mbtiles"
         val nom = nettoyerNom(nomBrut)
         val dest = File(dossier(context), nom)
+        // Écriture dans un TEMPORAIRE, validation, PUIS bascule : copier directement sur `dest`
+        // écrasait une carte déjà en place portant le même nom, et la validation qui échouait
+        // ensuite la supprimait — réimporter une copie corrompue détruisait donc la bonne carte
+        // (constat du portage iOS, 2026-10-17). Tant que le fichier reçu n'est pas validé, la
+        // carte existante n'est pas touchée.
+        val tmp = File(dossier(context), "$nom.tmp")
         return try {
             context.contentResolver.openInputStream(uri).use { input ->
-                if (input == null) return null
-                dest.outputStream().use { input.copyTo(it) }
+                if (input == null) { tmp.delete(); return null }
+                tmp.outputStream().use { input.copyTo(it) }
             }
             // Validation : le fichier doit être un MBTiles ouvrable (sinon on ne le garde pas).
-            if (!estMbtilesValide(dest)) { dest.delete(); null } else dest
+            if (!estMbtilesValide(tmp)) { tmp.delete(); return null }
+            if (!tmp.renameTo(dest)) {
+                // Certains systèmes de fichiers refusent d'écraser : on ne supprime la cible
+                // qu'une fois le remplaçant validé, donc sans risque de perte sèche.
+                if (dest.exists()) dest.delete()
+                if (!tmp.renameTo(dest)) { tmp.delete(); return null }
+            }
+            dest
         } catch (e: Exception) {
             android.util.Log.w("MbtilesStore", "import échoué : ${e.message}", e)
-            dest.delete()
+            tmp.delete()
             null
         }
     }

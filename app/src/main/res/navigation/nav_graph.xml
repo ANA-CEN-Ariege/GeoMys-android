@@ -274,9 +274,6 @@
         <action
             android:id="@+id/action_trace_to_details_releve"
             app:destination="@id/detailsReleveFragment" />
-        <action
-            android:id="@+id/action_trace_to_saisie_rapide"
-            app:destination="@id/saisieRapideFragment" />
     </fragment>
 
     <fragment

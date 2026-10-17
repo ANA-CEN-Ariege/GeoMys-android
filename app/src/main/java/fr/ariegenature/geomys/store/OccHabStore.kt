@@ -189,6 +189,17 @@ class OccHabStore(context: Context) : JsonCollectionStore<OccHabSaisie>() {
             it.copy(derniereErreurEnvoi = message.take(200), envoiIncertain = false)
         }
 
+    /** Échec qui ne dit RIEN de ce que le serveur a fait : erreur AVANT émission (login
+     *  impossible hors-ligne, connexion refusée) ou exception non typée. On enregistre le message
+     *  SANS toucher à [OccHabStation.envoiIncertain] : une incertitude posée par un envoi
+     *  PRÉCÉDENT — POST émis, réponse jamais revenue — doit survivre, sinon l'essai suivant
+     *  re-POSTe sans vérifier par uuid et crée une seconde station (le module OccHab n'a aucune
+     *  contrainte d'unicité). Constat du portage iOS (A12), 2026-10-17. */
+    fun marquerStationErreurSansConclure(saisieId: String, stationId: String, message: String) =
+        majStation(saisieId, stationId) {
+            it.copy(derniereErreurEnvoi = message.take(200))
+        }
+
     /** Envoi INCERTAIN d'une station (réseau coupé après émission — peut-être créée). */
     fun marquerStationIncertain(saisieId: String, stationId: String, message: String) =
         majStation(saisieId, stationId) {

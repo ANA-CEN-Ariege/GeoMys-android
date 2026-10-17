@@ -313,28 +313,13 @@ class TraceFragment : Fragment() {
             updateModePositionnement()
         }
 
-        binding.btnObservation.setOnLongClickListener {
-            // Saisie mono-taxons : on n'intercale l'écran "Détails du relevé" QUE s'il existe un
-            // champ additionnel OCCTAX_RELEVE obligatoire SANS valeur par défaut (sinon inutile :
-            // les champs restent éditables via « Détails », et un required avec défaut est satisfait).
-            traceViewModel.typeSaisieLabel = getString(R.string.saisie_mono_taxons)
-            val ecranReleveNecessaire = fr.ariegenature.geomys.ui.saisie.AdditionalFieldsRenderer
-                .aDesChampsReleveRequisSansDefaut(gnConfig.additionalFieldsOcctaxJsonActif, gnConfig.idDataset.toIntOrNull())
-            if (ecranReleveNecessaire) {
-                findNavController().naviguerSur(
-                    R.id.action_trace_to_details_releve,
-                    Bundle().apply {
-                        putBoolean("mono", true)
-                        // Pré-remplissage depuis les détails communs de la saisie.
-                        putString("addReleveJson", com.google.gson.Gson().toJson(
-                            traceViewModel.detailsCommuns?.additionnels ?: emptyMap<String, String>()))
-                    },
-                )
-            } else {
-                findNavController().naviguerSur(R.id.action_trace_to_saisie_rapide)
-            }
-            true
-        }
+        // PAS de bascule vers la saisie mono-taxons depuis cet écran — DÉCISION PRODUIT DE
+        // L'UTILISATEUR (2026-10-17). Un appui long sur ce bouton ouvrait l'écran mono SUR LA MÊME
+        // SESSION (même ViewModel, même sortie, mêmes observations) : les deux saisies n'en
+        // faisaient qu'une, si bien que « Terminer » depuis l'écran mono clôturait aussi le relevé
+        // multi en cours. Le geste n'était documenté dans aucun guide et n'avait pas de chemin
+        // retour. Les deux types de saisie se choisissent à l'accueil, et ne communiquent plus :
+        // NE PAS réintroduire de passerelle, dans un sens ni dans l'autre.
 
         binding.btnListe.setOnClickListener {
             findNavController().naviguerSur(R.id.action_trace_to_observations)

@@ -150,8 +150,13 @@ suspend fun envoyerSaisieOccHabVersGeoNature(
             else store.marquerStationErreur(saisie.id, station.id, msg)
             derniereErreur = msg
         } catch (e: Exception) {
+            // Exception NON TYPÉE : elle couvre aussi — et surtout — les échecs AVANT émission
+            // (login impossible hors-ligne, connexion refusée). Rien n'a alors été envoyé, mais
+            // cela ne prouve RIEN sur l'envoi PRÉCÉDENT : effacer l'incertitude posée par un POST
+            // resté sans réponse ferait sauter la vérification par uuid au prochain essai, donc
+            // une seconde station sur GeoNature. On enregistre l'erreur sans rien conclure.
             val msg = humaniserErreurReseau(e)
-            store.marquerStationErreur(saisie.id, station.id, msg)
+            store.marquerStationErreurSansConclure(saisie.id, station.id, msg)
             derniereErreur = msg
         }
     }

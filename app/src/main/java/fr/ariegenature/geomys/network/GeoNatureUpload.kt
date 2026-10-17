@@ -156,8 +156,20 @@ object GeoNatureUpload {
             // suppression maintenant que le réseau répond. Best-effort : un échec les laisse
             // mémorisés pour le prochain envoi.
             fr.ariegenature.geomys.store.RelevesOrphelins.liste(base).forEach { idOrphelin ->
-                if (tenterSupprimerReleve(base, token, cookies, idOrphelin)) {
-                    fr.ariegenature.geomys.store.RelevesOrphelins.retirer(base, idOrphelin)
+                // On vérifie qu'il est TOUJOURS vide avant de le supprimer : un relevé mémorisé
+                // ici peut avoir été réutilisé entre-temps (retrouvé par son uuid lors d'un
+                // ré-envoi) et contenir désormais des occurrences transmises — le DELETE les
+                // emporterait. Vérification impossible (réseau, 5xx) ⇒ on ne touche à rien et on
+                // le garde en liste pour le prochain envoi.
+                when (etatReleveOrphelin(base, token, cookies, idOrphelin)) {
+                    EtatOrphelin.VIDE ->
+                        if (tenterSupprimerReleve(base, token, cookies, idOrphelin)) {
+                            fr.ariegenature.geomys.store.RelevesOrphelins.retirer(base, idOrphelin)
+                        }
+                    // Plus vide, ou déjà absent du serveur : il n'y a plus d'orphelin à nettoyer.
+                    EtatOrphelin.PEUPLE, EtatOrphelin.ABSENT ->
+                        fr.ariegenature.geomys.store.RelevesOrphelins.retirer(base, idOrphelin)
+                    EtatOrphelin.INCONNU -> {}
                 }
             }
 
@@ -341,7 +353,13 @@ object GeoNatureUpload {
                 var idReleveReutilise: Int? = null
                 if (groupe.any { it.releveTente }) {
                     when (val existant = relevePresent(base, token, cookies, uuidGrp)) {
-                        is ReleveExistant.Trouve -> idReleveReutilise = existant.idReleve
+                        is ReleveExistant.Trouve -> {
+                            idReleveReutilise = existant.idReleve
+                            // Il va recevoir des occurrences : il ne doit plus figurer parmi les
+                            // relevés vides à supprimer, sinon une purge ultérieure l'emporterait
+                            // avec son contenu.
+                            fr.ariegenature.geomys.store.RelevesOrphelins.retirer(base, existant.idReleve)
+                        }
                         ReleveExistant.Absent -> {}
                         // Vérification IMPOSSIBLE : on ne crée RIEN. Re-POSTer à l'aveugle est
                         // exactement ce que l'invariant anti-doublon du projet interdit — la sortie
@@ -551,7 +569,19 @@ object GeoNatureUpload {
                         // Rejet FRANC du serveur : rien n'a été créé, on lève l'incertitude posée
                         // par le pré-marquage — sinon chaque envoi ultérieur paierait une
                         // vérification par uuid parfaitement inutile.
-                        marqueur?.occurrenceEchecNet(obs.id)
+                        //
+                        // SEUL un 4xx vaut rejet franc (c'est d'ailleurs le contrat écrit de
+                        // `occurrenceEchecNet`). Un 5xx ne dit PAS que rien n'a été créé : un
+                        // proxy peut rendre 502 ou 504 sur une requête que GeoNature a pourtant
+                        // honorée, et lever l'incertitude là ferait re-POSTer l'occurrence au
+                        // renvoi — donc un doublon. 408 et 429 sont des 4xx de la même eau : la
+                        // requête a pu aboutir. Dans ces cas on GARDE l'incertitude, et le
+                        // prochain envoi tranchera par uuid.
+                        if (estRejetFranc(code2)) {
+                            marqueur?.occurrenceEchecNet(obs.id)
+                        } else {
+                            obsIncertaines.add(obs.id to idReleve)
+                        }
                     }
                     conn2.disconnect() // libère la connexion à chaque occurrence (lot multi-taxons).
                 }
@@ -566,13 +596,22 @@ object GeoNatureUpload {
                         tenterSupprimerMedia(base, token, cookies, it)
                     }
                     mediasOK -= mediasSupprimes
-                    val releveSupprime = tenterSupprimerReleve(base, token, cookies, idReleve)
-                    if (!releveSupprime) {
-                        relevesOrphelins.add(idReleve)
-                        // Mémorisé pour suppression automatique au prochain envoi (cf. début
-                        // d'envoyer) — un « relevé sans taxon » ne doit pas rester sur le
-                        // serveur en comptant sur une suppression manuelle.
-                        fr.ariegenature.geomys.store.RelevesOrphelins.ajouter(base, listOf(idReleve))
+                    // Le rollback ne vise QUE le relevé que CET envoi vient de créer et qui est
+                    // resté vide. Un relevé RÉUTILISÉ (retrouvé par son uuid, envoi précédent
+                    // interrompu) contient déjà, lui, les occurrences transmises la fois d'avant :
+                    // GeoNature les supprimerait EN CASCADE avec lui — des données acceptées par
+                    // le serveur, perdues parce que le ré-envoi du reste a échoué. Les obs déjà
+                    // créées étant exclues du lot (`aEnvoyer`), `nbReussisGroupe == 0` ne dit rien
+                    // du contenu réel du relevé.
+                    if (idReleveReutilise == null) {
+                        val releveSupprime = tenterSupprimerReleve(base, token, cookies, idReleve)
+                        if (!releveSupprime) {
+                            relevesOrphelins.add(idReleve)
+                            // Mémorisé pour suppression automatique au prochain envoi (cf. début
+                            // d'envoyer) — un « relevé sans taxon » ne doit pas rester sur le
+                            // serveur en comptant sur une suppression manuelle.
+                            fr.ariegenature.geomys.store.RelevesOrphelins.ajouter(base, listOf(idReleve))
+                        }
                     }
                 }
             }
@@ -640,7 +679,14 @@ object GeoNatureUpload {
             when (val code = HttpClient.lireCode(conn)) {
                 in 200..299 -> {
                     val txt = conn.inputStream.bufferedReader().readText()
-                    val features = extraireFeaturesReleves(txt)
+                    // Réponse d'une forme inconnue : on ne sait PAS si le relevé existe. La
+                    // traiter comme une liste vide le déclarerait « absent » et en ferait créer
+                    // un second (doublon). Seul un tableau RECONNU et vide vaut « absent ».
+                    val features = extraireFeaturesReleves(txt) ?: run {
+                        android.util.Log.w("GeoNatureUpload",
+                            "Vérification relevé : réponse illisible (${txt.take(120)})")
+                        return ReleveExistant.Indeterminable
+                    }
                     val mien = features.firstOrNull { it.optJSONObject("properties")
                         ?.optString("unique_id_sinp_grp").equals(uuid, ignoreCase = true) }
                     when {
@@ -664,8 +710,12 @@ object GeoNatureUpload {
     }
 
     /** Extrait la liste des Feature d'une réponse `/releves`, en tolérant les formes connues :
-     *  `{items:{features:[…]}}` (GeoNature actuel), `{features:[…]}` ou un tableau nu. */
-    private fun extraireFeaturesReleves(txt: String): List<JSONObject> {
+     *  `{items:{features:[…]}}` (GeoNature actuel), `{features:[…]}` ou un tableau nu.
+     *
+     *  **null = réponse non reconnue** (enveloppe inconnue, JSON illisible), à ne surtout pas
+     *  confondre avec une liste vide : l'appelant en conclurait que le relevé n'existe pas et
+     *  le recréerait. Une liste vide, elle, est une réponse du serveur qui dit « aucun ». */
+    private fun extraireFeaturesReleves(txt: String): List<JSONObject>? {
         val arr: JSONArray = try {
             val racine = try { JSONObject(txt) } catch (_: Exception) { null }
             when {
@@ -674,11 +724,45 @@ object GeoNatureUpload {
                     racine.getJSONObject("items").getJSONArray("features")
                 racine.optJSONArray("items") != null -> racine.getJSONArray("items")
                 racine.optJSONArray("features") != null -> racine.getJSONArray("features")
-                else -> JSONArray()
+                else -> return null
             }
-        } catch (_: Exception) { return emptyList() }
+        } catch (_: Exception) { return null }
         return (0 until arr.length()).mapNotNull { arr.optJSONObject(it) }
     }
+
+    /** État d'un relevé mémorisé comme orphelin, au moment de le purger. */
+    internal enum class EtatOrphelin { VIDE, PEUPLE, ABSENT, INCONNU }
+
+    /** Le relevé [idReleve] est-il toujours vide ? `GET /releve/<id>` : son dump porte un
+     *  `id_occurrence_occtax` par occurrence. Toute réponse qu'on ne reconnaît pas rend
+     *  [EtatOrphelin.INCONNU] — on ne supprime jamais sur un doute. */
+    internal fun etatReleveOrphelin(
+        base: String, token: String?, cookies: String, idReleve: Int,
+    ): EtatOrphelin {
+        val conn = try {
+            HttpClient.get(URL("$base/api/occtax/OCCTAX/releve/$idReleve"), token, cookies, 30000)
+        } catch (_: IOException) { return EtatOrphelin.INCONNU }
+        return try {
+            when (HttpClient.lireCode(conn)) {
+                in 200..299 -> {
+                    val txt = conn.inputStream.bufferedReader().readText()
+                    when {
+                        txt.contains("id_occurrence_occtax") -> EtatOrphelin.PEUPLE
+                        txt.contains("id_releve_occtax") -> EtatOrphelin.VIDE
+                        else -> EtatOrphelin.INCONNU
+                    }
+                }
+                404 -> EtatOrphelin.ABSENT
+                else -> EtatOrphelin.INCONNU
+            }
+        } catch (_: Exception) { EtatOrphelin.INCONNU } finally { conn.disconnect() }
+    }
+
+    /** 4xx « francs » : le serveur a REFUSÉ, rien n'a été créé. 408 (timeout) et 429 (trop de
+     *  requêtes) en sont exclus — la requête a pu aboutir malgré la réponse —, comme les 5xx,
+     *  qu'un proxy peut rendre sur un POST pourtant honoré par GeoNature. */
+    internal fun estRejetFranc(code: Int): Boolean =
+        code in 400..499 && code != 408 && code != 429
 
     private fun idDepuisFeatureReleve(f: JSONObject): Int? =
         f.optJSONObject("properties")?.optInt("id_releve_occtax", -1)?.takeIf { it > 0 }
@@ -699,7 +783,22 @@ object GeoNatureUpload {
         } catch (_: IOException) { return null }
         return try {
             when (val code = HttpClient.lireCode(conn)) {
-                in 200..299 -> conn.inputStream.bufferedReader().readText().contains(uuid, ignoreCase = true)
+                in 200..299 -> {
+                    val txt = conn.inputStream.bufferedReader().readText()
+                    when {
+                        txt.contains(uuid, ignoreCase = true) -> true
+                        // Le corps doit RESSEMBLER au dump d'un relevé pour qu'une absence d'uuid
+                        // vaille « occurrence absente ». Sinon (page d'erreur HTML d'un proxy,
+                        // réponse tronquée, enveloppe inattendue), on ne conclut rien : re-POSTer
+                        // sur une réponse qu'on n'a pas comprise, c'est fabriquer un doublon.
+                        txt.contains("id_releve_occtax") || txt.contains("occurrences") -> false
+                        else -> {
+                            android.util.Log.w("GeoNatureUpload",
+                                "Vérification occurrence : réponse non reconnue (${txt.take(120)})")
+                            null
+                        }
+                    }
+                }
                 404 -> false
                 else -> { android.util.Log.w("GeoNatureUpload", "Vérification occurrence : HTTP $code"); null }
             }

@@ -141,6 +141,17 @@ class LocationTracker(private val context: Context) {
         _estEnCours.postValue(false)
     }
 
+    /** REPREND une trace existante sans rien effacer : sortie rouverte depuis « Mes saisies »
+     *  (cf. [restaurerParcours]), retour sur l'écran de saisie, ou relance après une pause.
+     *  C'est toute la différence avec [demarrerParcours], qui repart de zéro — et qui effaçait
+     *  jusqu'ici les points déjà enregistrés, perte écrite sur le disque au premier auto-save.
+     *  [dernierLoc] repart à null pour que le trajet parcouru pendant l'arrêt ne soit pas compté
+     *  dans la distance. */
+    fun reprendreParcours() {
+        dernierLoc = null
+        _estEnCours.postValue(true)
+    }
+
     fun reinitialiser() {
         synchronized(_parcoursMutable) { _parcoursMutable.clear() }
         _parcours.postValue(emptyList())

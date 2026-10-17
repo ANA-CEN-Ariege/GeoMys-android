@@ -344,18 +344,31 @@ class ConfigGeoNatureFragment : Fragment() {
         gnConfig.login = binding.etLogin.text.toString()
         gnConfig.motDePasse = binding.etMotDePasse.text.toString()
         val nouveau = Triple(gnConfig.urlServeur, gnConfig.login, gnConfig.motDePasse)
+        // IDENTITÉ = instance (URL) ou COMPTE (login). Le MOT DE PASSE n'en fait PAS partie : une
+        // rotation, une expiration ou une faute de frappe corrigée ne change ni de serveur ni de
+        // compte, donc les ids de sélection et les caches propres à l'instance restent valides.
+        // L'y inclure enfermait l'utilisateur dans Paramètres jusqu'à un rechargement RÉUSSI, donc
+        // AVEC réseau : `reinitialiserSelectionsOcctax` vide aussi les caches JSON qui peuplent les
+        // menus, si bien qu'il ne pouvait même pas re-choisir son jeu de données hors-ligne
+        // (constat du portage iOS, 2026-10-17). Les caches de SESSION, eux, tombent dans tous les
+        // cas : le jeton d'authentification du mot de passe précédent n'a plus cours.
+        val identiteChangee = ancien.first != nouveau.first || ancien.second != nouveau.second
         if (ancien != nouveau) {
             fr.ariegenature.geomys.network.invaliderCachesSession()
-            // Pictos de protocole : appartiennent à l'ANCIEN serveur → purge (re-préfetchés au
-            // prochain « Recharger les données », ou re-téléchargés à la demande dans Suivis).
-            fr.ariegenature.geomys.store.PictoCache.vider()
-            // Cache monitoring disque : ses clés (datalist_<apiUrl>, observateurs_<idListe>,
-            // objets/schémas) sont IDENTIQUES d'une instance à l'autre mais leurs contenus
-            // portent des ids propres à l'instance (id_nomenclature, id_role…) — sans purge,
-            // une saisie hors-ligne avant resynchro injecterait les ids de l'ancien serveur
-            // dans un payload (audit 2026-08-23). invaliderCachesSession ne couvre que les
-            // caches mémoire ; le disque se purge ici, au changement d'identité.
-            fr.ariegenature.geomys.store.MonitoringCache.vider()
+            if (identiteChangee) {
+                // Pictos de protocole : appartiennent à l'ANCIEN serveur → purge (re-préfetchés au
+                // prochain « Recharger les données », ou re-téléchargés à la demande dans Suivis).
+                fr.ariegenature.geomys.store.PictoCache.vider()
+                // Cache monitoring disque : ses clés (datalist_<apiUrl>, observateurs_<idListe>,
+                // objets/schémas) sont IDENTIQUES d'une instance à l'autre mais leurs contenus
+                // portent des ids propres à l'instance (id_nomenclature, id_role…) — sans purge,
+                // une saisie hors-ligne avant resynchro injecterait les ids de l'ancien serveur
+                // dans un payload (audit 2026-08-23). invaliderCachesSession ne couvre que les
+                // caches mémoire ; le disque se purge ici, au changement d'identité — et SEULEMENT
+                // là : c'est le repli hors-ligne du module Suivis, le vider sur un simple
+                // changement de mot de passe rendait les visites illisibles sans réseau.
+                fr.ariegenature.geomys.store.MonitoringCache.vider()
+            }
             // La version affichée appartient à l'ancienne instance — re-renseignée au
             // prochain test de connexion réussi. Le flag de compatibilité repart au bénéfice
             // du doute : le nouveau serveur sera re-jugé à son premier test de connexion.
@@ -367,8 +380,10 @@ class ConfigGeoNatureFragment : Fragment() {
             // sur les deux mais désignent autre chose). La réconciliation par présence ne suffit
             // donc pas ici : on réinitialise franchement les 3 sélections. L'observateur se
             // re-défaut sur l'utilisateur connecté au prochain peuplement (cf. peuplerSpinnerObservateurs).
-            reinitialiserSelectionsOcctax()
-            return // les champs ont été vidés ; rien d'autre à sauvegarder pour cette passe.
+            if (identiteChangee) {
+                reinitialiserSelectionsOcctax()
+                return // les champs ont été vidés ; rien d'autre à sauvegarder pour cette passe.
+            }
         }
         // idDataset / nomDataset sont positionnés via le spinner — pas via le champ texte.
         gnConfig.taxaListeId = binding.etTaxaListe.text.toString()

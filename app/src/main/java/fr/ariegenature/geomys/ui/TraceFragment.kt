@@ -293,11 +293,17 @@ class TraceFragment : Fragment() {
 
     private fun setupControls() {
         binding.btnParcours.setOnClickListener {
-            val enCours = traceViewModel.locationTracker.estEnCours.value == true
-            if (enCours) {
-                traceViewModel.locationTracker.arreterParcours()
-            } else {
-                traceViewModel.locationTracker.demarrerParcours()
+            val tracker = traceViewModel.locationTracker
+            when {
+                tracker.estEnCours.value == true -> tracker.arreterParcours()
+                // Des points sont DÉJÀ enregistrés : on CONTINUE la trace, on ne la recommence
+                // pas. `arreterParcours` étant appelé à chaque sortie du flux de saisie, le
+                // bouton repasse en ▶ dès un aller-retour par l'accueil — et `demarrerParcours`
+                // aurait alors effacé le parcours de la journée, définitivement (le store écrase
+                // `pointsParcours` en bloc au premier auto-save). Vaut aussi pour une reprise
+                // depuis « Mes saisies » et pour une pause volontaire.
+                !tracker.parcours.value.isNullOrEmpty() -> tracker.reprendreParcours()
+                else -> tracker.demarrerParcours()
             }
         }
 

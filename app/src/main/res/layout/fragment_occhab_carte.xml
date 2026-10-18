@@ -166,6 +166,18 @@
         android:paddingHorizontal="12dp"
         android:paddingVertical="10dp">
 
+        <!-- CONSULTATION (entrée dans OccHab) : seul ce bouton est visible ; il ouvre les infos
+             obligatoires, puis la carte passe en dessin. En création, il cède la place à
+             Annuler / Valider. -->
+        <Button
+            android:id="@+id/btn_ajouter_station"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:backgroundTint="@color/green_85"
+            android:text="Ajouter une station"
+            android:textAllCaps="false"
+            android:textColor="@android:color/white" />
+
         <Button
             android:id="@+id/btn_annuler_point"
             android:layout_width="0dp"

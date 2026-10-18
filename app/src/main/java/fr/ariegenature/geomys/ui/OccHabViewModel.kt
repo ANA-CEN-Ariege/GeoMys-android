@@ -129,6 +129,12 @@ class OccHabViewModel : ViewModel() {
         saisieId = java.util.UUID.randomUUID().toString()
     }
 
+    /** Dernier cadrage de la carte OccHab (latitude, longitude, zoom), mémorisé en quittant
+     *  l'écran et restauré au retour : terminer une station ne doit pas renvoyer l'utilisateur
+     *  sur sa position GPS alors qu'il travaillait ailleurs. Null tant que la carte n'a pas
+     *  encore été quittée. */
+    var dernierCadrageCarte: Triple<Double, Double, Double>? = null
+
     /** Nouvelle station dans la MÊME saisie : garde [saisieId], repart d'une géométrie et
      *  d'habitats vierges et des DÉFAUTS de session (détails par station). */
     fun nouvelleStation() {
@@ -214,6 +220,14 @@ class OccHabViewModel : ViewModel() {
         comment = s.comment,
         masquerStationsServeur = defautsSession.masquerStationsServeur,
     )
+
+    /** Rattache la session à la saisie [id] — celle qui CONTIENT la station qu'on va reprendre.
+     *  La carte affiche les stations de toutes les saisies : sans ce rattachement, valider une
+     *  station venue d'une autre saisie l'enregistrerait dans la saisie courante, créant un
+     *  second relevé dans « Mes stations » au lieu de modifier le sien (terrain 2026-10-18). */
+    fun rattacherASaisie(id: String) {
+        if (id.isNotBlank()) saisieId = id
+    }
 
     /** Reprend une STATION existante de la saisie courante pour l'éditer (garde la [saisieId]) :
      *  charge SEULEMENT sa géométrie et ses habitats. On NE recharge PAS [details] : le JDD /

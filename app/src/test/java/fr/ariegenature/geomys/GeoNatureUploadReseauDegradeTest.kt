@@ -110,6 +110,12 @@ class GeoNatureUploadReseauDegradeTest {
                         deletes.incrementAndGet()
                         reponse(codeDelete, "{}")
                     }
+                    // Dump d'un relevé : la purge des orphelins s'en sert pour vérifier qu'un
+                    // relevé mémorisé est TOUJOURS vide avant de le supprimer (un relevé réutilisé
+                    // entre-temps contiendrait des occurrences transmises). Le scénario de ce
+                    // fichier est « relevé sans taxon resté sur le serveur » : le dump est donc
+                    // celui d'un relevé existant et vide.
+                    path.contains("/releve/") -> reponse(200, """{"id_releve_occtax":100}""")
                     else -> MockResponse().setResponseCode(404)
                 }
             }

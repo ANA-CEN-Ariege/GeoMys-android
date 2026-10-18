@@ -97,6 +97,15 @@ class OccHabStore(context: Context) : JsonCollectionStore<OccHabSaisie>() {
      *  envoyer » (elle renverra le contenu d'origine en mise à jour — jamais de disparition
      *  d'une station peut-être modifiée côté serveur). */
     fun upsertStation(saisieId: String, station: OccHabStation): Boolean {
+        // Une station appartient à UNE SEULE saisie, celle où elle est née. Si on la réenregistre
+        // depuis une autre, on met à jour la sienne — sans quoi « Mes stations » gagnerait un
+        // relevé de plus à chaque modification. Le cas vient de la carte, qui affiche les
+        // stations de toutes les saisies : celle qu'on reprend n'est pas forcément de la saisie
+        // courante (constat terrain 2026-10-18).
+        val saisieDOrigine = charger().firstOrNull { s -> s.stations.any { it.id == station.id } }?.id
+        if (saisieDOrigine != null && saisieDOrigine != saisieId) {
+            return upsertStation(saisieDOrigine, station)
+        }
         if (!estIntacte(saisieId, station)) return upsertStationBrut(saisieId, station)
         val existante = stationsDeSaisie(saisieId).firstOrNull { it.id == station.id }
         return when {
@@ -187,6 +196,17 @@ class OccHabStore(context: Context) : JsonCollectionStore<OccHabSaisie>() {
     fun marquerStationErreur(saisieId: String, stationId: String, message: String) =
         majStation(saisieId, stationId) {
             it.copy(derniereErreurEnvoi = message.take(200), envoiIncertain = false)
+        }
+
+    /** Échec qui ne dit RIEN de ce que le serveur a fait : erreur AVANT émission (login
+     *  impossible hors-ligne, connexion refusée) ou exception non typée. On enregistre le message
+     *  SANS toucher à [OccHabStation.envoiIncertain] : une incertitude posée par un envoi
+     *  PRÉCÉDENT — POST émis, réponse jamais revenue — doit survivre, sinon l'essai suivant
+     *  re-POSTe sans vérifier par uuid et crée une seconde station (le module OccHab n'a aucune
+     *  contrainte d'unicité). Constat du portage iOS (A12), 2026-10-17. */
+    fun marquerStationErreurSansConclure(saisieId: String, stationId: String, message: String) =
+        majStation(saisieId, stationId) {
+            it.copy(derniereErreurEnvoi = message.take(200))
         }
 
     /** Envoi INCERTAIN d'une station (réseau coupé après émission — peut-être créée). */

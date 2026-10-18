@@ -164,7 +164,21 @@ suspend fun envoyerSortieVersGeoNature(
         if (res.nbCrees == res.nbTotal) {
             // Envoi COMPLET (nbTotal == 0 : tout avait déjà été transmis lors d'un envoi
             // partiel précédent — on clôture simplement).
-            if (!sortieStore.marquerEnvoyee(sortie.id)) marquageEchoue = true
+            //
+            // SAUF si des observations ont été AJOUTÉES pendant l'envoi : le verrou interdit deux
+            // envois simultanés, pas une édition concurrente, et un envoi avec photos dure assez
+            // longtemps pour qu'on ajoute une espèce entre-temps. Ces observations n'entrent dans
+            // aucun total de cet envoi (ils viennent de l'instantané relu au départ) ; marquer la
+            // saisie envoyée les enterrerait — elle sortirait de « Mes saisies » sans qu'elles
+            // soient jamais parties. On laisse donc la saisie à envoyer : les occurrences déjà
+            // transmises portent leur marquage individuel, seules les nouvelles repartiront.
+            val idsDeCetEnvoi = sortieEff.observations.map { it.id }.toSet()
+            val ajouteesPendantEnvoi = sortieStore.charger().find { it.id == sortie.id }
+                ?.observations.orEmpty()
+                .filter { it.id !in idsDeCetEnvoi && !it.envoyeeServeur }
+            if (ajouteesPendantEnvoi.isEmpty()) {
+                if (!sortieStore.marquerEnvoyee(sortie.id)) marquageEchoue = true
+            }
             val msg = buildString {
                 if (res.nbTotal == 0) {
                     append("Toutes les observations avaient déjà été transmises — saisie marquée envoyée.")
@@ -177,6 +191,10 @@ suspend fun envoyerSortieVersGeoNature(
                     if (res.nbDejaEnvoyees > 0) {
                         append(" (+ ${res.nbDejaEnvoyees} déjà transmis précédemment)")
                     }
+                }
+                if (ajouteesPendantEnvoi.isNotEmpty()) {
+                    append("\n⚠ ${ajouteesPendantEnvoi.size} observation(s) ajoutée(s) pendant l'envoi : ")
+                    append("la saisie reste à envoyer, relancez l'envoi pour les transmettre.")
                 }
                 res.premierIdReleve?.let { append("\nPremier id_releve_occtax : $it") }
                 if (res.mediasOK > 0) append("\n${res.mediasOK} média(s) uploadé(s)")

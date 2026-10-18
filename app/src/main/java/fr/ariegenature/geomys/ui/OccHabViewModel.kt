@@ -196,8 +196,14 @@ class OccHabViewModel : ViewModel() {
         masquerStationsServeur: Boolean = false,
     ) {
         saisieId = saisie.id
-        station = OccHabStation()
         val premiere = saisie.stations.firstOrNull()
+        // Relevé à UNE SEULE station : on la REPREND directement, si bien que la carte l'ouvre
+        // sélectionnée et cadrée dessus au lieu d'une carte sans objet en cours (demande
+        // utilisateur 2026-10-18). À plusieurs stations, aucune ne s'impose : on repart d'une
+        // station vierge et la carte les montre toutes.
+        station = if (saisie.stations.size == 1 && premiere != null)
+            premiere.copy(habitats = premiere.habitats.map { it.copy() })
+        else OccHabStation()
         defautsSession = (if (premiere == null) OccHabDetailsSession() else detailsDe(premiere))
             .apply { this.masquerStationsServeur = masquerStationsServeur }
         details = defautsSession.copy()

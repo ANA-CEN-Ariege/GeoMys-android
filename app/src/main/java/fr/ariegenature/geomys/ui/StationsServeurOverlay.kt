@@ -181,8 +181,17 @@ class StationsServeurOverlay(private val hote: Hote) {
                         (if (detail.isEmpty()) " affichée(s)" else " (dont ${detail.joinToString(", ")})") +
                         suffixeIgnorees,
                     Toast.LENGTH_LONG).show()
-                if (hote.aucuneGeometrieEnCours) hote.afficherInstructionSelection()
-                hote.cadrerSur(pts + hote.afficherStationsSession())
+                if (hote.aucuneGeometrieEnCours) {
+                    hote.afficherInstructionSelection()
+                    // Recadrage sur l'ensemble des stations SEULEMENT quand rien n'est en cours.
+                    // Ce chargement est asynchrone : il arrivait APRÈS le cadrage sur la station
+                    // qu'on vient d'ouvrir (réédition d'un relevé) et l'écrasait, si bien que
+                    // l'emprise ne montrait plus le relevé (constat terrain 2026-10-18).
+                    hote.cadrerSur(pts + hote.afficherStationsSession())
+                } else {
+                    // Géométrie en cours : on redessine les voisines sans toucher à la vue.
+                    hote.afficherStationsSession()
+                }
             }
             // Aucune station serveur pour ce compte et ce JDD : ce n'est PAS une information —
             // le chargement n'est plus demandé par l'utilisateur, il accompagne la création ou la
@@ -222,7 +231,13 @@ class StationsServeurOverlay(private val hote: Hote) {
         sommets.clear()
         val store = OccHabStore(hote.contexte)
         copiesLocales = store.copiesLocalesNonEnvoyees()
-        idsSaisieCourante = store.stationsDeSaisie(hote.vm.saisieId).mapNotNull { it.idStationServeur }.toSet()
+        // Ids serveur ayant une copie locale RESTANT À ENVOYER, toutes saisies confondues : ce
+        // sont exactement les stations que la carte dessine en rouge. Les redessiner ici ferait
+        // apparaître la même station deux fois, rouge et violette, avec deux actions différentes
+        // selon la couche touchée (audit OccHab 2026-10-18, C1). Une copie DÉJÀ ENVOYÉE, elle,
+        // n'est plus dessinée localement : la version serveur reprend sa place, à jour.
+        idsSaisieCourante = store.charger().flatMap { s -> s.stations }
+            .filterNot { it.envoyeGeoNature }.mapNotNull { it.idStationServeur }.toSet()
         nbReprisesAilleurs = 0
         val violet = 0xFF8E24AA.toInt() // contour COLORÉ : le gris se perdait sur certains fonds
         val orange = couleurAvertissement()
@@ -232,18 +247,14 @@ class StationsServeurOverlay(private val hote: Hote) {
             val enEdition = st.idStationServeur != null && st.idStationServeur == hote.vm.station.idStationServeur
             val dansSaisieCourante = st.idStationServeur?.let { it in idsSaisieCourante } == true
             when {
-                enEdition || dansSaisieCourante -> Unit
-                copie == null -> pts.addAll(dessiner(st, violet, 0x268E24AA, pointille = false) { proposerImport(st) })
-                copie.first.id == hote.vm.saisieId -> Unit // déjà rouge/bleue (session)
-                else -> {
-                    nbReprisesAilleurs++
-                    // On dessine la COPIE LOCALE (modifications comprises — géométrie déplacée,
-                    // sommets ajoutés…), pas la version serveur : c'est elle qui partira à
-                    // l'envoi, c'est donc elle que le terrain doit voir (demande 2026-08-31).
-                    pts.addAll(dessiner(copie.second, orange, 0x26E65100, pointille = true) {
-                        proposerOuvrirCopieLocale(copie.first, copie.second)
-                    })
-                }
+                // Déjà dessinée ailleurs : en cours d'édition (overlays bleus), ou comme station
+                // LOCALE (rouge) — y compris quand sa copie vit dans une autre saisie. Le rendu
+                // local montre la copie AVEC ses modifications, et la toucher l'ouvre directement
+                // dans sa propre saisie (le rattachement est automatique depuis 2026-10-18), ce
+                // qui remplace l'ancien détour « reprise ailleurs → ouvrir cette saisie ».
+                enEdition || dansSaisieCourante -> if (copie != null && copie.first.id != hote.vm.saisieId) nbReprisesAilleurs++
+                // Sans copie locale : station du serveur, importable d'un tap.
+                else -> pts.addAll(dessiner(st, violet, 0x268E24AA, pointille = false) { proposerImport(st) })
             }
         }
         carte.invalidate()

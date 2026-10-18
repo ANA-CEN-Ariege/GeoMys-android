@@ -405,10 +405,9 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
                 serveur.charger(conserverLesAutresJdd = true)
             }
             afficherStationsSession()
-            Toast.makeText(requireContext(),
-                if (mode == Mode.POINT) "Touchez la carte pour placer la station"
-                else "Touchez la carte pour tracer la station",
-                Toast.LENGTH_SHORT).show()
+            // Pas de toast ici : le bandeau d'instructions, permanent en haut de la carte, dit
+            // déjà quoi faire — et il reste à l'écran, contrairement au toast (E3).
+            majTexteInstructionsMode()
         }
     }
 

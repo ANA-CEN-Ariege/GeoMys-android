@@ -127,7 +127,7 @@
             android:layout_height="44dp"
             android:layout_marginBottom="12dp"
             android:background="@drawable/btn_circle_white"
-            android:contentDescription="Informations obligatoires de la station"
+            android:contentDescription="Détails de la station"
             android:src="@drawable/ic_info" />
 
         <ImageButton

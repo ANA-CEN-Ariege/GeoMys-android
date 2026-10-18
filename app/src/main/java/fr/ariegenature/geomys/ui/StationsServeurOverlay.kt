@@ -124,7 +124,8 @@ class StationsServeurOverlay(private val hote: Hote) {
             Toast.makeText(ctx, "Choisissez d'abord un jeu de données", Toast.LENGTH_SHORT).show()
             return
         }
-        Toast.makeText(ctx, "Chargement de vos stations GeoNature (ce jeu de données)…", Toast.LENGTH_SHORT).show()
+        // Pas de toast d'attente : le résultat (« N station(s) du serveur… ») arrive juste
+        // après et les deux se chevauchaient sur un seul geste (audit OccHab 2026-10-18, E3).
         hote.portee.launch {
             // Date du cache quand on affiche un REPLI hors-ligne (réseau en échec) ; null en ligne.
             var dateCache: Long? = null

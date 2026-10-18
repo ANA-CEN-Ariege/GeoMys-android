@@ -108,9 +108,21 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
     private var overlayForme: Overlay? = null
     // Overlays en LECTURE SEULE des autres stations déjà posées dans la session (pins/polygones
     // rouges). Redessinés séparément des overlays d'édition ; jamais draggables.
-    private val overlaysSession = mutableListOf<Overlay>()
     // Sommets des stations de session : cibles d'AIMANTAGE (snapping) d'un nouveau point/sommet.
-    private val sommetsSession = mutableListOf<GeoPoint>()
+    // Stations LOCALES restant à envoyer (rouge) — cf. StationsSessionOverlay (extrait de ce
+    // fragment, audit OccHab 2026-10-18).
+    private val stationsLocales by lazy {
+        StationsSessionOverlay(object : StationsSessionOverlay.Hote {
+            override val contexte: android.content.Context get() = requireContext()
+            override val carte: org.osmdroid.views.MapView get() = binding.map
+            override val vm: OccHabViewModel get() = occhabViewModel
+            override val store: fr.ariegenature.geomys.store.OccHabStore get() = occHabStore
+            override val editionEnCours: Boolean get() = geometrieChargee
+            override fun cercleSommet(couleur: Int) = this@OccHabCarteFragment.cercleSommet(couleur)
+            override fun editerStationExistante(st: OccHabStation) =
+                this@OccHabCarteFragment.editerStationExistante(st)
+        })
+    }
     // Stations DU SERVEUR (switch du formulaire de démarrage) : chargement, rendu violet/orange,
     // import au tap, bascule de saisie — cf. StationsServeurOverlay (extrait de ce fragment).
     private val serveur by lazy {
@@ -124,7 +136,7 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
             override val traceEnCoursNonValide: Boolean get() = !geometrieChargee && (pointChoisi != null || sommets.isNotEmpty())
             override fun cercleSommet(couleur: Int) = this@OccHabCarteFragment.cercleSommet(couleur)
             override fun editerStationExistante(st: OccHabStation) = this@OccHabCarteFragment.editerStationExistante(st)
-            override fun afficherStationsSession() = this@OccHabCarteFragment.afficherStationsSession()
+            override fun afficherStationsSession() = this@OccHabCarteFragment.stationsLocales.afficher()
             override fun cadrerSur(points: List<GeoPoint>) = this@OccHabCarteFragment.cadrerSur(points)
             override fun afficherInstructionSelection() = this@OccHabCarteFragment.afficherInstructionSelection()
         })
@@ -230,7 +242,7 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
             // (audit OccHab 2026-10-18, C2 — le choix est mémorisé depuis la v1.3.22).
             val ptsServeur = if (occhabViewModel.details.chargerStationsServeur)
                 serveur.afficherToutLeCache() else emptyList()
-            val ptsLocales = afficherStationsSession(toutesLesSaisies = true)
+            val ptsLocales = stationsLocales.afficher(toutesLesSaisies = true)
             // On reprend le cadrage laissé en quittant l'écran ; à la toute première ouverture,
             // on centre sur la position.
             val memo = occhabViewModel.dernierCadrageCarte
@@ -293,7 +305,7 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
         binding.map.overlays.add(locationOverlay)
 
         val ptsCourant = preremplirDepuisViewModel()
-        val ptsSession = afficherStationsSession()
+        val ptsSession = stationsLocales.afficher()
         // Stations serveur déjà chargées (retour de l'écran habitats, recréation de vue) : leurs
         // overlays pointaient une MapView détruite → on les redessine (audit 2026-08-27).
         if (serveur.chargees) serveur.afficher()
@@ -404,11 +416,10 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
             if (occhabViewModel.details.chargerStationsServeur) {
                 serveur.charger(conserverLesAutresJdd = true)
             }
-            afficherStationsSession()
-            Toast.makeText(requireContext(),
-                if (mode == Mode.POINT) "Touchez la carte pour placer la station"
-                else "Touchez la carte pour tracer la station",
-                Toast.LENGTH_SHORT).show()
+            stationsLocales.afficher()
+            // Pas de toast ici : le bandeau d'instructions, permanent en haut de la carte, dit
+            // déjà quoi faire — et il reste à l'écran, contrairement au toast (E3).
+            majTexteInstructionsMode()
         }
     }
 
@@ -426,89 +437,7 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
         binding.btnModePolygone.visibility = if (enCreation) View.VISIBLE else View.GONE
     }
 
-    /** Montre les stations locales de TOUTES les saisies (défaut), et non celles de la seule
-     *  session en cours : l'utilisateur doit retrouver ce qu'il a déjà saisi, à l'entrée comme
-     *  pendant une édition (demande utilisateur 2026-10-18). La station en cours d'édition est
-     *  exclue — elle est dessinée par les overlays d'édition. */
-    private fun afficherStationsSession(toutesLesSaisies: Boolean = true): List<GeoPoint> {
-        overlaysSession.forEach { binding.map.overlays.remove(it) }
-        overlaysSession.clear()
-        val store = occHabStore
-        val autres = (if (toutesLesSaisies)
-                // Toutes les saisies, mais SEULEMENT ce qui reste à envoyer. Une station déjà
-                // envoyée n'a rien à faire ici : si elle existe encore sur GeoNature, le cache
-                // serveur la porte — et dans sa version serveur ; si elle n'y est plus
-                // (supprimée côté serveur), l'afficher est un FANTÔME. Constat terrain
-                // 2026-10-18 : une station près de Foix, absente du serveur, restait dessinée
-                // parce que sa copie locale envoyée traînait dans le store.
-                store.charger().flatMap { it.stations }.filterNot { it.envoyeGeoNature }
-            else store.stationsDeSaisie(occhabViewModel.saisieId))
-            .filter { it.id != occhabViewModel.station.id }
-        val pts = mutableListOf<GeoPoint>()
-        val rouge = 0xFFD32F2F.toInt() // même rouge que le pin ic_pin_drop.
-        autres.forEach { st ->
-            if (st.geometryType == "Polygon" && !st.geometryCoordsJson.isNullOrEmpty()) {
-                try {
-                    val ring = GeoJsonCoords.parse(st.geometryCoordsJson)
-                    pts.addAll(ring)
-                    if (ring.size >= 2) {
-                        val poly = Polygon(binding.map).apply {
-                            points = ring
-                            // Trous (polygone dessiné sous QGIS) : dessinés en creux.
-                            GeoJsonCoords.parseAnneaux(st.geometryTrousJson)
-                                .takeIf { it.isNotEmpty() }?.let { holes = it }
-                            fillPaint.color = 0x33D32F2F
-                            outlinePaint.color = rouge
-                            outlinePaint.strokeWidth = 4f
-                            // Tap = éditer, SAUF pendant une édition : on ne bascule pas d'une
-                            // station à l'autre par mégarde (on sort d'abord par « Annuler »).
-                            setOnClickListener { _, _, _ ->
-                                if (!geometrieChargee) editerStationExistante(st)
-                                true
-                            }
-                        }
-                        binding.map.overlays.add(poly)
-                        overlaysSession.add(poly)
-                        // Chaque sommet matérialisé par un petit cercle rouge (non interactif).
-                        ring.forEach { sommet ->
-                            val cm = Marker(binding.map).apply {
-                                position = sommet
-                                icon = cercleSommet(rouge)
-                                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                                isDraggable = false
-                                setInfoWindow(null)
-                                setOnMarkerClickListener { _, _ -> false }
-                            }
-                            binding.map.overlays.add(cm)
-                            overlaysSession.add(cm)
-                        }
-                    }
-                } catch (_: Exception) {}
-            } else if (st.latitude != 0.0 || st.longitude != 0.0) {
-                val gp = GeoPoint(st.latitude, st.longitude)
-                pts.add(gp)
-                val m = Marker(binding.map).apply {
-                    position = gp
-                    icon = ContextCompat.getDrawable(requireContext(), R.drawable.ic_pin_drop) // rouge natif.
-                    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                    isDraggable = false
-                    setInfoWindow(null)
-                    setOnMarkerClickListener { _, _ ->
-                        if (!geometrieChargee) editerStationExistante(st)
-                        true
-                    }
-                }
-                binding.map.overlays.add(m)
-                overlaysSession.add(m)
-            }
-        }
-        binding.map.invalidate()
-        // Ces points (sommets de polygones + points des stations ponctuelles) servent de cibles
-        // d'aimantage pour la saisie de la station suivante.
-        sommetsSession.clear()
-        sommetsSession.addAll(pts)
-        return pts
-    }
+
 
     /** Recharge une station EXISTANTE de la saisie pour l'éditer, EN PLACE (sans navigation) : sa
      *  géométrie devient l'objet en cours (draggable), les autres stations restent en lecture
@@ -564,7 +493,7 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
             .firstOrNull { s -> s.stations.any { it.id == st.id } }
             ?.let { proprietaire -> occhabViewModel.rattacherASaisie(proprietaire.id) }
         occhabViewModel.reprendreStation(st)
-        pileAnnulation.clear()
+        pileAnnulation.vider()
         // Purge l'objet en cours d'édition précédent.
         pointChoisi = null
         sommets.clear()
@@ -576,7 +505,7 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
         overlayForme?.let { binding.map.overlays.remove(it) }; overlayForme = null
         cadrageInitialFait = false
         val ptsCourant = preremplirDepuisViewModel() // charge la géométrie de st (mode + redessine)
-        val ptsSession = afficherStationsSession()   // redessine les autres (st exclue désormais)
+        val ptsSession = stationsLocales.afficher()   // redessine les autres (st exclue désormais)
         // st sort du violet (en édition) ; une ex-sélection importée INTACTE y revient.
         if (serveur.chargees) serveur.afficher()
         mettreEnEvidenceBoutonMode()
@@ -594,7 +523,7 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
      *  2026-08-27 pour raccorder plus facilement au sommet d'un autre polygone), sinon renvoie
      *  null. Renvoie une COPIE du sommet (jamais l'instance partagée avec l'overlay de session). */
     private fun snapVersSommet(p: GeoPoint): GeoPoint? {
-        val cibles = sommetsSession + serveur.sommets
+        val cibles = stationsLocales.sommets + serveur.sommets
         if (cibles.isEmpty()) return null
         val proj = binding.map.projection ?: return null
         val pPix = proj.toPixels(p, null)
@@ -693,7 +622,7 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
 
 
     private fun changerMode(m: Mode) {
-        if (m != mode) pileAnnulation.clear()
+        if (m != mode) pileAnnulation.vider()
         mode = m
         mettreEnEvidenceBoutonMode()
         majTexteInstructionsMode()
@@ -768,7 +697,7 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
                         override fun onMarkerDragEnd(m: Marker) {
                             // Aimantage au relâcher : lâché près d'un sommet d'une AUTRE station,
                             // le sommet déplacé se raccorde exactement dessus (comme au tap). Ne
-                            // s'aimante jamais aux autres sommets du même polygone (sommetsSession
+                            // s'aimante jamais aux autres sommets du même polygone (stationsLocales.sommets
                             // = uniquement les stations voisines).
                             val i = markersSommets.indexOf(m)
                             if (i in sommets.indices) {
@@ -997,7 +926,7 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
                 ) else deplacee)
                 modifie = true
             }
-        if (modifie) afficherStationsSession()
+        if (modifie) stationsLocales.afficher()
     }
 
     /** Arête commune {a,b} chez un voisin (dans un sens ou l'autre, fermeture incluse) →
@@ -1057,19 +986,19 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
         majPanneauBas()
         majBoutons()
         serveur.afficherToutLeCache()
-        afficherStationsSession(toutesLesSaisies = true)
+        stationsLocales.afficher(toutesLesSaisies = true)
         binding.map.invalidate()
     }
 
     private fun deselectionnerStation() {
-        pileAnnulation.clear()
+        pileAnnulation.vider()
         occhabViewModel.nouvelleStation() // station vierge, même saisieId — l'ex-sélection n'est plus exclue de l'affichage
         pointChoisi = null
         sommets.clear()
         trous.clear()
         geometrieChargee = false
         redessiner()               // purge les overlays d'édition (pin bleu / anneau / sommets)
-        afficherStationsSession()  // la station redevient rouge et cliquable
+        stationsLocales.afficher()  // la station redevient rouge et cliquable
         // Une station serveur importée mais INTACTE (jamais persistée) ou dont la copie locale
         // vient d'être supprimée redevient importable (violette).
         if (serveur.chargees) serveur.afficher()
@@ -1119,32 +1048,15 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
     }
 
     // ── Annulation de la dernière opération (demande terrain 2026-08-30) ─────────────────────
-    /** Instantané AVANT une opération de géométrie (tap, déplacement, insertion) : la géométrie
-     *  en cours + les polygones VOISINS de la saisie (une propagation topologique les a peut-être
-     *  modifiés). Le bouton « Annuler » dépile et rétablit tout. */
-    private class Instantane(
-        val mode: Mode,
-        val pointChoisi: GeoPoint?,
-        val sommets: List<GeoPoint>,
-        /** Anneaux intérieurs (copie PROFONDE) : un sommet de trou déplacé/inséré s'annule
-         *  comme un sommet extérieur (demande terrain 2026-08-31). */
-        val trous: List<List<GeoPoint>>,
-        val voisins: List<OccHabStation>,
-    )
-    private val pileAnnulation = ArrayDeque<Instantane>()
+    // L'historique vit dans PileAnnulationGeometrie ; la RESTAURATION reste ici, elle touche
+    // les overlays, le store et les boutons (audit OccHab 2026-10-18, O1).
+    private val pileAnnulation = PileAnnulationGeometrie<Mode>()
 
     private fun memoriserAvantOperation() {
-        val voisins = occHabStore
-            .stationsDeSaisie(occhabViewModel.saisieId)
-            .filter { it.id != occhabViewModel.station.id && it.geometryType == "Polygon" }
-        pileAnnulation.addLast(Instantane(
-            mode,
-            pointChoisi?.let { GeoPoint(it.latitude, it.longitude) },
-            sommets.map { GeoPoint(it.latitude, it.longitude) },
-            trous.map { anneau -> anneau.map { GeoPoint(it.latitude, it.longitude) } },
-            voisins,
-        ))
-        while (pileAnnulation.size > 30) pileAnnulation.removeFirst()
+        // Les voisins ne sont plus capturés : l'annulation ne porte que sur la station en cours
+        // (demande utilisateur 2026-10-18), et relire le store à chaque opération coûtait une
+        // copie complète des polygones de la saisie pour rien.
+        pileAnnulation.empiler(mode, pointChoisi, sommets, trous)
     }
 
     /** « Annuler » = retour à l'état d'avant la DERNIÈRE opération : géométrie en cours (sommet
@@ -1154,34 +1066,27 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
         // Plus rien à dépiler : « Annuler » abandonne ce qui est engagé — la station
         // sélectionnée pour modification, ou la création tout juste démarrée — et ramène à la
         // vue d'ensemble, avec « Ajouter une station » (demande utilisateur 2026-10-18).
-        if (pileAnnulation.isEmpty() && (geometrieChargee || enCreation)) {
+        if (pileAnnulation.estVide && (geometrieChargee || enCreation)) {
             abandonnerCreation()
             return
         }
-        val inst = pileAnnulation.removeLastOrNull() ?: return
+        val inst = pileAnnulation.depiler() ?: return
         mode = inst.mode
         pointChoisi = inst.pointChoisi
         sommets.clear(); sommets.addAll(inst.sommets)
         trous.clear(); inst.trous.forEach { trous.add(it.toMutableList()) }
-        val store = occHabStore
-        val actuels = store.stationsDeSaisie(occhabViewModel.saisieId).associateBy { it.id }
-        var voisinRetabli = false
-        inst.voisins.forEach { avant ->
-            val now = actuels[avant.id] ?: return@forEach
-            if (now.geometryCoordsJson != avant.geometryCoordsJson) {
-                // Le voisin est remis EXACTEMENT dans son état d'avant (état d'envoi compris :
-                // une copie envoyée déplacée par la topologie redevient envoyée ; une copie
-                // d'import revenue à l'origine est retirée de Mes stations par upsertStation).
-                store.upsertStation(occhabViewModel.saisieId, avant)
-                voisinRetabli = true
-            }
-        }
+        // « Annuler » ne touche QUE la station en cours d'édition — demande utilisateur
+        // 2026-10-18. Les stations VOISINES qu'une propagation topologique a pu déplacer (sommet
+        // partagé, aimantage) restent dans leur état : annuler son propre geste ne doit pas
+        // modifier le travail enregistré sur d'autres stations.
+        // ⚠ Conséquence assumée : un sommet partagé annulé d'un côté seulement laisse les deux
+        // polygones désolidarisés (interstice) — c'est à l'utilisateur de rétablir le raccord
+        // s'il le souhaite, en s'aimantant de nouveau.
         mettreEnEvidenceBoutonMode()
         redessiner()
         majBoutons()
         majTexteInstructionsMode()
         if (geometrieChargee) persisterSelectionApresDrag()
-        if (voisinRetabli) afficherStationsSession()
         binding.map.invalidate()
     }
 
@@ -1207,7 +1112,7 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
         // Actif aussi quand il n'y a rien à dépiler : « Annuler » sert alors à abandonner la
         // sélection d'une station (ou la création tout juste engagée) et à revenir à la vue
         // d'ensemble — demande utilisateur 2026-10-18.
-        binding.btnAnnulerPoint.isEnabled = pileAnnulation.isNotEmpty() || geometrieChargee || enCreation
+        binding.btnAnnulerPoint.isEnabled = !pileAnnulation.estVide || geometrieChargee || enCreation
         // Le TYPE de géométrie se choisit avant de dessiner, et plus après : dès qu'une station
         // est reprise en édition OU qu'un premier point / sommet est posé, les deux boutons sont
         // inactifs (demande utilisateur 2026-10-18). Basculer en « Point » au milieu d'un
@@ -1258,7 +1163,7 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
                 "Libérez de l'espace (photos, cache de cartes) puis revalidez la géométrie.")
             return
         }
-        pileAnnulation.clear() // géométrie validée = acquise, plus d'annulation
+        pileAnnulation.vider() // géométrie validée = acquise, plus d'annulation
         // Géométrie validée → ÉCRAN DE LA STATION dans tous les cas : il porte le bouton
         // « Détails », la liste des habitats et « Ajouter un habitat » (même principe que l'appli
         // iOS, demande utilisateur 2026-10-18). Auparavant une station neuve filait droit sur la
@@ -1405,7 +1310,7 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
         boussole = null
         // Les overlays/markers référencent la MapView détruite : on les lâche. Les DONNÉES
         // (sommets, stations serveur, mode) survivent et sont redessinées par onViewCreated.
-        overlaysSession.clear(); serveur.liberer()
+        stationsLocales.liberer(); serveur.liberer()
         markersSommets.clear(); markersPoignees.clear()
         overlayForme = null; markerPoint = null; locationOverlay = null; poigneeDrawable = null
         _binding = null

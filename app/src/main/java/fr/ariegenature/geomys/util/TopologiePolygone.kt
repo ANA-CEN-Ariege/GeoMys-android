@@ -43,33 +43,6 @@ object TopologiePolygone {
 
     /** Si [ring] (anneau `[lon,lat]`, fermeture implicite) possède l'arête {a,b} — dans un sens
      *  ou dans l'autre — y insère [insere] entre ses deux extrémités. true si inséré. */
-    fun insererSurArete(ring: MutableList<DoubleArray>, a: GeoPoint, b: GeoPoint, insere: GeoPoint): Boolean {
-        for (i in ring.indices) {
-            val j = (i + 1) % ring.size
-            val pi = ring[i]; val pj = ring[j]
-            val sensDirect = memePoint(a, pi[1], pi[0]) && memePoint(b, pj[1], pj[0])
-            val sensInverse = memePoint(b, pi[1], pi[0]) && memePoint(a, pj[1], pj[0])
-            if (sensDirect || sensInverse) {
-                ring.add(i + 1, doubleArrayOf(insere.longitude, insere.latitude))
-                return true
-            }
-        }
-        return false
-    }
-
-    /** Tout sommet de [ring] confondu avec [avant] (sommet partagé) est déplacé vers [apres].
-     *  true si au moins un sommet a bougé. */
-    fun deplacerSommetsConfondus(ring: MutableList<DoubleArray>, avant: GeoPoint, apres: GeoPoint): Boolean {
-        var touche = false
-        ring.forEach { c ->
-            if (memePoint(avant, c[1], c[0])) {
-                c[0] = apres.longitude; c[1] = apres.latitude
-                touche = true
-            }
-        }
-        return touche
-    }
-
     /**
      * [p] est-il À L'INTÉRIEUR de l'anneau [anneau] (liste de sommets DISTINCTS, fermeture
      * implicite) ? Lancer de rayon standard (parité impaire des intersections), en degrés :

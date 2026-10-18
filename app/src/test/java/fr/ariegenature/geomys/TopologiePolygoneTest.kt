@@ -28,46 +28,15 @@ import org.osmdroid.util.GeoPoint
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
-/** Topologie partagée des polygones aimantés : insertion sur arête commune, déplacement de
- *  sommet partagé, tolérance d'égalité. */
+/** Outils géométriques de la carte OccHab : milieu d'arête, appartenance d'un point à un
+ *  anneau, tolérance d'égalité entre deux sommets (qui sert à l'aimantage).
+ *
+ *  La topologie PARTAGÉE entre polygones aimantés a été retirée le 2026-10-18 : un geste ne
+ *  modifie plus que la station en cours d'édition, donc plus rien n'est répercuté chez un
+ *  voisin — ni un déplacement de sommet, ni une insertion sur une arête commune. */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class TopologiePolygoneTest {
-
-    private fun ring() = mutableListOf(
-        doubleArrayOf(1.0, 42.0), doubleArrayOf(2.0, 42.0), doubleArrayOf(2.0, 43.0),
-    )
-
-    @Test
-    fun insertion_sur_arete_commune_dans_les_deux_sens_fermeture_incluse() {
-        val a = GeoPoint(42.0, 1.0); val b = GeoPoint(42.0, 2.0); val m = TopologiePolygone.milieu(a, b)
-        val r1 = ring()
-        assertTrue(TopologiePolygone.insererSurArete(r1, a, b, m))
-        assertEquals(4, r1.size)
-        assertEquals(1.5, r1[1][0], 1e-9); assertEquals(42.0, r1[1][1], 1e-9)
-        // Sens inverse (b→a) : même arête.
-        val r2 = ring()
-        assertTrue(TopologiePolygone.insererSurArete(r2, b, a, m))
-        assertEquals(4, r2.size)
-        // Arête de fermeture (dernier → premier).
-        val r3 = ring()
-        val c = GeoPoint(43.0, 2.0)
-        assertTrue(TopologiePolygone.insererSurArete(r3, c, a, TopologiePolygone.milieu(c, a)))
-        assertEquals(4, r3.size)
-        assertEquals("inséré après le dernier sommet", 42.5, r3[3][1], 1e-9)
-        // Arête étrangère : rien.
-        val r4 = ring()
-        assertFalse(TopologiePolygone.insererSurArete(r4, GeoPoint(50.0, 5.0), a, m))
-        assertEquals(3, r4.size)
-    }
-
-    @Test
-    fun deplacement_d_un_sommet_partage() {
-        val r = ring()
-        assertTrue(TopologiePolygone.deplacerSommetsConfondus(r, GeoPoint(42.0, 2.0), GeoPoint(42.1, 2.1)))
-        assertEquals(2.1, r[1][0], 1e-9); assertEquals(42.1, r[1][1], 1e-9)
-        assertFalse("aucun sommet confondu", TopologiePolygone.deplacerSommetsConfondus(r, GeoPoint(0.0, 0.0), GeoPoint(1.0, 1.0)))
-    }
 
     @Test
     fun meme_point_tolerance_fine() {

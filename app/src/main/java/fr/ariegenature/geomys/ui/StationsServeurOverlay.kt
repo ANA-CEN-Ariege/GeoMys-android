@@ -67,7 +67,6 @@ class StationsServeurOverlay(private val hote: Hote) {
         fun cercleSommet(couleur: Int): Drawable
         fun editerStationExistante(st: OccHabStation)
         fun afficherStationsSession(): List<GeoPoint>
-        fun cadrerSur(points: List<GeoPoint>)
         fun afficherInstructionSelection()
     }
 
@@ -182,17 +181,14 @@ class StationsServeurOverlay(private val hote: Hote) {
                         (if (detail.isEmpty()) " affichée(s)" else " (dont ${detail.joinToString(", ")})") +
                         suffixeIgnorees,
                     Toast.LENGTH_LONG).show()
-                if (hote.aucuneGeometrieEnCours) {
-                    hote.afficherInstructionSelection()
-                    // Recadrage sur l'ensemble des stations SEULEMENT quand rien n'est en cours.
-                    // Ce chargement est asynchrone : il arrivait APRÈS le cadrage sur la station
-                    // qu'on vient d'ouvrir (réédition d'un relevé) et l'écrasait, si bien que
-                    // l'emprise ne montrait plus le relevé (constat terrain 2026-10-18).
-                    hote.cadrerSur(pts + hote.afficherStationsSession())
-                } else {
-                    // Géométrie en cours : on redessine les voisines sans toucher à la vue.
-                    hote.afficherStationsSession()
-                }
+                if (hote.aucuneGeometrieEnCours) hote.afficherInstructionSelection()
+                // Les voisines sont redessinées, et l'EMPRISE N'EST PAS TOUCHÉE. Ce chargement
+                // est asynchrone : il arrivait après coup et écrasait la vue — sur le relevé
+                // qu'on venait d'ouvrir en réédition, puis, une fois ce cas traité, sur la
+                // localisation qu'on avait à l'entrée dès qu'on appuyait sur « Ajouter une
+                // station » (le JDD choisi déclenche ce chargement). L'emprise ne change plus
+                // que sur un geste de l'utilisateur (demande utilisateur 2026-10-18).
+                hote.afficherStationsSession()
             }
             // Aucune station serveur pour ce compte et ce JDD : ce n'est PAS une information —
             // le chargement n'est plus demandé par l'utilisateur, il accompagne la création ou la

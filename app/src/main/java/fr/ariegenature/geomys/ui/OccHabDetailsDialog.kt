@@ -174,6 +174,15 @@ fun ouvrirDialogDetailsOccHab(
             masquerClavier(champ)
         }
         champ.setOnDismissListener { champ.setText(nomChoisi.orEmpty(), false) }
+        // Le jeu de données se choisit UNIQUEMENT dans la liste. Taper reste possible — c'est
+        // ainsi qu'on filtre une liste qui peut compter des centaines d'entrées —, mais dès que
+        // le champ perd le focus, il réaffiche le choix RÉEL : un texte libre ne peut donc pas
+        // rester à l'écran en laissant croire à une sélection qui n'a pas eu lieu (seul
+        // setOnItemClickListener renseigne pendingIdDataset). Un champ laissé vide est bloqué
+        // à la validation (« Choisissez un jeu de données »).
+        champ.setOnFocusChangeListener { _, aLeFocus ->
+            if (!aLeFocus) champ.setText(nomChoisi.orEmpty(), false)
+        }
         racine.addView(til)
     }
 

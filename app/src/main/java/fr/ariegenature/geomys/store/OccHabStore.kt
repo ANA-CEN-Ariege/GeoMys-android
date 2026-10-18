@@ -97,6 +97,15 @@ class OccHabStore(context: Context) : JsonCollectionStore<OccHabSaisie>() {
      *  envoyer » (elle renverra le contenu d'origine en mise à jour — jamais de disparition
      *  d'une station peut-être modifiée côté serveur). */
     fun upsertStation(saisieId: String, station: OccHabStation): Boolean {
+        // Une station appartient à UNE SEULE saisie, celle où elle est née. Si on la réenregistre
+        // depuis une autre, on met à jour la sienne — sans quoi « Mes stations » gagnerait un
+        // relevé de plus à chaque modification. Le cas vient de la carte, qui affiche les
+        // stations de toutes les saisies : celle qu'on reprend n'est pas forcément de la saisie
+        // courante (constat terrain 2026-10-18).
+        val saisieDOrigine = charger().firstOrNull { s -> s.stations.any { it.id == station.id } }?.id
+        if (saisieDOrigine != null && saisieDOrigine != saisieId) {
+            return upsertStation(saisieDOrigine, station)
+        }
         if (!estIntacte(saisieId, station)) return upsertStationBrut(saisieId, station)
         val existante = stationsDeSaisie(saisieId).firstOrNull { it.id == station.id }
         return when {

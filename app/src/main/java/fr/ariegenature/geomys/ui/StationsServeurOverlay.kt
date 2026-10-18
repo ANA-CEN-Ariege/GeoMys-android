@@ -102,7 +102,21 @@ class StationsServeurOverlay(private val hote: Hote) {
      *  humanisé, la saisie continue.
      *  SEULEMENT les stations du compte (filtre client dans chargerStations) ET du JEU DE DONNÉES
      *  de la saisie (demande terrain 2026-08-27) : filtre serveur `id_dataset` + filtre client. */
-    fun charger() {
+    /** Affiche TOUTES les stations du cache, tous jeux de données confondus et SANS réseau —
+     *  vue d'entrée dans OccHab. À ce moment aucun JDD n'est choisi (il l'est à la création),
+     *  donc [charger], qui interroge le serveur pour un JDD donné, ne peut pas servir.
+     *  Renvoie les points affichés, pour le cadrage éventuel. */
+    fun afficherToutLeCache(): List<GeoPoint> {
+        stations.clear()
+        stations.addAll(fr.ariegenature.geomys.store.StationsServeurCache.tout)
+        return afficher()
+    }
+
+    /** [conserverLesAutresJdd] : garde à l'affichage les stations des AUTRES jeux de données,
+     *  telles que le cache les connaît. Choisir un JDD pour une nouvelle station ne doit pas
+     *  vider la carte de tout le reste (demande utilisateur 2026-10-18) — les stations du JDD
+     *  choisi, elles, sont rafraîchies depuis le serveur. */
+    fun charger(conserverLesAutresJdd: Boolean = false) {
         val ctx = hote.contexte
         val appContext = ctx.applicationContext
         val idJdd = hote.vm.details.idDataset
@@ -139,6 +153,10 @@ class StationsServeurOverlay(private val hote: Hote) {
             if (!hote.vueVivante) return@launch
             stations.clear()
             stations.addAll(chargees)
+            if (conserverLesAutresJdd) {
+                // Fraîches pour le JDD demandé, depuis le cache pour les autres.
+                stations.addAll(StationsServeurCache.tout.filter { it.idDataset != idJdd })
+            }
             jddCharge = idJdd
             val pts = afficher()
             if (chargees.isNotEmpty()) {
@@ -165,10 +183,12 @@ class StationsServeurOverlay(private val hote: Hote) {
                     Toast.LENGTH_LONG).show()
                 if (hote.aucuneGeometrieEnCours) hote.afficherInstructionSelection()
                 hote.cadrerSur(pts + hote.afficherStationsSession())
-            } else {
-                Toast.makeText(hote.contexte,
-                    "Aucune station sur le serveur pour ce compte et ce jeu de données", Toast.LENGTH_SHORT).show()
             }
+            // Aucune station serveur pour ce compte et ce JDD : ce n'est PAS une information —
+            // le chargement n'est plus demandé par l'utilisateur, il accompagne la création ou la
+            // réédition d'une station. Annoncer « aucune station » à quelqu'un qui édite la
+            // sienne est du bruit (constat terrain 2026-10-18). Le silence vaut mieux : la carte
+            // montre déjà ce qu'il y a.
         }
     }
 

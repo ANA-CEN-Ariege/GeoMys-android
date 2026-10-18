@@ -132,6 +132,30 @@ object StationsServeurCache {
         ecrire(Contenu(System.currentTimeMillis(), autres + stations, VERSION_FORMAT))
     }
 
+    /** Ajoute ou REMPLACE une seule station, identifiée par son id serveur — appelé après un
+     *  envoi réussi (création comme mise à jour).
+     *
+     *  Sans cela, le cache n'était alimenté que par la synchro et par le chargement réseau de la
+     *  carte : une station que l'on venait de créer n'y figurait pas, et une station modifiée puis
+     *  envoyée y restait dans sa version PRÉCÉDENTE — en rouvrant OccHab, la carte réaffichait
+     *  l'ancienne géométrie (constat terrain 2026-10-17).
+     *
+     *  La date de chargement n'est PAS rafraîchie : elle date l'instantané du serveur dans son
+     *  ensemble (c'est elle qu'affiche le repli hors-ligne), et une station envoyée ne dit rien
+     *  des autres. */
+    @Synchronized
+    fun upsert(station: OccHabStation) {
+        val id = station.idStationServeur ?: return
+        val courant = charger()
+        val autres = courant.liste.filter { it.idStationServeur != id }
+        val date = courant.dateChargement.takeIf { it > 0L } ?: System.currentTimeMillis()
+        ecrire(Contenu(date, autres + station, VERSION_FORMAT))
+    }
+
+    /** TOUTES les stations en cache, tous jeux de données confondus — vue d'entrée dans OccHab,
+     *  où aucun JDD n'est encore choisi (il l'est à la création d'une station). */
+    val tout: List<OccHabStation> get() = charger().liste
+
     /** Stations en cache pour ce jeu de données (repli hors-ligne de la carte). */
     fun lire(idJdd: Int): List<OccHabStation> =
         charger().liste.filter { it.idDataset == idJdd }

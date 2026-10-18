@@ -60,6 +60,7 @@ class OccHabStationFragment : Fragment() {
         appliquerBandeauNavigation(binding.bandeauSaisie.root, findNavController(), "OccHab")
         occHabStore = OccHabStore(requireContext())
         gnConfig = GeoNatureConfig(requireContext())
+        majTitre() // APRÈS occHabStore : il le consulte pour savoir si la station existe déjà.
 
         // Mort du process pendant la saisie (ViewModel reconstruit VIERGE) : sans géométrie il
         // n'y a rien à enregistrer — on ne crée PAS une station fantôme (0,0) envoyable
@@ -109,10 +110,22 @@ class OccHabStationFragment : Fragment() {
         }
     }
 
+    /** « Nouvelle station » ou « Modifier la station » selon le contexte réel : le titre était
+     *  figé dans le layout, si bien qu'une station rééditée — importée du serveur ou reprise
+     *  depuis « Mes stations » — s'annonçait encore comme une création. Une station est une
+     *  RÉÉDITION dès qu'elle existe déjà quelque part : côté serveur (importée) ou dans le store
+     *  local (déjà enregistrée dans cette saisie). */
+    private fun majTitre() {
+        val st = occhabViewModel.station
+        val dejaDansLeStore = occHabStore.stationsDeSaisie(occhabViewModel.saisieId).any { it.id == st.id }
+        val existante = st.origineServeur || (st.idStationServeur ?: 0) > 0 || dejaDansLeStore
+        binding.tvTitreStation.text = if (existante) "Modifier la station" else "Nouvelle station"
+    }
+
     /** Enregistrement AU FIL DE L'EAU (comme les saisies Occtax) : la station courante — détails
-     *  de session fusionnés — est (ré)écrite dans le store. On arrive ici après la validation du
-     *  1er habitat (champ OBLIGATOIRE — pas de station sans habitat), la géométrie et au moins un
-     *  habitat sont donc déjà définis.
+     *  de session fusionnés — est (ré)écrite dans le store. La géométrie est définie ; les
+     *  habitats, eux, sont FACULTATIFS (une station sans habitat est enregistrable et envoyable
+     *  depuis la v1.3.11 — le commentaire qui les disait obligatoires datait d'avant).
      *  Renvoie le succès de l'ÉCRITURE DISQUE ; sur échec, l'alerte bloquante est déjà affichée
      *  (le retour des stores était ignoré côté OccHab — audit 2026-08-23, constat CRITIQUE). */
     private fun sauvegarderAuFilDeLEau(): Boolean {

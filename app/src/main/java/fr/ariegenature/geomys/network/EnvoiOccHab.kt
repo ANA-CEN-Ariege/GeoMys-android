@@ -126,6 +126,23 @@ suspend fun envoyerSaisieOccHabVersGeoNature(
                 val persiste = store.marquerStationEnvoyee(saisie.id, station.id, res.idStationServeur)
                 if (persiste) {
                     nbCrees++
+                    // La version qui vient de partir devient l'état de référence du serveur : on
+                    // la met dans le cache des stations serveur, à la place de l'ancienne s'il y
+                    // en avait une. Sans ça, rouvrir OccHab réaffichait la version PRÉCÉDENTE
+                    // (le cache n'était écrit qu'à la synchro et au chargement réseau de la
+                    // carte), et une station tout juste créée n'apparaissait pas du tout.
+                    // Mise en forme « station serveur », comme le parser de chargement :
+                    // l'empreinte d'origine est recalculée au prochain import pour édition.
+                    fr.ariegenature.geomys.store.StationsServeurCache.upsert(
+                        station.copy(
+                            idStationServeur = res.idStationServeur ?: station.idStationServeur,
+                            envoyeGeoNature = true,
+                            origineServeur = true,
+                            envoiIncertain = false,
+                            derniereErreurEnvoi = null,
+                            empreinteOrigine = null,
+                        )
+                    )
                 } else {
                     // POST réussi mais écriture disque échouée (disque plein…) : la station EST créée
                     // côté serveur mais non marquée localement → on la passe en INCERTAIN pour que le

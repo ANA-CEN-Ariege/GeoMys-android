@@ -64,6 +64,11 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
     private var fondCarte: FondChoisi = FondChoisi.EnLigne(FondCarte.TOPO)
     private var locationOverlay: MyLocationNewOverlay? = null
 
+    /** false = CONSULTATION (vue d'entrée) : la carte montre ce qui existe déjà et les taps ne
+     *  dessinent rien ; seul « Ajouter une station » engage une création. true = CRÉATION : le
+     *  comportement historique de cet écran (tap = point ou sommet, Annuler/Valider). */
+    private var enCreation = false
+
     private enum class Mode { POINT, POLYGONE }
     private var mode = Mode.POINT
     private var pointChoisi: GeoPoint? = null
@@ -201,18 +206,34 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
         // n'apparaissait qu'au 1er écran habitat). Pré-rempli avec les valeurs du relevé
         // précédent ; « Annuler » ramène à l'accueil ; validé → on saisit la station puis
         // ses habitats.
-        if (!occhabViewModel.jddDefini) binding.root.post {
-            if (isAdded && !occhabViewModel.jddDefini) ouvrirDialogDetailsOccHab(
-                requireContext(), occhabViewModel,
-                fr.ariegenature.geomys.store.GeoNatureConfig(requireContext()),
-                jddObligatoire = true, jddSeul = true,
-                onAnnule = { allerAccueil() },
-            ) {
-                if (occhabViewModel.details.chargerStationsServeur) serveur.charger()
-                // Sans les stations serveur, rien à cadrer : on centre sur la POSITION GPS
-                // (demande terrain 2026-08-31). Fix déjà acquis → centrage immédiat ; sinon le
-                // runOnFirstFix (plus bas) recentrera à l'acquisition, comme avant.
-                else centrerSurPosition()
+        binding.btnAjouterStation.setOnClickListener { demarrerCreationStation() }
+        // Retour sur la carte alors qu'une station est en cours (Valider → habitats → retour,
+        // recréation de vue, rotation) : on reprend en CRÉATION, pas en consultation — sinon le
+        // panneau bas proposerait « Ajouter une station » par-dessus un tracé en cours.
+        if (occhabViewModel.station.geometrieDefinie()) enCreation = true
+        majPanneauBas()
+
+        // VUE D'ENSEMBLE, à l'entrée comme à CHAQUE RETOUR en consultation (station terminée,
+        // création abandonnée) : toutes les stations restent affichées, quel que soit leur jeu de
+        // données — serveur (cache, tous JDD) et locales (toutes saisies). Demande utilisateur
+        // 2026-10-18 : le formulaire des infos obligatoires n'est plus imposé à l'entrée, et
+        // terminer une station ne doit pas faire disparaître le reste de la carte.
+        if (!enCreation) binding.root.post {
+            if (!isAdded) return@post
+            val ptsServeur = serveur.afficherToutLeCache()
+            val ptsLocales = afficherStationsSession(toutesLesSaisies = true)
+            // On reprend le cadrage laissé en quittant l'écran ; à la toute première ouverture,
+            // on centre sur la position.
+            val memo = occhabViewModel.dernierCadrageCarte
+            if (memo != null) {
+                binding.map.controller.setZoom(memo.third)
+                binding.map.controller.setCenter(GeoPoint(memo.first, memo.second))
+                cadrageInitialFait = true
+            } else centrerSurPosition()
+            if (ptsServeur.isEmpty() && ptsLocales.isEmpty()) {
+                Toast.makeText(requireContext(),
+                    "Aucune station enregistrée — appuyez sur « Ajouter une station »",
+                    Toast.LENGTH_SHORT).show()
             }
         }
 
@@ -347,11 +368,56 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
      *  est exclue) : pins pour les points, contour + cercles aux sommets pour les polygones. Ces
      *  stations sont CLIQUABLES pour être rééditées ([editerStationExistante]). Renvoie tous leurs
      *  points pour le cadrage de l'emprise et alimente les cibles d'aimantage. */
-    private fun afficherStationsSession(): List<GeoPoint> {
+    /** « Ajouter une station » : la création COMMENCE par les infos obligatoires (jeu de données
+     *  en tête), pré-remplies avec celles du relevé précédent. Validées, la carte passe en mode
+     *  dessin ; annulées, on reste sur la vue de consultation. C'est le seul chemin qui engage
+     *  une création depuis cet écran (demande utilisateur 2026-10-18). */
+    private fun demarrerCreationStation() {
+        ouvrirDialogDetailsOccHab(
+            requireContext(), occhabViewModel,
+            fr.ariegenature.geomys.store.GeoNatureConfig(requireContext()),
+            jddObligatoire = true, jddSeul = true,
+        ) {
+            enCreation = true
+            majPanneauBas()
+            // Recalcule l'état des boutons : « Annuler » devient actif dès l'entrée en création,
+            // pour pouvoir revenir en arrière sans avoir rien dessiné (le layout le livre
+            // désactivé, et rien ne le réveillait avant le premier tap sur la carte).
+            majBoutons()
+            // Le JDD est désormais connu : on rafraîchit ses stations depuis le serveur, en
+            // CONSERVANT celles des autres jeux de données déjà affichées — choisir un JDD ne
+            // doit pas vider la carte du reste (demande utilisateur 2026-10-18). Toutes restent
+            // cibles d'aimantage pendant le dessin.
+            if (occhabViewModel.details.chargerStationsServeur) {
+                serveur.charger(conserverLesAutresJdd = true)
+            }
+            afficherStationsSession()
+            Toast.makeText(requireContext(),
+                if (mode == Mode.POINT) "Touchez la carte pour placer la station"
+                else "Touchez la carte pour tracer la station",
+                Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    /** Bas d'écran : « Ajouter une station » en consultation, Annuler / Valider en création. */
+    private fun majPanneauBas() {
+        binding.btnAjouterStation.visibility = if (enCreation) View.GONE else View.VISIBLE
+        binding.btnAnnulerPoint.visibility = if (enCreation) View.VISIBLE else View.GONE
+        binding.btnValider.visibility = if (enCreation) View.VISIBLE else View.GONE
+        // Les outils de dessin (point / polygone) n'ont de sens qu'en création.
+        binding.btnModePoint.visibility = if (enCreation) View.VISIBLE else View.GONE
+        binding.btnModePolygone.visibility = if (enCreation) View.VISIBLE else View.GONE
+    }
+
+    /** [toutesLesSaisies] : vue d'ENTRÉE — on montre les stations locales de toutes les saisies,
+     *  pas seulement celles de la session en cours, pour que l'utilisateur retrouve ce qu'il a
+     *  déjà saisi. En création, on s'en tient à la saisie courante, comme avant. */
+    private fun afficherStationsSession(toutesLesSaisies: Boolean = false): List<GeoPoint> {
         overlaysSession.forEach { binding.map.overlays.remove(it) }
         overlaysSession.clear()
-        val autres = fr.ariegenature.geomys.store.OccHabStore(requireContext())
-            .stationsDeSaisie(occhabViewModel.saisieId)
+        val store = fr.ariegenature.geomys.store.OccHabStore(requireContext())
+        val autres = (if (toutesLesSaisies) store.charger().flatMap { it.stations }
+                      else store.stationsDeSaisie(occhabViewModel.saisieId))
             .filter { it.id != occhabViewModel.station.id }
         val pts = mutableListOf<GeoPoint>()
         val rouge = 0xFFD32F2F.toInt() // même rouge que le pin ic_pin_drop.
@@ -415,6 +481,10 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
      *  géométrie devient l'objet en cours (draggable), les autres stations restent en lecture
      *  seule. « Valider » enchaînera sur la liste des habitats (la station en porte). */
     private fun editerStationExistante(st: fr.ariegenature.geomys.model.OccHabStation) {
+        // Reprendre une station existante, c'est l'éditer : la carte passe en mode dessin, avec
+        // Annuler / Valider — et non plus « Ajouter une station ».
+        enCreation = true
+        majPanneauBas()
         // Station déjà envoyée : rééditable SEULEMENT si son id serveur est connu — elle repasse
         // alors « à envoyer » et repartira en MISE À JOUR (POST /stations/<id>/, pas de doublon).
         // Sans id serveur (envoi ancien), un update est impossible et un re-POST dupliquerait :
@@ -453,6 +523,13 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
             }
             return
         }
+        // La carte montre les stations de TOUTES les saisies : celle qu'on reprend peut venir
+        // d'une autre. On rattache la session à SA saisie, pour que tout ce qui suit — détails,
+        // enregistrement au fil de l'eau, envoi — porte sur la bonne. Station venue du serveur
+        // et pas encore locale : aucune saisie propriétaire, on reste sur la saisie courante.
+        fr.ariegenature.geomys.store.OccHabStore(requireContext()).charger()
+            .firstOrNull { s -> s.stations.any { it.id == st.id } }
+            ?.let { proprietaire -> occhabViewModel.rattacherASaisie(proprietaire.id) }
         occhabViewModel.reprendreStation(st)
         pileAnnulation.clear()
         // Purge l'objet en cours d'édition précédent.
@@ -474,7 +551,7 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
         majBoutons()
         cadrerSur(ptsCourant + ptsSession)
         Toast.makeText(requireContext(),
-            "Station chargée — déplacez les sommets, ou touchez la carte pour redessiner",
+            "Station chargée — déplacez ses sommets ; « Annuler » pour quitter l'édition",
             Toast.LENGTH_LONG).show()
     }
 
@@ -522,20 +599,16 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
     }
 
     override fun singleTapConfirmedHelper(p: GeoPoint): Boolean {
-        // STATION SÉLECTIONNÉE : un tap hors de sa géométrie la DÉSÉLECTIONNE et démarre une
-        // NOUVELLE station (demande terrain 2026-08-26 — la sélection ne permet que modifier
-        // par drag, persisté au relâcher ; plus de redessin — suppression via « Mes stations »).
-        if (geometrieChargee) {
-            occhabViewModel.nouvelleStation() // la station sélectionnée reste telle quelle dans le store
-            pointChoisi = null
-            sommets.clear()
-            trous.clear() // nouveau tracé = polygone PLEIN (les trous de l'ancien ne suivent pas)
-            geometrieChargee = false
-            afficherStationsSession() // l'ex-sélection redevient rouge et cliquable
-            // …ou violette si c'était une station importée INTACTE (jamais persistée).
-            if (serveur.chargees) serveur.afficher()
-            pileAnnulation.clear()
-        }
+        // CONSULTATION : la carte est une vue d'ensemble de ce qui existe déjà. Un tap dans le
+        // vide ne doit rien créer — les stations affichées restent cliquables (leurs propres
+        // listeners), et c'est « Ajouter une station » qui engage une création.
+        if (!enCreation) return false
+        // STATION EN ÉDITION : un tap sur la carte — dans le polygone comme en dehors — n'a
+        // AUCUN effet (demande utilisateur 2026-10-18). Les seuls gestes sont l'ajout d'un
+        // sommet par une poignée +, le déplacement d'un sommet par appui long, et la sortie par
+        // « Annuler ». Auparavant un tap hors de la géométrie désélectionnait et démarrait une
+        // nouvelle station : un geste imprécis abandonnait l'édition en cours.
+        if (geometrieChargee) return false
         memoriserAvantOperation()
         // Aimantage : si le tap tombe près d'un sommet d'une station déjà posée, on réutilise
         // exactement ce sommet (pour raccorder proprement deux stations voisines).
@@ -558,9 +631,10 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
     private fun majTexteInstructionsMode() {
         binding.tvInstructions.text = when {
             mode == Mode.POLYGONE && geometrieChargee ->
-                "Poignée + : ajouter un sommet · appui long sur un sommet : déplacer · re-touchez la station : désélectionner"
+                "Poignée + : ajouter un sommet · appui long sur un sommet : déplacer · " +
+                    "« Annuler » : quitter l'édition"
             mode == Mode.POINT && geometrieChargee ->
-                "Touchez : déplacer le point · re-touchez le point : désélectionner"
+                "Appui long sur le point : déplacer · « Annuler » : quitter l'édition"
             mode == Mode.POINT ->
                 "Touchez pour placer le point · appui long pour le déplacer"
             else ->
@@ -623,12 +697,10 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
         if (mode == Mode.POINT) {
             pointChoisi?.let { pt ->
                 markerPoint = markerDraggable(pt).apply {
-                    // Tap sur le pin d'une station-point SÉLECTIONNÉE → désélection (le drag
-                    // reste le geste de modification). Hors sélection : tap consommé sans effet.
-                    setOnMarkerClickListener { _, _ ->
-                        if (geometrieChargee) deselectionnerStation()
-                        true
-                    }
+                    // Tap sur le pin : consommé SANS effet. Déplacer le point se fait par appui
+                    // long (drag), et l'on sort de l'édition par « Annuler » — un tap ne doit
+                    // rien défaire (demande utilisateur 2026-10-18).
+                    setOnMarkerClickListener { _, _ -> true }
                     setOnMarkerDragListener(object : Marker.OnMarkerDragListener {
                         override fun onMarkerDrag(m: Marker) { pointChoisi = m.position }
                         override fun onMarkerDragEnd(m: Marker) {
@@ -942,6 +1014,19 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
     /** DÉSÉLECTIONNE la station en cours d'édition (re-tap sur sa géométrie — demande terrain
      *  2026-08-25) : la station retourne à l'affichage session (rouge), l'édition repart d'une
      *  station vierge de la même saisie, le bandeau repropose sélection ou nouvelle saisie. */
+    /** Retour à l'état d'ENTRÉE : plus de station sélectionnée, plus de tracé en cours, et le
+     *  panneau bas repropose « Ajouter une station ». La vue d'ensemble est rétablie — stations
+     *  serveur de tous les jeux de données et stations locales de toutes les saisies. */
+    private fun abandonnerCreation() {
+        deselectionnerStation()
+        enCreation = false
+        majPanneauBas()
+        majBoutons()
+        serveur.afficherToutLeCache()
+        afficherStationsSession(toutesLesSaisies = true)
+        binding.map.invalidate()
+    }
+
     private fun deselectionnerStation() {
         pileAnnulation.clear()
         occhabViewModel.nouvelleStation() // station vierge, même saisieId — l'ex-sélection n'est plus exclue de l'affichage
@@ -972,13 +1057,16 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
                 outlinePaint.color = 0xFF1976D2.toInt()
                 outlinePaint.strokeWidth = 4f
                 // Pas de bulle : le constructeur Polygon(map) attache une BasicInfoWindow par
-                // défaut → re-taper la géométrie affichait un POPUP VIDE. Tap sur le corps du
-                // polygone : géométrie CHARGÉE (station sélectionnée) → DÉSÉLECTION ; saisie en
-                // cours d'un nouveau polygone → le tap traverse (ajout de sommet).
+                // défaut → re-taper la géométrie affichait un POPUP VIDE.
+                //
+                // Tap sur le corps du polygone : CONSOMMÉ SANS EFFET quand une station est en
+                // édition (demande utilisateur 2026-10-18 — seuls l'ajout d'un sommet par une
+                // poignée +, le déplacement par appui long et « Annuler » agissent ; il
+                // désélectionnait auparavant, si bien qu'un doigt posé dans la forme abandonnait
+                // l'édition). Pendant le tracé d'un NOUVEAU polygone, le tap doit en revanche
+                // traverser pour ajouter un sommet à l'intérieur de la forme déjà esquissée.
                 infoWindow = null
-                setOnClickListener { _, _, _ ->
-                    if (geometrieChargee) { deselectionnerStation(); true } else false
-                }
+                setOnClickListener { _, _, _ -> geometrieChargee }
             }
             binding.map.overlays.add(poly)
             overlayForme = poly
@@ -1029,6 +1117,13 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
      *  ajouté, déplacé, inséré, point déplacé) ET voisins touchés par la propagation topologique.
      *  Station sélectionnée → l'annulation est persistée comme l'opération l'était. */
     private fun annulerDerniereOperation() {
+        // Plus rien à dépiler : « Annuler » abandonne ce qui est engagé — la station
+        // sélectionnée pour modification, ou la création tout juste démarrée — et ramène à la
+        // vue d'ensemble, avec « Ajouter une station » (demande utilisateur 2026-10-18).
+        if (pileAnnulation.isEmpty() && (geometrieChargee || enCreation)) {
+            abandonnerCreation()
+            return
+        }
         val inst = pileAnnulation.removeLastOrNull() ?: return
         mode = inst.mode
         pointChoisi = inst.pointChoisi
@@ -1075,7 +1170,21 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
             (mode == Mode.POLYGONE && sommets.size >= 3)
         binding.btnValider.isEnabled = geomOk
         binding.btnValider.alpha = if (geomOk) 1f else 0.5f
-        binding.btnAnnulerPoint.isEnabled = pileAnnulation.isNotEmpty()
+        // Actif aussi quand il n'y a rien à dépiler : « Annuler » sert alors à abandonner la
+        // sélection d'une station (ou la création tout juste engagée) et à revenir à la vue
+        // d'ensemble — demande utilisateur 2026-10-18.
+        binding.btnAnnulerPoint.isEnabled = pileAnnulation.isNotEmpty() || geometrieChargee || enCreation
+        // Le TYPE de géométrie se choisit avant de dessiner, et plus après : dès qu'une station
+        // est reprise en édition OU qu'un premier point / sommet est posé, les deux boutons sont
+        // inactifs (demande utilisateur 2026-10-18). Basculer en « Point » au milieu d'un
+        // polygone — ou l'inverse — jetait silencieusement ce qui venait d'être tracé. Pour
+        // changer d'avis, « Annuler » : en défaisant le dernier sommet (ou en quittant
+        // l'édition), il rend la main sur le choix du type.
+        val geometrieEngagee = geometrieChargee || sommets.isNotEmpty() || pointChoisi != null
+        listOf(binding.btnModePoint, binding.btnModePolygone).forEach { btn ->
+            btn.isEnabled = !geometrieEngagee
+            btn.alpha = if (geometrieEngagee) 0.4f else 1f
+        }
     }
 
 
@@ -1116,12 +1225,12 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
             return
         }
         pileAnnulation.clear() // géométrie validée = acquise, plus d'annulation
-        // Nouvelle station (aucun habitat) → écran de création directement ; station rééditée
-        // (habitats déjà présents) → liste des habitats.
-        if (occhabViewModel.station.habitats.isEmpty())
-            findNavController().naviguerSur(R.id.action_occhab_carte_to_habitat)
-        else
-            findNavController().naviguerSur(R.id.action_occhab_carte_to_liste)
+        // Géométrie validée → ÉCRAN DE LA STATION dans tous les cas : il porte le bouton
+        // « Détails », la liste des habitats et « Ajouter un habitat » (même principe que l'appli
+        // iOS, demande utilisateur 2026-10-18). Auparavant une station neuve filait droit sur la
+        // création d'un habitat : l'habitat étant FACULTATIF, cela forçait la main, et il fallait
+        // en sortir pour revenir à une station qu'on voulait simplement enregistrer.
+        findNavController().naviguerSur(R.id.action_occhab_carte_to_liste)
     }
 
     /** Remplit les altitudes min/max de la station courante via le MNT du serveur
@@ -1245,6 +1354,13 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
 
     override fun onPause() {
         super.onPause()
+        // Cadrage courant mémorisé pour le retour (cf. vue d'ensemble) : sans lui, chaque retour
+        // sur la carte recentrait sur le GPS.
+        _binding?.map?.let { carte ->
+            carte.mapCenter.let { c ->
+                occhabViewModel.dernierCadrageCarte = Triple(c.latitude, c.longitude, carte.zoomLevelDouble)
+            }
+        }
         binding.map.onPause()
         locationOverlay?.disableMyLocation()
         boussole?.arreter()

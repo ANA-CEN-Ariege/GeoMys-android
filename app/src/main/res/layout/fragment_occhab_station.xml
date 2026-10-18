@@ -49,7 +49,10 @@
         android:orientation="horizontal"
         android:paddingHorizontal="16dp">
 
+        <!-- Libellé posé par OccHabStationFragment : « Nouvelle station » ou « Modifier la
+             station » selon que la station existe déjà (store ou serveur). -->
         <TextView
+            android:id="@+id/tv_titre_station"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
@@ -128,7 +131,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="4dp"
-                android:text="Aucun habitat. Ajoutez-en au moins un."
+                android:text="Aucun habitat pour l'instant — il est facultatif."
                 android:textColor="?attr/colorControlNormal"
                 android:textSize="13sp" />
 
@@ -137,7 +140,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
-                android:text="＋ Ajouter un autre habitat"
+                android:text="＋ Ajouter un habitat"
                 android:textAllCaps="false" />
         </LinearLayout>
     </ScrollView>

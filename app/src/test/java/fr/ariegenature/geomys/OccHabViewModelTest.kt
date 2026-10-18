@@ -152,4 +152,32 @@ class OccHabViewModelTest {
         assertFalse("les nouvelles stations de la session aussi",
             vmMasque.defautsSession.chargerStationsServeur)
     }
+
+    /**
+     * Rééditer un relevé qui ne contient QU'UNE station doit ouvrir la carte sur cette station,
+     * sélectionnée et cadrée — pas sur une carte sans objet en cours (demande utilisateur
+     * 2026-10-18). C'est la station reprise dans le ViewModel qui le déclenche : la carte charge
+     * sa géométrie à l'ouverture et cadre dessus.
+     */
+    @Test
+    fun reediter_un_releve_a_une_seule_station_la_selectionne() {
+        val unique = stationServeur()
+        val vm = OccHabViewModel().apply {
+            reprendreSaisie(fr.ariegenature.geomys.model.OccHabSaisie(stations = listOf(unique)))
+        }
+        assertEquals("la station unique doit être reprise", unique.id, vm.station.id)
+        assertTrue("donc sa géométrie est définie — la carte l'ouvrira sélectionnée",
+            vm.station.geometrieDefinie())
+    }
+
+    /** CONTRE-ÉPREUVE : à PLUSIEURS stations, aucune ne s'impose — on repart d'une station
+     *  vierge et la carte les montre toutes. */
+    @Test
+    fun reediter_un_releve_a_plusieurs_stations_ne_selectionne_rien() {
+        val vm = OccHabViewModel().apply {
+            reprendreSaisie(fr.ariegenature.geomys.model.OccHabSaisie(
+                stations = listOf(stationServeur(), stationServeur())))
+        }
+        assertFalse("aucune station sélectionnée", vm.station.geometrieDefinie())
+    }
 }

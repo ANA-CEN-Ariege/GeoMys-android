@@ -1053,10 +1053,10 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
     private val pileAnnulation = PileAnnulationGeometrie<Mode>()
 
     private fun memoriserAvantOperation() {
-        val voisins = occHabStore
-            .stationsDeSaisie(occhabViewModel.saisieId)
-            .filter { it.id != occhabViewModel.station.id && it.geometryType == "Polygon" }
-        pileAnnulation.empiler(mode, pointChoisi, sommets, trous, voisins)
+        // Les voisins ne sont plus capturés : l'annulation ne porte que sur la station en cours
+        // (demande utilisateur 2026-10-18), et relire le store à chaque opération coûtait une
+        // copie complète des polygones de la saisie pour rien.
+        pileAnnulation.empiler(mode, pointChoisi, sommets, trous)
     }
 
     /** « Annuler » = retour à l'état d'avant la DERNIÈRE opération : géométrie en cours (sommet
@@ -1075,25 +1075,18 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
         pointChoisi = inst.pointChoisi
         sommets.clear(); sommets.addAll(inst.sommets)
         trous.clear(); inst.trous.forEach { trous.add(it.toMutableList()) }
-        val store = occHabStore
-        val actuels = store.stationsDeSaisie(occhabViewModel.saisieId).associateBy { it.id }
-        var voisinRetabli = false
-        inst.voisins.forEach { avant ->
-            val now = actuels[avant.id] ?: return@forEach
-            if (now.geometryCoordsJson != avant.geometryCoordsJson) {
-                // Le voisin est remis EXACTEMENT dans son état d'avant (état d'envoi compris :
-                // une copie envoyée déplacée par la topologie redevient envoyée ; une copie
-                // d'import revenue à l'origine est retirée de Mes stations par upsertStation).
-                store.upsertStation(occhabViewModel.saisieId, avant)
-                voisinRetabli = true
-            }
-        }
+        // « Annuler » ne touche QUE la station en cours d'édition — demande utilisateur
+        // 2026-10-18. Les stations VOISINES qu'une propagation topologique a pu déplacer (sommet
+        // partagé, aimantage) restent dans leur état : annuler son propre geste ne doit pas
+        // modifier le travail enregistré sur d'autres stations.
+        // ⚠ Conséquence assumée : un sommet partagé annulé d'un côté seulement laisse les deux
+        // polygones désolidarisés (interstice) — c'est à l'utilisateur de rétablir le raccord
+        // s'il le souhaite, en s'aimantant de nouveau.
         mettreEnEvidenceBoutonMode()
         redessiner()
         majBoutons()
         majTexteInstructionsMode()
         if (geometrieChargee) persisterSelectionApresDrag()
-        if (voisinRetabli) stationsLocales.afficher()
         binding.map.invalidate()
     }
 

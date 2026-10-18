@@ -842,39 +842,12 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
             Toast.LENGTH_LONG).show()
     }
 
-    /** Icône d'une poignée d'ajout : petit disque bleu, liseré blanc, « + » blanc. */
-    /** Poignée « + » d'ajout de sommet : VISUEL de 18 dp (réglé terrain 2026-08-27 : 26 → 9 → 18)
-     *  dessiné au centre d'une image transparente de 24 dp qui conserve une zone de tap
-     *  raisonnable. ⚠ osmdroid dimensionne un Marker sur la taille
-     *  INTRINSÈQUE de son icône : l'ancien LayerDrawable héritait des 24 dp d'`ic_add` et
-     *  `setSize`/`setBounds` étaient ignorés — les « réductions » à 5 dp n'avaient aucun effet
-     *  visible (rendu réel ≈ 26 dp). On RASTERISE donc dans un bitmap. Une seule instance,
-     *  partagée par toutes les poignées (osmdroid pose les bounds avant chaque draw). */
+    /** Poignée « + » d'ajout de sommet — une seule instance, partagée par toutes les poignées
+     *  (cf. IconesEditionCarte.poigneeAjout pour le détail du rendu). */
     private fun poigneeAjout(): android.graphics.drawable.Drawable =
-        poigneeDrawable ?: creerPoigneeAjout().also { poigneeDrawable = it }
+        poigneeDrawable ?: IconesEditionCarte.poigneeAjout(requireContext()).also { poigneeDrawable = it }
 
     private var poigneeDrawable: android.graphics.drawable.Drawable? = null
-
-    private fun creerPoigneeAjout(): android.graphics.drawable.Drawable {
-        val densite = resources.displayMetrics.density
-        val zone = (24 * densite).toInt()
-        val visuel = (18 * densite).toInt()
-        val bmp = android.graphics.Bitmap.createBitmap(zone, zone, android.graphics.Bitmap.Config.ARGB_8888)
-        val canvas = android.graphics.Canvas(bmp)
-        val debut = (zone - visuel) / 2
-        android.graphics.drawable.GradientDrawable().apply {
-            shape = android.graphics.drawable.GradientDrawable.OVAL
-            setColor(0xFF1976D2.toInt())
-            setStroke(maxOf(1, (1 * densite).toInt()), Color.WHITE)
-            setBounds(debut, debut, debut + visuel, debut + visuel)
-        }.draw(canvas)
-        val marge = (1.5f * densite).toInt()
-        ContextCompat.getDrawable(requireContext(), R.drawable.ic_add)!!.mutate().apply {
-            setTint(Color.WHITE)
-            setBounds(debut + marge, debut + marge, debut + visuel - marge, debut + visuel - marge)
-        }.draw(canvas)
-        return android.graphics.drawable.BitmapDrawable(resources, bmp)
-    }
 
     /** Insère un sommet au MILIEU de l'arête [indexArete] → [indexArete]+1 (fermeture incluse)
      *  du polygone sélectionné, le persiste, et le répercute sur un éventuel polygone VOISIN
@@ -1091,15 +1064,8 @@ class OccHabCarteFragment : Fragment(), MapEventsReceiver {
     }
 
     /** Petit disque plein (liseré blanc) pour matérialiser un sommet d'une station déjà posée. */
-    private fun cercleSommet(couleur: Int): android.graphics.drawable.Drawable {
-        val d = (12 * resources.displayMetrics.density).toInt()
-        return android.graphics.drawable.GradientDrawable().apply {
-            shape = android.graphics.drawable.GradientDrawable.OVAL
-            setColor(couleur)
-            setStroke((2 * resources.displayMetrics.density).toInt(), Color.WHITE)
-            setSize(d, d)
-        }
-    }
+    private fun cercleSommet(couleur: Int): android.graphics.drawable.Drawable =
+        IconesEditionCarte.cercleSommet(requireContext(), couleur)
 
     private fun majBoutons() {
         // « Valider » et « Annuler » actifs dès que la géométrie le permet — Y COMPRIS pendant

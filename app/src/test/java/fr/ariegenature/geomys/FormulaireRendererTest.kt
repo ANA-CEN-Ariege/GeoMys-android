@@ -37,6 +37,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
+import org.junit.Assert.assertNotEquals
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -69,6 +70,35 @@ class FormulaireRendererTest {
         is EditText -> listOf(v)
         is ViewGroup -> (0 until v.childCount).flatMap { editTexts(v.getChildAt(it)) }
         else -> emptyList()
+    }
+
+    /** Tous les boutons du formulaire, dans l'ordre de rendu. */
+    private fun boutons(v: View): List<android.widget.Button> = when (v) {
+        is android.widget.Button -> listOf(v)
+        is ViewGroup -> (0 until v.childCount).flatMap { boutons(v.getChildAt(it)) }
+        else -> emptyList()
+    }
+
+    /**
+     * N'ajouter QUE des photos est une modification. Le `tag` du champ MEDIA porte une liste
+     * MUTABLE, mutée en place à chaque ajout : rendue telle quelle par [lireValeurs], elle était
+     * partagée avec l'instantané pris après le rendu, et la comparaison « formulaire modifié ? »
+     * comparait la liste avec elle-même. « Terminer » et le retour quittaient donc sans proposer
+     * d'enregistrer, et les photos étaient perdues (constat 2026-10-19).
+     */
+    @Test
+    fun ajouter_une_photo_compte_comme_une_modification() {
+        renderer.setOnChoixMedia { _, callback -> callback(listOf("file:///tmp/photo.jpg")) }
+        renderer.rendre(listOf(EditableField("photos", ViewType.MEDIA, "Photos")))
+        val apresRendu = renderer.lireValeurs()
+
+        boutons(parent).first { it.text.toString().contains("Ajouter des photos") }.performClick()
+
+        assertNotEquals(
+            "ajouter une photo doit compter comme une modification du formulaire",
+            apresRendu, renderer.lireValeurs(),
+        )
+        assertEquals(listOf("file:///tmp/photo.jpg"), renderer.lireValeurs()["photos"])
     }
 
     @Test

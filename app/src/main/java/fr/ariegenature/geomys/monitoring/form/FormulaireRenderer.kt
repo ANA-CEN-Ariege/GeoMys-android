@@ -602,9 +602,15 @@ class FormulaireRenderer(
             // MEDIA : URI String stockée dans le tag du LinearLayout, ou null. Le payload
             // POST de l'objet ne porte PAS cette valeur — l'envoi du fichier est différé
             // à OutboxEnvoi (cf. SaisieEnAttente.mediaPathLocal).
+            // COPIE, jamais la liste interne : le `tag` est muté EN PLACE à chaque photo
+            // ajoutée ou retirée. Rendue telle quelle, elle était partagée avec l'instantané
+            // pris après le rendu — « ajouter une photo » mutait donc les DEUX côtés de la
+            // comparaison, et ne comptait pas comme une modification : « Terminer » et le
+            // retour quittaient sans rien proposer, les photos étaient perdues (constat
+            // 2026-10-19).
             ViewType.MEDIA -> {
                 @Suppress("UNCHECKED_CAST")
-                (v as LinearLayout).tag as? List<String> ?: emptyList<String>()
+                ((v as LinearLayout).tag as? List<String>)?.toList() ?: emptyList<String>()
             }
         }
     }

@@ -19,6 +19,7 @@
 package fr.ariegenature.geomys.network
 
 import fr.ariegenature.geomys.store.GeoNatureConfig
+import fr.ariegenature.geomys.model.OptionNomenclature
 import fr.ariegenature.geomys.store.NomenclatureCache
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -68,8 +69,8 @@ data class AdditionalFieldDef(
     /** Pour widget=`nomenclature` : code mnémonique du type de nomenclature serveur
      *  (ex. `STATUT_OBS`, `METH_DETERMIN`). Sert à fetcher /api/nomenclatures/nomenclature/<code>. */
     val codeNomenclatureType: String? = null,
-    /** Options résolues pour widget=`nomenclature` : (id_nomenclature, label_fr). */
-    val nomenclatureOptions: List<Pair<String, String>> = emptyList(),
+    /** Options résolues pour widget=`nomenclature` (id_nomenclature + label_fr). */
+    val nomenclatureOptions: List<OptionNomenclature> = emptyList(),
 ) {
     fun appliqueA(codeObjet: String): Boolean = objectsCode.contains(codeObjet)
 
@@ -115,7 +116,7 @@ object AdditionalFieldsApi {
             // Pour les widgets `nomenclature` : fetch parallèle des listes serveur
             // (/api/nomenclatures/nomenclature/<CODE>) pour résoudre id_nomenclature → label_fr.
             val codesNom = result.mapNotNull { it.codeNomenclatureType }.toSet()
-            val nomenclaturesResolues: Map<String, List<Pair<String, String>>> =
+            val nomenclaturesResolues: Map<String, List<OptionNomenclature>> =
                 if (codesNom.isEmpty()) emptyMap() else coroutineScope {
                     codesNom.map { code ->
                         async { code to fetchValeursNomenclature(base, token, cookies, code) }
@@ -321,23 +322,23 @@ object AdditionalFieldsApi {
         token: String?,
         cookies: String,
         code: String,
-    ): List<Pair<String, String>> {
+    ): List<OptionNomenclature> {
         return try {
             val url = URL("$base/api/nomenclatures/nomenclature/$code")
             val conn = HttpClient.get(url, token, cookies, 10000)
             if (HttpClient.lireCode(conn) != 200) { conn.disconnect(); return emptyList() }
             val text = conn.inputStream.bufferedReader().readText()
             val arr = text.parserTableauJson("values", "data") ?: return emptyList()
-            val out = mutableListOf<Pair<String, String>>()
+            val out = mutableListOf<OptionNomenclature>()
             for (i in 0 until arr.length()) {
                 val item = arr.optJSONObject(i) ?: continue
                 val id = item.opt("id_nomenclature")?.toString() ?: continue
                 val lbl = item.optString("label_fr", "")
                     .ifEmpty { item.optString("label_default", "") }
                     .takeIf { it.isNotEmpty() } ?: continue
-                out.add(id to lbl)
+                out.add(OptionNomenclature(id, lbl))
             }
-            out.sortedBy { it.second.lowercase() }
+            out.sortedBy { it.label.lowercase() }
         } catch (_: Exception) { emptyList() }
     }
 

@@ -28,6 +28,15 @@ data class PointTrace(
     val longitude: Double
 )
 
+/** Option d'un champ additionnel de type `nomenclature` : identifiant de nomenclature et
+ *  libellé affiché. Classe DÉDIÉE, et non une `Pair` : ce couple est sérialisé par Gson dans le
+ *  cache des champs additionnels, or R8 renomme les champs `first`/`second` de `kotlin.Pair`
+ *  (mapping de release : `first -> f`, `second -> g`). Ce cache survivant aux mises à jour, une
+ *  version qui réattribuait d'autres noms ne savait plus le relire : les options revenaient
+ *  vides jusqu'à la synchro suivante (constat 2026-10-19). Ici, la règle keep du paquet `model`
+ *  fige `code` et `label`. */
+data class OptionNomenclature(val code: String, val label: String)
+
 /** Un dénombrement (counting) GeoNature : 1 occurrence peut en avoir plusieurs.
  *  Chacun a sa propre tranche d'effectif + caractéristiques (sexe, stade…) + médias attachés. */
 data class Denombrement(

@@ -258,8 +258,8 @@ object AdditionalFieldsRenderer {
                     )
                     tag = "input"
                 }
-                val labels = listOf("(non renseigné)") + def.nomenclatureOptions.map { it.second }
-                val codes = listOf("") + def.nomenclatureOptions.map { it.first }
+                val labels = listOf("(non renseigné)") + def.nomenclatureOptions.map { it.label }
+                val codes = listOf("") + def.nomenclatureOptions.map { it.code }
                 val adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_item, labels)
                 adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
                 spinner.adapter = adapter

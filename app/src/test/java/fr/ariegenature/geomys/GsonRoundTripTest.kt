@@ -25,11 +25,15 @@ import fr.ariegenature.geomys.model.Observation
 import fr.ariegenature.geomys.model.OccHabHabitat
 import fr.ariegenature.geomys.model.OccHabSaisie
 import fr.ariegenature.geomys.model.OccHabStation
+import fr.ariegenature.geomys.model.OptionNomenclature
 import fr.ariegenature.geomys.model.PointTrace
 import fr.ariegenature.geomys.model.Sortie
 import fr.ariegenature.geomys.model.Taxon
 import fr.ariegenature.geomys.store.SaisieEnAttente
+import fr.ariegenature.geomys.network.AdditionalFieldDef
+import fr.ariegenature.geomys.network.WidgetType
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** Round-trip Gson des modèles PERSISTÉS (SortieStore, OutboxMonitoring) : sérialise un
@@ -41,6 +45,43 @@ import org.junit.Test
 class GsonRoundTripTest {
 
     private val gson = Gson()
+
+    /**
+     * Le cache des champs additionnels (`gn_cache_add_fields_occtax`) survit aux mises à jour :
+     * ses noms de champs JSON doivent donc être STABLES d'une version à l'autre. Ils l'étaient
+     * pour [AdditionalFieldDef] (règle -keep), mais PAS pour les options de nomenclature, qui
+     * étaient des `kotlin.Pair` — R8 renomme `first`/`second` (mapping de release : `first -> f`,
+     * `second -> g`), si bien qu'une version réattribuant d'autres noms ne savait plus relire le
+     * cache : options vides jusqu'à la synchro suivante (constat 2026-10-19).
+     */
+    @Test
+    fun les_options_de_nomenclature_ont_des_noms_json_stables() {
+        val def = AdditionalFieldDef(
+            idField = 7, fieldName = "etat_sanitaire", fieldLabel = "État sanitaire",
+            widget = WidgetType.NOMENCLATURE,
+            codeNomenclatureType = "ETA_SANITAIRE",
+            nomenclatureOptions = listOf(OptionNomenclature("12", "Bon"), OptionNomenclature("13", "Blessé")),
+        )
+        val json = gson.toJson(listOf(def))
+        assertTrue("les options doivent être nommées (code/label), jamais first/second",
+            json.contains("\"code\"") && json.contains("\"label\""))
+        assertTrue("une kotlin.Pair est revenue : R8 renommera ses champs",
+            !json.contains("\"first\"") && !json.contains("\"second\""))
+        val t = object : TypeToken<List<AdditionalFieldDef>>() {}.type
+        assertEquals(def, gson.fromJson<List<AdditionalFieldDef>>(json, t).single())
+    }
+
+    /** Aucun champ d'[AdditionalFieldDef] ne doit reposer sur `kotlin.Pair` (ni sur un autre
+     *  type de la stdlib Kotlin que les règles keep du projet ne protègent pas) : le cache est
+     *  relu par une AUTRE version de l'application que celle qui l'a écrit. */
+    @Test
+    fun aucun_champ_du_cache_ne_repose_sur_kotlin_pair() {
+        val suspects = AdditionalFieldDef::class.java.declaredFields
+            .filter { it.genericType.toString().contains("kotlin.Pair") }
+            .map { it.name }
+        assertEquals("champs à remplacer par une classe du paquet model : $suspects",
+            emptyList<String>(), suspects)
+    }
 
     @Test
     fun sortie_integralement_peuplee_survit_au_round_trip() {

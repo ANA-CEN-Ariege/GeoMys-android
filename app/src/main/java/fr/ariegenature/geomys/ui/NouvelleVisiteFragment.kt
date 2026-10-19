@@ -255,7 +255,6 @@ class NouvelleVisiteFragment : Fragment() {
                 ?.let { mediaPathsPreremplir = it }
         }
 
-        val titreSite = arguments?.getString("titreSite").orEmpty()
         val moduleCode = arguments?.getString("moduleCode").orEmpty()
         val modeEdition = editUuid != null
 
@@ -278,13 +277,7 @@ class NouvelleVisiteFragment : Fragment() {
             binding.tvFil, findNavController(), moduleCode,
             decoderFil(arguments?.getString("fil")), dernierCliquable = true,
         )
-        binding.tvContexte.text = buildString {
-            if (titreSite.isNotEmpty()) append("Sur : $titreSite")
-            if (moduleCode.isNotEmpty()) {
-                if (isNotEmpty()) append(" — ")
-                append("Protocole : $moduleCode")
-            }
-        }
+        afficherLigneContexte()
 
         binding.btnTerminer.setOnClickListener { terminerChaine() }
         // Garde « retour système » : le geste/bouton retour jetait silencieusement la saisie
@@ -1201,14 +1194,32 @@ class NouvelleVisiteFragment : Fragment() {
      *  un peu plus coûteux qu'un simple reset des inputs, mais ça garantit que les valeurs
      *  par défaut, les datalists et les pré-sélections (utilisateur connecté, etc.) sont
      *  reposées de zéro sans contamination de la saisie précédente. */
+    /** Ligne de contexte « Sur : <site> — Protocole : <module> », sous le fil d'Ariane. Posée au
+     *  rendu ET après chaque réinitialisation : ce TextView sert AUSSI de bandeau aux messages
+     *  d'envoi, et sa purge effaçait le contexte. */
+    private fun afficherLigneContexte() {
+        val titreSite = arguments?.getString("titreSite").orEmpty()
+        val moduleCode = arguments?.getString("moduleCode").orEmpty()
+        binding.tvContexte.text = buildString {
+            if (titreSite.isNotEmpty()) append("Sur : $titreSite")
+            if (moduleCode.isNotEmpty()) {
+                if (isNotEmpty()) append(" — ")
+                append("Protocole : $moduleCode")
+            }
+        }
+    }
+
     private fun reinitialiserFormulaire() {
         val moduleCode = arguments?.getString("moduleCode")
         if (moduleCode.isNullOrEmpty()) {
             renderer.rendre(creerChampsDemo())
             return
         }
-        // Vide le bandeau debug pour ne pas accumuler les logs de l'envoi précédent.
-        binding.tvContexte.text = ""
+        // Vide le bandeau debug pour ne pas accumuler les logs de l'envoi précédent, et REPOSE
+        // la ligne de contexte : le même TextView porte les deux, et la purge emportait
+        // « Sur : … — Protocole : … » après chaque « Enregistrer + suivante » (constat
+        // 2026-10-19).
+        afficherLigneContexte()
         chargerSchemaEtRendre(moduleCode)
     }
 

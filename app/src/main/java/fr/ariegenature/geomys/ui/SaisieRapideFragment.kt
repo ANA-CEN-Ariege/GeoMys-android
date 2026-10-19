@@ -103,7 +103,13 @@ class SaisieRapideFragment : Fragment() {
     private var preuveExist = ""
     private var comportement = ""
     private var methDetermin = ""
+    private var naturalite = ""
     private var determinateur = ""
+    /** Champs OCCURRENCE pilotés par form_fields (statut de la source, floutage, preuve
+     *  numérique / non numérique) : saisis dans Caractérisation, ils étaient RENVOYÉS par cet
+     *  écran mais jamais repris ici — la valeur saisie se perdait au retour (parité mono/multi,
+     *  constat 2026-10-19). */
+    private var champsOccExtra: Map<String, String> = emptyMap()
     private var additionalFieldsReleve: Map<String, String> = emptyMap()
     private var additionalFieldsOccurrence: Map<String, String> = emptyMap()
 
@@ -658,6 +664,7 @@ class SaisieRapideFragment : Fragment() {
             getLiveData<String>("statutBio").observe(viewLifecycleOwner)     { statutBio = it; updateDetailsIndicator() }
             getLiveData<String>("methDetermin").observe(viewLifecycleOwner)  { methDetermin = it; updateDetailsIndicator() }
             getLiveData<String>("preuveExist").observe(viewLifecycleOwner)   { preuveExist = it; updateDetailsIndicator() }
+            getLiveData<String>("naturalite").observe(viewLifecycleOwner)    { naturalite = it; updateDetailsIndicator() }
             getLiveData<String>("determinateur").observe(viewLifecycleOwner) { determinateur = it }
             getLiveData<String>("notes").observe(viewLifecycleOwner)         { notes = it; updateDetailsIndicator() }
             val mapType = object : TypeToken<Map<String, String>>() {}.type
@@ -670,6 +677,12 @@ class SaisieRapideFragment : Fragment() {
                 additionalFieldsOccurrence = try {
                     Gson().fromJson<Map<String, String>?>(json, mapType) ?: emptyMap()
                 } catch (_: Exception) { emptyMap() }
+            }
+            getLiveData<String>("occExtraJson").observe(viewLifecycleOwner) { json ->
+                champsOccExtra = try {
+                    Gson().fromJson<Map<String, String>?>(json, mapType) ?: emptyMap()
+                } catch (_: Exception) { emptyMap() }
+                updateDetailsIndicator()
             }
             // ─── Retour de DenombrementFragment ───
             // counting #0 (= 1ʳᵉ entrée de la liste) → champs flat de la saisie rapide.
@@ -737,12 +750,14 @@ class SaisieRapideFragment : Fragment() {
             putString("comportement",        comportement)
             putString("statutBio",           statutBio)
             putString("methDetermin",        methDetermin)
+            putString("naturalite",          naturalite)
             putString("determinateur",       determinateur)
             putString("determinateurDefaut", determinateurParDefaut())
             putString("preuveExist",         preuveExist)
             putString("notes",               notes)
             putString("addReleveJson",       gson.toJson(additionalFieldsReleve))
             putString("addOccJson",          gson.toJson(additionalFieldsOccurrence))
+            putString("occExtraJson",        gson.toJson(champsOccExtra))
         }
         findNavController().naviguerSur(R.id.action_saisieRapide_to_caracterisation, bundle)
     }
@@ -774,6 +789,7 @@ class SaisieRapideFragment : Fragment() {
             techniqueObs.isNotEmpty() || statutBio.isNotEmpty() || etaBio.isNotEmpty() ||
             preuveExist.isNotEmpty() || objDenbr.isNotEmpty() || typDenbr.isNotEmpty() ||
             comportement.isNotEmpty() || methDetermin.isNotEmpty() || statutObs.isNotEmpty() ||
+            naturalite.isNotEmpty() || champsOccExtra.isNotEmpty() ||
             denombrementsAdditionnels.isNotEmpty()
         val chips = listOfNotNull(
             sexe.ifEmpty { null },
@@ -902,6 +918,7 @@ class SaisieRapideFragment : Fragment() {
             typDenbr      = typDenbr.ifEmpty { null },
             comportement  = comportement.ifEmpty { null },
             methDetermin  = methDetermin.ifEmpty { null },
+            naturalite    = naturalite.ifEmpty { null },
             determinateur = determinateur.ifEmpty { null },
             statutObs     = statutObs.ifEmpty { null },
             mediaUrisCounting0          = mediaUrisCounting0,
@@ -927,6 +944,7 @@ class SaisieRapideFragment : Fragment() {
             dateDebutReleve             = dateDebutReleveSession,
             dateFinReleve               = dateFinReleveSession,
             additionalFieldsOccurrence  = additionalFieldsOccurrence,
+            champsOccExtra              = champsOccExtra,
             denombrementsAdditionnels   = denombrementsAdditionnels,
         )
         traceViewModel.ajouterObservation(obs)

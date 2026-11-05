@@ -91,7 +91,9 @@ C'est le plus simple et le plus utile tout de suite.
 Voir `docs/collections-specimens.md` (cedricroy/GeoNature) pour le détail.
 
 - Un **module Collections transversal avec sa propre saisie web**, pas un sous-module Monitoring : un spécimen peut venir d'une observation opportuniste comme d'un suivi. Occtax et Monitoring ne sont pas modifiés.
-- **Rattachement** recommandé : à `synthese.unique_id_sinp`, comme `t_validations` (clé étrangère vers la Synthèse). Une colonne directe façon `id_individual` est une alternative à discuter en amont.
+- **Rattachement — décidé le 2026-11-05** : par UUID vers `synthese.unique_id_sinp`, comme `t_validations`, **sans modifier le cœur GeoNature** (pas de colonne `id_individual`).
+  - Pour GeoMys, l'UUID du dénombrement généré par l'appli (phase 1) est exactement la clé de rattachement. C'est ce qui rend la phase 1 indispensable.
+  - Limite assumée : les spécimens ne s'affichent pas dans la Synthèse. On les consulte dans le module Collections.
 - Chaque spécimen a **son propre identifiant**, sous forme d'URI résolvable (modèle CETAF), imprimée en QR code. L'UUID du dénombrement identifie la donnée, pas chacun des spécimens qu'elle regroupe.
 - Comment un spécimen entre dans le module :
   - **observation opportuniste ou suivi** (Occtax, Monitoring, GeoMys) : `PREUVE_EXIST` = Oui + code du spécimen. L'observation apparaît dans une **liste de travail** web, où l'on complète la fiche spécimen ;

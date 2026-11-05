@@ -81,7 +81,29 @@ Seulement si le besoin dépasse « une preuve non numérique par occurrence » :
 - un module GeoNature `gn_module_collections`, sur le modèle de `gn_module_individuals`, avec une table `t_specimens` liée à `unique_id_occurence_occtax` (type de conservation, lieu de stockage, déterminations successives) ;
 - ou proposer à PnX-SI d'étendre `individuals` à un objet « spécimen ».
 
-Voir aussi la note côté serveur : `docs/collections-specimens.md` dans le fork GeoNature (cedricroy/GeoNature).
+Voir aussi la note côté serveur : `docs/collections-specimens.md` dans le fork GeoNature (cedricroy/GeoNature). Elle détaille l'architecture, les tables et les champs.
+
+## Résumé de l'architecture côté serveur
+
+- Le module Collections ne se greffe pas sur chaque module de saisie. Il s'accroche à l'**UUID SINP de l'observation** (`uuid_attached_row`), comme `t_medias` et `t_validations`. Il marche donc pour Occtax, Monitoring, Import et GeoMys.
+- Il ajoute les lots/contenants, plusieurs spécimens par observation, l'historique des déterminations, le rangement et les prêts.
+- Champs repris du **Darwin Core** :
+  - collection : `catalog_number`, `preparation`, `type_status`, `disposition` ;
+  - texte exact de l'étiquette : `verbatim_locality`, `verbatim_date`, `recorded_by`, `record_number`, `label_text`.
+- Ce qui est écrit sur l'étiquette est toujours conservé tel quel, à côté de l'interprétation normalisée.
+
+## Noms absents de Taxref
+
+- Dans GeoNature, une donnée sans `cd_nom` est **invisible** dans la Synthèse (vues en `JOIN taxref`) et **refusée** par l'Import. On ne peut pas laisser le `cd_nom` vide.
+- Démarche :
+  1. chercher parmi les synonymes Taxref (beaucoup de noms anciens y sont) ;
+  2. sinon, rattacher au rang supérieur (genre) et garder le nom exact dans `nom_cite` ;
+  3. demander l'ajout à Taxref (MNHN / INPN) et corriger le `cd_nom` ensuite ;
+  4. spécimens étrangers, cultivars, hybrides horticoles : ils restent dans le module Collections seulement, avec un lien éventuel vers WFO ou GBIF.
+- À éviter : inventer des `cd_nom` locaux dans `taxonomie.taxref` (conflits à la mise à jour Taxref, inconnus de l'INPN).
+- **Côté GeoMys, rien ne change** : sur le terrain on choisit toujours un taxon Taxref, au besoin au genre. Le problème concerne surtout la saisie de collections et d'herbiers anciens. Si la saisie depuis une photo d'étiquette (phase 2) est faite, il faudra :
+  - conserver le nom lu tel quel dans `nom_cite` ;
+  - proposer le rattachement Taxref le plus proche (synonyme ou genre) sans l'imposer.
 
 ## À valider avec le demandeur
 

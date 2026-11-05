@@ -91,6 +91,13 @@ Voir aussi la note côté serveur : `docs/collections-specimens.md` dans le fork
   - collection : `catalog_number`, `preparation`, `type_status`, `disposition` ;
   - texte exact de l'étiquette : `verbatim_locality`, `verbatim_date`, `recorded_by`, `record_number`, `label_text`.
 - Ce qui est écrit sur l'étiquette est toujours conservé tel quel, à côté de l'interprétation normalisée.
+- C'est un **module transversal avec sa propre saisie web**, pas un sous-module Monitoring : un spécimen peut venir d'une observation opportuniste comme d'un suivi. Occtax et Monitoring ne sont pas modifiés.
+- Comment un spécimen entre dans le module :
+  - **observation opportuniste ou suivi** (Occtax, Monitoring, GeoMys) : on met « preuve non numérique » + code du spécimen. L'observation apparaît dans une **liste de travail** web, et on y complète la fiche spécimen ;
+  - **herbier ancien ou collection reçue** : saisie complète dans le module web. Le module crée ensuite l'observation via l'API Occtax, dans un jeu de données propre à la collection ;
+  - **rattachement après coup** à une observation existante, par recherche dans la Synthèse.
+- Écrans web : liste et carte des spécimens, liste de travail, fiche spécimen (étiquette d'un côté, interprétation de l'autre, déterminations), saisie en lot, export d'étiquettes.
+- **Pour GeoMys** : la case « spécimen collecté » doit être disponible dans **tous les modes de saisie**, opportuniste comme protocoles Monitoring. Elle suffit pour que la donnée remonte dans la liste de travail du module.
 
 ## Noms absents de Taxref
 
